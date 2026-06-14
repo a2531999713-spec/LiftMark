@@ -50,7 +50,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/a2531999713-spec/-.git
+git clone https://github.com/a2531999713-spec/LiftMark.git
 
 # 进入项目目录
 cd -/training-partner-app
