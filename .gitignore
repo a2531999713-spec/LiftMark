@@ -36,8 +36,26 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-example
-
 # generated native folders
 /ios
 /android
+
+# logs
+.expo-metro-*.log
+.expo-server*.log
+
+# IDE
+.idea/
+.vscode/
+.claude/
+
+# temporary files
+*.xml
+lifton-*.png
+ChatGPT*.png
+
+# mimocode
+.mimocode/
+
+# android build
+training-partner-app/android/
