@@ -1,0 +1,10 @@
+Starting project at C:\Users\zhw\Documents\LiftOn\training-partner-app
+Logs: C:\Users\zhw\Documents\LiftOn\training-partner-app\.expo\dev\logs\start.log
+React Compiler enabled
+Starting Metro Bundler
+
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Waiting on http://localhost:8082
+Logs for your project will appear below.
+Android Bundled 19716ms node_modules\expo-router\entry.js (1899 modules)
+Android Bundled 65ms node_modules\expo-router\entry.js (1 module)

@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="NONE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="58e73350-4b56-4e88-ae63-462c0c540941" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/LICENSE" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(tabs)/_layout.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(tabs)/explore.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(tabs)/history.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(tabs)/members.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(tabs)/plan.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(tabs)/settings.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/(tabs)/today.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/_layout.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/about.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/activation.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/history/[sessionId].tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/history/manual.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/index.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/member/[memberId].tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/member/new.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/plan/[planId].tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/plan/create.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/workout/[sessionId].tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/workout/summary/[sessionId].tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/adaptive-icon-foreground-white.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/adaptive-icon-foreground.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/adaptive-icon-monochrome.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/app-icon-1024.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/brand-preview.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/favicon.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/logo-primary.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/logo-wordmark.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/source/source-horizontal-preview.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/source/source-icon-dark-card.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/source/source-icon-light-card.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/source/source-mark-light.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/source/source-stacked-preview.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/splash-logo-square.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/brand/splash-logo.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/ICON_GUIDE.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/eslint.config.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/jest.config.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/clean-android-native.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/fix_icons.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/fix_icons_android.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/fix_splash.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/reset-project.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/brand/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/brand/brand-mark-small.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/brand/brand-mark.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/brand/brand-preview.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/brand/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/brand/logo-primary.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/brand/logo-wordmark.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/icons/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/illustrations/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/images/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/images/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/images/liftmark-hero-deadlift.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/images/liftmark-partner-bench.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/images/liftmark-plan-review.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/images/liftmark-recovery.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/assets/images/liftmark-training-bench.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/common/AppButton.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/common/AppTextInput.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/common/EmptyState.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/common/Screen.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/common/ScreenPlaceholder.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/members/MemberCard.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/members/MemberForm.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/ActionCard.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/AppButton.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/AppCard.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/AppText.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/DangerZone.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/EmptyState.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/MetricCard.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/Screen.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/SectionHeader.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/SettingsRow.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/Tag.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/VisualHeroCard.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ui/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/activation/LocalActivationRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/activation/RemoteActivationProvider.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/db.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/migrations.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/repositories/base.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/repositories/exerciseRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/repositories/groupRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/repositories/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/repositories/mappers.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/repositories/memberRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/repositories/planRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/repositories/progressionRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/repositories/workoutRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/local/schema.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/repositories/exerciseRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/repositories/groupRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/repositories/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/repositories/memberRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/repositories/planRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/repositories/progressionRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/repositories/workoutRepository.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/seed/defaultAlternatives.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/seed/defaultDeloadPlan.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/seed/defaultExercises.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/seed/defaultHypertrophyPlan.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/seed/defaultStrengthPlan.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/seed/seedDefaultData.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/activation/activation.service.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/activation/activation.types.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/common/ids.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/common/result.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/common/time.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/exercise/exercise.types.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/group/group.types.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/history/history-analysis.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/member/member.service.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/member/member.types.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/member/member.validation.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/plan/defaultCycle.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/plan/plan.selectors.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/plan/plan.service.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/plan/plan.types.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/plan/planCopy.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/plan/systemSchemes.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/progression/progression.labels.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/progression/progression.types.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/recovery/recovery-engine.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/recovery/recovery.types.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/weight/weight-calculator.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/weight/weight.types.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/workout/workout.service.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/workout/workout.types.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domain/workout/workout.validation.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/services/activationService.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/services/exportService.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/services/notificationService.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/services/planFileService.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/services/platformService.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/store/appStore.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/store/selectedGroupStore.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/store/workoutDraftStore.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/sync/conflictResolver.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/sync/syncQueue.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/sync/syncTypes.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tests/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tests/activation.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tests/history.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tests/member.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tests/plan-file.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tests/plan.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tests/recovery.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tests/weight.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tests/workout.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/theme/colors.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/theme/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/theme/radius.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/theme/shadows.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/theme/spacing.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/theme/typography.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/types/assets.d.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/tsconfig.json" beforeDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ClangdSettings">
+    <option name="formatViaClangd" value="false" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/.." />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 5
+}</component>
+  <component name="ProjectId" id="3EvvuUyNUZs5ocZq8bJYhn4F7a3" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
+    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;dart.analysis.tool.window.visible&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;reference.settingsdialog.project.gradle&quot;,
+    &quot;show.migrate.to.gradle.popup&quot;: &quot;false&quot;
+  }
+}</component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="58e73350-4b56-4e88-ae63-462c0c540941" name="Changes" comment="" />
+      <created>1781072081490</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1781072081490</updated>
+    </task>
+    <servers />
+  </component>
+</project>

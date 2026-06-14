@@ -1,0 +1,5 @@
+interface:
+  display_name: "AI Doc Driven Development"
+  short_description: "Create and maintain project docs that stay synchronized with code."
+  icon: "book-open"
+  background_color: "#1E3A8A"
