@@ -8,6 +8,7 @@ import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import {
   analyzeExerciseHistory,
+  estimateOneRM,
   selectLargestExerciseSeries,
   type HistoryAnalysis,
   type HistorySetEntry,
@@ -19,10 +20,12 @@ import { colors, radius, spacing } from '@/theme';
 type DataScope = 'personal' | 'group';
 
 type SessionSummary = {
+  bestEstimatedOneRM?: number;
   durationMinutes?: number;
   exerciseCount: number;
   session: WorkoutSession;
   setCount: number;
+  topSetLabel?: string;
   volume: number;
 };
 
@@ -160,12 +163,22 @@ function summarizeSession(detail: WorkoutSessionDetail, memberId: string): Sessi
   const exerciseIds = new Set(
     memberSets.map((set) => detail.exercises.find((exercise) => exercise.id === set.exerciseRecordId)?.exerciseId ?? set.exerciseRecordId),
   );
+  const topSet = memberSets
+    .map((set) => ({
+      estimatedOneRM: estimateOneRM(set.actualWeight ?? set.plannedWeight ?? 0, set.actualReps ?? set.plannedReps ?? 0),
+      reps: set.actualReps ?? set.plannedReps ?? 0,
+      weight: set.actualWeight ?? set.plannedWeight ?? 0,
+    }))
+    .filter((set) => set.weight > 0 && set.reps > 0)
+    .sort((left, right) => right.estimatedOneRM - left.estimatedOneRM)[0];
 
   return {
+    bestEstimatedOneRM: topSet?.estimatedOneRM,
     durationMinutes: getDurationMinutes(detail.session),
     exerciseCount: exerciseIds.size,
     session: detail.session,
     setCount: memberSets.length,
+    topSetLabel: topSet ? `${topSet.weight}kg x ${topSet.reps}` : undefined,
     volume: memberSets.reduce(
       (sum, set) => sum + (set.actualWeight ?? set.plannedWeight ?? 0) * (set.actualReps ?? set.plannedReps ?? 0),
       0,
@@ -400,16 +413,21 @@ export default function HistoryRoute() {
                 </View>
               )}
 
-              {history.recentSessions.length > 0 ? (
-                <>
-                  <SectionHeader actionLabel="月视图" onActionPress={() => setMonthVisible(true)} title="最近训练记录" />
-                  <View style={styles.sessionList}>
-                    {history.recentSessions.slice(0, 6).map((summary) => (
-                      <SessionCard key={summary.session.id} memberName={history.currentMember?.displayName ?? '成员'} summary={summary} />
-                    ))}
-                  </View>
-                </>
-              ) : null}
+              <SectionHeader actionLabel="月视图" onActionPress={() => setMonthVisible(true)} title="最近训练" />
+              {history.recentSessions.length === 0 ? (
+                <EmptyState
+                  actionLabel="去训练"
+                  description="完成一次训练后，这里会显示训练摘要、训练量和进步趋势。"
+                  onActionPress={() => router.push('/(tabs)/today')}
+                  title="还没有训练记录"
+                />
+              ) : (
+                <View style={styles.sessionList}>
+                  {history.recentSessions.slice(0, 6).map((summary) => (
+                    <SessionCard key={summary.session.id} memberName={history.currentMember?.displayName ?? '成员'} summary={summary} />
+                  ))}
+                </View>
+              )}
             </>
           ) : (
             <AppCard style={styles.groupPendingCard} tone="soft">
@@ -626,49 +644,60 @@ function AnalysisPanel({
 function SessionCard({ memberName, summary }: { memberName: string; summary: SessionSummary }) {
   const session = summary.session;
   const detailRoute = { pathname: '/history/[sessionId]', params: { sessionId: session.id } } as never;
+  const durationLabel = summary.durationMinutes ? `${summary.durationMinutes} 分钟` : '时长待补充';
+  const trendLabel =
+    summary.bestEstimatedOneRM && summary.bestEstimatedOneRM > 0
+      ? `估算 1RM ${summary.bestEstimatedOneRM}kg`
+      : '趋势样本积累中';
+
   return (
-    <AppCard style={styles.sessionCard}>
-      <View style={styles.sessionDatePill}>
-        <AppText tone="inverse" variant="caption">
+    <Pressable accessibilityRole="button" onPress={() => router.push(detailRoute)} style={({ pressed }) => [styles.sessionCard, pressed && styles.pressed]}>
+      <View style={styles.sessionAccent}>
+        <AppText tone="inverse" variant="caption" weight="900">
           {formatShortDate(session.date)}
         </AppText>
       </View>
+
       <View style={styles.sessionBody}>
         <View style={styles.sessionTop}>
           <View style={styles.sessionTitleBlock}>
-            <AppText variant="bodySmall" weight="900">
+            <AppText numberOfLines={1} variant="bodySmall" weight="900">
               {session.title}
             </AppText>
             <AppText tone="muted" variant="caption">
-              {memberName} · {summary.exerciseCount} 动作 · {summary.setCount} 组
+              {session.date} · {durationLabel}
             </AppText>
           </View>
+          <Ionicons color={colors.textMuted} name="chevron-forward" size={20} />
+        </View>
+
+        <View style={styles.sessionMetricRow}>
+          <SessionMetric label="动作" value={`${summary.exerciseCount}`} />
+          <SessionMetric label="组数" value={`${summary.setCount}`} />
+          <SessionMetric label="训练量" value={formatKg(summary.volume)} wide />
+        </View>
+
+        <View style={styles.sessionTags}>
+          <Tag label={memberName} tone="neutral" />
           <Tag label={session.status === 'completed' ? '已完成' : '进行中'} tone={session.status === 'completed' ? 'success' : 'warning'} />
-        </View>
-        <View style={styles.sessionMetaRow}>
-          <AppText tone="muted" variant="caption">
-            {formatKg(summary.volume)}
-          </AppText>
-          {summary.durationMinutes ? (
-            <AppText tone="muted" variant="caption">
-              {summary.durationMinutes} 分钟
-            </AppText>
-          ) : null}
-        </View>
-        <View style={styles.sessionActions}>
-          <Pressable accessibilityRole="button" onPress={() => router.push(detailRoute)} style={styles.sessionActionButton}>
-            <AppText variant="caption" weight="900">
-              查看
-            </AppText>
-          </Pressable>
-          <Pressable accessibilityRole="button" onPress={() => router.push(detailRoute)} style={styles.sessionActionButton}>
-            <AppText variant="caption" weight="900">
-              编辑
-            </AppText>
-          </Pressable>
+          {summary.topSetLabel ? <Tag label={`PR 参考 ${summary.topSetLabel}`} tone="brand" /> : null}
+          <Tag label={trendLabel} tone="accent" />
         </View>
       </View>
-    </AppCard>
+    </Pressable>
+  );
+}
+
+function SessionMetric({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <View style={[styles.sessionMetric, wide && styles.sessionMetricWide]}>
+      <AppText tone="muted" variant="caption">
+        {label}
+      </AppText>
+      <AppText numberOfLines={1} variant="bodySmall" weight="900">
+        {value}
+      </AppText>
+    </View>
   );
 }
 
@@ -889,26 +918,27 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   sessionCard: {
-    alignItems: 'flex-start',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
-    padding: spacing.md,
+    overflow: 'hidden',
   },
-  sessionDatePill: {
+  sessionAccent: {
     alignItems: 'center',
     backgroundColor: colors.dark,
-    borderRadius: radius.md,
     justifyContent: 'center',
-    minHeight: 48,
-    minWidth: 56,
-    paddingHorizontal: spacing.sm,
+    width: 58,
   },
   sessionBody: {
     flex: 1,
     gap: spacing.sm,
+    padding: spacing.md,
   },
   sessionTop: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
     justifyContent: 'space-between',
@@ -917,20 +947,25 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  sessionMetaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-  },
-  sessionActions: {
+  sessionMetricRow: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  sessionActionButton: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+  sessionMetric: {
+    backgroundColor: colors.backgroundElevated,
+    borderRadius: radius.sm,
+    flex: 1,
+    gap: 2,
+    minHeight: 54,
+    padding: spacing.sm,
+  },
+  sessionMetricWide: {
+    flex: 1.5,
+  },
+  sessionTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
   },
   groupPendingCard: {
     gap: spacing.sm,
@@ -956,5 +991,9 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingVertical: spacing.sm,
     width: '13.4%',
+  },
+  pressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.99 }],
   },
 });

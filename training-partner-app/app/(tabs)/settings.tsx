@@ -2,16 +2,18 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
 import { type ComponentProps, type ReactNode, useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, View } from 'react-native';
 
+import { liftmarkBrandAssets } from '@/assets/brand';
 import { AppCard, AppText, EmptyState, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, getDatabase, initializeLocalDatabase } from '@/data/local';
 import { createActivationService } from '@/services/activationService';
 import { exportLocalDataJson, exportWorkoutDataJson, resetDefaultPlanData } from '@/services/exportService';
-import { createCurrentPlanFile, serializePlanFile } from '@/services/planFileService';
+import { pickImportedPlanDocument } from '@/services/planDocumentService';
+import { createCurrentPlanFile, PlanFileError, serializePlanFile } from '@/services/planFileService';
 import { getTrialDaysLeft } from '@/domain/activation/activation.service';
 import type { ActivationState } from '@/domain/activation/activation.types';
-import type { FridayStrategy, Group } from '@/domain/group/group.types';
+import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { colors, radius, spacing } from '@/theme';
 
@@ -47,22 +49,6 @@ async function loadDiagnostics(): Promise<Diagnostics> {
   };
 }
 
-function formatIncrement(profile: MemberProfile | null, key: 'barbellIncrement' | 'dumbbellIncrement') {
-  return `${profile?.[key] ?? (key === 'barbellIncrement' ? 2.5 : 2)} kg`;
-}
-
-function formatFridayStrategy(strategy: FridayStrategy) {
-  if (strategy === 'allow_weak') {
-    return '允许补弱';
-  }
-
-  if (strategy === 'allow_free') {
-    return '允许自由训练';
-  }
-
-  return '默认休息';
-}
-
 function showComingSoon(feature: string) {
   Alert.alert('开发中', `该功能正在开发中，后续版本开放。\n\n${feature}`);
 }
@@ -74,15 +60,39 @@ function showLocalGroupRules() {
   );
 }
 
+function formatMembersValue(members: GroupMember[]) {
+  return members.length > 0 ? `${members.length} 位成员` : '添加成员';
+}
+
+function formatMembersDescription(members: GroupMember[]) {
+  if (members.length === 0) {
+    return '管理本地训练成员资料';
+  }
+
+  return members.map((member) => member.displayName).join(' / ');
+}
+
+function formatMemberUnitsDescription(members: GroupMember[], profilesByMemberId: Record<string, MemberProfile | null>) {
+  if (members.length === 0) {
+    return '按成员分别设置杠铃 / 哑铃加重单位';
+  }
+
+  return members
+    .map((member) => {
+      const profile = profilesByMemberId[member.id];
+      return `${member.displayName} ${profile?.barbellIncrement ?? 2.5}/${profile?.dumbbellIncrement ?? 2}kg`;
+    })
+    .join(' · ');
+}
+
 export default function SettingsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const activationService = useMemo(() => createActivationService(), []);
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
-  const [firstProfile, setFirstProfile] = useState<MemberProfile | null>(null);
+  const [profilesByMemberId, setProfilesByMemberId] = useState<Record<string, MemberProfile | null>>({});
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [activation, setActivation] = useState<ActivationState | null>(null);
-  const [exportPreview, setExportPreview] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,11 +109,16 @@ export default function SettingsRoute() {
       }
 
       const nextMembers = await repositories.memberRepository.listMembers(nextGroup.id);
-      const profile = nextMembers[0] ? await repositories.memberRepository.getMemberProfile(nextMembers[0].id) : null;
+      const profiles = await Promise.all(
+        nextMembers.map(async (member) => [
+          member.id,
+          await repositories.memberRepository.getMemberProfile(member.id),
+        ]),
+      );
 
       setGroup(nextGroup);
       setMembers(nextMembers);
-      setFirstProfile(profile);
+      setProfilesByMemberId(Object.fromEntries(profiles));
       setDiagnostics(await loadDiagnostics());
       setActivation(await activationService.getState());
     } catch (loadError) {
@@ -119,32 +134,31 @@ export default function SettingsRoute() {
     }, [loadSettings]),
   );
 
-  const showExportPreview = useCallback((title: string, json: string) => {
-    setExportPreview(json);
-    Alert.alert(title, `已生成 JSON，大小约 ${Math.ceil(json.length / 1024)} KB。文件保存/分享能力后续接入。`);
+  const showExportSuccess = useCallback((title: string, json: string) => {
+    Alert.alert(title, `已生成 JSON，大小约 ${Math.ceil(json.length / 1024)} KB。保存 / 分享 / 复制能力正在接入中。`);
   }, []);
 
   const exportAllData = useCallback(async () => {
     setIsWorking(true);
     try {
-      showExportPreview('导出全部数据', await exportLocalDataJson());
+      showExportSuccess('导出全部数据', await exportLocalDataJson());
     } catch (exportError) {
       Alert.alert('导出失败', exportError instanceof Error ? exportError.message : '导出全部数据失败。');
     } finally {
       setIsWorking(false);
     }
-  }, [showExportPreview]);
+  }, [showExportSuccess]);
 
   const exportWorkoutData = useCallback(async () => {
     setIsWorking(true);
     try {
-      showExportPreview('导出训练记录', await exportWorkoutDataJson());
+      showExportSuccess('导出训练记录', await exportWorkoutDataJson());
     } catch (exportError) {
       Alert.alert('导出失败', exportError instanceof Error ? exportError.message : '导出训练记录失败。');
     } finally {
       setIsWorking(false);
     }
-  }, [showExportPreview]);
+  }, [showExportSuccess]);
 
   const exportCurrentPlan = useCallback(async () => {
     if (!group) {
@@ -154,35 +168,66 @@ export default function SettingsRoute() {
     setIsWorking(true);
     try {
       const planFile = await createCurrentPlanFile(repositories, group.activePlanId);
-      showExportPreview('导出当前计划', serializePlanFile(planFile));
+      showExportSuccess('导出当前计划', serializePlanFile(planFile));
     } catch (exportError) {
       Alert.alert('导出失败', exportError instanceof Error ? exportError.message : '导出当前计划失败。');
     } finally {
       setIsWorking(false);
     }
-  }, [group, repositories, showExportPreview]);
+  }, [group, repositories, showExportSuccess]);
 
-  const saveFridayStrategy = useCallback(
-    async (strategy: FridayStrategy) => {
-      if (!group) {
+  const importPlan = useCallback(async () => {
+    setIsWorking(true);
+    try {
+      const picked = await pickImportedPlanDocument();
+      if (!picked) {
         return;
       }
 
-      setIsWorking(true);
-      try {
-        const updatedGroup = await repositories.groupRepository.updateGroup(group.id, {
-          fridayEnabled: strategy !== 'default_rest',
-          fridayStrategy: strategy,
-        });
-        setGroup(updatedGroup);
-      } catch (updateError) {
-        Alert.alert('保存失败', updateError instanceof Error ? updateError.message : '周五策略保存失败。');
-      } finally {
-        setIsWorking(false);
+      const importedPlan = await repositories.planRepository.importUserPlan({
+        alternatives: picked.draft.alternatives,
+        days: picked.draft.plan.days,
+        exercises: picked.draft.exercises,
+        phases: picked.draft.plan.phases,
+        planExercises: picked.draft.plan.exercises,
+        template: picked.draft.plan.template,
+      });
+      await loadSettings();
+
+      Alert.alert('计划已导入', `“${importedPlan.name}”已成为我的计划。\n\n是否设为当前训练计划？`, [
+        { text: '稍后', style: 'cancel' },
+        {
+          text: '设为当前',
+          onPress: () => {
+            void (async () => {
+              const firstPhase = (await repositories.planRepository.listPlanPhases(importedPlan.id))[0];
+              const currentGroup = await repositories.groupRepository.getDefaultGroup();
+              if (!currentGroup) {
+                return;
+              }
+
+              const updatedGroup = await repositories.groupRepository.updateGroup(currentGroup.id, {
+                activePlanId: importedPlan.id,
+                currentPhaseType: firstPhase?.type ?? 'custom',
+                currentWeek: 1,
+              });
+              setGroup(updatedGroup);
+              Alert.alert('已设为当前计划', `训练页将读取“${importedPlan.name}”。`);
+            })();
+          },
+        },
+      ]);
+    } catch (importError) {
+      if (importError instanceof PlanFileError) {
+        Alert.alert('计划文件格式不兼容', '这个文件不是练刻 LiftMark 支持的计划文件。');
+        return;
       }
-    },
-    [group, repositories],
-  );
+
+      Alert.alert('导入失败', importError instanceof Error ? importError.message : '计划导入失败。');
+    } finally {
+      setIsWorking(false);
+    }
+  }, [loadSettings, repositories]);
 
   const confirmResetDefaultPlan = useCallback(() => {
     Alert.alert('重置默认计划？', '将重新检查系统方案 seed，并补齐缺失的用户计划副本，不会删除已有训练记录。确认继续？', [
@@ -215,16 +260,6 @@ export default function SettingsRoute() {
     ]);
   }, []);
 
-  const editFirstMember = useCallback(() => {
-    const firstMember = members[0];
-    if (firstMember) {
-      router.push({ pathname: '/member/[memberId]', params: { memberId: firstMember.id } });
-      return;
-    }
-
-    router.push('/member/new');
-  }, [members]);
-
   return (
     <Screen title="设置" subtitle="本地数据、训练偏好与应用状态。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -238,11 +273,11 @@ export default function SettingsRoute() {
           <SettingsGroup title="通用设置">
             <SettingsItem icon="people-outline" title="当前小组" value={group?.name ?? '本地训练小组'} />
             <SettingsItem
-              description="管理 1RM、体重与加重单位"
+              description={formatMembersDescription(members)}
               icon="person-circle-outline"
-              onPress={editFirstMember}
-              title="当前成员"
-              value={members[0]?.displayName ?? '添加成员'}
+              onPress={() => router.push('/settings/members')}
+              title="成员资料"
+              value={formatMembersValue(members)}
             />
             <SettingsItem
               description="同一设备多人轮换，本机保存"
@@ -262,43 +297,13 @@ export default function SettingsRoute() {
           <SettingsGroup title="训练设置">
             <SettingsItem icon="scale-outline" title="默认单位" value="kg" />
             <SettingsItem
-              description={`杠铃 ${formatIncrement(firstProfile, 'barbellIncrement')} · 哑铃 ${formatIncrement(firstProfile, 'dumbbellIncrement')}`}
+              description={formatMemberUnitsDescription(members, profilesByMemberId)}
               icon="barbell-outline"
-              onPress={editFirstMember}
+              onPress={() => router.push('/settings/member-units')}
               title="加重单位"
-              value="编辑"
+              value={formatMembersValue(members)}
             />
             <SettingsItem icon="pulse-outline" title="默认记录方式" value="RPE / RIR" />
-            <View style={styles.strategyBlock}>
-              <View style={styles.strategyHeader}>
-                <View style={styles.rowIcon}>
-                  <Ionicons color={colors.primary} name="calendar-outline" size={18} />
-                </View>
-                <View style={styles.itemText}>
-                  <AppText variant="bodySmall" weight="900">
-                    周五策略
-                  </AppText>
-                  <AppText tone="muted" variant="caption">
-                    当前：{formatFridayStrategy(group?.fridayStrategy ?? 'default_rest')}
-                  </AppText>
-                </View>
-              </View>
-              <View style={styles.segmentRow}>
-                {(['default_rest', 'allow_weak', 'allow_free'] as FridayStrategy[]).map((strategy) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={isWorking}
-                    key={strategy}
-                    onPress={() => void saveFridayStrategy(strategy)}
-                    style={[styles.segment, group?.fridayStrategy === strategy && styles.segmentActive]}
-                  >
-                    <AppText tone={group?.fridayStrategy === strategy ? 'inverse' : 'default'} variant="caption">
-                      {formatFridayStrategy(strategy)}
-                    </AppText>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
           </SettingsGroup>
 
           <SettingsGroup title="试用与激活">
@@ -316,7 +321,7 @@ export default function SettingsRoute() {
             <SettingsItem disabled={isWorking} icon="download-outline" onPress={() => void exportAllData()} title="导出全部数据" />
             <SettingsItem disabled={isWorking} icon="document-text-outline" onPress={() => void exportCurrentPlan()} title="导出当前计划" />
             <SettingsItem disabled={isWorking} icon="bar-chart-outline" onPress={() => void exportWorkoutData()} title="导出训练记录" />
-            <SettingsItem icon="cloud-upload-outline" onPress={() => showComingSoon('导入计划')} tag="开发中" title="导入计划" />
+            <SettingsItem disabled={isWorking} icon="cloud-upload-outline" onPress={() => void importPlan()} title="导入计划" value="选择文件" />
             <SettingsItem icon="server-outline" onPress={() => showComingSoon('备份数据库')} tag="开发中" title="备份数据库" />
             <SettingsItem icon="refresh-outline" onPress={() => showComingSoon('恢复数据库')} tag="开发中" title="恢复数据库" />
           </SettingsGroup>
@@ -344,16 +349,6 @@ export default function SettingsRoute() {
             <SettingsItem icon="leaf-outline" title="seed 状态" value={diagnostics?.seedStatus ?? '未知'} />
             <SettingsItem icon="people-outline" title="成员数量" value={`${members.length}`} />
             <SettingsItem icon="fitness-outline" title="动作数量" value={`${diagnostics?.exerciseCount ?? 0}`} />
-            {__DEV__ && exportPreview ? (
-              <AppCard style={styles.previewCard}>
-                <AppText variant="bodySmall" weight="900">
-                  最近导出预览
-                </AppText>
-                <AppText tone="muted" variant="caption">
-                  {exportPreview.slice(0, 900)}
-                </AppText>
-              </AppCard>
-            ) : null}
           </SettingsGroup>
 
           <SettingsGroup title="危险操作" tone="danger">
@@ -380,11 +375,7 @@ function SettingsHero({
   return (
     <AppCard style={styles.heroCard} tone="dark">
       <View style={styles.heroTop}>
-        <View style={styles.heroMark}>
-          <AppText tone="inverse" variant="subtitle">
-            练
-          </AppText>
-        </View>
+        <Image resizeMode="contain" source={liftmarkBrandAssets.logoPrimary} style={styles.heroLogo} />
         <Tag label={activation?.isActivated ? '已激活' : '试用模式'} tone="dark" />
       </View>
       <View style={styles.heroText}>
@@ -392,12 +383,15 @@ function SettingsHero({
           练刻 LiftMark
         </AppText>
         <AppText style={styles.heroMutedText} variant="bodySmall">
-          {group?.name ?? '本地训练小组'} · 本地优先 / SQLite
+          你的力量训练计划执行器
+        </AppText>
+        <AppText style={styles.heroMutedText} variant="caption">
+          本地数据 / Android 预览版 / com.liftmark.app
         </AppText>
       </View>
       <View style={styles.heroStats}>
         <HeroStat label="成员" value={`${members.length}`} />
-        <HeroStat label="版本" value={Constants.expoConfig?.version ?? '0.1.0'} />
+        <HeroStat label="小组" value={group?.name ?? '本地'} />
         <HeroStat label="同步" value="本机" />
       </View>
     </AppCard>
@@ -493,13 +487,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  heroMark: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderRadius: radius.md,
-    height: 48,
-    justifyContent: 'center',
-    width: 48,
+  heroLogo: {
+    height: 58,
+    width: 156,
   },
   heroText: {
     gap: spacing.xs,
@@ -557,34 +547,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     maxWidth: 132,
     textAlign: 'right',
-  },
-  strategyBlock: {
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  strategyHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  segmentRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  segment: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  segmentActive: {
-    backgroundColor: colors.primary,
-  },
-  previewCard: {
-    gap: spacing.sm,
   },
   disabled: {
     opacity: 0.5,

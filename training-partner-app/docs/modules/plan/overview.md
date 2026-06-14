@@ -1,6 +1,13 @@
 # Plan 模块概览
 
-更新时间：2026-06-12
+更新时间：2026-06-14
+
+## 2026-06-14 settings-history-plan-switch-cleanup-sprint
+
+- 新增完整可用系统方案“经典三分化 PPL”，系统方案只读，用户必须点击“使用此方案”后复制为“我的计划”才能执行。
+- 计划页和设置页均支持导入 `.liftmark.json`；导入使用 schema 校验与 ID 重映射，落库后成为 `source: "imported"` 的用户计划。
+- 训练页顶部当前计划卡新增“切换计划”入口，只列出“我的计划”，不直接列出系统方案。
+- 切换当前计划只更新当前本地小组的 `active_plan_id`、`current_week` 和 `current_phase_type`，不影响历史训练记录。
 
 ## 1. 模块职责
 
@@ -51,12 +58,15 @@ Plan 模块负责区分并管理两类对象：
 |---|---|
 | `src/domain/plan/plan.types.ts` | 计划模板、阶段、训练日、计划动作类型，`PlanTemplate.source` 区分 system/system_copy/imported 等来源。 |
 | `src/domain/plan/systemSchemes.ts` | 本地系统方案目录，包含标题、目标、难度、频率、标签、可用状态和系统模板 planId。 |
+| `src/data/seed/classicPplPlan.ts` | “经典三分化 PPL”系统模板 seed 数据。 |
 | `src/domain/plan/planCopy.ts` | 把系统模板复制成用户计划草稿的纯函数。 |
 | `src/data/local/migrations.ts` | v2 增加 `origin_scheme_id`，并把旧默认系统计划迁移为用户计划副本。 |
 | `src/data/seed/seedDefaultData.ts` | 首次启动写入系统方案模板和默认用户计划副本。 |
 | `src/data/local/repositories/planRepository.ts` | 本地计划 Repository，支持用户计划列表、复制系统方案、今日训练读取。 |
 | `app/(tabs)/plan.tsx` | 计划页：当前计划、我的计划、系统方案、创建计划和导入计划入口。 |
+| `app/(tabs)/today.tsx` | 训练页当前计划卡和“切换计划”弹层，只切换用户计划。 |
 | `src/services/planFileService.ts` | 计划文件生成、校验和导入 ID 重映射。 |
+| `src/services/planDocumentService.ts` | 文件选择和计划导入草稿生成。 |
 
 ## 7. 核心数据结构
 

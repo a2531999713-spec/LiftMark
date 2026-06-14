@@ -1,6 +1,6 @@
 # 本地 Repository API 文档
 
-更新时间：2026-06-12
+更新时间：2026-06-14
 
 ## 1. API 定位
 
@@ -77,6 +77,7 @@ export interface PlanRepository {
   listPlanExercises(planDayId: ID): Promise<PlanExercise[]>;
   createUserPlan(input: CreateUserPlanInput): Promise<PlanTemplate>;
   copySystemSchemeToUserPlan(input: CopySystemSchemeToUserPlanInput): Promise<PlanTemplate>;
+  importUserPlan(input: ImportUserPlanInput): Promise<PlanTemplate>;
   getTodayPlan(input: GetTodayPlanInput): Promise<TodayPlanResult>;
 }
 ```
@@ -87,10 +88,13 @@ export interface PlanRepository {
 - 列出“我的计划”，不返回 `source=system` 的系统方案。
 - 从创建计划页保存用户拥有的 `blank_created` 计划。
 - 将完整可用的系统方案复制成用户计划。
+- 将 `.liftmark.json` 导入草稿写入 SQLite，生成 `source: "imported"` 的用户计划。
 - 根据当前小组状态生成今日训练。
 - 支持系统方案库、空白创建、导入和复制计划的未来扩展。
 
 系统方案不是用户计划。训练记录不能直接绑定系统方案；训练页应通过 `groups.active_plan_id` 读取当前用户计划。
+
+`importUserPlan` 不导入成员 1RM、身体数据、训练记录，不覆盖已有计划，也不允许把 `source: "system"` 的模板直接作为用户计划导入。
 
 ## 6. WorkoutRepository
 

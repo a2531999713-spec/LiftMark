@@ -22,6 +22,7 @@ export type SystemTrainingScheme = {
 };
 
 export const SYSTEM_SCHEME_FOUR_DAY_ID = 'scheme_four_day_strength_hypertrophy';
+export const SYSTEM_SCHEME_CLASSIC_PPL_ID = 'scheme_classic_three_day_ppl';
 
 export const systemTrainingSchemes: SystemTrainingScheme[] = [
   {
@@ -55,19 +56,21 @@ export const systemTrainingSchemes: SystemTrainingScheme[] = [
     isComingSoon: true,
   },
   {
-    id: 'scheme_ppl',
-    title: '推拉腿 PPL 方案',
-    subtitle: '推、拉、腿结构，兼顾力量与肌肥大',
-    goal: 'general',
+    id: SYSTEM_SCHEME_CLASSIC_PPL_ID,
+    title: '经典三分化 PPL',
+    subtitle: '推 / 拉 / 腿三天循环，适合每周训练 3 天，兼顾增肌和基础力量。',
+    goal: 'hypertrophy',
     level: 'intermediate',
     frequencyPerWeek: 3,
-    durationWeeks: 6,
-    dayStructure: 'Push / Pull / Legs',
-    description: '适合希望用固定结构覆盖全身训练的人，完整编辑后接入。',
-    tags: ['PPL', '通用', '全身覆盖'],
+    durationWeeks: 8,
+    dayStructure: 'Day 1 推 Push / Day 2 拉 Pull / Day 3 腿 Legs',
+    description:
+      '推、拉、腿三天循环，使用双进阶：所有工作组达到目标次数上限且 RIR >= 1 或 RPE <= 8 时下次加重；连续低于下限或 RPE 过高时降重 5%-10%。',
+    tags: ['PPL', '三分化', '完整可用'],
     schemeVersion: 1,
-    isAvailable: false,
-    isComingSoon: true,
+    isAvailable: true,
+    isComingSoon: false,
+    templatePlanId: 'plan_classic_three_day_ppl',
   },
   {
     id: 'scheme_reverse_pyramid',

@@ -27,6 +27,8 @@ export default function RootLayout() {
       <Stack.Screen name="history/[sessionId]" options={{ title: '训练详情' }} />
       <Stack.Screen name="plan/[planId]" options={{ title: '计划详情' }} />
       <Stack.Screen name="plan/create" options={{ title: '创建计划' }} />
+      <Stack.Screen name="settings/members" options={{ title: '成员资料' }} />
+      <Stack.Screen name="settings/member-units" options={{ title: '加重单位' }} />
       <Stack.Screen name="activation" options={{ title: '输入激活码' }} />
       <Stack.Screen name="about" options={{ title: '关于练刻' }} />
     </Stack>

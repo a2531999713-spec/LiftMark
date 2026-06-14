@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import {
   AppButton,
@@ -11,6 +11,7 @@ import {
   PriorityTag,
   Screen,
   SectionHeader,
+  Tag,
   VisualHeroCard,
 } from '@/components/ui';
 import { liftmarkImages } from '@/assets/images';
@@ -18,8 +19,7 @@ import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
-import { getDefaultCyclePhaseType, describeDefaultCycleWeek } from '@/domain/plan/defaultCycle';
-import type { PlanExercise, TodayPlanResult, Weekday } from '@/domain/plan/plan.types';
+import type { PhaseType, PlanDay, PlanExercise, PlanTemplate, TodayPlanResult, Weekday } from '@/domain/plan/plan.types';
 import type { RecoveryMode } from '@/domain/plan/plan.service';
 import { calculateSuggestedWeight } from '@/domain/weight/weight-calculator';
 import { colors, radius, spacing } from '@/theme';
@@ -31,7 +31,7 @@ type RecoveryOption = {
 };
 
 type TrainingChoice = {
-  key: 'today' | 'day1' | 'day2' | 'day3' | 'day4' | 'weak' | 'free';
+  key: 'today' | `day${number}` | 'weak' | 'free';
   label: string;
   subtitle: string;
   weekday?: Weekday;
@@ -46,11 +46,14 @@ const recoveryOptions: RecoveryOption[] = [
   { icon: 'moon-outline', mode: 'very_bad', label: '休息' },
 ];
 
-const trainingChoices: TrainingChoice[] = [
-  { key: 'day1', label: 'Day 1', subtitle: '下肢力量日', weekday: 1 },
-  { key: 'day2', label: 'Day 2', subtitle: '上肢推举日', weekday: 2 },
-  { key: 'day3', label: 'Day 3', subtitle: '下肢后链日', weekday: 3 },
-  { key: 'day4', label: 'Day 4', subtitle: '上肢拉力日', weekday: 4 },
+const fallbackPlanDayChoices: TrainingChoice[] = [
+  { key: 'day1', label: 'Day 1', subtitle: '训练日', weekday: 1 },
+  { key: 'day2', label: 'Day 2', subtitle: '训练日', weekday: 2 },
+  { key: 'day3', label: 'Day 3', subtitle: '训练日', weekday: 3 },
+  { key: 'day4', label: 'Day 4', subtitle: '训练日', weekday: 4 },
+];
+
+const specialTrainingChoices: TrainingChoice[] = [
   { key: 'weak', label: '补弱', subtitle: '针对薄弱部位', weekday: 5, forceFriday: true },
   { key: 'free', label: '自由训练', subtitle: '自定义训练', free: true },
 ];
@@ -145,8 +148,72 @@ function formatFridayStrategy(strategy: Group['fridayStrategy']) {
   return '默认休息';
 }
 
-function getChoiceByKey(key: TrainingChoice['key']) {
-  return trainingChoices.find((choice) => choice.key === key) ?? trainingChoices[0];
+function formatPlanSource(source: PlanTemplate['source']) {
+  const labels: Record<PlanTemplate['source'], string> = {
+    system: '系统方案',
+    user: '手动创建',
+    system_copy: '来自系统方案',
+    blank_created: '空白创建',
+    imported: '导入计划',
+    duplicated: '复制计划',
+  };
+  return labels[source];
+}
+
+function getDayKey(weekday: Weekday): `day${number}` {
+  return `day${weekday}`;
+}
+
+function buildPlanDayChoices(days: PlanDay[], currentWeek: number): TrainingChoice[] {
+  const scopedDays = days.filter((day) => day.week === currentWeek);
+  const candidates = scopedDays.length > 0 ? scopedDays : days;
+  const seen = new Set<number>();
+
+  const choices = candidates
+    .slice()
+    .sort((a, b) => a.weekday - b.weekday || a.title.localeCompare(b.title))
+    .flatMap((day) => {
+      if (seen.has(day.weekday)) {
+        return [];
+      }
+
+      seen.add(day.weekday);
+      return [
+        {
+          key: getDayKey(day.weekday),
+          label: `Day ${day.weekday}`,
+          subtitle: day.title,
+          weekday: day.weekday,
+        } satisfies TrainingChoice,
+      ];
+    });
+
+  return choices.length > 0 ? choices : fallbackPlanDayChoices;
+}
+
+function resolveChoiceForExecution(key: TrainingChoice['key'], todayWeekday: Weekday): TrainingChoice {
+  if (key === 'today') {
+    return { key: 'today', label: '今天', subtitle: '按今日安排', weekday: todayWeekday };
+  }
+
+  if (key === 'weak') {
+    return specialTrainingChoices[0];
+  }
+
+  if (key === 'free') {
+    return specialTrainingChoices[1];
+  }
+
+  const weekday = Number(key.replace('day', '')) as Weekday;
+  return { key, label: `Day ${weekday}`, subtitle: '训练日', weekday };
+}
+
+function getChoiceByKey(key: TrainingChoice['key'], choices: TrainingChoice[], todayWeekday: Weekday) {
+  if (key === 'today') {
+    return resolveChoiceForExecution(key, todayWeekday);
+  }
+
+  return choices.find((choice) => choice.key === key) ?? resolveChoiceForExecution(key, todayWeekday);
 }
 
 export default function TodayRoute() {
@@ -155,25 +222,28 @@ export default function TodayRoute() {
   const [recoveryMode, setRecoveryMode] = useState<RecoveryMode>('good');
   const [selectedChoiceKey, setSelectedChoiceKey] = useState<TrainingChoice['key']>('today');
   const [todayPlan, setTodayPlan] = useState<TodayPlanResult | null>(null);
+  const [activePlan, setActivePlan] = useState<PlanTemplate | null>(null);
+  const [userPlans, setUserPlans] = useState<PlanTemplate[]>([]);
+  const [planDayChoices, setPlanDayChoices] = useState<TrainingChoice[]>(fallbackPlanDayChoices);
   const [exerciseMap, setExerciseMap] = useState<Record<string, Exercise>>({});
   const [freeExercises, setFreeExercises] = useState<Exercise[]>([]);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
   const [group, setGroup] = useState<Group | null>(null);
   const [cycleLabel, setCycleLabel] = useState('');
+  const [isPlanSwitcherVisible, setPlanSwitcherVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const trainingChoices = useMemo<TrainingChoice[]>(() => [...planDayChoices, ...specialTrainingChoices], [planDayChoices]);
+
   const selectedChoice = useMemo<TrainingChoice>(
-    () =>
-      selectedChoiceKey === 'today'
-        ? { key: 'today', label: '今天', subtitle: '按今日安排', weekday: todayWeekday }
-        : getChoiceByKey(selectedChoiceKey),
-    [selectedChoiceKey, todayWeekday],
+    () => getChoiceByKey(selectedChoiceKey, trainingChoices, todayWeekday),
+    [selectedChoiceKey, todayWeekday, trainingChoices],
   );
 
-  const loadTodayPlan = useCallback(async () => {
+  const loadTodayPlan = useCallback(async (choiceKey = selectedChoiceKey) => {
     setIsLoading(true);
     setError(null);
 
@@ -184,12 +254,18 @@ export default function TodayRoute() {
         throw new Error('默认小组尚未初始化。');
       }
 
-      const phaseType = getDefaultCyclePhaseType(nextGroup.currentWeek);
+      const [nextActivePlan, nextUserPlans, nextPlanDays] = await Promise.all([
+        repositories.planRepository.getPlanById(nextGroup.activePlanId),
+        repositories.planRepository.listUserPlans(),
+        repositories.planRepository.listPlanDays(nextGroup.activePlanId),
+      ]);
+      const effectiveChoice = resolveChoiceForExecution(choiceKey, todayWeekday);
+      const phaseType = nextGroup.currentPhaseType as PhaseType;
       const effectiveRecoveryMode = recoveryMode === 'very_bad' ? 'bad' : recoveryMode;
-      const effectiveWeekday = selectedChoice.weekday ?? todayWeekday;
+      const effectiveWeekday = effectiveChoice.weekday ?? todayWeekday;
       const manualFriday =
-        selectedChoice.forceFriday || nextGroup.fridayStrategy === 'allow_weak' || nextGroup.fridayStrategy === 'allow_free';
-      const result = selectedChoice.free
+        effectiveChoice.forceFriday || nextGroup.fridayStrategy === 'allow_weak' || nextGroup.fridayStrategy === 'allow_free';
+      const result = effectiveChoice.free
         ? null
         : await repositories.planRepository.getTodayPlan({
             currentWeek: nextGroup.currentWeek,
@@ -219,18 +295,58 @@ export default function TodayRoute() {
       setExerciseMap(Object.fromEntries(nextExercises.map((exercise) => [exercise.id, exercise])));
       setFreeExercises(allExercises.slice(0, 5));
       setGroup(nextGroup);
-      setCycleLabel(describeDefaultCycleWeek(nextGroup.currentWeek));
+      setActivePlan(nextActivePlan);
+      setUserPlans(nextUserPlans);
+      setPlanDayChoices(buildPlanDayChoices(nextPlanDays, nextGroup.currentWeek));
+      setCycleLabel(nextActivePlan ? `第 ${nextGroup.currentWeek}/${nextActivePlan.durationWeeks} 周` : '当前周期');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '今日训练加载失败。');
     } finally {
       setIsLoading(false);
     }
-  }, [repositories, recoveryMode, selectedChoice, todayWeekday]);
+  }, [repositories, recoveryMode, selectedChoiceKey, todayWeekday]);
 
   useFocusEffect(
     useCallback(() => {
       void loadTodayPlan();
     }, [loadTodayPlan]),
+  );
+
+  const resolvePhaseTypeForPlan = useCallback(
+    async (planId: string): Promise<PhaseType> => {
+      const phases = await repositories.planRepository.listPlanPhases(planId);
+      return phases[0]?.type ?? 'custom';
+    },
+    [repositories],
+  );
+
+  const switchPlan = useCallback(
+    async (plan: PlanTemplate) => {
+      if (!group || plan.id === group.activePlanId) {
+        setPlanSwitcherVisible(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        await repositories.groupRepository.updateGroup(group.id, {
+          activePlanId: plan.id,
+          currentPhaseType: await resolvePhaseTypeForPlan(plan.id),
+          currentWeek: 1,
+        });
+        setSelectedChoiceKey('today');
+        setPlanSwitcherVisible(false);
+        await loadTodayPlan('today');
+        Alert.alert('已切换计划', `当前训练计划已切换为“${plan.name}”。`);
+      } catch (switchError) {
+        setError(switchError instanceof Error ? switchError.message : '切换计划失败。');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [group, loadTodayPlan, repositories, resolvePhaseTypeForPlan],
   );
 
   const startWorkout = useCallback(async () => {
@@ -298,6 +414,8 @@ export default function TodayRoute() {
     members.length > 0 &&
     (selectedChoice.free || selectedChoice.key === 'weak' || Boolean(todayPlan && !todayPlan.isRestDay && planExercises.length > 0));
   const isDefaultFridayRest = todayWeekday === 5 && selectedChoice.key === 'today' && group?.fridayStrategy === 'default_rest';
+  const activePlanWeeks = activePlan?.durationWeeks ?? todayPlan?.plan.durationWeeks ?? 16;
+  const activePlanProgress = Math.min(100, Math.round(((group?.currentWeek ?? 1) / activePlanWeeks) * 100));
   const heroTheme = selectedChoice.free
     ? '自由训练'
     : isDefaultFridayRest
@@ -324,8 +442,8 @@ export default function TodayRoute() {
             eyebrow="当前计划"
             icon="barbell-outline"
             imageSource={liftmarkImages.trainingHero}
-            subtitle={`第 ${group.currentWeek} / 16 周 · 周五策略：${formatFridayStrategy(group.fridayStrategy)}`}
-            title={todayPlan?.plan.name ?? '四练增力增肌计划'}
+            subtitle={`第 ${group.currentWeek} / ${activePlanWeeks} 周 · 周五策略：${formatFridayStrategy(group.fridayStrategy)}`}
+            title={activePlan?.name ?? todayPlan?.plan.name ?? '还没有当前计划'}
           >
             <View style={styles.heroStats}>
               <View>
@@ -342,9 +460,17 @@ export default function TodayRoute() {
                   计划进度
                 </AppText>
                 <AppText tone="inverse" variant="subtitle">
-                  {Math.round((group.currentWeek / 16) * 100)}%
+                  {activePlanProgress}%
                 </AppText>
               </View>
+            </View>
+            <View style={styles.inlineActions}>
+              <AppButton onPress={() => setPlanSwitcherVisible(true)} size="sm" variant="dark">
+                切换计划
+              </AppButton>
+              <AppButton onPress={() => router.push('/(tabs)/plan')} size="sm" variant="dark">
+                去计划页
+              </AppButton>
             </View>
           </VisualHeroCard>
 
@@ -503,6 +629,64 @@ export default function TodayRoute() {
           </View>
         </>
       ) : null}
+
+      <Modal animationType="slide" transparent visible={Boolean(group && isPlanSwitcherVisible)} onRequestClose={() => setPlanSwitcherVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <AppCard style={styles.planSwitchPanel}>
+            <View style={styles.planSwitchHeader}>
+              <View style={styles.exerciseText}>
+                <AppText variant="title">选择当前计划</AppText>
+                <AppText tone="muted" variant="bodySmall">
+                  这里只列出我的计划。系统方案需先在计划页点击“使用此方案”。
+                </AppText>
+              </View>
+              <Pressable accessibilityRole="button" onPress={() => setPlanSwitcherVisible(false)} style={styles.iconButton}>
+                <Ionicons color={colors.text} name="close-outline" size={21} />
+              </Pressable>
+            </View>
+
+            {userPlans.length === 0 ? (
+              <EmptyState
+                actionLabel="去计划页"
+                description="复制系统方案或导入计划后，训练页才可以切换执行计划。"
+                onActionPress={() => {
+                  setPlanSwitcherVisible(false);
+                  router.push('/(tabs)/plan');
+                }}
+                title="还没有我的计划"
+              />
+            ) : (
+              <View style={styles.planSwitchList}>
+                {userPlans.map((plan) => {
+                  const isActive = plan.id === group?.activePlanId;
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={isActive || isLoading}
+                      key={plan.id}
+                      onPress={() => void switchPlan(plan)}
+                      style={({ pressed }) => [styles.planSwitchItem, isActive && styles.planSwitchItemActive, pressed && styles.pressed]}
+                    >
+                      <View style={styles.planSwitchIcon}>
+                        <Ionicons color={isActive ? colors.surface : colors.primary} name="clipboard-outline" size={18} />
+                      </View>
+                      <View style={styles.exerciseText}>
+                        <AppText tone={isActive ? 'inverse' : 'default'} variant="bodySmall" weight="900">
+                          {plan.name}
+                        </AppText>
+                        <AppText tone={isActive ? 'inverse' : 'muted'} variant="caption">
+                          {formatPlanSource(plan.source)} · {plan.durationWeeks} 周 · 每周 {plan.frequencyPerWeek} 练
+                        </AppText>
+                      </View>
+                      {isActive ? <Tag label="当前" tone="dark" /> : <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          </AppCard>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -614,5 +798,49 @@ const styles = StyleSheet.create({
   exerciseText: {
     flex: 1,
     gap: 2,
+  },
+  modalBackdrop: {
+    backgroundColor: colors.overlay,
+    flex: 1,
+    justifyContent: 'flex-end',
+    padding: spacing.lg,
+  },
+  planSwitchHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  planSwitchIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  planSwitchItem: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 74,
+    padding: spacing.md,
+  },
+  planSwitchItemActive: {
+    backgroundColor: colors.dark,
+    borderColor: colors.dark,
+  },
+  planSwitchList: {
+    gap: spacing.sm,
+  },
+  planSwitchPanel: {
+    gap: spacing.lg,
+  },
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.99 }],
   },
 });

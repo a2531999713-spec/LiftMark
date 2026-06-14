@@ -109,6 +109,8 @@ describe('LiftMark plan file service', () => {
 
     expect(draft.plan.template.id).not.toBe(template.id);
     expect(draft.plan.template.source).toBe('imported');
+    expect(draft.plan.template.visibility).toBe('private');
+    expect(draft.plan.template.originSchemeId).toBeUndefined();
     expect(draft.plan.phases[0].planId).toBe(draft.plan.template.id);
     expect(draft.plan.days[0].phaseId).toBe(draft.plan.phases[0].id);
     expect(draft.plan.exercises[0].planDayId).toBe(draft.plan.days[0].id);

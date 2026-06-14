@@ -2,6 +2,14 @@ import { describe, expect, it, jest } from '@jest/globals';
 
 import { defaultExerciseSeeds } from '@/data/seed/defaultExercises';
 import {
+  CLASSIC_PPL_PLAN_ID,
+  CLASSIC_PPL_SCHEME_ID,
+  classicPplPhaseSeed,
+  classicPplPlanDaySeeds,
+  classicPplPlanExerciseSeeds,
+  createClassicPplPlanTemplateSeed,
+} from '@/data/seed/classicPplPlan';
+import {
   DEFAULT_ORIGIN_SCHEME_ID,
   DEFAULT_PLAN_ID,
   createDefaultPlanTemplateSeed,
@@ -91,5 +99,35 @@ describe('default plan seed and recovery filtering', () => {
     expect(draft.phases.every((phase) => phase.planId === draft.template.id)).toBe(true);
     expect(draft.days.every((day) => day.planId === draft.template.id)).toBe(true);
     expect(draft.exercises.every((exercise) => exercise.planDayId === draft.days[0]?.id)).toBe(true);
+  });
+
+  it('exposes classic three-day PPL as a copyable system scheme', () => {
+    const scheme = listSystemTrainingSchemes().find((item) => item.id === CLASSIC_PPL_SCHEME_ID);
+    const sourceTemplate = createClassicPplPlanTemplateSeed('2026-06-14T00:00:00.000Z');
+    const firstWeekDays = classicPplPlanDaySeeds.filter((day) => day.week === 1);
+    const firstWeekExercises = classicPplPlanExerciseSeeds.filter((exercise) =>
+      firstWeekDays.some((day) => day.id === exercise.planDayId),
+    );
+
+    expect(scheme?.title).toBe('经典三分化 PPL');
+    expect(scheme?.isAvailable).toBe(true);
+    expect(scheme?.templatePlanId).toBe(CLASSIC_PPL_PLAN_ID);
+
+    const draft = createUserPlanCopyDraft({
+      sourceTemplate,
+      phases: [classicPplPhaseSeed],
+      days: firstWeekDays,
+      exercises: firstWeekExercises,
+      name: '我的经典三分化 PPL',
+      originSchemeId: CLASSIC_PPL_SCHEME_ID,
+      now: '2026-06-14T00:00:00.000Z',
+    });
+
+    expect(draft.template.source).toBe('system_copy');
+    expect(draft.template.originSchemeId).toBe(CLASSIC_PPL_SCHEME_ID);
+    expect(draft.template.id).not.toBe(CLASSIC_PPL_PLAN_ID);
+    expect(draft.days).toHaveLength(3);
+    expect(draft.exercises).toHaveLength(15);
+    expect(draft.exercises.every((exercise) => draft.days.some((day) => day.id === exercise.planDayId))).toBe(true);
   });
 });

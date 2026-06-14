@@ -154,6 +154,8 @@ export function createImportedPlanDraft(payload: LiftMarkPlanFile): LiftMarkPlan
         ...file.plan.template,
         id: planId,
         name: `${file.plan.template.name}（导入）`,
+        originSchemeId: undefined,
+        visibility: 'private',
         source: 'imported',
         createdAt: now,
         updatedAt: now,

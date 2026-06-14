@@ -1,0 +1,162 @@
+import { Ionicons } from '@expo/vector-icons';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+
+import { AppButton, AppCard, AppText, EmptyState, Screen, Tag } from '@/components/ui';
+import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
+import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
+import { colors, radius, spacing } from '@/theme';
+
+type MemberWithProfile = {
+  member: GroupMember;
+  profile: MemberProfile | null;
+};
+
+function formatProfileSummary(profile: MemberProfile | null): string {
+  if (!profile) {
+    return '资料待补充';
+  }
+
+  const lifts = [
+    profile.bench1RM ? '卧推' : null,
+    profile.squat1RM ? '深蹲' : null,
+    profile.deadlift1RM ? '硬拉' : null,
+    profile.overheadPress1RM ? '肩推' : null,
+  ].filter(Boolean);
+
+  return lifts.length > 0 ? `已填写 ${lifts.length} 项 1RM` : '1RM 待补充';
+}
+
+export default function SettingsMembersRoute() {
+  const repositories = useMemo(() => createLocalRepositories(), []);
+  const [items, setItems] = useState<MemberWithProfile[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadMembers = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await initializeLocalDatabase();
+      const group = await repositories.groupRepository.getDefaultGroup();
+      if (!group) {
+        throw new Error('默认小组尚未初始化。');
+      }
+
+      const members = await repositories.memberRepository.listMembers(group.id);
+      const profiles = await Promise.all(
+        members.map(async (member) => ({
+          member,
+          profile: await repositories.memberRepository.getMemberProfile(member.id),
+        })),
+      );
+      setItems(profiles);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : '成员资料加载失败。');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [repositories]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadMembers();
+    }, [loadMembers]),
+  );
+
+  return (
+    <Screen title="成员资料" subtitle="设置页只展示摘要，点击成员后进入完整资料。">
+      {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
+      {error ? <EmptyState title="成员资料暂时无法加载" description={error} /> : null}
+
+      {!isLoading && !error ? (
+        <>
+          <AppCard style={styles.summaryCard} tone="brand">
+            <AppText variant="subtitle">{items.length} 位成员</AppText>
+            <AppText tone="muted" variant="bodySmall">
+              成员资料、1RM 和加重单位按成员分别维护，不作为全局设置。
+            </AppText>
+          </AppCard>
+
+          {items.length === 0 ? (
+            <EmptyState
+              actionLabel="新增成员"
+              description="添加成员后，设置页会显示全部成员摘要。"
+              onActionPress={() => router.push('/member/new')}
+              title="还没有成员"
+            />
+          ) : (
+            <View style={styles.list}>
+              {items.map(({ member, profile }) => (
+                <Pressable
+                  accessibilityRole="button"
+                  key={member.id}
+                  onPress={() => router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } })}
+                  style={({ pressed }) => [styles.memberCard, pressed && styles.pressed]}
+                >
+                  <View style={styles.avatar}>
+                    <AppText tone="inverse" variant="bodySmall" weight="900">
+                      {member.displayName.slice(0, 1)}
+                    </AppText>
+                  </View>
+                  <View style={styles.memberText}>
+                    <AppText variant="bodySmall" weight="900">
+                      {member.displayName}
+                    </AppText>
+                    <AppText tone="muted" variant="caption">
+                      {formatProfileSummary(profile)}
+                    </AppText>
+                  </View>
+                  <Tag label={member.role === 'owner' ? '组长' : '成员'} tone={member.role === 'owner' ? 'brand' : 'neutral'} />
+                  <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          <AppButton icon="person-add-outline" onPress={() => router.push('/member/new')} variant="secondary">
+            新增成员
+          </AppButton>
+        </>
+      ) : null}
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  avatar: {
+    alignItems: 'center',
+    backgroundColor: colors.dark,
+    borderRadius: radius.pill,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  list: {
+    gap: spacing.sm,
+  },
+  memberCard: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 72,
+    padding: spacing.md,
+  },
+  memberText: {
+    flex: 1,
+    gap: 2,
+  },
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.99 }],
+  },
+  summaryCard: {
+    gap: spacing.sm,
+  },
+});

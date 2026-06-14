@@ -17,18 +17,16 @@ import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import {
   DEFAULT_CYCLE_WEEK_COUNT,
-  clampDefaultCycleWeek,
-  describeDefaultCycleWeek,
-  getDefaultCyclePhaseType,
 } from '@/domain/plan/defaultCycle';
-import type { PlanTemplate } from '@/domain/plan/plan.types';
+import type { PhaseType, PlanTemplate } from '@/domain/plan/plan.types';
 import {
   describeSchemeGoal,
   describeSchemeLevel,
   listSystemTrainingSchemes,
   type SystemTrainingScheme,
 } from '@/domain/plan/systemSchemes';
-import { createCurrentPlanFile, serializePlanFile } from '@/services/planFileService';
+import { pickImportedPlanDocument } from '@/services/planDocumentService';
+import { createCurrentPlanFile, PlanFileError, serializePlanFile } from '@/services/planFileService';
 import { colors, radius, spacing, typography } from '@/theme';
 
 function showComingSoon(feature: string) {
@@ -47,6 +45,11 @@ function describePlanSource(source: PlanTemplate['source']) {
   return labels[source];
 }
 
+function clampPlanWeek(week: number, plan: PlanTemplate | null) {
+  const maxWeek = plan?.durationWeeks ?? DEFAULT_CYCLE_WEEK_COUNT;
+  return Math.min(maxWeek, Math.max(1, Math.round(week)));
+}
+
 export default function PlanRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const systemSchemes = useMemo(() => listSystemTrainingSchemes(), []);
@@ -55,7 +58,6 @@ export default function PlanRoute() {
   const [userPlans, setUserPlans] = useState<PlanTemplate[]>([]);
   const [selectedScheme, setSelectedScheme] = useState<SystemTrainingScheme | null>(null);
   const [draftPlanName, setDraftPlanName] = useState('');
-  const [exportPreview, setExportPreview] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,20 +94,28 @@ export default function PlanRoute() {
     }, [loadPlans]),
   );
 
+  const resolvePhaseTypeForWeek = useCallback(
+    async (planId: string, week: number): Promise<PhaseType> => {
+      const phases = await repositories.planRepository.listPlanPhases(planId);
+      return phases.find((phase) => week >= phase.startWeek && week <= phase.endWeek)?.type ?? phases[0]?.type ?? 'custom';
+    },
+    [repositories],
+  );
+
   const saveWeek = useCallback(
     async (week: number) => {
       if (!group) {
         return;
       }
 
-      const currentWeek = clampDefaultCycleWeek(week);
+      const currentWeek = clampPlanWeek(week, activePlan);
       const updated = await repositories.groupRepository.updateGroup(group.id, {
-        currentPhaseType: getDefaultCyclePhaseType(currentWeek),
+        currentPhaseType: await resolvePhaseTypeForWeek(group.activePlanId, currentWeek),
         currentWeek,
       });
       setGroup(updated);
     },
-    [group, repositories],
+    [activePlan, group, repositories, resolvePhaseTypeForWeek],
   );
 
   const toggleFriday = useCallback(async () => {
@@ -130,7 +140,7 @@ export default function PlanRoute() {
       try {
         const updated = await repositories.groupRepository.updateGroup(group.id, {
           activePlanId: plan.id,
-          currentPhaseType: getDefaultCyclePhaseType(1),
+          currentPhaseType: await resolvePhaseTypeForWeek(plan.id, 1),
           currentWeek: 1,
         });
         setGroup(updated);
@@ -142,7 +152,7 @@ export default function PlanRoute() {
         setIsWorking(false);
       }
     },
-    [group, repositories],
+    [group, repositories, resolvePhaseTypeForWeek],
   );
 
   const exportPlan = useCallback(
@@ -151,10 +161,9 @@ export default function PlanRoute() {
       try {
         const planFile = await createCurrentPlanFile(repositories, plan.id);
         const json = serializePlanFile(planFile);
-        setExportPreview(json.slice(0, 560));
         Alert.alert(
           '导出计划',
-          `已生成 .liftmark.json 内容，大小约 ${Math.ceil(json.length / 1024)} KB。文件保存/分享后续接入。`,
+          `已生成 .liftmark.json 内容，大小约 ${Math.ceil(json.length / 1024)} KB。文件保存/分享能力正在接入中。`,
         );
       } catch (exportError) {
         Alert.alert('导出失败', exportError instanceof Error ? exportError.message : '导出计划失败。');
@@ -164,6 +173,45 @@ export default function PlanRoute() {
     },
     [repositories],
   );
+
+  const importPlan = useCallback(async () => {
+    setIsWorking(true);
+    try {
+      const picked = await pickImportedPlanDocument();
+      if (!picked) {
+        return;
+      }
+
+      const importedPlan = await repositories.planRepository.importUserPlan({
+        alternatives: picked.draft.alternatives,
+        days: picked.draft.plan.days,
+        exercises: picked.draft.exercises,
+        phases: picked.draft.plan.phases,
+        planExercises: picked.draft.plan.exercises,
+        template: picked.draft.plan.template,
+      });
+      setUserPlans(await repositories.planRepository.listUserPlans());
+
+      Alert.alert('计划已导入', `“${importedPlan.name}”已成为我的计划。\n\n是否设为当前训练计划？`, [
+        { text: '稍后', style: 'cancel' },
+        {
+          text: '设为当前',
+          onPress: () => {
+            void setCurrentPlan(importedPlan);
+          },
+        },
+      ]);
+    } catch (importError) {
+      if (importError instanceof PlanFileError) {
+        Alert.alert('计划文件格式不兼容', '这个文件不是练刻 LiftMark 支持的计划文件。');
+        return;
+      }
+
+      Alert.alert('导入失败', importError instanceof Error ? importError.message : '计划导入失败。');
+    } finally {
+      setIsWorking(false);
+    }
+  }, [repositories, setCurrentPlan]);
 
   const openSchemeDetail = useCallback((scheme: SystemTrainingScheme) => {
     Alert.alert(
@@ -213,7 +261,7 @@ export default function PlanRoute() {
         if (makeActive && group) {
           const updated = await repositories.groupRepository.updateGroup(group.id, {
             activePlanId: plan.id,
-            currentPhaseType: getDefaultCyclePhaseType(1),
+            currentPhaseType: await resolvePhaseTypeForWeek(plan.id, 1),
             currentWeek: 1,
           });
           setGroup(updated);
@@ -233,7 +281,7 @@ export default function PlanRoute() {
         setIsWorking(false);
       }
     },
-    [closeUseScheme, draftPlanName, group, repositories, selectedScheme],
+    [closeUseScheme, draftPlanName, group, repositories, resolvePhaseTypeForWeek, selectedScheme],
   );
 
   const confirmDeletePlan = useCallback((plan: PlanTemplate) => {
@@ -242,6 +290,9 @@ export default function PlanRoute() {
       { text: '开发中', style: 'destructive', onPress: () => showComingSoon('删除计划') },
     ]);
   }, []);
+
+  const activePlanWeeks = activePlan?.durationWeeks ?? DEFAULT_CYCLE_WEEK_COUNT;
+  const activePlanProgress = Math.min(100, Math.round((group?.currentWeek ?? 1) / activePlanWeeks * 100));
 
   return (
     <Screen
@@ -264,16 +315,16 @@ export default function PlanRoute() {
             icon="clipboard-outline"
             imageSource={liftmarkImages.planHero}
             minHeight={230}
-            subtitle={`${describeDefaultCycleWeek(group.currentWeek)} · 第 ${group.currentWeek}/${DEFAULT_CYCLE_WEEK_COUNT} 周`}
+            subtitle={`第 ${group.currentWeek}/${activePlanWeeks} 周 · 当前阶段：${group.currentPhaseType}`}
             title={activePlan?.name ?? '还没有当前计划'}
           >
             <View style={styles.planMetaRow}>
               <Tag label={`${activePlan?.frequencyPerWeek ?? 0} 天/周`} tone="dark" />
-              <Tag label={`${activePlan?.durationWeeks ?? DEFAULT_CYCLE_WEEK_COUNT} 周周期`} tone="dark" />
-              <Tag label={getDefaultCyclePhaseType(group.currentWeek)} tone="dark" />
+              <Tag label={`${activePlanWeeks} 周周期`} tone="dark" />
+              <Tag label={group.currentPhaseType} tone="dark" />
             </View>
             <View style={styles.progressTrackDark}>
-              <View style={[styles.progressFill, { width: `${(group.currentWeek / DEFAULT_CYCLE_WEEK_COUNT) * 100}%` }]} />
+              <View style={[styles.progressFill, { width: `${activePlanProgress}%` }]} />
             </View>
             <View style={styles.inlineActions}>
               <AppButton onPress={() => Alert.alert('当前默认计划', '当前计划会被训练页读取，已作为本地默认执行计划。')} size="sm">
@@ -289,14 +340,14 @@ export default function PlanRoute() {
             <AppButton disabled={group.currentWeek <= 1} onPress={() => void saveWeek(group.currentWeek - 1)} size="sm" variant="secondary">
               上一周
             </AppButton>
-            <AppButton disabled={group.currentWeek >= DEFAULT_CYCLE_WEEK_COUNT} onPress={() => void saveWeek(group.currentWeek + 1)} size="sm">
+            <AppButton disabled={group.currentWeek >= activePlanWeeks} onPress={() => void saveWeek(group.currentWeek + 1)} size="sm">
               下一周
             </AppButton>
           </View>
 
           <View style={styles.actionGrid}>
             <ActionCard icon="add-outline" label="创建计划" onPress={() => router.push('/plan/create')} />
-            <ActionCard icon="download-outline" label="导入计划" onPress={() => showComingSoon('导入计划')} />
+            <ActionCard icon="download-outline" label="导入计划" onPress={() => void importPlan()} />
           </View>
 
           <SectionHeader subtitle="从空白创建、系统方案复制或文件导入后，都会出现在这里。" title="我的计划" />
@@ -402,15 +453,6 @@ export default function PlanRoute() {
               </AppCard>
             ))}
           </View>
-
-          {exportPreview ? (
-            <AppCard style={styles.previewCard}>
-              <AppText variant="subtitle">最近导出预览</AppText>
-              <AppText tone="muted" variant="caption">
-                {exportPreview}
-              </AppText>
-            </AppCard>
-          ) : null}
 
           {isWorking ? (
             <AppText tone="muted" variant="bodySmall">
@@ -555,9 +597,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
-  },
-  previewCard: {
-    gap: spacing.sm,
   },
   modalBackdrop: {
     alignItems: 'center',

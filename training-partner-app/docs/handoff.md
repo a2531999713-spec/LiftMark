@@ -1,5 +1,18 @@
 # LiftMark 项目交接记录
 
+## 2026-06-14 settings-history-plan-switch-cleanup-sprint 交接
+
+- 当前实际项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`。
+- Android package 仍为 `com.liftmark.app`，本次未修改 App 名称、品牌、启动图、桌面图标或 package。
+- 设置页顶部已使用 LiftMark 品牌专属图；设置页只做成员资料和加重单位入口/摘要，不再内嵌成员编辑表单，不显示“保存成员”或“稍后补充”。
+- 设置页不再暴露“周五策略”，`groups.friday_strategy` 仍保留用于兼容；设置页不再常驻显示最近导出 JSON 预览。
+- 计划导入已接入 `.liftmark.json` 文件选择、校验、ID 重映射和 SQLite 落库；导入结果为 `source: "imported"` 的用户计划，可选择设为当前计划。
+- 系统方案新增只读模板“经典三分化 PPL”，用户必须通过“使用此方案”复制为我的计划后才能训练。
+- 训练页当前计划卡可打开“切换计划”弹层，只列出我的计划；切换不会修改历史训练记录。
+- 记录页最近训练改为摘要卡，点击进入 `app/history/[sessionId].tsx`。
+- 当前 Git 根目录检查结果：仓库根在 `C:\Users\zhw\Documents\LiftMark`，项目内没有单独 `.git`，未发现 `training-partner-app\training-partner-app` 嵌套残留；仓库当前追踪内容仍位于 `training-partner-app/` 下和根 `.gitignore`。
+- 本次新增依赖：`expo-document-picker`、`expo-file-system`，已通过 `npx expo install` 写入 package 文件。
+
 ## 2026-06-14 训练执行交互与 UI 重设计交接
 
 - 当前实际项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`。

@@ -31,6 +31,8 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
 .env*.local
 
 # typescript
@@ -49,6 +51,9 @@ yarn-error.*
 .vscode/
 .claude/
 
+# local AI development materials
+ai-doc-driven-development/
+
 # temporary files
 *.xml
 lifton-*.png
@@ -58,4 +63,14 @@ ChatGPT*.png
 .mimocode/
 
 # android build
-training-partner-app/android/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+training-partner-app/android/.gradle/
+training-partner-app/android/build/
+training-partner-app/android/app/build/
+training-partner-app/android/app/.cxx/
+*.apk
+*.aab
+*.keystore

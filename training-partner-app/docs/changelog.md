@@ -1,5 +1,15 @@
 # 变更记录
 
+## 2026-06-14 - settings-history-plan-switch-cleanup-sprint
+
+- 设置页顶部接入 LiftMark 品牌专属图；成员资料改为全成员摘要入口；加重单位改为全成员单位摘要入口；移除设置页成员编辑表单、周五策略入口和最近导出 JSON 预览。
+- 计划页和设置页接入 `.liftmark.json` 导入：DocumentPicker 选择文件、`planFileService` 校验和 ID 重映射、`PlanRepository.importUserPlan()` 写入 SQLite，导入后可选择设为当前计划。
+- 新增系统只读模板“经典三分化 PPL”，seed 写入系统模板，系统方案列表可见并可复制为我的计划；新增测试覆盖系统方案和复制草稿。
+- 训练页当前计划卡新增“切换计划”弹层，只列出我的计划，切换后更新当前小组 current plan 并刷新今日训练。
+- 记录页最近训练改为移动端摘要卡，展示日期/时长、动作数、完成组数、总训练量、成员口径、PR/估算 1RM/趋势标签，点击进入详情。
+- 新增 `expo-document-picker`、`expo-file-system` 依赖用于 Android 本地文件选择和计划文件读取。
+- Git 忽略规则补齐 `.expo/`、Android build 目录、APK/AAB/keystore 和环境变量文件。
+
 ## 2026-06-14 - 训练执行交互修正 + 记录/设置 UI 重设计 + 图标背景修复
 
 - 训练执行页 RPE/RIR 改为纯 preset 点选：RPE `6-10/清空`，RIR `0-5/清空`，不再显示数值输入框。

@@ -1,6 +1,6 @@
 # Plan 模块实现文档
 
-更新时间：2026-06-12  
+更新时间：2026-06-14  
 对应代码目录：`training-partner-app/`
 
 ## 1. 当前实现概览
@@ -9,8 +9,10 @@
 
 - 系统方案目录位于 `src/domain/plan/systemSchemes.ts`。
 - 完整可用的“四练增力增肌方案”引用 SQLite 中的系统模板 `plan_four_day_strength_hypertrophy`。
+- 完整可用的“经典三分化 PPL”引用 SQLite 中的系统模板 `plan_classic_three_day_ppl`。
 - 首次 seed 和 migration 会生成一份默认用户计划 `plan_user_four_day_strength_hypertrophy_default`，并让默认小组当前计划指向这份用户计划。
 - 用户点击“使用此方案”时，Repository 复制系统模板的 phases、days、plan_exercises，生成新的用户计划。
+- 导入 `.liftmark.json` 时，页面通过 `planDocumentService` 选择文件并调用 `PlanRepository.importUserPlan()` 写入 SQLite。
 
 ## 2. 主要文件
 
@@ -23,8 +25,10 @@
 | `src/data/local/repositories/planRepository.ts` | SQLite 实现用户计划列表、系统方案复制和今日训练读取。 |
 | `src/data/local/migrations.ts` | v2 `plan_system_scheme_origin` 补 `origin_scheme_id` 并迁移旧默认当前计划。 |
 | `src/data/seed/defaultStrengthPlan.ts` | 增加默认用户计划 ID 和四练系统方案 ID 常量。 |
+| `src/data/seed/classicPplPlan.ts` | “经典三分化 PPL”系统模板 seed。 |
 | `src/data/seed/seedDefaultData.ts` | 写入系统模板和默认用户计划副本。 |
 | `app/(tabs)/plan.tsx` | 计划页展示当前计划、我的计划、系统方案、创建计划和导入计划。 |
+| `app/(tabs)/today.tsx` | 训练页当前计划卡和计划切换弹层。 |
 | `app/plan/create.tsx` | 第一版创建计划页面。 |
 | `src/tests/plan.test.ts` | 增加系统方案复制为用户计划草稿测试。 |
 
@@ -49,6 +53,18 @@
 
 文件：`src/data/local/repositories/planRepository.ts`  
 职责：读取系统方案引用的模板计划，复制 phases、days、plan exercises，并写入 SQLite。该方法只生成用户计划，不自动修改训练记录。
+
+### PlanRepository.importUserPlan
+
+文件：`src/data/local/repositories/planRepository.ts`  
+职责：将导入计划草稿写入 SQLite，写入 template、phases、days、plan exercises、exercises 和 alternatives，并保证导入结果为用户计划。  
+边界：拒绝把 `source: "system"` 的模板作为导入用户计划；不导入训练记录、成员 1RM 或身体数据；不覆盖既有计划。
+
+### 训练页计划切换
+
+文件：`app/(tabs)/today.tsx`  
+职责：顶部当前计划卡提供“切换计划”按钮，弹层只列出 `listUserPlans()` 返回的用户计划。用户选择后更新当前 group 的 `activePlanId`、`currentWeek`、`currentPhaseType`，并刷新今日训练内容。  
+边界：不直接列出或执行系统方案；历史记录继续打开训练时快照。
 
 ### PlanRepository.createUserPlan
 
@@ -84,13 +100,16 @@ app: LiftMark
 已覆盖：
 
 - 系统四练方案存在且引用系统模板 ID。
+- 系统“经典三分化 PPL”存在且引用系统模板 ID。
 - 复制系统方案时生成新的用户计划 ID。
 - 复制结果 `source` 为 `system_copy`。
 - 复制结果记录 `originSchemeId`。
 - phases、days、plan exercises 指向新的用户计划结构。
+- 导入计划草稿生成 `source: "imported"`、`visibility: "private"`，且不会保留系统方案来源。
 
 ## 7. 文档同步记录
 
 - 2026-06-12：系统方案与用户计划分离；计划页新增“系统方案”和“我的计划”；新增 `origin_scheme_id` migration；默认小组当前计划切换到默认用户计划副本。
 - 2026-06-12：同步可用性 + UI 落地 Sprint：计划页当前计划改为大图卡风格；创建计划入口接入 `app/plan/create.tsx` 和 `PlanRepository.createUserPlan()`；未完成深层编辑显示统一开发中提示。
 - 2026-06-12：同步本地图片资产落地：计划页和创建计划页 Hero 通过 `liftmarkImages.planHero` 使用本地训练计划图片；计划模板、seed、SQLite schema 和 Repository 未变。
+- 2026-06-14：新增“经典三分化 PPL”系统模板、导入计划落库、设置/计划页导入入口和训练页用户计划切换弹层。

@@ -1,6 +1,7 @@
 import type {
   CopySystemSchemeToUserPlanInput,
   CreateUserPlanInput,
+  ImportUserPlanInput,
   PlanRepository,
 } from '@/data/repositories/planRepository';
 import { createId } from '@/domain/common/ids';
@@ -286,6 +287,132 @@ export class SQLitePlanRepository implements PlanRepository {
     });
 
     return draft.template;
+  }
+
+  async importUserPlan(input: ImportUserPlanInput): Promise<PlanTemplate> {
+    if (input.template.source === 'system') {
+      throw new Error('系统方案不能直接导入为当前训练计划。');
+    }
+
+    const db = await this.getDb();
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const exercise of input.exercises) {
+        await txn.runAsync(
+          `INSERT OR IGNORE INTO exercises (
+            id, name, category, movement_pattern, target_muscle, secondary_muscle,
+            equipment, difficulty, notes, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          exercise.id,
+          exercise.name,
+          exercise.category,
+          exercise.movementPattern,
+          exercise.targetMuscle,
+          exercise.secondaryMuscle ?? null,
+          exercise.equipment,
+          exercise.difficulty ?? null,
+          exercise.notes ?? null,
+          exercise.createdAt,
+          exercise.updatedAt,
+        );
+      }
+
+      for (const alternative of input.alternatives) {
+        await txn.runAsync(
+          `INSERT OR IGNORE INTO exercise_alternatives (
+            id, exercise_id, alternative_exercise_id, reason
+          ) VALUES (?, ?, ?, ?)`,
+          alternative.id,
+          alternative.exerciseId,
+          alternative.alternativeExerciseId,
+          alternative.reason ?? null,
+        );
+      }
+
+      await txn.runAsync(
+        `INSERT INTO plan_templates (
+          id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
+          description, source, origin_scheme_id, version, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        input.template.id,
+        input.template.name,
+        input.template.creatorId ?? null,
+        'private',
+        input.template.goal,
+        input.template.durationWeeks,
+        input.template.frequencyPerWeek,
+        input.template.description ?? null,
+        'imported',
+        input.template.originSchemeId ?? null,
+        input.template.version,
+        input.template.createdAt,
+        input.template.updatedAt,
+      );
+
+      for (const phase of input.phases) {
+        await txn.runAsync(
+          `INSERT INTO plan_phases (
+            id, plan_id, name, type, start_week, end_week, order_index
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          phase.id,
+          phase.planId,
+          phase.name,
+          phase.type,
+          phase.startWeek,
+          phase.endWeek,
+          phase.orderIndex,
+        );
+      }
+
+      for (const day of input.days) {
+        await txn.runAsync(
+          `INSERT INTO plan_days (
+            id, plan_id, phase_id, week, weekday, title, focus, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          day.id,
+          day.planId,
+          day.phaseId,
+          day.week,
+          day.weekday,
+          day.title,
+          day.focus,
+          day.notes ?? null,
+        );
+      }
+
+      for (const exercise of input.planExercises) {
+        await txn.runAsync(
+          `INSERT INTO plan_exercises (
+            id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
+            intensity_type, percent_1rm, rpe_target, rir_target, fixed_weight, reference_lift,
+            rest_seconds, progression_rule_id, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          exercise.id,
+          exercise.planDayId,
+          exercise.exerciseId,
+          exercise.priority,
+          exercise.orderIndex,
+          exercise.sets ?? null,
+          exercise.reps ?? null,
+          exercise.repMin ?? null,
+          exercise.repMax ?? null,
+          exercise.intensityType,
+          exercise.percent1RM ?? null,
+          exercise.rpeTarget ?? null,
+          exercise.rirTarget ?? null,
+          exercise.fixedWeight ?? null,
+          exercise.referenceLift,
+          exercise.restSeconds ?? null,
+          exercise.progressionRuleId ?? null,
+          exercise.notes ?? null,
+        );
+      }
+    });
+
+    return {
+      ...input.template,
+      source: 'imported',
+      visibility: 'private',
+    };
   }
 
   async getTodayPlan(input: GetTodayPlanInput): Promise<TodayPlanResult> {

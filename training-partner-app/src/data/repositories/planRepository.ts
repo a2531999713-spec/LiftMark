@@ -1,4 +1,5 @@
 import type { ID } from '@/domain/common/ids';
+import type { Exercise, ExerciseAlternative } from '@/domain/exercise/exercise.types';
 import type { SystemTrainingScheme } from '@/domain/plan/systemSchemes';
 import type {
   GetTodayPlanInput,
@@ -36,6 +37,15 @@ export type CreateUserPlanInput = {
   days: CreateUserPlanDayInput[];
 };
 
+export type ImportUserPlanInput = {
+  alternatives: ExerciseAlternative[];
+  days: PlanDay[];
+  exercises: Exercise[];
+  phases: PlanPhase[];
+  planExercises: PlanExercise[];
+  template: PlanTemplate;
+};
+
 export interface PlanRepository {
   getPlanById(planId: ID): Promise<PlanTemplate | null>;
   listUserPlans(): Promise<PlanTemplate[]>;
@@ -44,5 +54,6 @@ export interface PlanRepository {
   listPlanExercises(planDayId: ID): Promise<PlanExercise[]>;
   createUserPlan(input: CreateUserPlanInput): Promise<PlanTemplate>;
   copySystemSchemeToUserPlan(input: CopySystemSchemeToUserPlanInput): Promise<PlanTemplate>;
+  importUserPlan(input: ImportUserPlanInput): Promise<PlanTemplate>;
   getTodayPlan(input: GetTodayPlanInput): Promise<TodayPlanResult>;
 }

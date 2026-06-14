@@ -1,6 +1,6 @@
 # SQLite 数据库结构
 
-更新时间：2026-06-12
+更新时间：2026-06-14
 
 ## 1. 设计原则
 
@@ -38,9 +38,10 @@ Sprint 3 seed 文件：
 - `training-partner-app/src/data/seed/defaultStrengthPlan.ts`
 - `training-partner-app/src/data/seed/defaultHypertrophyPlan.ts`
 - `training-partner-app/src/data/seed/defaultDeloadPlan.ts`
+- `training-partner-app/src/data/seed/classicPplPlan.ts`
 - `training-partner-app/src/data/seed/seedDefaultData.ts`
 
-当前 seed 幂等写入默认动作库、动作替换、系统四练方案模板、默认用户计划副本和默认小组。系统方案不是用户计划；默认小组 `active_plan_id` 指向用户计划副本，不直接指向系统方案模板。
+当前 seed 幂等写入默认动作库、动作替换、系统四练方案模板、系统“经典三分化 PPL”模板、默认用户计划副本和默认小组。系统方案不是用户计划；默认小组 `active_plan_id` 指向用户计划副本，不直接指向系统方案模板。新增 PPL seed 不需要 schema migration，不会覆盖用户已复制出的计划。
 
 Sprint 4 训练执行：
 
@@ -68,7 +69,7 @@ CREATE TABLE IF NOT EXISTS groups (
 );
 ```
 
-`friday_enabled` 为旧兼容字段；当前训练页和设置页以 `friday_strategy` 为主，可选值为 `default_rest`、`allow_weak`、`allow_free`。
+`friday_enabled` 为旧兼容字段；`friday_strategy` 字段继续保留以兼容训练页。当前设置页不再暴露周五策略，后续策略入口应放在计划详情或训练页临时覆盖中。可选值为 `default_rest`、`allow_weak`、`allow_free`。
 
 ### group_members
 

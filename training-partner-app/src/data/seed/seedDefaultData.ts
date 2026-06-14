@@ -3,6 +3,12 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { defaultExerciseAlternativeSeeds } from './defaultAlternatives';
 import { defaultExerciseSeeds } from './defaultExercises';
 import {
+  classicPplPhaseSeed,
+  classicPplPlanDaySeeds,
+  classicPplPlanExerciseSeeds,
+  createClassicPplPlanTemplateSeed,
+} from './classicPplPlan';
+import {
   defaultDeloadPhaseSeeds,
   defaultDeloadPlanDaySeeds,
   defaultDeloadPlanExerciseSeeds,
@@ -26,6 +32,7 @@ import {
 export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
   const now = new Date().toISOString();
   const plan = createDefaultPlanTemplateSeed(now);
+  const classicPplPlan = createClassicPplPlanTemplateSeed(now);
   const phases = [
     defaultStrengthPhaseSeed,
     ...defaultDeloadPhaseSeeds,
@@ -109,6 +116,26 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
       userPlan.updatedAt,
     );
 
+    await txn.runAsync(
+      `INSERT OR IGNORE INTO plan_templates (
+        id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
+        description, source, origin_scheme_id, version, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      classicPplPlan.id,
+      classicPplPlan.name,
+      classicPplPlan.creatorId ?? null,
+      classicPplPlan.visibility,
+      classicPplPlan.goal,
+      classicPplPlan.durationWeeks,
+      classicPplPlan.frequencyPerWeek,
+      classicPplPlan.description ?? null,
+      classicPplPlan.source,
+      classicPplPlan.originSchemeId ?? null,
+      classicPplPlan.version,
+      classicPplPlan.createdAt,
+      classicPplPlan.updatedAt,
+    );
+
     for (const phase of phases) {
       await txn.runAsync(
         `INSERT OR IGNORE INTO plan_phases (
@@ -138,6 +165,19 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
         phase.orderIndex,
       );
     }
+
+    await txn.runAsync(
+      `INSERT OR IGNORE INTO plan_phases (
+        id, plan_id, name, type, start_week, end_week, order_index
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      classicPplPhaseSeed.id,
+      classicPplPhaseSeed.planId,
+      classicPplPhaseSeed.name,
+      classicPplPhaseSeed.type,
+      classicPplPhaseSeed.startWeek,
+      classicPplPhaseSeed.endWeek,
+      classicPplPhaseSeed.orderIndex,
+    );
 
     for (const exercise of defaultExerciseSeeds) {
       await txn.runAsync(
@@ -203,7 +243,51 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
       );
     }
 
+    for (const day of classicPplPlanDaySeeds) {
+      await txn.runAsync(
+        `INSERT OR IGNORE INTO plan_days (
+          id, plan_id, phase_id, week, weekday, title, focus, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        day.id,
+        day.planId,
+        day.phaseId,
+        day.week,
+        day.weekday,
+        day.title,
+        day.focus,
+        day.notes ?? null,
+      );
+    }
+
     for (const exercise of planExercises) {
+      await txn.runAsync(
+        `INSERT OR IGNORE INTO plan_exercises (
+          id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
+          intensity_type, percent_1rm, rpe_target, rir_target, fixed_weight, reference_lift,
+          rest_seconds, progression_rule_id, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        exercise.id,
+        exercise.planDayId,
+        exercise.exerciseId,
+        exercise.priority,
+        exercise.orderIndex,
+        exercise.sets ?? null,
+        exercise.reps ?? null,
+        exercise.repMin ?? null,
+        exercise.repMax ?? null,
+        exercise.intensityType,
+        exercise.percent1RM ?? null,
+        exercise.rpeTarget ?? null,
+        exercise.rirTarget ?? null,
+        exercise.fixedWeight ?? null,
+        exercise.referenceLift,
+        exercise.restSeconds ?? null,
+        exercise.progressionRuleId ?? null,
+        exercise.notes ?? null,
+      );
+    }
+
+    for (const exercise of classicPplPlanExerciseSeeds) {
       await txn.runAsync(
         `INSERT OR IGNORE INTO plan_exercises (
           id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,

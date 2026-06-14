@@ -31,6 +31,8 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
 .env*.local
 
 # typescript
@@ -38,7 +40,6 @@ yarn-error.*
 
 # generated native folders
 /ios
-/android
 
 # logs
 .expo-metro-*.log
@@ -58,4 +59,10 @@ ChatGPT*.png
 .mimocode/
 
 # android build
-training-partner-app/android/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+*.apk
+*.aab
+*.keystore
