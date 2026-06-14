@@ -51,7 +51,6 @@ yarn-error.*
 .claude/
 
 # temporary files
-*.xml
 lifton-*.png
 ChatGPT*.png
 

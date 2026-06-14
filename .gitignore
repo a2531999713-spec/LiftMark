@@ -55,7 +55,6 @@ yarn-error.*
 ai-doc-driven-development/
 
 # temporary files
-*.xml
 lifton-*.png
 ChatGPT*.png
 
