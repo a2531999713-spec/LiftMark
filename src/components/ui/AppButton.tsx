@@ -1,0 +1,124 @@
+import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps, ReactNode } from 'react';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+
+import { colors, radius, spacing, typography } from '@/theme';
+
+import { AppText } from './AppText';
+
+type IconName = ComponentProps<typeof Ionicons>['name'];
+type AppButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'dark';
+type AppButtonSize = 'sm' | 'md' | 'lg';
+
+type AppButtonProps = {
+  children: ReactNode;
+  disabled?: boolean;
+  icon?: IconName;
+  onPress?: () => void;
+  size?: AppButtonSize;
+  style?: StyleProp<ViewStyle>;
+  variant?: AppButtonVariant;
+};
+
+export function AppButton({
+  children,
+  disabled = false,
+  icon,
+  onPress,
+  size = 'md',
+  style,
+  variant = 'primary',
+}: AppButtonProps) {
+  const isSecondary = variant === 'secondary' || variant === 'ghost';
+  const iconColor = isSecondary ? colors.text : colors.surface;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.button,
+        styles[variant],
+        styles[size],
+        disabled && styles.disabled,
+        pressed && !disabled && styles.pressed,
+        style,
+      ]}
+    >
+      <View style={styles.inner}>
+        {icon ? <Ionicons color={iconColor} name={icon} size={size === 'lg' ? 19 : 17} /> : null}
+        <AppText
+          style={[styles.text, isSecondary && styles.secondaryText, variant === 'danger' && styles.dangerText]}
+          variant="bodySmall"
+          weight={typography.weights.black}
+        >
+          {children}
+        </AppText>
+      </View>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  button: {
+    alignItems: 'center',
+    borderRadius: radius.sm,
+    justifyContent: 'center',
+  },
+  inner: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+  },
+  sm: {
+    minHeight: 38,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  md: {
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  lg: {
+    minHeight: 56,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
+  primary: {
+    backgroundColor: colors.primary,
+  },
+  secondary: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+  },
+  danger: {
+    backgroundColor: colors.danger,
+  },
+  ghost: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  dark: {
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  disabled: {
+    opacity: 0.45,
+  },
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.99 }],
+  },
+  text: {
+    color: colors.surface,
+    textAlign: 'center',
+  },
+  secondaryText: {
+    color: colors.text,
+  },
+  dangerText: {
+    color: colors.surface,
+  },
+});

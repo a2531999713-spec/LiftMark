@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "练刻",
+    "slug": "liftmark",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/brand/app-icon-1024.png",
+    "scheme": "liftmark",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/brand/splash-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F2F4F7"
+    },
+    "ios": {
+      "icon": "./assets/brand/app-icon-1024.png",
+      "supportsTablet": false,
+      "bundleIdentifier": "com.liftmark.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0D1B2A",
+        "foregroundImage": "./assets/brand/adaptive-icon-foreground-white.png",
+        "monochromeImage": "./assets/brand/adaptive-icon-monochrome.png"
+      },
+      "package": "com.liftmark.app",
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/brand/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F2F4F7",
+          "image": "./assets/brand/splash-logo.png",
+          "imageWidth": 180,
+          "android": {
+            "image": "./assets/brand/splash-logo.png",
+            "imageWidth": 180
+          }
+        }
+      ],
+      "expo-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
