@@ -23,7 +23,8 @@ function createProfile(patch: Partial<MemberProfile> = {}): MemberProfile {
 }
 
 describe('member domain rules', () => {
-  it('allows fewer than four members and blocks the fifth member', () => {
+  it('allows fewer than five members and blocks the sixth member', () => {
+    expect(MAX_GROUP_MEMBERS).toBe(5);
     expect(canAddGroupMember(0)).toBe(true);
     expect(canAddGroupMember(MAX_GROUP_MEMBERS - 1)).toBe(true);
     expect(canAddGroupMember(MAX_GROUP_MEMBERS)).toBe(false);

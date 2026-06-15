@@ -185,6 +185,9 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
               ? calculateSuggestedWeight({
                   referenceLift: planExercise.referenceLift,
                   percent1RM: planExercise.percent1RM,
+                  repMax: planExercise.repMax,
+                  repMin: planExercise.repMin,
+                  reps: planExercise.reps,
                   equipment: exercise.equipment,
                   profile,
                 })

@@ -167,6 +167,24 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 5,
+    name: 'exercise_source_for_custom_library',
+    async up(db) {
+      const columns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(exercises)',
+      );
+      const hasSource = columns.some((column) => column.name === 'source');
+
+      if (!hasSource) {
+        await db.execAsync("ALTER TABLE exercises ADD COLUMN source TEXT NOT NULL DEFAULT 'system';");
+      }
+
+      await db.execAsync(
+        'CREATE INDEX IF NOT EXISTS idx_exercises_source_name ON exercises(source, name);',
+      );
+    },
+  },
 ];
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {

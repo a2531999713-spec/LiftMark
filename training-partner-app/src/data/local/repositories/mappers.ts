@@ -95,6 +95,7 @@ export function mapMemberProfile(row: MemberProfileRow): MemberProfile {
 export type ExerciseRow = {
   id: string;
   name: string;
+  source?: Exercise['source'] | null;
   category: Exercise['category'];
   movement_pattern: Exercise['movementPattern'];
   target_muscle: string;
@@ -110,6 +111,7 @@ export function mapExercise(row: ExerciseRow): Exercise {
   return {
     id: row.id,
     name: row.name,
+    source: row.source ?? 'system',
     category: row.category,
     movementPattern: row.movement_pattern,
     targetMuscle: row.target_muscle,

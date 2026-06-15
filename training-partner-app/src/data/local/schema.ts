@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS member_profiles (
 CREATE TABLE IF NOT EXISTS exercises (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'system',
   category TEXT NOT NULL,
   movement_pattern TEXT NOT NULL,
   target_muscle TEXT NOT NULL,
@@ -213,6 +214,7 @@ CREATE TABLE IF NOT EXISTS activation_state (
 
 CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id);
 CREATE INDEX IF NOT EXISTS idx_member_profiles_member_id ON member_profiles(member_id);
+CREATE INDEX IF NOT EXISTS idx_exercises_source_name ON exercises(source, name);
 CREATE INDEX IF NOT EXISTS idx_plan_phases_plan_id ON plan_phases(plan_id);
 CREATE INDEX IF NOT EXISTS idx_plan_days_phase_weekday ON plan_days(phase_id, week, weekday);
 CREATE INDEX IF NOT EXISTS idx_plan_exercises_day_id ON plan_exercises(plan_day_id);

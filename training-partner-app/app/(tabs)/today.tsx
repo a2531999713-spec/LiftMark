@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import {
   AppButton,
   AppCard,
+  AppModalSheet,
   AppText,
   EmptyState,
   PriorityTag,
@@ -39,6 +40,16 @@ type TrainingChoice = {
   free?: boolean;
 };
 
+type PlanSwitchNotice = {
+  message: string;
+  title: string;
+};
+
+type SuggestedWeightDisplay = {
+  hint: string;
+  value: string;
+};
+
 const recoveryOptions: RecoveryOption[] = [
   { icon: 'happy-outline', mode: 'good', label: '状态好' },
   { icon: 'ellipse-outline', mode: 'normal', label: '一般' },
@@ -57,10 +68,6 @@ const specialTrainingChoices: TrainingChoice[] = [
   { key: 'weak', label: '补弱', subtitle: '针对薄弱部位', weekday: 5, forceFriday: true },
   { key: 'free', label: '自由训练', subtitle: '自定义训练', free: true },
 ];
-
-function showComingSoon() {
-  Alert.alert('开发中', '该功能正在开发中，后续版本开放。');
-}
 
 function getTodayWeekday(): Weekday {
   const day = new Date().getDay();
@@ -113,27 +120,39 @@ function formatSuggestedWeight(
   planExercise: PlanExercise | null,
   exercise: Exercise | null,
   profile: MemberProfile | null,
-): string {
+): SuggestedWeightDisplay {
   if (!profile) {
-    return '未设置资料';
+    return { value: '未设置资料', hint: '补充 1RM 后自动计算' };
   }
 
   if (!planExercise) {
-    return '现场决定';
+    return { value: '参考上次重量', hint: '自由训练可手动输入' };
   }
 
   const result = calculateSuggestedWeight({
     referenceLift: planExercise.referenceLift,
     percent1RM: planExercise.percent1RM,
+    repMax: planExercise.repMax,
+    repMin: planExercise.repMin,
+    reps: planExercise.reps,
     equipment: exercise?.equipment ?? 'other',
     profile,
   });
 
   if (result.status === 'ready') {
-    return `${result.weight} kg`;
+    return {
+      value: `${result.weight} kg`,
+      hint: result.percent1RM
+        ? `按 ${Math.round(result.percent1RM * 100)}% 参考主项估算`
+        : '按计划次数估算',
+    };
   }
 
-  return result.status === 'manual' ? '手动' : '缺少 1RM';
+  if (result.status === 'missing_1rm') {
+    return { value: '缺少 1RM', hint: '去成员资料补充参考主项' };
+  }
+
+  return { value: '参考上次重量', hint: '孤立或器械动作先按历史重量调整' };
 }
 
 function formatFridayStrategy(strategy: Group['fridayStrategy']) {
@@ -232,6 +251,8 @@ export default function TodayRoute() {
   const [group, setGroup] = useState<Group | null>(null);
   const [cycleLabel, setCycleLabel] = useState('');
   const [isPlanSwitcherVisible, setPlanSwitcherVisible] = useState(false);
+  const [pendingSwitchPlan, setPendingSwitchPlan] = useState<PlanTemplate | null>(null);
+  const [planSwitchNotice, setPlanSwitchNotice] = useState<PlanSwitchNotice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -324,6 +345,7 @@ export default function TodayRoute() {
     async (plan: PlanTemplate) => {
       if (!group || plan.id === group.activePlanId) {
         setPlanSwitcherVisible(false);
+        setPendingSwitchPlan(null);
         return;
       }
 
@@ -338,8 +360,12 @@ export default function TodayRoute() {
         });
         setSelectedChoiceKey('today');
         setPlanSwitcherVisible(false);
+        setPendingSwitchPlan(null);
         await loadTodayPlan('today');
-        Alert.alert('已切换计划', `当前训练计划已切换为“${plan.name}”。`);
+        setPlanSwitchNotice({
+          title: '已切换计划',
+          message: `当前训练计划已切换为“${plan.name}”，今日训练内容已刷新。历史记录不会受影响。`,
+        });
       } catch (switchError) {
         setError(switchError instanceof Error ? switchError.message : '切换计划失败。');
       } finally {
@@ -556,21 +582,29 @@ export default function TodayRoute() {
                 添加成员后显示建议重量。
               </AppText>
             ) : (
-              members.map((member) => (
-                <View key={member.id} style={styles.weightRow}>
-                  <View style={styles.avatarSmall}>
-                    <AppText tone="inverse" variant="caption">
-                      {member.displayName.slice(0, 1)}
+              members.map((member) => {
+                const suggestedWeight = formatSuggestedWeight(firstPlanExercise, firstExercise, profiles[member.id] ?? null);
+                return (
+                  <View key={member.id} style={styles.weightRow}>
+                    <View style={styles.avatarSmall}>
+                      <AppText tone="inverse" variant="caption">
+                        {member.displayName.slice(0, 1)}
+                      </AppText>
+                    </View>
+                    <View style={styles.weightName}>
+                      <AppText variant="bodySmall" weight="900">
+                        {member.displayName}
+                      </AppText>
+                      <AppText tone="muted" variant="caption">
+                        {suggestedWeight.hint}
+                      </AppText>
+                    </View>
+                    <AppText variant="bodySmall" weight="900">
+                      {suggestedWeight.value}
                     </AppText>
                   </View>
-                  <AppText style={styles.weightName} variant="bodySmall" weight="900">
-                    {member.displayName}
-                  </AppText>
-                  <AppText tone="muted" variant="caption">
-                    {formatSuggestedWeight(firstPlanExercise, firstExercise, profiles[member.id] ?? null)}
-                  </AppText>
-                </View>
-              ))
+                );
+              })
             )}
           </AppCard>
 
@@ -593,9 +627,7 @@ export default function TodayRoute() {
                           自由训练建议动作 · 现场设置重量和次数
                         </AppText>
                       </View>
-                      <Pressable accessibilityRole="button" onPress={showComingSoon}>
-                        <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
-                      </Pressable>
+                      <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
                     </View>
                   </AppCard>
                 ))
@@ -614,9 +646,7 @@ export default function TodayRoute() {
                             {formatPrescription(planExercise)} · {formatIntensity(planExercise)}
                           </AppText>
                         </View>
-                        <Pressable accessibilityRole="button" onPress={showComingSoon}>
-                          <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
-                        </Pressable>
+                        <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
                       </View>
                       {planExercise.notes ? (
                         <AppText tone="muted" variant="caption">
@@ -630,63 +660,88 @@ export default function TodayRoute() {
         </>
       ) : null}
 
-      <Modal animationType="slide" transparent visible={Boolean(group && isPlanSwitcherVisible)} onRequestClose={() => setPlanSwitcherVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <AppCard style={styles.planSwitchPanel}>
-            <View style={styles.planSwitchHeader}>
-              <View style={styles.exerciseText}>
-                <AppText variant="title">选择当前计划</AppText>
-                <AppText tone="muted" variant="bodySmall">
-                  这里只列出我的计划。系统方案需先在计划页点击“使用此方案”。
-                </AppText>
-              </View>
-              <Pressable accessibilityRole="button" onPress={() => setPlanSwitcherVisible(false)} style={styles.iconButton}>
-                <Ionicons color={colors.text} name="close-outline" size={21} />
-              </Pressable>
-            </View>
+      <AppModalSheet
+        onClose={() => setPlanSwitcherVisible(false)}
+        subtitle="这里只列出我的计划。系统方案需先在计划页点击“使用此方案”。"
+        title="选择当前计划"
+        visible={Boolean(group && isPlanSwitcherVisible)}
+      >
+        {userPlans.length === 0 ? (
+          <EmptyState
+            actionLabel="去计划页"
+            description="复制系统方案或导入计划后，训练页才可以切换执行计划。"
+            onActionPress={() => {
+              setPlanSwitcherVisible(false);
+              router.push('/(tabs)/plan');
+            }}
+            title="还没有我的计划"
+          />
+        ) : (
+          <View style={styles.planSwitchList}>
+            {userPlans.map((plan) => {
+              const isActive = plan.id === group?.activePlanId;
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={isActive || isLoading}
+                  key={plan.id}
+                  onPress={() => setPendingSwitchPlan(plan)}
+                  style={({ pressed }) => [styles.planSwitchItem, isActive && styles.planSwitchItemActive, pressed && styles.pressed]}
+                >
+                  <View style={styles.planSwitchIcon}>
+                    <Ionicons color={isActive ? colors.surface : colors.primary} name="clipboard-outline" size={18} />
+                  </View>
+                  <View style={styles.exerciseText}>
+                    <AppText tone={isActive ? 'inverse' : 'default'} variant="bodySmall" weight="900">
+                      {plan.name}
+                    </AppText>
+                    <AppText tone={isActive ? 'inverse' : 'muted'} variant="caption">
+                      {formatPlanSource(plan.source)} · {plan.durationWeeks} 周 · 每周 {plan.frequencyPerWeek} 练
+                    </AppText>
+                  </View>
+                  {isActive ? <Tag label="当前计划" tone="dark" /> : <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </AppModalSheet>
 
-            {userPlans.length === 0 ? (
-              <EmptyState
-                actionLabel="去计划页"
-                description="复制系统方案或导入计划后，训练页才可以切换执行计划。"
-                onActionPress={() => {
-                  setPlanSwitcherVisible(false);
-                  router.push('/(tabs)/plan');
-                }}
-                title="还没有我的计划"
-              />
-            ) : (
-              <View style={styles.planSwitchList}>
-                {userPlans.map((plan) => {
-                  const isActive = plan.id === group?.activePlanId;
-                  return (
-                    <Pressable
-                      accessibilityRole="button"
-                      disabled={isActive || isLoading}
-                      key={plan.id}
-                      onPress={() => void switchPlan(plan)}
-                      style={({ pressed }) => [styles.planSwitchItem, isActive && styles.planSwitchItemActive, pressed && styles.pressed]}
-                    >
-                      <View style={styles.planSwitchIcon}>
-                        <Ionicons color={isActive ? colors.surface : colors.primary} name="clipboard-outline" size={18} />
-                      </View>
-                      <View style={styles.exerciseText}>
-                        <AppText tone={isActive ? 'inverse' : 'default'} variant="bodySmall" weight="900">
-                          {plan.name}
-                        </AppText>
-                        <AppText tone={isActive ? 'inverse' : 'muted'} variant="caption">
-                          {formatPlanSource(plan.source)} · {plan.durationWeeks} 周 · 每周 {plan.frequencyPerWeek} 练
-                        </AppText>
-                      </View>
-                      {isActive ? <Tag label="当前" tone="dark" /> : <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            )}
+      <AppModalSheet
+        onClose={() => setPendingSwitchPlan(null)}
+        subtitle="切换后训练页会按新计划生成今日训练，历史记录不会受影响。"
+        title="切换当前计划？"
+        visible={Boolean(pendingSwitchPlan)}
+      >
+        {pendingSwitchPlan ? (
+          <AppCard style={styles.switchConfirmCard} tone="soft">
+            <AppText variant="bodySmall" weight="900">
+              {pendingSwitchPlan.name}
+            </AppText>
+            <AppText tone="muted" variant="caption">
+              {formatPlanSource(pendingSwitchPlan.source)} · {pendingSwitchPlan.durationWeeks} 周 · 每周 {pendingSwitchPlan.frequencyPerWeek} 练
+            </AppText>
           </AppCard>
+        ) : null}
+        <View style={styles.confirmActions}>
+          <AppButton onPress={() => setPendingSwitchPlan(null)} variant="secondary">
+            取消
+          </AppButton>
+          <AppButton disabled={isLoading} onPress={() => (pendingSwitchPlan ? void switchPlan(pendingSwitchPlan) : undefined)}>
+            切换
+          </AppButton>
         </View>
-      </Modal>
+      </AppModalSheet>
+
+      <AppModalSheet
+        onClose={() => setPlanSwitchNotice(null)}
+        position="center"
+        subtitle={planSwitchNotice?.message}
+        title={planSwitchNotice?.title ?? '已切换计划'}
+        visible={Boolean(planSwitchNotice)}
+      >
+        <AppButton onPress={() => setPlanSwitchNotice(null)}>知道了</AppButton>
+      </AppModalSheet>
     </Screen>
   );
 }
@@ -783,6 +838,7 @@ const styles = StyleSheet.create({
   },
   weightName: {
     flex: 1,
+    gap: 2,
   },
   exerciseList: {
     gap: spacing.sm,
@@ -838,6 +894,13 @@ const styles = StyleSheet.create({
   },
   planSwitchPanel: {
     gap: spacing.lg,
+  },
+  switchConfirmCard: {
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  confirmActions: {
+    gap: spacing.sm,
   },
   pressed: {
     opacity: 0.82,

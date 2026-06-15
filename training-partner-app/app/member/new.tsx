@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator } from 'react-native';
 
@@ -12,6 +12,7 @@ import { canAddGroupMember, MAX_GROUP_MEMBERS } from '@/domain/member/member.val
 import { colors } from '@/theme/colors';
 
 export default function NewMemberRoute() {
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const [group, setGroup] = useState<Group | null>(null);
   const [memberCount, setMemberCount] = useState(0);
@@ -66,7 +67,7 @@ export default function NewMemberRoute() {
       setError(null);
 
       try {
-        const member = await repositories.memberRepository.createMember({
+        await repositories.memberRepository.createMember({
           groupId: group.id,
           displayName: values.displayName.trim(),
           profile: {
@@ -81,14 +82,14 @@ export default function NewMemberRoute() {
           },
         });
 
-        router.replace({ pathname: '/member/[memberId]', params: { memberId: member.id } });
+        router.replace(returnTo === 'settings' ? '/settings/members' : '/(tabs)/members');
       } catch (saveError) {
         setError(saveError instanceof Error ? saveError.message : '成员保存失败。');
       } finally {
         setIsSaving(false);
       }
     },
-    [group, repositories],
+    [group, repositories, returnTo],
   );
 
   const canCreateMember = canAddGroupMember(memberCount);
@@ -101,8 +102,8 @@ export default function NewMemberRoute() {
 
       {!isLoading && !canCreateMember ? (
         <EmptyState
-          title="成员数量已达上限"
-          description={`第一版每个本地小组最多支持 ${MAX_GROUP_MEMBERS} 位成员。`}
+          title={`本地小组最多支持 ${MAX_GROUP_MEMBERS} 位训练成员`}
+          description="适合一台设备多人轮换记录。后续云同步版本会支持更多小组能力。"
         />
       ) : null}
 

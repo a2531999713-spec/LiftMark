@@ -23,6 +23,7 @@ type SessionSummary = {
   bestEstimatedOneRM?: number;
   durationMinutes?: number;
   exerciseCount: number;
+  mainExerciseNames: string[];
   session: WorkoutSession;
   setCount: number;
   topSetLabel?: string;
@@ -158,11 +159,22 @@ function getMemberEntries(detail: WorkoutSessionDetail, memberId: string): Histo
     });
 }
 
-function summarizeSession(detail: WorkoutSessionDetail, memberId: string): SessionSummary {
+function summarizeSession(
+  detail: WorkoutSessionDetail,
+  memberId: string,
+  exerciseNamesById: Record<string, string> = {},
+): SessionSummary {
   const memberSets = detail.sets.filter((set) => set.memberId === memberId && set.completed);
   const exerciseIds = new Set(
     memberSets.map((set) => detail.exercises.find((exercise) => exercise.id === set.exerciseRecordId)?.exerciseId ?? set.exerciseRecordId),
   );
+  const completedRecordIds = new Set(memberSets.map((set) => set.exerciseRecordId));
+  const mainExerciseNames = detail.exercises
+    .filter((exercise) => completedRecordIds.has(exercise.id))
+    .slice()
+    .sort((left, right) => left.orderIndex - right.orderIndex)
+    .map((exercise) => exerciseNamesById[exercise.exerciseId] ?? '未知动作')
+    .filter((name, index, names) => names.indexOf(name) === index);
   const topSet = memberSets
     .map((set) => ({
       estimatedOneRM: estimateOneRM(set.actualWeight ?? set.plannedWeight ?? 0, set.actualReps ?? set.plannedReps ?? 0),
@@ -176,6 +188,7 @@ function summarizeSession(detail: WorkoutSessionDetail, memberId: string): Sessi
     bestEstimatedOneRM: topSet?.estimatedOneRM,
     durationMinutes: getDurationMinutes(detail.session),
     exerciseCount: exerciseIds.size,
+    mainExerciseNames,
     session: detail.session,
     setCount: memberSets.length,
     topSetLabel: topSet ? `${topSet.weight}kg x ${topSet.reps}` : undefined,
@@ -268,15 +281,24 @@ export default function HistoryRoute() {
       const exercise = series
         ? (await repositories.exerciseRepository.listExercisesByIds([series.exerciseId]))[0] ?? null
         : null;
-      const weeklySummaries = weekDetails.map((detail) => summarizeSession(detail, currentMember.id));
+      const summaryExerciseIds = Array.from(
+        new Set(
+          [...recentDetails, ...selectedDetails, ...weekDetails].flatMap((detail) =>
+            detail.exercises.map((exerciseRecord) => exerciseRecord.exerciseId),
+          ),
+        ),
+      );
+      const summaryExercises = await repositories.exerciseRepository.listExercisesByIds(summaryExerciseIds);
+      const exerciseNamesById = Object.fromEntries(summaryExercises.map((exerciseItem) => [exerciseItem.id, exerciseItem.name]));
+      const weeklySummaries = weekDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById));
 
       setHistory({
         analysis,
         currentMember,
         exercise,
         monthlyTrainingDates: new Set(monthSessions.map((session) => session.date)),
-        recentSessions: recentDetails.map((detail) => summarizeSession(detail, currentMember.id)),
-        selectedDateSessions: selectedDetails.map((detail) => summarizeSession(detail, currentMember.id)),
+        recentSessions: recentDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById)),
+        selectedDateSessions: selectedDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById)),
         weeklyCompletedSets: weeklySummaries.reduce((sum, summary) => sum + summary.setCount, 0),
         weeklySessionCount: weeklySummaries.filter((summary) => summary.setCount > 0).length,
         weeklyTrend: buildWeeklyTrend(sevenDaysAgo, weeklySummaries),
@@ -606,7 +628,7 @@ function AnalysisPanel({
             近 7 天总量 · {exerciseName ?? '暂无重点动作'}
           </AppText>
         </View>
-        <Tag label="基础规则建议" tone="warning" />
+        <Tag label="训练建议" tone="warning" />
       </View>
       <View style={styles.analysisBody}>
         <View style={styles.trendBars}>
@@ -626,7 +648,7 @@ function AnalysisPanel({
             {primarySuggestion}
           </AppText>
           <AppText tone="muted" variant="caption">
-            明确标注：这是基础规则建议，不是 AI 预测。
+            根据你的完成组、RPE/RIR 和历史趋势生成。
           </AppText>
         </View>
       </View>
@@ -649,6 +671,8 @@ function SessionCard({ memberName, summary }: { memberName: string; summary: Ses
     summary.bestEstimatedOneRM && summary.bestEstimatedOneRM > 0
       ? `估算 1RM ${summary.bestEstimatedOneRM}kg`
       : '趋势样本积累中';
+  const visibleExercises = summary.mainExerciseNames.slice(0, 2);
+  const extraExerciseCount = Math.max(0, summary.mainExerciseNames.length - visibleExercises.length);
 
   return (
     <Pressable accessibilityRole="button" onPress={() => router.push(detailRoute)} style={({ pressed }) => [styles.sessionCard, pressed && styles.pressed]}>
@@ -676,6 +700,15 @@ function SessionCard({ memberName, summary }: { memberName: string; summary: Ses
           <SessionMetric label="组数" value={`${summary.setCount}`} />
           <SessionMetric label="训练量" value={formatKg(summary.volume)} wide />
         </View>
+
+        {visibleExercises.length > 0 ? (
+          <View style={styles.sessionExerciseRow}>
+            {visibleExercises.map((name) => (
+              <Tag key={name} label={name} tone="neutral" />
+            ))}
+            {extraExerciseCount > 0 ? <Tag label={`+${extraExerciseCount}`} tone="accent" /> : null}
+          </View>
+        ) : null}
 
         <View style={styles.sessionTags}>
           <Tag label={memberName} tone="neutral" />
@@ -950,6 +983,11 @@ const styles = StyleSheet.create({
   sessionMetricRow: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  sessionExerciseRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
   },
   sessionMetric: {
     backgroundColor: colors.backgroundElevated,

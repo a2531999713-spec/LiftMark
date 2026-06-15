@@ -27,8 +27,50 @@ export function getReferenceOneRm(profile: MemberProfile, referenceLift: Referen
   }
 }
 
+export function estimatePercentFromTargetReps(reps: number | undefined): number | undefined {
+  if (!reps || reps <= 0) {
+    return undefined;
+  }
+
+  if (reps <= 3) {
+    return 0.88;
+  }
+
+  if (reps <= 5) {
+    return 0.82;
+  }
+
+  if (reps <= 8) {
+    return 0.75;
+  }
+
+  if (reps <= 10) {
+    return 0.7;
+  }
+
+  if (reps <= 12) {
+    return 0.65;
+  }
+
+  if (reps <= 15) {
+    return 0.6;
+  }
+
+  return undefined;
+}
+
+function resolvePercent1RM(input: SuggestedWeightInput): number | undefined {
+  if (input.percent1RM) {
+    return input.percent1RM;
+  }
+
+  return estimatePercentFromTargetReps(input.repMax ?? input.reps ?? input.repMin);
+}
+
 export function calculateSuggestedWeight(input: SuggestedWeightInput): SuggestedWeightResult {
-  if (input.referenceLift === 'none' || !input.percent1RM) {
+  const percent1RM = resolvePercent1RM(input);
+
+  if (input.referenceLift === 'none' || !percent1RM) {
     return {
       status: 'manual',
       reason: 'This exercise does not use a percentage-based 1RM recommendation.',
@@ -54,7 +96,8 @@ export function calculateSuggestedWeight(input: SuggestedWeightInput): Suggested
 
   return {
     status: 'ready',
-    weight: roundToIncrement(referenceOneRm * input.percent1RM, increment),
+    percent1RM,
+    weight: roundToIncrement(referenceOneRm * percent1RM, increment),
   };
 }
 

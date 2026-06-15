@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
-export const MIN_GROUP_MEMBERS = 2;
-export const MAX_GROUP_MEMBERS = 4;
+import { LOCAL_GROUP_LIMITS } from '@/config/appLimits';
+
+export const MIN_GROUP_MEMBERS = LOCAL_GROUP_LIMITS.minMembersPerGroup;
+export const MAX_GROUP_MEMBERS = LOCAL_GROUP_LIMITS.maxMembersPerGroup;
 
 const optionalPositiveNumber = z
   .number('请输入数字。')

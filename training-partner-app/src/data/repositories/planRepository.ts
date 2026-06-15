@@ -55,5 +55,6 @@ export interface PlanRepository {
   createUserPlan(input: CreateUserPlanInput): Promise<PlanTemplate>;
   copySystemSchemeToUserPlan(input: CopySystemSchemeToUserPlanInput): Promise<PlanTemplate>;
   importUserPlan(input: ImportUserPlanInput): Promise<PlanTemplate>;
+  deleteUserPlan(planId: ID): Promise<void>;
   getTodayPlan(input: GetTodayPlanInput): Promise<TodayPlanResult>;
 }

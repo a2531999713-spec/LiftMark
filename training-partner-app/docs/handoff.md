@@ -1,5 +1,30 @@
 # LiftMark 项目交接记录
 
+## 2026-06-15 plan-dashboard-exercise-library-custom-exercise-member-limit-weight-git-sprint 交接
+
+- 当前实际项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`；所有命令执行前先 `cd` 到该路径并用 `Get-Location` 校验。
+- 本次未修改 Android package，仍为 `com.liftmark.app`；未做登录、云同步、饮食、视频/GIF、品牌改名或 node_modules 修改。
+- 系统动作库已修复历史中文编码污染并扩展为 100+ 个系统动作；SQLite migration v5 新增 `exercises.source`，区分 `system` 和 `custom`。
+- 统一动作选择器 `src/components/exercises/ExercisePickerSheet.tsx` 已接入历史补录和创建计划，支持搜索、系统/我的动作切换、肌群/器械筛选和快速新建自定义动作。
+- 计划页已重做为当前计划仪表盘：本周执行、本周安排、我的计划摘要、计划工具和系统方案；“管理全部计划”弹层支持删除用户计划。
+- 删除用户计划只删除计划模板/阶段/训练日/计划动作；系统方案、当前计划和最后一个用户计划会被阻止删除；训练记录不删除。
+- 计划导入按动作名称复用本机已有动作，缺失动作才写入 SQLite，避免重复导入自定义动作。
+- 本地小组成员上限从 4 调整为 5，集中配置在 `src/config/appLimits.ts`。
+- 训练页建议重量支持按百分比或目标次数区间保守估算，缺少 1RM 或孤立动作会显示更明确提示。
+
+## 2026-06-15 ui-consistency-plan-entry-member-flow-sprint 交接
+
+- 当前实际项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`；所有命令执行前先 `cd` 到该路径并用 `Get-Location` 校验。
+- 本次未修改 Android package，仍为 `com.liftmark.app`；未做登录、云同步、饮食、视频/GIF、品牌改名或 node_modules 修改。
+- 新增统一弹层组件 `AppModalSheet`：复制方案、导入后设当前、导出内容复制、训练页切换计划确认统一使用 App 风格卡片/底部弹层。
+- 探索页 PPL 入口已接入系统方案复制和设当前流程；推荐方案不再铺满未完成列表，创建/导入收进“计划工具”小卡。
+- 计划页右上角加号进入真实创建计划页；系统方案只展示可复制模板；复制方案不再显示表单；用户计划可进入只读计划详情。
+- 训练页切换计划只列出“我的计划”，选择后先确认再切换，切换后刷新今日训练内容，历史记录不受影响。
+- 记录页日期下训练记录压缩为摘要卡，显示主要动作前 2 个和剩余数量；训练建议文案改为基础规则说明。
+- 设置页导出计划/数据时明确提示当前版本暂未保存文件，并支持复制内容；不常驻显示 JSON 预览。
+- 新增成员保存后自动返回成员列表；达到本地成员上限时新增入口显示本地小组上限说明。
+- 本次新增依赖：`expo-clipboard`，用于复制导出 JSON 内容。
+
 ## 2026-06-14 settings-history-plan-switch-cleanup-sprint 交接
 
 - 当前实际项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`。
@@ -40,7 +65,7 @@
 - 当前一键预览：`npm run android:preview`。
 - 当前计划导出：`.liftmark.json` / `liftmark-plan`。
 - 新增品牌资源目录：`training-partner-app/assets/brand/`、`training-partner-app/src/assets/brand/`。
-- 当前外层目录仍为 `C:\Users\zhw\Documents\LiftOn`；用户可在本 Sprint 验证完成后手动改名为 `LiftMark`。
+- 当前项目目录为 `C:\Users\zhw\Documents\LiftMark\training-partner-app`。
 
 
 更新时间：2026-06-12
@@ -75,7 +100,7 @@
 推荐命令：
 
 ```powershell
-cd C:\Users\zhw\Documents\LiftOn\training-partner-app
+cd C:\Users\zhw\Documents\LiftMark\training-partner-app
 npm run android:preview
 ```
 
@@ -91,8 +116,8 @@ npm run android:preview
 
 ## 4. 仍需注意
 
-- 未实现的深层功能必须显示“开发中”，不能无响应。
-- 未实现功能统一提示：“该功能正在开发中，后续版本开放。”
+- 未实现的深层功能应收进说明卡、开发中标签或二级入口，不能做成显眼按钮后只弹系统 Alert。
+- 复杂选择流程使用 App 风格底部弹层或卡片，不用系统 Alert 承载。
 - 不要把训练计划硬编码进 React 页面组件。
 - 不要把系统方案直接当作用户计划。
 - 训练记录不能直接绑定系统方案，只能绑定用户计划或训练时计划快照。

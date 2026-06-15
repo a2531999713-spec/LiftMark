@@ -5,6 +5,9 @@ import type { ReferenceLift } from '../plan/plan.types';
 export type SuggestedWeightInput = {
   referenceLift: ReferenceLift;
   percent1RM?: number;
+  repMax?: number;
+  repMin?: number;
+  reps?: number;
   equipment: Equipment;
   profile: MemberProfile;
 };
@@ -12,6 +15,7 @@ export type SuggestedWeightInput = {
 export type SuggestedWeightResult =
   | {
       status: 'ready';
+      percent1RM?: number;
       weight: number;
     }
   | {

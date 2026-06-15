@@ -1,6 +1,6 @@
 # Member 模块实现文档
 
-更新时间：2026-06-10  
+更新时间：2026-06-15  
 对应代码目录：`training-partner-app/`；Sprint 2 已实现成员列表、新增成员、编辑成员、MemberProfile 表单、1RM 输入和加重单位设置。
 
 ## 1. 模块职责
@@ -13,6 +13,7 @@
 |---|---|
 | `src/domain/member/member.types.ts` | 成员、成员档案类型。 |
 | `src/domain/member/member.service.ts` | 成员资料校验和领域服务。 |
+| `src/config/appLimits.ts` | 本地小组成员上限等集中配置。 |
 | `src/domain/member/member.validation.ts` | 成员表单 schema、默认值和成员数量限制。 |
 | `src/data/local/repositories/memberRepository.ts` | 成员和档案的 SQLite Repository。 |
 | `src/components/members/MemberForm.tsx` | 成员编辑表单。 |
@@ -92,9 +93,9 @@
 文件：`src/domain/member/member.validation.ts`  
 符号：`canAddGroupMember`  
 搜索锚点：`canAddGroupMember`  
-职责：限制本地默认小组最多 4 名成员。  
+职责：限制本地默认小组最多 5 名成员。  
 调用方：`app/(tabs)/members.tsx`, `app/member/new.tsx`  
-依赖：无  
+依赖：`src/config/appLimits.ts`  
 测试：`src/tests/member.test.ts`
 
 ## 4. 数据结构
@@ -111,7 +112,7 @@
 
 ## 6. 测试位置
 
-- 创建 2-4 个成员后均可独立保存 1RM。
+- 创建 2-5 个成员后均可独立保存 1RM。
 - 关闭 App 后成员资料仍存在。
 - 缺失 1RM 时今日训练页不崩溃。
 
@@ -135,3 +136,4 @@
 - 2026-06-10：同步本地 Android 预览 APK 流程：成员数据存储仍为 native SQLite；本地 release APK 已完成安装和首屏烟测，成员新增/编辑后关闭重开的持久化场景仍需后续手工验证。
 - 2026-06-12：同步可用性 + UI 落地 Sprint：`MemberForm` 改为顶部训练氛围 Hero、基础信息卡、两列训练参数卡、加重单位卡和说明卡；保存链路仍使用原有 Zod 校验和 SQLite Repository。
 - 2026-06-12：同步本地图片资产落地：`MemberForm` 的 Hero 通过 `liftmarkImages.partnerHero` 使用本地训练搭子图片；成员数据结构、校验和 SQLite 保存链路未变。
+- 2026-06-15：本地小组成员上限从 4 调整为 5，并集中到 `src/config/appLimits.ts`。

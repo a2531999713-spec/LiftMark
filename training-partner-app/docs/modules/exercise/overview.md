@@ -1,13 +1,13 @@
 # Exercise 模块概览
 
-更新时间：2026-06-09
+更新时间：2026-06-15
 
 ## 1. 模块职责
 
 管理动作库、动作模式、器械、目标肌群和替代动作，支撑计划动作与训练中替换。
 
 - Exercise 和 ExerciseAlternative 数据模型。
-- 默认动作库与动作替换库 seed。
+- 默认系统动作库、用户自定义动作和动作替换库 seed。
 - 动作分类：胸推、垂直拉、水平拉、深蹲类、髋铰链、肩推、孤立动作等。
 - 替代动作必须保持动作模式和训练目的尽量一致。
 
@@ -21,7 +21,7 @@
 - 首次使用流程。
 - 今日训练生成流程。
 - 训练执行和历史查看。
-- 数据导出和后续云同步预留。
+- 计划创建、历史补录、数据导出和后续云同步预留。
 
 ## 4. 依赖模块
 
@@ -36,15 +36,16 @@
 
 ## 6. 主要文件
 
-Sprint 3 已创建默认动作 seed 和本地 Repository；以下路径按当前实现列出：
+当前版本已创建系统动作 seed、自定义动作写入能力和本地 Repository；以下路径按当前实现列出：
 
 | 文件 | 说明 |
 |---|---|
 | `src/domain/exercise/exercise.types.ts` | 动作和替代动作类型。 |
-| `src/data/seed/defaultExercises.ts` | 默认动作库和周五补弱菜单动作 seed。 |
+| `src/data/seed/defaultExercises.ts` | 默认系统动作库 seed，当前包含胸/背/肩/腿/手臂/核心/热身等 100+ 个动作。 |
 | `src/data/seed/defaultAlternatives.ts` | 默认动作替换关系 seed。 |
 | `src/data/repositories/exerciseRepository.ts` | 动作库 Repository 接口。 |
 | `src/data/local/repositories/exerciseRepository.ts` | 动作库 Repository。 |
+| `src/components/exercises/ExercisePickerSheet.tsx` | 统一动作选择器，支持搜索、筛选和快速新建自定义动作。 |
 
 ## 7. 核心数据结构
 
@@ -52,6 +53,8 @@ Sprint 3 已创建默认动作 seed 和本地 Repository；以下路径按当前
 - ExerciseAlternative
 - exercises
 - exercise_alternatives
+
+第一版动作库采用“较完整系统动作 + 用户自定义动作”。`exercises.source` 区分 `system` 和 `custom`；系统动作由 seed 幂等更新，用户自定义动作由 Repository 创建，不允许页面组件直接写数据库。
 
 ## 8. 修改风险
 

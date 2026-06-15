@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { AppButton, AppCard, AppText, EmptyState, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
+import { MAX_GROUP_MEMBERS } from '@/domain/member/member.validation';
 import { colors, radius, spacing } from '@/theme';
 
 type MemberWithProfile = {
@@ -66,6 +67,8 @@ export default function SettingsMembersRoute() {
     }, [loadMembers]),
   );
 
+  const canAddMember = items.length < MAX_GROUP_MEMBERS;
+
   return (
     <Screen title="成员资料" subtitle="设置页只展示摘要，点击成员后进入完整资料。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -84,7 +87,7 @@ export default function SettingsMembersRoute() {
             <EmptyState
               actionLabel="新增成员"
               description="添加成员后，设置页会显示全部成员摘要。"
-              onActionPress={() => router.push('/member/new')}
+              onActionPress={() => router.push({ pathname: '/member/new', params: { returnTo: 'settings' } })}
               title="还没有成员"
             />
           ) : (
@@ -116,9 +119,20 @@ export default function SettingsMembersRoute() {
             </View>
           )}
 
-          <AppButton icon="person-add-outline" onPress={() => router.push('/member/new')} variant="secondary">
-            新增成员
-          </AppButton>
+          {canAddMember ? (
+            <AppButton icon="person-add-outline" onPress={() => router.push({ pathname: '/member/new', params: { returnTo: 'settings' } })} variant="secondary">
+              新增成员
+            </AppButton>
+          ) : (
+            <AppCard style={styles.limitCard} tone="soft">
+              <AppText variant="bodySmall" weight="900">
+                本地小组最多支持 {MAX_GROUP_MEMBERS} 位训练成员
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                适合一台设备多人轮换记录。后续云同步版本会支持更多小组能力。
+              </AppText>
+            </AppCard>
+          )}
         </>
       ) : null}
     </Screen>
@@ -151,6 +165,10 @@ const styles = StyleSheet.create({
   memberText: {
     flex: 1,
     gap: 2,
+  },
+  limitCard: {
+    gap: spacing.xs,
+    padding: spacing.md,
   },
   pressed: {
     opacity: 0.82,

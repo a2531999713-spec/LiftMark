@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import * as Clipboard from 'expo-clipboard';
 import { router, useFocusEffect } from 'expo-router';
 import { type ComponentProps, type ReactNode, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, View } from 'react-native';
 
 import { liftmarkBrandAssets } from '@/assets/brand';
-import { AppCard, AppText, EmptyState, Screen, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, getDatabase, initializeLocalDatabase } from '@/data/local';
 import { createActivationService } from '@/services/activationService';
 import { exportLocalDataJson, exportWorkoutDataJson, resetDefaultPlanData } from '@/services/exportService';
@@ -15,6 +16,7 @@ import { getTrialDaysLeft } from '@/domain/activation/activation.service';
 import type { ActivationState } from '@/domain/activation/activation.types';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
+import type { PhaseType, PlanTemplate } from '@/domain/plan/plan.types';
 import { colors, radius, spacing } from '@/theme';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
@@ -29,6 +31,23 @@ type Diagnostics = {
 
 type CountRow = {
   count: number;
+};
+
+type NoticeState = {
+  message: string;
+  title: string;
+};
+
+type ExportPrompt = {
+  content: string;
+  message: string;
+  title: string;
+};
+
+type ActivationPrompt = {
+  message: string;
+  plan: PlanTemplate;
+  title: string;
 };
 
 async function loadDiagnostics(): Promise<Diagnostics> {
@@ -47,17 +66,6 @@ async function loadDiagnostics(): Promise<Diagnostics> {
     seedStatus: (exerciseCount?.count ?? 0) > 0 && (planCount?.count ?? 0) > 0 ? '已初始化' : '待初始化',
     sqliteStatus: '已连接',
   };
-}
-
-function showComingSoon(feature: string) {
-  Alert.alert('开发中', `该功能正在开发中，后续版本开放。\n\n${feature}`);
-}
-
-function showLocalGroupRules() {
-  Alert.alert(
-    '本地小组规则',
-    '当前版本的小组适合同一台设备多人轮换记录，数据保存在本机，不会自动同步到其他手机。\n\n当前版本组长可以查看本机保存的所有本地成员训练数据。未来云同步版本再支持账号登录、邀请成员加入、多设备同步，以及组长查看成员授权共享的数据。',
-  );
 }
 
 function formatMembersValue(members: GroupMember[]) {
@@ -93,6 +101,9 @@ export default function SettingsRoute() {
   const [profilesByMemberId, setProfilesByMemberId] = useState<Record<string, MemberProfile | null>>({});
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [activation, setActivation] = useState<ActivationState | null>(null);
+  const [activationPrompt, setActivationPrompt] = useState<ActivationPrompt | null>(null);
+  const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,15 +146,70 @@ export default function SettingsRoute() {
   );
 
   const showExportSuccess = useCallback((title: string, json: string) => {
-    Alert.alert(title, `已生成 JSON，大小约 ${Math.ceil(json.length / 1024)} KB。保存 / 分享 / 复制能力正在接入中。`);
+    setExportPrompt({
+      content: json,
+      title,
+      message: `内容已生成，大小约 ${Math.ceil(json.length / 1024)} KB。当前版本暂未保存到文件，你可以先复制内容；后续版本会接入保存和分享。`,
+    });
   }, []);
+
+  const copyExportContent = useCallback(async () => {
+    if (!exportPrompt) {
+      return;
+    }
+
+    await Clipboard.setStringAsync(exportPrompt.content);
+    setExportPrompt(null);
+    setNotice({
+      title: '已复制内容',
+      message: '导出内容已复制到剪贴板。当前版本还不会自动保存文件。',
+    });
+  }, [exportPrompt]);
+
+  const resolvePhaseTypeForPlan = useCallback(
+    async (planId: string): Promise<PhaseType> => {
+      const phases = await repositories.planRepository.listPlanPhases(planId);
+      return phases[0]?.type ?? 'custom';
+    },
+    [repositories],
+  );
+
+  const setCurrentPlan = useCallback(
+    async (plan: PlanTemplate) => {
+      const currentGroup = await repositories.groupRepository.getDefaultGroup();
+      if (!currentGroup) {
+        setNotice({ title: '设置失败', message: '默认小组尚未初始化。' });
+        return;
+      }
+
+      setIsWorking(true);
+      try {
+        const updatedGroup = await repositories.groupRepository.updateGroup(currentGroup.id, {
+          activePlanId: plan.id,
+          currentPhaseType: await resolvePhaseTypeForPlan(plan.id),
+          currentWeek: 1,
+        });
+        setGroup(updatedGroup);
+        setActivationPrompt(null);
+        setNotice({
+          title: '已设为当前计划',
+          message: `训练页将读取“${plan.name}”。历史记录不会受影响。`,
+        });
+      } catch (error) {
+        setNotice({ title: '设置失败', message: error instanceof Error ? error.message : '设置当前计划失败。' });
+      } finally {
+        setIsWorking(false);
+      }
+    },
+    [repositories, resolvePhaseTypeForPlan],
+  );
 
   const exportAllData = useCallback(async () => {
     setIsWorking(true);
     try {
       showExportSuccess('导出全部数据', await exportLocalDataJson());
     } catch (exportError) {
-      Alert.alert('导出失败', exportError instanceof Error ? exportError.message : '导出全部数据失败。');
+      setNotice({ title: '导出失败', message: exportError instanceof Error ? exportError.message : '导出全部数据失败。' });
     } finally {
       setIsWorking(false);
     }
@@ -154,7 +220,7 @@ export default function SettingsRoute() {
     try {
       showExportSuccess('导出训练记录', await exportWorkoutDataJson());
     } catch (exportError) {
-      Alert.alert('导出失败', exportError instanceof Error ? exportError.message : '导出训练记录失败。');
+      setNotice({ title: '导出失败', message: exportError instanceof Error ? exportError.message : '导出训练记录失败。' });
     } finally {
       setIsWorking(false);
     }
@@ -170,7 +236,7 @@ export default function SettingsRoute() {
       const planFile = await createCurrentPlanFile(repositories, group.activePlanId);
       showExportSuccess('导出当前计划', serializePlanFile(planFile));
     } catch (exportError) {
-      Alert.alert('导出失败', exportError instanceof Error ? exportError.message : '导出当前计划失败。');
+      setNotice({ title: '导出失败', message: exportError instanceof Error ? exportError.message : '导出当前计划失败。' });
     } finally {
       setIsWorking(false);
     }
@@ -194,36 +260,21 @@ export default function SettingsRoute() {
       });
       await loadSettings();
 
-      Alert.alert('计划已导入', `“${importedPlan.name}”已成为我的计划。\n\n是否设为当前训练计划？`, [
-        { text: '稍后', style: 'cancel' },
-        {
-          text: '设为当前',
-          onPress: () => {
-            void (async () => {
-              const firstPhase = (await repositories.planRepository.listPlanPhases(importedPlan.id))[0];
-              const currentGroup = await repositories.groupRepository.getDefaultGroup();
-              if (!currentGroup) {
-                return;
-              }
-
-              const updatedGroup = await repositories.groupRepository.updateGroup(currentGroup.id, {
-                activePlanId: importedPlan.id,
-                currentPhaseType: firstPhase?.type ?? 'custom',
-                currentWeek: 1,
-              });
-              setGroup(updatedGroup);
-              Alert.alert('已设为当前计划', `训练页将读取“${importedPlan.name}”。`);
-            })();
-          },
-        },
-      ]);
+      setActivationPrompt({
+        plan: importedPlan,
+        title: '计划已导入',
+        message: `“${importedPlan.name}”已成为我的计划。是否设为当前训练计划？`,
+      });
     } catch (importError) {
       if (importError instanceof PlanFileError) {
-        Alert.alert('计划文件格式不兼容', '这个文件不是练刻 LiftMark 支持的计划文件。');
+        setNotice({
+          title: '计划文件格式不兼容',
+          message: '这个文件不是练刻 LiftMark 支持的计划文件。',
+        });
         return;
       }
 
-      Alert.alert('导入失败', importError instanceof Error ? importError.message : '计划导入失败。');
+      setNotice({ title: '导入失败', message: importError instanceof Error ? importError.message : '计划导入失败。' });
     } finally {
       setIsWorking(false);
     }
@@ -241,9 +292,9 @@ export default function SettingsRoute() {
             try {
               await resetDefaultPlanData();
               await loadSettings();
-              Alert.alert('已完成', '默认计划数据已重新检查并写入缺失数据。');
+              setNotice({ title: '已完成', message: '默认计划数据已重新检查并写入缺失数据。' });
             } catch (resetError) {
-              Alert.alert('重置失败', resetError instanceof Error ? resetError.message : '重置默认计划失败。');
+              setNotice({ title: '重置失败', message: resetError instanceof Error ? resetError.message : '重置默认计划失败。' });
             } finally {
               setIsWorking(false);
             }
@@ -256,7 +307,15 @@ export default function SettingsRoute() {
   const confirmDanger = useCallback((title: string) => {
     Alert.alert(title, '这是危险操作。为了避免误删真实训练数据，本版本只保留入口和二次确认。', [
       { text: '取消', style: 'cancel' },
-      { text: '我知道了', style: 'destructive', onPress: () => showComingSoon(title) },
+      {
+        text: '我知道了',
+        style: 'destructive',
+        onPress: () =>
+          setNotice({
+            title,
+            message: '当前版本不会执行该危险操作，真实训练记录仍保存在本机 SQLite。',
+          }),
+      },
     ]);
   }, []);
 
@@ -282,7 +341,13 @@ export default function SettingsRoute() {
             <SettingsItem
               description="同一设备多人轮换，本机保存"
               icon="information-circle-outline"
-              onPress={showLocalGroupRules}
+              onPress={() =>
+                setNotice({
+                  title: '本地小组规则',
+                  message:
+                    '当前版本的小组适合同一台设备多人轮换记录，数据保存在本机，不会自动同步到其他手机。组长可以查看本机保存的所有本地成员训练数据；未来云同步版本再支持账号登录、邀请成员加入、多设备同步，以及组长查看成员授权共享的数据。',
+                })
+              }
               title="本地小组规则"
               value="了解"
             />
@@ -322,8 +387,18 @@ export default function SettingsRoute() {
             <SettingsItem disabled={isWorking} icon="document-text-outline" onPress={() => void exportCurrentPlan()} title="导出当前计划" />
             <SettingsItem disabled={isWorking} icon="bar-chart-outline" onPress={() => void exportWorkoutData()} title="导出训练记录" />
             <SettingsItem disabled={isWorking} icon="cloud-upload-outline" onPress={() => void importPlan()} title="导入计划" value="选择文件" />
-            <SettingsItem icon="server-outline" onPress={() => showComingSoon('备份数据库')} tag="开发中" title="备份数据库" />
-            <SettingsItem icon="refresh-outline" onPress={() => showComingSoon('恢复数据库')} tag="开发中" title="恢复数据库" />
+            <SettingsItem
+              icon="server-outline"
+              onPress={() => setNotice({ title: '备份数据库', message: '文件保存和分享能力接入后开放。当前训练记录仍保存在本机 SQLite。' })}
+              tag="开发中"
+              title="备份数据库"
+            />
+            <SettingsItem
+              icon="refresh-outline"
+              onPress={() => setNotice({ title: '恢复数据库', message: '恢复能力会在备份文件校验完成后开放，当前版本不会覆盖本机数据。' })}
+              tag="开发中"
+              title="恢复数据库"
+            />
           </SettingsGroup>
 
           <SettingsGroup title="计划管理">
@@ -337,7 +412,12 @@ export default function SettingsRoute() {
             />
             <SettingsItem
               icon="layers-outline"
-              onPress={() => Alert.alert('系统方案版本', '系统方案版本：1\n四练增力增肌：完整可用\n其他方案：开发中')}
+              onPress={() =>
+                setNotice({
+                  title: '系统方案版本',
+                  message: '系统方案版本：1。四练增力增肌与经典三分化 PPL 已可复制使用，其他方案会逐步补齐。',
+                })
+              }
               title="系统方案版本"
               value={`${diagnostics?.planCount ?? 0} 个模板`}
             />
@@ -356,9 +436,50 @@ export default function SettingsRoute() {
             <SettingsItem destructive disabled={isWorking} icon="trash-outline" onPress={() => confirmDanger('清空训练记录')} title="清空训练记录" />
             <SettingsItem destructive disabled={isWorking} icon="nuclear-outline" onPress={() => confirmDanger('重置整个 App')} title="重置整个 App" />
           </SettingsGroup>
-
         </>
       ) : null}
+
+      <AppModalSheet
+        onClose={() => setExportPrompt(null)}
+        subtitle={exportPrompt?.message}
+        title={exportPrompt?.title ?? '内容已生成'}
+        visible={Boolean(exportPrompt)}
+      >
+        <View style={styles.modalButtons}>
+          <AppButton disabled={isWorking} onPress={() => void copyExportContent()}>
+            复制内容
+          </AppButton>
+          <AppButton onPress={() => setExportPrompt(null)} variant="secondary">
+            知道了
+          </AppButton>
+        </View>
+      </AppModalSheet>
+
+      <AppModalSheet
+        onClose={() => setActivationPrompt(null)}
+        subtitle={activationPrompt?.message}
+        title={activationPrompt?.title ?? '计划已导入'}
+        visible={Boolean(activationPrompt)}
+      >
+        <View style={styles.modalButtons}>
+          <AppButton onPress={() => setActivationPrompt(null)} variant="secondary">
+            稍后
+          </AppButton>
+          <AppButton disabled={isWorking} onPress={() => (activationPrompt ? void setCurrentPlan(activationPrompt.plan) : undefined)}>
+            设为当前
+          </AppButton>
+        </View>
+      </AppModalSheet>
+
+      <AppModalSheet
+        onClose={() => setNotice(null)}
+        position="center"
+        subtitle={notice?.message}
+        title={notice?.title ?? '提示'}
+        visible={Boolean(notice)}
+      >
+        <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
+      </AppModalSheet>
     </Screen>
   );
 }
@@ -547,6 +668,9 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     maxWidth: 132,
     textAlign: 'right',
+  },
+  modalButtons: {
+    gap: spacing.sm,
   },
   disabled: {
     opacity: 0.5,

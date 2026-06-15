@@ -1,15 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { AppButton, AppCard, AppText, EmptyState, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
+import { ExercisePickerSheet, formatExerciseEquipment } from '@/components/exercises/ExercisePickerSheet';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
+import type { CreateCustomExerciseInput } from '@/data/repositories/exerciseRepository';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember } from '@/domain/member/member.types';
 import { colors, radius, spacing, typography } from '@/theme';
+
+type NoticeState = {
+  sessionId?: string;
+  message: string;
+  title: string;
+};
 
 function getLocalDateString(date = new Date()): string {
   const year = date.getFullYear();
@@ -55,6 +63,7 @@ export default function ManualHistoryRoute() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
+  const [isExercisePickerVisible, setExercisePickerVisible] = useState(false);
   const [date, setDate] = useState(params.date ?? getLocalDateString());
   const [title, setTitle] = useState('补录训练');
   const [setCount, setSetCount] = useState('3');
@@ -63,6 +72,7 @@ export default function ManualHistoryRoute() {
   const [rpe, setRpe] = useState('');
   const [rir, setRir] = useState('');
   const [restSeconds, setRestSeconds] = useState('');
+  const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,9 +121,21 @@ export default function ManualHistoryRoute() {
     };
   }, [repositories]);
 
+  const selectedExercise = exercises.find((exercise) => exercise.id === selectedExerciseId) ?? null;
+
+  const createCustomExercise = async (input: CreateCustomExerciseInput) => {
+    const exercise = await repositories.exerciseRepository.createCustomExercise(input);
+    setExercises((current) => [exercise, ...current]);
+    setSelectedExerciseId(exercise.id);
+    return exercise;
+  };
+
   const saveManualSession = async () => {
     if (!group || !selectedMemberId || !selectedExerciseId) {
-      Alert.alert('信息不完整', '请选择成员和动作后再保存。');
+      setNotice({
+        title: '信息不完整',
+        message: '请选择成员和动作后再保存。',
+      });
       return;
     }
 
@@ -133,7 +155,7 @@ export default function ManualHistoryRoute() {
       assertOptionalRange('重量', parsedWeight, 0);
       assertOptionalRange('RPE', parsedRpe, 6, 10);
       assertOptionalRange('RIR', parsedRir, 0, 5);
-      assertOptionalRange('间歇时间', parsedRestSeconds, 0);
+      assertOptionalRange('休息时间', parsedRestSeconds, 0);
 
       const session = await repositories.workoutRepository.createManualSession({
         completed: true,
@@ -151,12 +173,11 @@ export default function ManualHistoryRoute() {
         weight: parsedWeight,
       });
 
-      Alert.alert('已保存', '历史训练已保存到本地 SQLite。', [
-        {
-          text: '查看详情',
-          onPress: () => router.replace({ pathname: '/history/[sessionId]', params: { sessionId: session.id } } as never),
-        },
-      ]);
+      setNotice({
+        sessionId: session.id,
+        title: '已保存',
+        message: '历史训练已保存到本地 SQLite。休息时间留空不会影响训练量、PR 或估算 1RM。',
+      });
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存补录训练失败。');
     } finally {
@@ -201,28 +222,36 @@ export default function ManualHistoryRoute() {
           </AppCard>
 
           <AppCard style={styles.card}>
-            <SectionHeader title="动作" />
-            <View style={styles.exerciseList}>
-              {exercises.slice(0, 12).map((exercise) => (
-                <Pressable
-                  accessibilityRole="button"
-                  key={exercise.id}
-                  onPress={() => setSelectedExerciseId(exercise.id)}
-                  style={[styles.exerciseRow, selectedExerciseId === exercise.id && styles.exerciseRowActive]}
-                >
-                  <Ionicons color={selectedExerciseId === exercise.id ? colors.primary : colors.textMuted} name="barbell-outline" size={20} />
-                  <View style={styles.exerciseText}>
-                    <AppText variant="bodySmall" weight="900">
-                      {exercise.name}
-                    </AppText>
-                    <AppText tone="muted" variant="caption">
-                      {exercise.targetMuscle} · {exercise.equipment}
-                    </AppText>
-                  </View>
-                  {selectedExerciseId === exercise.id ? <Tag label="已选择" tone="brand" /> : null}
-                </Pressable>
-              ))}
-            </View>
+            <SectionHeader
+              actionLabel="选择动作"
+              onActionPress={() => setExercisePickerVisible(true)}
+              subtitle="可选择系统动作，也可快速新建自定义动作。"
+              title="动作"
+            />
+            {selectedExercise ? (
+              <Pressable accessibilityRole="button" onPress={() => setExercisePickerVisible(true)} style={styles.selectedExerciseCard}>
+                <View style={styles.exerciseIcon}>
+                  <Ionicons color={colors.primary} name="barbell-outline" size={20} />
+                </View>
+                <View style={styles.exerciseText}>
+                  <AppText variant="bodySmall" weight="900">
+                    {selectedExercise.name}
+                  </AppText>
+                  <AppText tone="muted" variant="caption">
+                    {selectedExercise.targetMuscle} · {formatExerciseEquipment(selectedExercise.equipment)}
+                  </AppText>
+                </View>
+                <Tag label={selectedExercise.source === 'custom' ? '自定义' : '系统'} tone={selectedExercise.source === 'custom' ? 'brand' : 'neutral'} />
+                <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
+              </Pressable>
+            ) : (
+              <EmptyState
+                actionLabel="选择动作"
+                description="选择一个动作后再保存补录训练。"
+                onActionPress={() => setExercisePickerVisible(true)}
+                title="还没有选择动作"
+              />
+            )}
           </AppCard>
 
           <AppCard style={styles.card}>
@@ -233,10 +262,10 @@ export default function ManualHistoryRoute() {
               <Field label="次数" onChangeText={setReps} value={reps} />
               <Field label="RPE" onChangeText={setRpe} placeholder="可留空" value={rpe} />
               <Field label="RIR" onChangeText={setRir} placeholder="可留空" value={rir} />
-              <Field label="间歇秒" onChangeText={setRestSeconds} placeholder="可留空" value={restSeconds} />
+              <Field label="休息秒" onChangeText={setRestSeconds} placeholder="可留空" value={restSeconds} />
             </View>
             <AppText tone="muted" variant="caption">
-              间歇时间留空不影响训练量、PR 和估算 1RM。
+              休息时间留空不影响训练量、PR 和估算 1RM，也不会参与密度或疲劳分析。
             </AppText>
           </AppCard>
 
@@ -245,6 +274,44 @@ export default function ManualHistoryRoute() {
           </AppButton>
         </>
       ) : null}
+
+      <ExercisePickerSheet
+        exercises={exercises}
+        onClose={() => setExercisePickerVisible(false)}
+        onCreateCustomExercise={createCustomExercise}
+        onSelect={(exercise) => {
+          setSelectedExerciseId(exercise.id);
+          setExercisePickerVisible(false);
+        }}
+        selectedExerciseIds={selectedExerciseId ? [selectedExerciseId] : []}
+        title="选择补录动作"
+        visible={isExercisePickerVisible}
+      />
+
+      <AppModalSheet
+        onClose={() => setNotice(null)}
+        position="center"
+        subtitle={notice?.message}
+        title={notice?.title ?? '提示'}
+        visible={Boolean(notice)}
+      >
+        <View style={styles.modalButtons}>
+          {notice?.sessionId ? (
+            <AppButton
+              onPress={() => {
+                const sessionId = notice.sessionId;
+                setNotice(null);
+                router.replace({ pathname: '/history/[sessionId]', params: { sessionId } } as never);
+              }}
+            >
+              查看详情
+            </AppButton>
+          ) : null}
+          <AppButton onPress={() => setNotice(null)} variant={notice?.sessionId ? 'secondary' : 'primary'}>
+            知道了
+          </AppButton>
+        </View>
+      </AppModalSheet>
     </Screen>
   );
 }
@@ -293,10 +360,31 @@ const styles = StyleSheet.create({
   card: {
     gap: spacing.md,
   },
-  fieldGrid: {
+  chip: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+  },
+  chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  exerciseIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  exerciseText: {
+    flex: 1,
+    gap: 2,
   },
   field: {
     backgroundColor: colors.backgroundElevated,
@@ -307,30 +395,21 @@ const styles = StyleSheet.create({
     minWidth: '47%',
     padding: spacing.md,
   },
+  fieldGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
   input: {
     color: colors.text,
     fontSize: typography.sizes.bodySmall,
     fontWeight: '800',
     minHeight: 28,
   },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  modalButtons: {
     gap: spacing.sm,
   },
-  chip: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  chipActive: {
-    backgroundColor: colors.primary,
-  },
-  exerciseList: {
-    gap: spacing.sm,
-  },
-  exerciseRow: {
+  selectedExerciseCard: {
     alignItems: 'center',
     backgroundColor: colors.backgroundElevated,
     borderColor: colors.border,
@@ -338,13 +417,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
+    minHeight: 74,
     padding: spacing.md,
-  },
-  exerciseRowActive: {
-    borderColor: colors.primary,
-  },
-  exerciseText: {
-    flex: 1,
-    gap: 2,
   },
 });

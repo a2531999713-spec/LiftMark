@@ -1,6 +1,6 @@
 # 计划导入导出流程
 
-更新时间：2026-06-14
+更新时间：2026-06-15
 
 ## 1. 支持格式
 
@@ -70,11 +70,15 @@
 - `createImportedPlanDraft` 已支持重新生成本地 ID。
 - `planDocumentService` 已接入 Expo DocumentPicker，支持选择 `.liftmark.json` 并读取文件内容。
 - `PlanRepository.importUserPlan()` 已支持导入草稿落库，导入结果为 `source: "imported"`、`visibility: "private"` 的用户计划。
+- 导入动作按名称复用本机已有动作；缺失动作才写入 SQLite，用户自定义动作保留 `source: "custom"`。
 - 计划页和设置页导入成功后都会询问“是否设为当前训练计划？”，确认后只更新当前本地小组的 current plan。
-- 文件保存/分享/复制能力仍为后续增强，当前导出后只显示成功提示，不常驻展示 JSON 预览。
+- 导出后使用 App 风格弹层提示“内容已生成，但当前版本暂未保存到文件”，并提供“复制内容 / 知道了”。
+- 设置页和计划页不常驻展示 JSON 预览；文件保存和分享仍为后续增强。
+- `expo-clipboard` 用于复制导出的 `.liftmark.json` 内容。
 
 ## 6. 失败提示
 
 - JSON 解析失败、format 不匹配、schemaVersion 不兼容或结构不完整时，页面显示“计划文件格式不兼容 / 这个文件不是练刻 LiftMark 支持的计划文件”。
 - 导入取消不报错。
 - 导入不会覆盖已有计划，不导入成员 1RM、身体数据或训练记录。
+- 导入不会修改系统方案，也不会把系统方案直接设为当前训练计划。

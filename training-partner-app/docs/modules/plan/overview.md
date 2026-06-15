@@ -1,6 +1,13 @@
 # Plan 模块概览
 
-更新时间：2026-06-14
+更新时间：2026-06-15
+
+## 2026-06-15 plan-dashboard-exercise-library-custom-exercise-member-limit-weight-git-sprint
+
+- 计划页重做为当前计划仪表盘，默认展示当前计划进度、本周执行、周安排和我的计划摘要。
+- “管理全部计划”进入 App 风格底部弹层；用户计划可以删除，但系统方案、当前计划和最后一个用户计划不可删除。
+- 计划创建页接入统一动作选择器，支持系统动作和用户自定义动作。
+- 导入计划按动作名称复用本机已有动作，缺失动作才写入 SQLite，避免重复导入自定义动作。
 
 ## 2026-06-14 settings-history-plan-switch-cleanup-sprint
 
@@ -32,7 +39,7 @@ Plan 模块负责区分并管理两类对象：
 ## 3. 相关业务场景
 
 - 系统方案复制为我的计划。
-- 从空白创建计划。
+- 从空白创建计划，并通过统一动作选择器添加动作。
 - 导入 `.json` / `.liftmark.json` / `.liftmark` 计划文件。
 - 当前计划周数、阶段和周五补弱设置。
 - 今日训练读取当前用户计划。
@@ -62,8 +69,8 @@ Plan 模块负责区分并管理两类对象：
 | `src/domain/plan/planCopy.ts` | 把系统模板复制成用户计划草稿的纯函数。 |
 | `src/data/local/migrations.ts` | v2 增加 `origin_scheme_id`，并把旧默认系统计划迁移为用户计划副本。 |
 | `src/data/seed/seedDefaultData.ts` | 首次启动写入系统方案模板和默认用户计划副本。 |
-| `src/data/local/repositories/planRepository.ts` | 本地计划 Repository，支持用户计划列表、复制系统方案、今日训练读取。 |
-| `app/(tabs)/plan.tsx` | 计划页：当前计划、我的计划、系统方案、创建计划和导入计划入口。 |
+| `src/data/local/repositories/planRepository.ts` | 本地计划 Repository，支持用户计划列表、复制系统方案、导入、删除和今日训练读取。 |
+| `app/(tabs)/plan.tsx` | 计划页：当前计划仪表盘、本周安排、我的计划管理、系统方案和计划工具。 |
 | `app/(tabs)/today.tsx` | 训练页当前计划卡和“切换计划”弹层，只切换用户计划。 |
 | `src/services/planFileService.ts` | 计划文件生成、校验和导入 ID 重映射。 |
 | `src/services/planDocumentService.ts` | 文件选择和计划导入草稿生成。 |
@@ -78,5 +85,5 @@ Plan 模块负责区分并管理两类对象：
 ## 8. 修改风险
 
 - 系统方案直接成为当前计划，会污染用户“我的计划”和训练记录边界。
-- 删除用户计划前需要确认，未来建议采用软删除。
+- 删除用户计划前需要二次确认；当前版本物理删除计划数据但不删除训练记录，未来建议采用软删除。
 - 修改系统方案 seed 时，不能自动覆盖用户已复制出的计划。

@@ -1,11 +1,11 @@
 # Weight 模块实现文档
 
-更新时间：2026-06-09  
-对应代码目录：`training-partner-app/`；Sprint 3 已实现基于成员 1RM、计划百分比和器械加重单位的建议重量。
+更新时间：2026-06-15  
+对应代码目录：`training-partner-app/`；当前已实现基于成员 1RM、计划百分比、目标次数区间和器械加重单位的建议重量。
 
 ## 1. 模块职责
 
-根据计划百分比、成员 1RM 和器械加重单位计算建议重量，并提供预估 1RM。
+根据计划百分比或目标次数区间、成员 1RM 和器械加重单位计算建议重量，并提供预估 1RM。
 
 ## 2. 主要文件
 
@@ -38,7 +38,7 @@
 文件：见主要文件列表  
 符号：`calculateSuggestedWeight()`  
 搜索锚点：`calculateSuggestedWeight()`  
-职责：按 percent1RM 和成员 1RM 生成建议重量。  
+职责：优先按 percent1RM 和成员 1RM 生成建议重量；没有百分比时，可按目标次数区间映射为保守百分比。  
 调用方：today-training-flow, workout, history, progression  
 依赖：member, plan, exercise  
 测试：见 `test-plan.md`  
@@ -48,6 +48,14 @@
 1. 不要把该逻辑移动到页面组件。
 2. 保持输入输出可测试。
 3. 修改后同步相关模块和流程文档。
+
+### estimatePercentFromTargetReps()
+
+文件：见主要文件列表  
+符号：`estimatePercentFromTargetReps()`  
+职责：把 3/5/8/10/12/15 次附近的计划目标映射为保守 1RM 百分比，用于 PPL 等 RPE/RIR 计划的基础建议重量。  
+调用方：`calculateSuggestedWeight()`  
+测试：`src/tests/weight.test.ts`
 
 ### estimateOneRM()
 
@@ -83,6 +91,8 @@
 - 1RM 80kg，72.5%，2.5kg increment 的取整策略需明确。
 - 杠铃动作使用 `barbellIncrement`，哑铃动作使用 `dumbbellIncrement`。
 - 引体参考总负重缺失时可回退到体重。
+- 没有百分比但有 5-8 次目标区间时，能推算出保守建议重量。
+- `referenceLift: none` 时返回 manual 状态，UI 展示“参考上次重量”。
 
 建议测试文件：
 
@@ -99,3 +109,4 @@
 - 2026-06-08：根据需求文档、开发文档和 Excel 计划初始化模块实现说明。
 - 2026-06-09：同步 Sprint 1 代码骨架：Weight 类型、取整、参考 1RM 和预估 1RM 函数已创建。
 - 2026-06-09：同步 Sprint 3：`calculateSuggestedWeight` 已接入今日训练页，为不同成员生成不同建议重量。
+- 2026-06-15：`calculateSuggestedWeight` 支持从目标次数区间推算保守百分比；训练页和创建 session 时都传入 reps/repMin/repMax。

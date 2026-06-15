@@ -32,9 +32,12 @@ export type Equipment =
   | 'smith'
   | 'other';
 
+export type ExerciseSource = 'system' | 'custom';
+
 export type Exercise = {
   id: ID;
   name: string;
+  source: ExerciseSource;
   category: ExerciseCategory;
   movementPattern: MovementPattern;
   targetMuscle: string;

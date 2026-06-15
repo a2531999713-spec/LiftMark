@@ -63,6 +63,7 @@ const planExercise: PlanExercise = {
 const exercise: Exercise = {
   id: 'exercise_original',
   name: '卧推',
+  source: 'custom',
   category: 'chest',
   movementPattern: 'horizontal_push',
   targetMuscle: '胸',

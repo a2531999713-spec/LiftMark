@@ -30,7 +30,7 @@ describe('suggested weight calculation', () => {
       profile: createProfile(),
     });
 
-    expect(result).toEqual({ status: 'ready', weight: 77.5 });
+    expect(result).toEqual({ status: 'ready', percent1RM: 0.775, weight: 77.5 });
   });
 
   it('uses dumbbell increment for dumbbell exercises', () => {
@@ -41,7 +41,7 @@ describe('suggested weight calculation', () => {
       profile: createProfile({ dumbbellIncrement: 2 }),
     });
 
-    expect(result).toEqual({ status: 'ready', weight: 40 });
+    expect(result).toEqual({ status: 'ready', percent1RM: 0.65, weight: 40 });
   });
 
   it('falls back to bodyweight for pull-up total load when reference weight is empty', () => {
@@ -52,7 +52,7 @@ describe('suggested weight calculation', () => {
       profile: createProfile({ pullupReferenceWeight: undefined }),
     });
 
-    expect(result).toEqual({ status: 'ready', weight: 60 });
+    expect(result).toEqual({ status: 'ready', percent1RM: 0.75, weight: 60 });
   });
 
   it('returns missing 1RM when the needed member parameter is absent', () => {
@@ -64,5 +64,17 @@ describe('suggested weight calculation', () => {
     });
 
     expect(result.status).toBe('missing_1rm');
+  });
+
+  it('infers a conservative percentage from target rep ranges', () => {
+    const result = calculateSuggestedWeight({
+      referenceLift: 'bench',
+      repMin: 5,
+      repMax: 8,
+      equipment: 'barbell',
+      profile: createProfile(),
+    });
+
+    expect(result).toEqual({ status: 'ready', percent1RM: 0.75, weight: 75 });
   });
 });

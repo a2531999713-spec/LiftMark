@@ -1,6 +1,6 @@
 # SQLite 数据库结构
 
-更新时间：2026-06-14
+更新时间：2026-06-15
 
 ## 1. 设计原则
 
@@ -41,7 +41,7 @@ Sprint 3 seed 文件：
 - `training-partner-app/src/data/seed/classicPplPlan.ts`
 - `training-partner-app/src/data/seed/seedDefaultData.ts`
 
-当前 seed 幂等写入默认动作库、动作替换、系统四练方案模板、系统“经典三分化 PPL”模板、默认用户计划副本和默认小组。系统方案不是用户计划；默认小组 `active_plan_id` 指向用户计划副本，不直接指向系统方案模板。新增 PPL seed 不需要 schema migration，不会覆盖用户已复制出的计划。
+当前 seed 幂等写入扩展系统动作库、动作替换、系统四练方案模板、系统“经典三分化 PPL”模板、默认用户计划副本和默认小组。系统方案不是用户计划；默认小组 `active_plan_id` 指向用户计划副本，不直接指向系统方案模板。新增 PPL seed 不需要 schema migration，不会覆盖用户已复制出的计划。
 
 Sprint 4 训练执行：
 
@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS member_profiles (
 CREATE TABLE IF NOT EXISTS exercises (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'system',
   category TEXT NOT NULL,
   movement_pattern TEXT NOT NULL,
   target_muscle TEXT NOT NULL,
@@ -122,6 +123,8 @@ CREATE TABLE IF NOT EXISTS exercises (
   updated_at TEXT NOT NULL
 );
 ```
+
+`source` 区分 `system` 和 `custom`。系统动作由 seed 按 ID 幂等更新；用户自定义动作由 Repository 写入，seed 不应覆盖。当前 migration v5 会为旧库补 `source` 列并创建 `idx_exercises_source_name`。
 
 ### exercise_alternatives
 
@@ -246,6 +249,7 @@ CREATE TABLE IF NOT EXISTS workout_exercise_records (
   planned_rpe REAL,
   planned_rir REAL,
   planned_percent_1rm REAL,
+  planned_rest_seconds INTEGER,
   notes TEXT
 );
 ```
@@ -329,6 +333,7 @@ CREATE TABLE IF NOT EXISTS activation_state (
 ```sql
 CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id);
 CREATE INDEX IF NOT EXISTS idx_member_profiles_member_id ON member_profiles(member_id);
+CREATE INDEX IF NOT EXISTS idx_exercises_source_name ON exercises(source, name);
 CREATE INDEX IF NOT EXISTS idx_plan_phases_plan_id ON plan_phases(plan_id);
 CREATE INDEX IF NOT EXISTS idx_plan_days_phase_weekday ON plan_days(phase_id, week, weekday);
 CREATE INDEX IF NOT EXISTS idx_plan_exercises_day_id ON plan_exercises(plan_day_id);
@@ -361,6 +366,8 @@ Sprint 1 已落地 `schema_migrations` 版本表：
 - 当前 v1 为 `initial_schema`，执行初始建表 SQL 和索引 SQL。
 - 当前 v2 为 `plan_system_scheme_origin`，为 `plan_templates` 增加 `origin_scheme_id`，并把旧默认系统计划复制为用户计划副本后更新默认小组的 `active_plan_id`。
 - 当前 v3 为 `friday_strategy_and_activation_state`，为 `groups` 增加 `friday_strategy`，并创建 `activation_state` 本地试用/激活状态表。
+- 当前 v4 为 `workout_record_rest_time_snapshot`，为 `workout_exercise_records` 增加 `planned_rest_seconds`，补录休息时间可为空。
+- 当前 v5 为 `exercise_source_for_custom_library`，为 `exercises` 增加 `source`，并创建 `idx_exercises_source_name`。
 - 后续不能直接改旧 migration 语义，应追加新 migration。
 
 ## 7. 需要人工确认的问题

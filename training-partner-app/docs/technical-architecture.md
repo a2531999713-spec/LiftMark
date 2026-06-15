@@ -43,7 +43,7 @@ UI / App Routes
 第一阶段主要验收目标切换为本地 Android 预览 APK：不依赖 Web 预览、不依赖 Expo Go，也不要求启动后连接 Metro。推荐运行方式：
 
 ```powershell
-cd C:\Users\zhw\Documents\LiftOn\training-partner-app
+cd C:\Users\zhw\Documents\LiftMark\training-partner-app
 npm install
 npm run android:preview
 ```
@@ -65,7 +65,7 @@ development build 需要 Metro；本地预览 APK 不需要 Metro。当前阶段
 - 64-bit JDK 17；当前推荐 `C:\Program Files\Microsoft\jdk-17.0.19.10-hotspot`，不要切到 Java 24。
 - Android SDK Platform 36、Build Tools 36、NDK 27.1。
 - Gradle 通过 `JAVA_HOME` 发现 JDK 17，并关闭 toolchain 自动下载，避免 React Native Gradle Plugin 的 Foojay resolver 在 Gradle 9.3.1 下触发 `JvmVendorSpec.IBM_SEMERU` 兼容错误。
-- 当前本地预览 APK 已在 `C:\Users\zhw\Documents\LiftOn\training-partner-app` 下通过 `x86_64` release 构建和模拟器首屏烟测。若后续 native module 再出现 CMake / Ninja 缓存异常，先执行 `npm run android:apk:clean` 清理 `android/app/.cxx`、`android/app/build`、`android/build` 等项目内生成目录后重建。原生 `gradlew clean` 在一次 native 构建后可能继续尝试清理 `node_modules/react-native-reanimated/android/.cxx` 等生成缓存；在“不修改 node_modules”的约束下，不把 raw `gradlew clean` 作为本阶段 APK 验收步骤。
+- 当前本地预览 APK 在 `C:\Users\zhw\Documents\LiftMark\training-partner-app` 下执行 `x86_64` release 构建和模拟器首屏烟测。若后续 native module 再出现 CMake / Ninja 缓存异常，先执行 `npm run android:apk:clean` 清理 `android/app/.cxx`、`android/app/build`、`android/build` 等项目内生成目录后重建。原生 `gradlew clean` 在一次 native 构建后可能继续尝试清理 `node_modules/react-native-reanimated/android/.cxx` 等生成缓存；在“不修改 node_modules”的约束下，不把 raw `gradlew clean` 作为本阶段 APK 验收步骤。
 - Android package / applicationId：`com.liftmark.app`。
 
 ## 3. 后端架构

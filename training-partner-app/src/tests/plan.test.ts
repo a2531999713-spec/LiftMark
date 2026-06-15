@@ -31,6 +31,16 @@ jest.mock('@/domain/common/ids', () => ({
 }));
 
 describe('default plan seed and recovery filtering', () => {
+  it('ships a broad system exercise library with stable Chinese names', () => {
+    const names = defaultExerciseSeeds.map((exercise) => exercise.name);
+    const uniqueNames = new Set(names);
+
+    expect(defaultExerciseSeeds.length).toBeGreaterThanOrEqual(100);
+    expect(uniqueNames.size).toBe(names.length);
+    expect(names).toEqual(expect.arrayContaining(['杠铃卧推', '腿举', '面拉', '绳索下压', '悬垂举腿', '泽奇深蹲']));
+    expect(defaultExerciseSeeds.every((exercise) => exercise.source === 'system')).toBe(true);
+  });
+
   it('seeds the first Monday bench day as percentage-based plan data', () => {
     const monday = defaultStrengthPlanDaySeeds.find((day) => day.week === 1 && day.weekday === 1);
     const bench = defaultExerciseSeeds.find((exercise) => exercise.name === '杠铃卧推');

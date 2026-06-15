@@ -1,14 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { AppButton, AppCard, AppText, EmptyState, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
+import { ExercisePickerSheet, formatExerciseEquipment } from '@/components/exercises/ExercisePickerSheet';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
+import type { CreateCustomExerciseInput } from '@/data/repositories/exerciseRepository';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
 import { colors, radius, spacing, typography } from '@/theme';
+
+type NoticeState = {
+  message: string;
+  title: string;
+};
 
 function parseInteger(value: string, fallback: number): number {
   const parsed = Number.parseInt(value, 10);
@@ -19,6 +26,7 @@ export default function CreatePlanRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>([]);
+  const [isExercisePickerVisible, setExercisePickerVisible] = useState(false);
   const [name, setName] = useState('我的训练计划');
   const [goal, setGoal] = useState<PlanTemplate['goal']>('strength');
   const [frequency, setFrequency] = useState('4');
@@ -28,6 +36,8 @@ export default function CreatePlanRoute() {
   const [sets, setSets] = useState('3');
   const [reps, setReps] = useState('8');
   const [rpe, setRpe] = useState('7');
+  const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [createdPlan, setCreatedPlan] = useState<PlanTemplate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,17 +74,37 @@ export default function CreatePlanRoute() {
     };
   }, [repositories]);
 
-  const toggleExercise = (exerciseId: string) => {
-    setSelectedExerciseIds((current) =>
-      current.includes(exerciseId)
-        ? current.filter((id) => id !== exerciseId)
-        : [...current, exerciseId].slice(0, 8),
-    );
+  const selectedExercises = selectedExerciseIds
+    .map((id) => exercises.find((exercise) => exercise.id === id))
+    .filter((exercise): exercise is Exercise => Boolean(exercise));
+
+  const addExercise = (exercise: Exercise) => {
+    setSelectedExerciseIds((current) => {
+      if (current.includes(exercise.id)) {
+        return current;
+      }
+
+      return [...current, exercise.id].slice(0, 12);
+    });
+  };
+
+  const removeExercise = (exerciseId: string) => {
+    setSelectedExerciseIds((current) => current.filter((id) => id !== exerciseId));
+  };
+
+  const createCustomExercise = async (input: CreateCustomExerciseInput) => {
+    const exercise = await repositories.exerciseRepository.createCustomExercise(input);
+    setExercises((current) => [exercise, ...current]);
+    addExercise(exercise);
+    return exercise;
   };
 
   const savePlan = async () => {
     if (selectedExerciseIds.length === 0) {
-      Alert.alert('请选择动作', '至少选择一个动作后再保存计划。');
+      setNotice({
+        title: '请选择动作',
+        message: '至少添加一个动作后再保存计划。',
+      });
       return;
     }
 
@@ -101,18 +131,23 @@ export default function CreatePlanRoute() {
         name,
       });
 
-      Alert.alert('已创建计划', `“${plan.name}”已保存到我的计划。`, [
-        { text: '回到计划页', onPress: () => router.replace('/(tabs)/plan') },
-      ]);
+      setCreatedPlan(plan);
+      setNotice({
+        title: '已创建计划',
+        message: `“${plan.name}”已保存到我的计划。`,
+      });
     } catch (saveError) {
-      Alert.alert('保存失败', saveError instanceof Error ? saveError.message : '创建计划失败。');
+      setNotice({
+        title: '保存失败',
+        message: saveError instanceof Error ? saveError.message : '创建计划失败。',
+      });
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <Screen title="创建计划" subtitle="从一个可执行训练日开始，后续再扩展完整编辑器。">
+    <Screen title="创建计划" subtitle="从一个可执行训练日开始，后续再逐步完善。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="创建计划暂时不可用" description={error} /> : null}
 
@@ -123,7 +158,7 @@ export default function CreatePlanRoute() {
             icon="add-circle-outline"
             imageSource={liftmarkImages.planHero}
             minHeight={154}
-            subtitle="先保存基础训练结构，再逐步完善每个训练日。"
+            subtitle="先保存基础训练结构，动作来自系统动作库或你的自定义动作。"
             title="创建自己的训练计划"
           />
 
@@ -155,31 +190,44 @@ export default function CreatePlanRoute() {
           </AppCard>
 
           <AppCard style={styles.card}>
-            <SectionHeader subtitle="第一版先创建一个训练日，完整拖拽排序后续开放。" title="添加动作" />
-            <View style={styles.exerciseList}>
-              {exercises.slice(0, 16).map((exercise) => {
-                const active = selectedExerciseIds.includes(exercise.id);
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={exercise.id}
-                    onPress={() => toggleExercise(exercise.id)}
-                    style={[styles.exerciseRow, active && styles.exerciseRowActive]}
-                  >
-                    <Ionicons color={active ? colors.primary : colors.textMuted} name="barbell-outline" size={20} />
+            <SectionHeader
+              actionLabel="添加动作"
+              onActionPress={() => setExercisePickerVisible(true)}
+              subtitle="从动作库选择；没有就快速新建自定义动作。"
+              title="训练动作"
+            />
+            {selectedExercises.length === 0 ? (
+              <EmptyState
+                actionLabel="添加动作"
+                description="添加动作后，这个训练日就可以保存为我的计划。"
+                onActionPress={() => setExercisePickerVisible(true)}
+                title="还没有动作"
+              />
+            ) : (
+              <View style={styles.exerciseList}>
+                {selectedExercises.map((exercise, index) => (
+                  <View key={exercise.id} style={styles.exerciseRow}>
+                    <View style={styles.exerciseOrder}>
+                      <AppText tone="inverse" variant="caption" weight="900">
+                        {index + 1}
+                      </AppText>
+                    </View>
                     <View style={styles.exerciseText}>
                       <AppText variant="bodySmall" weight="900">
                         {exercise.name}
                       </AppText>
                       <AppText tone="muted" variant="caption">
-                        {exercise.targetMuscle} · {exercise.equipment}
+                        {exercise.targetMuscle} · {formatExerciseEquipment(exercise.equipment)}
                       </AppText>
                     </View>
-                    {active ? <Tag label="已加入" tone="brand" /> : null}
-                  </Pressable>
-                );
-              })}
-            </View>
+                    <Tag label={exercise.source === 'custom' ? '自定义' : '系统'} tone={exercise.source === 'custom' ? 'brand' : 'neutral'} />
+                    <Pressable accessibilityRole="button" onPress={() => removeExercise(exercise.id)} style={styles.removeButton}>
+                      <Ionicons color={colors.danger} name="close-outline" size={18} />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
           </AppCard>
 
           <AppButton disabled={isSaving} icon="save-outline" onPress={() => void savePlan()} size="lg">
@@ -187,6 +235,40 @@ export default function CreatePlanRoute() {
           </AppButton>
         </>
       ) : null}
+
+      <ExercisePickerSheet
+        exercises={exercises}
+        onClose={() => setExercisePickerVisible(false)}
+        onCreateCustomExercise={createCustomExercise}
+        onSelect={addExercise}
+        selectedExerciseIds={selectedExerciseIds}
+        title="添加训练动作"
+        visible={isExercisePickerVisible}
+      />
+
+      <AppModalSheet
+        onClose={() => setNotice(null)}
+        position="center"
+        subtitle={notice?.message}
+        title={notice?.title ?? '提示'}
+        visible={Boolean(notice)}
+      >
+        <View style={styles.modalButtons}>
+          {createdPlan ? (
+            <AppButton
+              onPress={() => {
+                setNotice(null);
+                router.replace('/(tabs)/plan');
+              }}
+            >
+              回到计划页
+            </AppButton>
+          ) : null}
+          <AppButton onPress={() => setNotice(null)} variant={createdPlan ? 'secondary' : 'primary'}>
+            知道了
+          </AppButton>
+        </View>
+      </AppModalSheet>
     </Screen>
   );
 }
@@ -200,13 +282,16 @@ function Field({
   onChangeText: (value: string) => void;
   value: string;
 }) {
+  const isNumber =
+    label.includes('天数') || label.includes('周数') || label === '组数' || label === '次数' || label === 'RPE';
+
   return (
     <View style={styles.field}>
       <AppText tone="muted" variant="caption">
         {label}
       </AppText>
       <TextInput
-        keyboardType={label.includes('天数') || label.includes('周数') || label === '组数' || label === '次数' || label === 'RPE' ? 'number-pad' : 'default'}
+        keyboardType={isNumber ? 'number-pad' : 'default'}
         onChangeText={onChangeText}
         placeholderTextColor={colors.textSubtle}
         style={styles.input}
@@ -230,10 +315,31 @@ const styles = StyleSheet.create({
   card: {
     gap: spacing.md,
   },
-  fieldRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  exerciseList: {
     gap: spacing.sm,
+  },
+  exerciseOrder: {
+    alignItems: 'center',
+    backgroundColor: colors.dark,
+    borderRadius: radius.pill,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  exerciseRow: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 72,
+    padding: spacing.md,
+  },
+  exerciseText: {
+    flex: 1,
+    gap: 2,
   },
   field: {
     backgroundColor: colors.backgroundElevated,
@@ -245,14 +351,9 @@ const styles = StyleSheet.create({
     minWidth: '30%',
     padding: spacing.md,
   },
-  input: {
-    color: colors.text,
-    fontSize: typography.sizes.bodySmall,
-    fontWeight: '800',
-    minHeight: 28,
-  },
-  goalRow: {
+  fieldRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   goalChip: {
@@ -264,24 +365,27 @@ const styles = StyleSheet.create({
   goalChipActive: {
     backgroundColor: colors.primary,
   },
-  exerciseList: {
+  goalRow: {
+    flexDirection: 'row',
     gap: spacing.sm,
   },
-  exerciseRow: {
+  input: {
+    color: colors.text,
+    fontSize: typography.sizes.bodySmall,
+    fontWeight: '800',
+    minHeight: 28,
+  },
+  modalButtons: {
+    gap: spacing.sm,
+  },
+  removeButton: {
     alignItems: 'center',
-    backgroundColor: colors.backgroundElevated,
+    backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
-    padding: spacing.md,
-  },
-  exerciseRowActive: {
-    borderColor: colors.primary,
-  },
-  exerciseText: {
-    flex: 1,
-    gap: 2,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
   },
 });

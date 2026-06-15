@@ -1,6 +1,6 @@
 # 本地 Repository API 文档
 
-更新时间：2026-06-14
+更新时间：2026-06-15
 
 ## 1. API 定位
 
@@ -54,8 +54,10 @@ export interface MemberRepository {
 ```ts
 export interface ExerciseRepository {
   getExerciseById(id: ID): Promise<Exercise | null>;
-  listExercises(): Promise<Exercise[]>;
+  listExercises(filters?: ListExercisesFilters): Promise<Exercise[]>;
   listExercisesByIds(ids: ID[]): Promise<Exercise[]>;
+  findExerciseByName(name: string): Promise<Exercise | null>;
+  createCustomExercise(input: CreateCustomExerciseInput): Promise<Exercise>;
   listAlternatives(exerciseId: ID): Promise<ExerciseAlternative[]>;
 }
 ```
@@ -64,6 +66,8 @@ export interface ExerciseRepository {
 
 - 今日训练按 `exercise_id` 读取动作名、器械类型和目标肌群。
 - 重量计算按动作器械类型选择杠铃或哑铃加重单位。
+- 计划创建和历史补录通过统一动作选择器搜索系统/自定义动作。
+- 用户可以快速新建自定义动作，Repository 负责名称去重和 SQLite 写入。
 - 后续动作替换流程读取同模式替换项。
 
 ## 5. PlanRepository
@@ -78,6 +82,7 @@ export interface PlanRepository {
   createUserPlan(input: CreateUserPlanInput): Promise<PlanTemplate>;
   copySystemSchemeToUserPlan(input: CopySystemSchemeToUserPlanInput): Promise<PlanTemplate>;
   importUserPlan(input: ImportUserPlanInput): Promise<PlanTemplate>;
+  deleteUserPlan(planId: ID): Promise<void>;
   getTodayPlan(input: GetTodayPlanInput): Promise<TodayPlanResult>;
 }
 ```
@@ -89,12 +94,15 @@ export interface PlanRepository {
 - 从创建计划页保存用户拥有的 `blank_created` 计划。
 - 将完整可用的系统方案复制成用户计划。
 - 将 `.liftmark.json` 导入草稿写入 SQLite，生成 `source: "imported"` 的用户计划。
+- 删除用户计划，且不删除训练记录。
 - 根据当前小组状态生成今日训练。
 - 支持系统方案库、空白创建、导入和复制计划的未来扩展。
 
 系统方案不是用户计划。训练记录不能直接绑定系统方案；训练页应通过 `groups.active_plan_id` 读取当前用户计划。
 
-`importUserPlan` 不导入成员 1RM、身体数据、训练记录，不覆盖已有计划，也不允许把 `source: "system"` 的模板直接作为用户计划导入。
+`importUserPlan` 不导入成员 1RM、身体数据、训练记录，不覆盖已有计划，也不允许把 `source: "system"` 的模板直接作为用户计划导入。导入动作按名称复用本机已有动作，缺失动作才新增。
+
+`deleteUserPlan` 只允许删除非系统、非当前、非最后一个用户计划；只删除计划模板、阶段、训练日和计划动作，不删除 `workout_*` 训练记录表。
 
 ## 6. WorkoutRepository
 

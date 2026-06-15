@@ -1,6 +1,6 @@
 # Weight 模块设计文档
 
-更新时间：2026-06-09
+更新时间：2026-06-15
 
 ## 1. 设计目标
 
@@ -11,6 +11,7 @@
 - roundToIncrement。
 - calculateSuggestedWeight。
 - 根据 referenceLift 获取成员对应 1RM。
+- 无明确百分比但有参考主项和目标次数区间时，按保守百分比估算建议重量。
 - 根据 equipment 选择杠铃/哑铃加重单位。
 - estimateOneRM。
 
@@ -23,6 +24,9 @@
 ## 4. 核心业务规则
 
 - 1RM 缺失时必须返回可解释状态，而不是 NaN。
+- 如果计划动作有 `percent1RM`，优先按百分比计算。
+- 如果没有 `percent1RM`，但有 `referenceLift` 和 `repMax/reps/repMin`，按目标次数区间保守映射为百分比，再按成员 1RM 计算。
+- 如果 `referenceLift` 为 `none`，返回手动/参考历史重量状态，不强行显示“现场决定”。
 - round 策略会影响 57.5kg 或 60kg 等边界，需要人工确认。
 
 ## 5. 状态流转
@@ -47,7 +51,7 @@
 
 ## 9. 边界条件
 
-- Sprint 3 已实现建议重量计算，并由今日训练页按成员分别调用。
+- 建议重量计算由今日训练页和训练 session 创建共同调用，展示层需要把缺少 1RM、参考历史重量和估算来源说明清楚。
 - 取整策略变更必须同步 `src/tests/weight.test.ts` 和今日训练显示。
 
 ## 10. 扩展点

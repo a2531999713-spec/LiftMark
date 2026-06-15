@@ -295,15 +295,28 @@ export class SQLitePlanRepository implements PlanRepository {
     }
 
     const db = await this.getDb();
+    const exerciseIdByImportedId = new Map<string, string>();
+
     await db.withExclusiveTransactionAsync(async (txn) => {
       for (const exercise of input.exercises) {
+        const existingByName = await txn.getFirstAsync<{ id: string }>(
+          'SELECT id FROM exercises WHERE lower(name) = lower(?) ORDER BY source ASC LIMIT 1',
+          exercise.name.trim(),
+        );
+
+        if (existingByName) {
+          exerciseIdByImportedId.set(exercise.id, existingByName.id);
+          continue;
+        }
+
         await txn.runAsync(
-          `INSERT OR IGNORE INTO exercises (
-            id, name, category, movement_pattern, target_muscle, secondary_muscle,
+          `INSERT INTO exercises (
+            id, name, source, category, movement_pattern, target_muscle, secondary_muscle,
             equipment, difficulty, notes, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           exercise.id,
           exercise.name,
+          exercise.source === 'system' ? 'system' : 'custom',
           exercise.category,
           exercise.movementPattern,
           exercise.targetMuscle,
@@ -314,16 +327,21 @@ export class SQLitePlanRepository implements PlanRepository {
           exercise.createdAt,
           exercise.updatedAt,
         );
+        exerciseIdByImportedId.set(exercise.id, exercise.id);
       }
 
       for (const alternative of input.alternatives) {
+        const exerciseId = exerciseIdByImportedId.get(alternative.exerciseId) ?? alternative.exerciseId;
+        const alternativeExerciseId =
+          exerciseIdByImportedId.get(alternative.alternativeExerciseId) ?? alternative.alternativeExerciseId;
+
         await txn.runAsync(
           `INSERT OR IGNORE INTO exercise_alternatives (
             id, exercise_id, alternative_exercise_id, reason
           ) VALUES (?, ?, ?, ?)`,
           alternative.id,
-          alternative.exerciseId,
-          alternative.alternativeExerciseId,
+          exerciseId,
+          alternativeExerciseId,
           alternative.reason ?? null,
         );
       }
@@ -388,7 +406,7 @@ export class SQLitePlanRepository implements PlanRepository {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           exercise.id,
           exercise.planDayId,
-          exercise.exerciseId,
+          exerciseIdByImportedId.get(exercise.exerciseId) ?? exercise.exerciseId,
           exercise.priority,
           exercise.orderIndex,
           exercise.sets ?? null,
@@ -413,6 +431,44 @@ export class SQLitePlanRepository implements PlanRepository {
       source: 'imported',
       visibility: 'private',
     };
+  }
+
+  async deleteUserPlan(planId: string): Promise<void> {
+    const plan = await requireRow(await this.getPlanById(planId), `未找到计划：${planId}`);
+
+    if (plan.source === 'system' || plan.visibility === 'system') {
+      throw new Error('系统方案是只读模板，不能删除。');
+    }
+
+    const userPlans = await this.listUserPlans();
+    if (userPlans.length <= 1) {
+      throw new Error('至少需要保留一个我的计划。');
+    }
+
+    const db = await this.getDb();
+    const activeGroup = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM groups WHERE active_plan_id = ? LIMIT 1',
+      planId,
+    );
+
+    if (activeGroup) {
+      throw new Error('当前训练计划不能删除，请先切换到其他计划。');
+    }
+
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      const days = await txn.getAllAsync<{ id: string }>(
+        'SELECT id FROM plan_days WHERE plan_id = ?',
+        planId,
+      );
+
+      for (const day of days) {
+        await txn.runAsync('DELETE FROM plan_exercises WHERE plan_day_id = ?', day.id);
+      }
+
+      await txn.runAsync('DELETE FROM plan_days WHERE plan_id = ?', planId);
+      await txn.runAsync('DELETE FROM plan_phases WHERE plan_id = ?', planId);
+      await txn.runAsync('DELETE FROM plan_templates WHERE id = ?', planId);
+    });
   }
 
   async getTodayPlan(input: GetTodayPlanInput): Promise<TodayPlanResult> {

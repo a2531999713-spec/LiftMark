@@ -1,6 +1,6 @@
 # Plan 模块实现文档
 
-更新时间：2026-06-14  
+更新时间：2026-06-15  
 对应代码目录：`training-partner-app/`
 
 ## 1. 当前实现概览
@@ -13,6 +13,9 @@
 - 首次 seed 和 migration 会生成一份默认用户计划 `plan_user_four_day_strength_hypertrophy_default`，并让默认小组当前计划指向这份用户计划。
 - 用户点击“使用此方案”时，Repository 复制系统模板的 phases、days、plan_exercises，生成新的用户计划。
 - 导入 `.liftmark.json` 时，页面通过 `planDocumentService` 选择文件并调用 `PlanRepository.importUserPlan()` 写入 SQLite。
+- 计划页当前为仪表盘结构：当前计划、执行统计、本周安排、我的计划摘要、计划工具和系统方案。
+- 用户计划可在“管理全部计划”弹层中删除；系统方案、当前计划和最后一个用户计划会被 Repository 阻止删除。
+- 创建计划页接入统一动作选择器，可添加系统动作或快速新建自定义动作。
 
 ## 2. 主要文件
 
@@ -21,16 +24,17 @@
 | `src/domain/plan/plan.types.ts` | `PlanTemplate.source` 增加 `system_copy`、`blank_created`、`duplicated`，并增加 `originSchemeId`。 |
 | `src/domain/plan/systemSchemes.ts` | 本地系统方案目录和目标/难度中文 label。 |
 | `src/domain/plan/planCopy.ts` | `createUserPlanCopyDraft()` 纯函数，复制系统模板为用户计划草稿。 |
-| `src/data/repositories/planRepository.ts` | `PlanRepository` 增加 `listUserPlans()` 和 `copySystemSchemeToUserPlan()`。 |
-| `src/data/local/repositories/planRepository.ts` | SQLite 实现用户计划列表、系统方案复制和今日训练读取。 |
+| `src/data/repositories/planRepository.ts` | `PlanRepository` 支持用户计划列表、复制系统方案、导入和删除用户计划。 |
+| `src/data/local/repositories/planRepository.ts` | SQLite 实现用户计划列表、系统方案复制、导入、删除和今日训练读取。 |
 | `src/data/local/migrations.ts` | v2 `plan_system_scheme_origin` 补 `origin_scheme_id` 并迁移旧默认当前计划。 |
 | `src/data/seed/defaultStrengthPlan.ts` | 增加默认用户计划 ID 和四练系统方案 ID 常量。 |
 | `src/data/seed/classicPplPlan.ts` | “经典三分化 PPL”系统模板 seed。 |
 | `src/data/seed/seedDefaultData.ts` | 写入系统模板和默认用户计划副本。 |
-| `app/(tabs)/plan.tsx` | 计划页展示当前计划、我的计划、系统方案、创建计划和导入计划。 |
+| `app/(tabs)/plan.tsx` | 计划页展示当前计划仪表盘、本周安排、我的计划管理、系统方案和计划工具。 |
 | `app/(tabs)/today.tsx` | 训练页当前计划卡和计划切换弹层。 |
-| `app/plan/create.tsx` | 第一版创建计划页面。 |
-| `src/tests/plan.test.ts` | 增加系统方案复制为用户计划草稿测试。 |
+| `app/plan/create.tsx` | 第一版创建计划页面，接入统一动作选择器。 |
+| `src/tests/plan.test.ts` | 系统方案复制、PPL 和动作库 seed 测试。 |
+| `src/tests/plan-repository.test.ts` | 用户计划删除边界测试。 |
 
 ## 3. 关键函数
 
@@ -58,7 +62,13 @@
 
 文件：`src/data/local/repositories/planRepository.ts`  
 职责：将导入计划草稿写入 SQLite，写入 template、phases、days、plan exercises、exercises 和 alternatives，并保证导入结果为用户计划。  
-边界：拒绝把 `source: "system"` 的模板作为导入用户计划；不导入训练记录、成员 1RM 或身体数据；不覆盖既有计划。
+边界：拒绝把 `source: "system"` 的模板作为导入用户计划；不导入训练记录、成员 1RM 或身体数据；不覆盖既有计划；动作按名称复用本机已有动作，缺失动作才写入。
+
+### PlanRepository.deleteUserPlan
+
+文件：`src/data/local/repositories/planRepository.ts`  
+职责：删除用户计划的 template、phases、days 和 plan exercises。  
+边界：系统方案不能删除；当前计划不能删除；最后一个用户计划不能删除；不删除 `workout_sessions`、`workout_exercise_records` 或 `workout_sets`。
 
 ### 训练页计划切换
 
@@ -106,6 +116,8 @@ app: LiftMark
 - 复制结果记录 `originSchemeId`。
 - phases、days、plan exercises 指向新的用户计划结构。
 - 导入计划草稿生成 `source: "imported"`、`visibility: "private"`，且不会保留系统方案来源。
+- 用户计划删除不会碰训练记录表。
+- 系统动作库包含 100+ 个无重名系统动作，覆盖 PPL 和补录常用动作。
 
 ## 7. 文档同步记录
 
@@ -113,3 +125,4 @@ app: LiftMark
 - 2026-06-12：同步可用性 + UI 落地 Sprint：计划页当前计划改为大图卡风格；创建计划入口接入 `app/plan/create.tsx` 和 `PlanRepository.createUserPlan()`；未完成深层编辑显示统一开发中提示。
 - 2026-06-12：同步本地图片资产落地：计划页和创建计划页 Hero 通过 `liftmarkImages.planHero` 使用本地训练计划图片；计划模板、seed、SQLite schema 和 Repository 未变。
 - 2026-06-14：新增“经典三分化 PPL”系统模板、导入计划落库、设置/计划页导入入口和训练页用户计划切换弹层。
+- 2026-06-15：计划页重做为当前计划仪表盘；新增用户计划删除边界；创建计划接入统一动作选择器；导入计划按动作名称复用本机动作。

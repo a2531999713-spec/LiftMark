@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
 
-import { AppButton, AppCard, AppText, EmptyState, MetricCard, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MetricCard, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
@@ -17,9 +17,10 @@ type PartnerStats = {
   weeklySessions: number;
 };
 
-function showComingSoon(feature: string) {
-  Alert.alert('开发中', `该功能正在开发中，后续版本开放。\n\n${feature}`);
-}
+type NoticeState = {
+  message: string;
+  title: string;
+};
 
 function formatKg(value: number): string {
   return `${Math.round(value).toLocaleString('zh-CN')} kg`;
@@ -49,6 +50,7 @@ export default function MembersRoute() {
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
   const [stats, setStats] = useState<PartnerStats>({ streakDays: 0, totalVolume: 0, weeklySessions: 0 });
   const [isLocalRuleVisible, setLocalRuleVisible] = useState(false);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,7 +108,18 @@ export default function MembersRoute() {
   return (
     <Screen
       headerRight={
-        <Pressable accessibilityRole="button" onPress={() => showComingSoon('小组邀请')} style={styles.iconButton}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            canAddMember
+              ? router.push('/member/new')
+              : setNotice({
+                  title: `本地小组最多支持 ${MAX_GROUP_MEMBERS} 位训练成员`,
+                  message: '适合一台设备多人轮换记录。后续云同步版本会支持更多小组能力。',
+                })
+          }
+          style={styles.iconButton}
+        >
           <Ionicons color={colors.text} name="person-add-outline" size={20} />
         </Pressable>
       }
@@ -185,7 +198,7 @@ export default function MembersRoute() {
 
           <SectionHeader
             actionLabel={canAddMember ? '添加' : undefined}
-            onActionPress={() => router.push('/member/new')}
+            onActionPress={canAddMember ? () => router.push('/member/new') : undefined}
             subtitle={`已配置 ${members.length}/${MAX_GROUP_MEMBERS} 人`}
             title="成员"
           />
@@ -211,19 +224,29 @@ export default function MembersRoute() {
           </View>
 
           {!canAddMember ? (
-            <AppText tone="warning" variant="bodySmall">
-              第一版本地小组最多支持 4 位成员。
-            </AppText>
+            <AppCard style={styles.limitCard} tone="soft">
+              <AppText variant="bodySmall" weight="900">
+                本地小组最多支持 {MAX_GROUP_MEMBERS} 位训练成员
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                适合一台设备多人轮换记录。后续云同步版本会支持更多小组能力。
+              </AppText>
+            </AppCard>
           ) : (
             <AppButton icon="add-outline" onPress={() => router.push('/member/new')}>
               添加成员
             </AppButton>
           )}
 
-          <View style={styles.inviteList}>
-            <InviteCard icon="share-social-outline" label="邀请搭子" onPress={() => showComingSoon('邀请搭子')} />
-            <InviteCard icon="qr-code-outline" label="二维码加入" onPress={() => showComingSoon('二维码加入')} />
-          </View>
+          <AppCard style={styles.cloudPendingCard} tone="soft">
+            <Tag label="未来云同步" tone="neutral" />
+            <AppText variant="bodySmall" weight="900">
+              邀请成员和二维码加入会在云同步版本开放
+            </AppText>
+            <AppText tone="muted" variant="caption">
+              当前版本适合一台设备多人轮换记录，不会自动同步到其他手机。
+            </AppText>
+          </AppCard>
 
           <Modal animationType="slide" transparent visible={isLocalRuleVisible} onRequestClose={() => setLocalRuleVisible(false)}>
             <View style={styles.modalBackdrop}>
@@ -244,6 +267,16 @@ export default function MembersRoute() {
               </AppCard>
             </View>
           </Modal>
+
+          <AppModalSheet
+            onClose={() => setNotice(null)}
+            position="center"
+            subtitle={notice?.message}
+            title={notice?.title ?? '提示'}
+            visible={Boolean(notice)}
+          >
+            <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
+          </AppModalSheet>
         </>
       ) : null}
     </Screen>
@@ -290,20 +323,6 @@ function LiftValue({ label, value }: { label: string; value?: number }) {
       </AppText>
       <AppText variant="caption">{value ? `${value} kg` : '-'}</AppText>
     </View>
-  );
-}
-
-function InviteCard({ icon, label, onPress }: { icon: 'qr-code-outline' | 'share-social-outline'; label: string; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={styles.inviteCard}>
-      <Ionicons color={colors.textMuted} name={icon} size={24} />
-      <View style={styles.inviteText}>
-        <AppText variant="bodySmall" weight="900">
-          {label}
-        </AppText>
-        <Tag label="开发中" tone="neutral" />
-      </View>
-    </Pressable>
   );
 }
 
@@ -422,23 +441,13 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 1,
   },
-  inviteList: {
-    gap: spacing.sm,
+  limitCard: {
+    gap: spacing.xs,
+    padding: spacing.md,
   },
-  inviteCard: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    flexDirection: 'row',
-    gap: spacing.md,
-    padding: spacing.lg,
-  },
-  inviteText: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
+  cloudPendingCard: {
     gap: spacing.sm,
-    justifyContent: 'space-between',
+    padding: spacing.md,
   },
   pressed: {
     opacity: 0.82,

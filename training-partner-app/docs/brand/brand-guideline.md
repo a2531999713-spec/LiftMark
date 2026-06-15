@@ -15,7 +15,7 @@
 - 英文项目名、npm package、slug、scheme 使用 `liftmark` / `LiftMark`。
 - Android package / applicationId 使用 `com.liftmark.app`。
 - 已废弃旧品牌 `LiftOn`、`lifton`、`开练`、`WhatLift`、`今天练啥` 不再用于当前 UI、配置、源码语义名或导出格式。
-- 当前外层目录仍为 `C:\Users\zhw\Documents\LiftOn`，仅作为用户尚未手动改名的本地路径保留。
+- 当前真实项目路径为 `C:\Users\zhw\Documents\LiftMark\training-partner-app`。
 
 ## 品牌色
 

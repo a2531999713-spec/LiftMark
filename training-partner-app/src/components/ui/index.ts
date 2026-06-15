@@ -1,6 +1,7 @@
 export { ActionCard } from './ActionCard';
 export { AppButton } from './AppButton';
 export { AppCard } from './AppCard';
+export { AppModalSheet } from './AppModalSheet';
 export { AppText } from './AppText';
 export { DangerZone } from './DangerZone';
 export { EmptyState } from './EmptyState';

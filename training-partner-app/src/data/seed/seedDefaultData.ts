@@ -181,12 +181,24 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
 
     for (const exercise of defaultExerciseSeeds) {
       await txn.runAsync(
-        `INSERT OR IGNORE INTO exercises (
-          id, name, category, movement_pattern, target_muscle, secondary_muscle,
+        `INSERT INTO exercises (
+          id, name, source, category, movement_pattern, target_muscle, secondary_muscle,
           equipment, difficulty, notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          source = 'system',
+          category = excluded.category,
+          movement_pattern = excluded.movement_pattern,
+          target_muscle = excluded.target_muscle,
+          secondary_muscle = excluded.secondary_muscle,
+          equipment = excluded.equipment,
+          difficulty = excluded.difficulty,
+          notes = excluded.notes,
+          updated_at = excluded.updated_at`,
         exercise.id,
         exercise.name,
+        exercise.source,
         exercise.category,
         exercise.movementPattern,
         exercise.targetMuscle,
