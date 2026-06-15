@@ -9,7 +9,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-<img src="trainning-partner-app/assets/brand/brand-preview.png" alt="LiftMark Preview" width="100%">
+<img src="training-partner-app/assets/brand/brand-preview.png" alt="LiftMark Preview" width="100%">
 
 </div>
 
