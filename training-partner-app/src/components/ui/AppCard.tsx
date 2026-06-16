@@ -16,26 +16,22 @@ export function AppCard({ children, padded = true, style, tone = 'default' }: Ap
 
 const styles = StyleSheet.create({
   card: {
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
+    borderRadius: radius.lg,
     ...shadows.card,
   },
   padded: {
-    padding: spacing.lg,
+    padding: spacing.xl,
   },
   default: {
     backgroundColor: colors.surface,
   },
   soft: {
-    backgroundColor: colors.backgroundElevated,
+    backgroundColor: colors.surfaceMuted,
   },
   brand: {
     backgroundColor: colors.primarySoft,
-    borderColor: colors.primarySoft,
   },
   dark: {
     backgroundColor: colors.darkCard,
-    borderColor: 'rgba(255,255,255,0.12)',
   },
 });

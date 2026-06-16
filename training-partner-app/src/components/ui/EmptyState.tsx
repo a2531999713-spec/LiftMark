@@ -18,7 +18,7 @@ export function EmptyState({ actionLabel, description, onActionPress, title }: E
     <AppCard style={styles.card}>
       <View style={styles.dot} />
       <AppText variant="subtitle">{title}</AppText>
-      <AppText tone="muted" variant="bodySmall">
+      <AppText tone="muted" variant="body">
         {description}
       </AppText>
       {actionLabel ? (
@@ -32,12 +32,14 @@ export function EmptyState({ actionLabel, description, onActionPress, title }: E
 
 const styles = StyleSheet.create({
   card: {
-    gap: spacing.sm,
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.xxl,
   },
   dot: {
-    backgroundColor: colors.primary,
-    borderRadius: 5,
-    height: 10,
-    width: 10,
+    backgroundColor: colors.primarySoft,
+    borderRadius: 12,
+    height: 48,
+    width: 48,
   },
 });

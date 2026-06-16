@@ -1,17 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
-import { AppButton, AppCard, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
+import { AppCard, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
-import type { Exercise } from '@/domain/exercise/exercise.types';
 import {
-  analyzeExerciseHistory,
   estimateOneRM,
-  selectLargestExerciseSeries,
-  type HistoryAnalysis,
-  type HistorySetEntry,
+  getGroupHistoryAnalysis,
+  getPersonalHistoryAnalysis,
+  type GroupHistoryAnalysis,
+  type PersonalHistoryAnalysis,
+  type WeeklyHistoryBucket,
 } from '@/domain/history/history-analysis';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutSession, WorkoutSessionDetail } from '@/domain/workout/workout.types';
@@ -30,36 +30,21 @@ type SessionSummary = {
   volume: number;
 };
 
-type WeekTrendPoint = {
-  date: string;
-  volume: number;
-};
-
 type HistoryState = {
-  analysis: HistoryAnalysis | null;
   currentMember: GroupMember | null;
-  exercise: Exercise | null;
+  groupAnalysis: GroupHistoryAnalysis | null;
   monthlyTrainingDates: Set<string>;
+  personalAnalysis: PersonalHistoryAnalysis | null;
   recentSessions: SessionSummary[];
-  selectedDateSessions: SessionSummary[];
-  weeklyCompletedSets: number;
-  weeklySessionCount: number;
-  weeklyTrend: WeekTrendPoint[];
-  weeklyVolume: number;
 };
 
 function createEmptyHistory(currentMember: GroupMember | null = null): HistoryState {
   return {
-    analysis: null,
     currentMember,
-    exercise: null,
+    groupAnalysis: null,
     monthlyTrainingDates: new Set<string>(),
+    personalAnalysis: null,
     recentSessions: [],
-    selectedDateSessions: [],
-    weeklyCompletedSets: 0,
-    weeklySessionCount: 0,
-    weeklyTrend: [],
-    weeklyVolume: 0,
   };
 }
 
@@ -90,11 +75,6 @@ function addMonths(date: Date, count: number) {
   return next;
 }
 
-function getWeekDates(centerDate: string) {
-  const center = new Date(`${centerDate}T12:00:00`);
-  return Array.from({ length: 7 }, (_, index) => addDays(center, index - 3));
-}
-
 function getMonthDates(monthCursor: Date) {
   const first = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1, 12);
   const daysInMonth = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0).getDate();
@@ -109,20 +89,12 @@ function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-function formatTrend(value: string): string {
-  if (value === 'up') {
-    return '上升';
+function formatSignedPercent(value?: number): string {
+  if (value === undefined || Math.abs(value) < 3) {
+    return '持平';
   }
 
-  if (value === 'down') {
-    return '下降';
-  }
-
-  if (value === 'stable') {
-    return '稳定';
-  }
-
-  return '样本不足';
+  return `${value > 0 ? '+' : ''}${value}%`;
 }
 
 function getDurationMinutes(session: WorkoutSession): number | undefined {
@@ -139,36 +111,16 @@ function getDurationMinutes(session: WorkoutSession): number | undefined {
   return Math.round((finishedAt - startedAt) / 60000);
 }
 
-function getMemberEntries(detail: WorkoutSessionDetail, memberId: string): HistorySetEntry[] {
-  return detail.sets
-    .filter((set) => set.memberId === memberId)
-    .map((set) => {
-      const record = detail.exercises.find((exercise) => exercise.id === set.exerciseRecordId);
-
-      return {
-        completed: set.completed,
-        date: detail.session.date,
-        exerciseId: record?.exerciseId ?? set.exerciseRecordId,
-        memberId: set.memberId,
-        reps: set.actualReps,
-        rir: set.rir,
-        rpe: set.rpe,
-        sessionId: detail.session.id,
-        weight: set.actualWeight,
-      };
-    });
-}
-
 function summarizeSession(
   detail: WorkoutSessionDetail,
   memberId: string,
   exerciseNamesById: Record<string, string> = {},
 ): SessionSummary {
   const memberSets = detail.sets.filter((set) => set.memberId === memberId && set.completed);
+  const completedRecordIds = new Set(memberSets.map((set) => set.exerciseRecordId));
   const exerciseIds = new Set(
     memberSets.map((set) => detail.exercises.find((exercise) => exercise.id === set.exerciseRecordId)?.exerciseId ?? set.exerciseRecordId),
   );
-  const completedRecordIds = new Set(memberSets.map((set) => set.exerciseRecordId));
   const mainExerciseNames = detail.exercises
     .filter((exercise) => completedRecordIds.has(exercise.id))
     .slice()
@@ -199,26 +151,14 @@ function summarizeSession(
   };
 }
 
-function buildWeeklyTrend(startDate: Date, summaries: SessionSummary[]): WeekTrendPoint[] {
-  const byDate = new Map<string, number>();
-  summaries.forEach((summary) => {
-    byDate.set(summary.session.date, (byDate.get(summary.session.date) ?? 0) + summary.volume);
-  });
-
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = getLocalDateString(addDays(startDate, index));
-    return {
-      date,
-      volume: byDate.get(date) ?? 0,
-    };
-  });
+function collectExerciseIds(details: WorkoutSessionDetail[]): string[] {
+  return Array.from(new Set(details.flatMap((detail) => detail.exercises.map((exercise) => exercise.exerciseId))));
 }
 
 export default function HistoryRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const [selectedDate, setSelectedDate] = useState(getLocalDateString());
   const [monthCursor, setMonthCursor] = useState(new Date());
-  const [isMonthVisible, setMonthVisible] = useState(false);
   const [dataScope, setDataScope] = useState<DataScope>('personal');
   const [history, setHistory] = useState<HistoryState>(createEmptyHistory());
   const [isLoading, setIsLoading] = useState(true);
@@ -242,18 +182,17 @@ export default function HistoryRoute() {
         return;
       }
 
+      const today = getLocalDateString();
+      const analysisStart = getLocalDateString(addDays(new Date(), -55));
       const monthStart = getLocalDateString(new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1, 12));
       const monthEnd = getLocalDateString(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0, 12));
-      const sevenDaysAgo = addDays(new Date(), -6);
-      const weekStart = getLocalDateString(sevenDaysAgo);
-      const [recentSessions, selectedSessions, monthSessions, weekSessions] = await Promise.all([
-        repositories.workoutRepository.listSessions({ groupId: group.id, memberId: currentMember.id, limit: 10 }),
+      const [analysisSessions, monthSessions] = await Promise.all([
         repositories.workoutRepository.listSessions({
           groupId: group.id,
           memberId: currentMember.id,
-          fromDate: selectedDate,
-          toDate: selectedDate,
-          limit: 30,
+          fromDate: analysisStart,
+          toDate: today,
+          limit: 400,
         }),
         repositories.workoutRepository.listSessions({
           groupId: group.id,
@@ -262,54 +201,31 @@ export default function HistoryRoute() {
           toDate: monthEnd,
           limit: 200,
         }),
-        repositories.workoutRepository.listSessions({
-          groupId: group.id,
-          memberId: currentMember.id,
-          fromDate: weekStart,
-          toDate: getLocalDateString(),
-          limit: 200,
-        }),
       ]);
-      const [recentDetails, selectedDetails, weekDetails] = await Promise.all([
-        Promise.all(recentSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id))),
-        Promise.all(selectedSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id))),
-        Promise.all(weekSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id))),
-      ]);
-      const recentEntries = recentDetails.flatMap((detail) => getMemberEntries(detail, currentMember.id));
-      const series = selectLargestExerciseSeries(recentEntries);
-      const analysis = series ? analyzeExerciseHistory(series.entries) : null;
-      const exercise = series
-        ? (await repositories.exerciseRepository.listExercisesByIds([series.exerciseId]))[0] ?? null
-        : null;
-      const summaryExerciseIds = Array.from(
-        new Set(
-          [...recentDetails, ...selectedDetails, ...weekDetails].flatMap((detail) =>
-            detail.exercises.map((exerciseRecord) => exerciseRecord.exerciseId),
-          ),
-        ),
-      );
-      const summaryExercises = await repositories.exerciseRepository.listExercisesByIds(summaryExerciseIds);
-      const exerciseNamesById = Object.fromEntries(summaryExercises.map((exerciseItem) => [exerciseItem.id, exerciseItem.name]));
-      const weeklySummaries = weekDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById));
+
+      const analysisDetails = await Promise.all(analysisSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)));
+      const exerciseIds = collectExerciseIds(analysisDetails);
+      const exercises = await repositories.exerciseRepository.listExercisesByIds(exerciseIds);
+      const exerciseNamesById = Object.fromEntries(exercises.map((exercise) => [exercise.id, exercise.name]));
+      const personalAnalysis = getPersonalHistoryAnalysis(analysisDetails, currentMember.id, exerciseNamesById, 4);
+      const recentSummaries = analysisDetails
+        .map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById))
+        .filter((summary) => summary.setCount > 0)
+        .sort((left, right) => `${right.session.date} ${right.session.updatedAt}`.localeCompare(`${left.session.date} ${left.session.updatedAt}`));
 
       setHistory({
-        analysis,
         currentMember,
-        exercise,
+        groupAnalysis: getGroupHistoryAnalysis(group.id, 4),
         monthlyTrainingDates: new Set(monthSessions.map((session) => session.date)),
-        recentSessions: recentDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById)),
-        selectedDateSessions: selectedDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById)),
-        weeklyCompletedSets: weeklySummaries.reduce((sum, summary) => sum + summary.setCount, 0),
-        weeklySessionCount: weeklySummaries.filter((summary) => summary.setCount > 0).length,
-        weeklyTrend: buildWeeklyTrend(sevenDaysAgo, weeklySummaries),
-        weeklyVolume: weeklySummaries.reduce((sum, summary) => sum + summary.volume, 0),
+        personalAnalysis,
+        recentSessions: recentSummaries,
       });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '历史记录加载失败。');
     } finally {
       setIsLoading(false);
     }
-  }, [monthCursor, repositories, selectedDate]);
+  }, [monthCursor, repositories]);
 
   useFocusEffect(
     useCallback(() => {
@@ -317,32 +233,19 @@ export default function HistoryRoute() {
     }, [loadHistory]),
   );
 
-  const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
   const monthDates = useMemo(() => getMonthDates(monthCursor), [monthCursor]);
-
-  const openRecentForEdit = useCallback(() => {
-    const latest = history.recentSessions[0]?.session;
-    if (!latest) {
-      Alert.alert('暂无训练', '完成或补录一次训练后，就可以编辑最近训练。');
-      return;
-    }
-
-    router.push({ pathname: '/history/[sessionId]', params: { sessionId: latest.id } } as never);
-  }, [history.recentSessions]);
 
   return (
     <Screen
       headerRight={
-        <Pressable accessibilityRole="button" onPress={() => setMonthVisible(true)} style={styles.iconButton}>
-          <Ionicons color={colors.text} name="calendar-outline" size={22} />
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push({ pathname: '/history/manual', params: { date: selectedDate } } as never)}
+          style={styles.iconButton}
+        >
+          <Ionicons color={colors.text} name="add-outline" size={22} />
         </Pressable>
       }
-      subtitle={
-        history.currentMember
-          ? `当前成员：${history.currentMember.displayName} · 默认显示个人数据`
-          : '默认统计当前本地成员个人数据'
-      }
-      title="记录"
     >
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
 
@@ -350,165 +253,31 @@ export default function HistoryRoute() {
 
       {!isLoading && !error ? (
         <>
-          <ScopeStrip dataScope={dataScope} memberName={history.currentMember?.displayName ?? '暂无成员'} setDataScope={setDataScope} />
+          <ScopeSegment
+            dataScope={dataScope}
+            memberName={history.currentMember?.displayName ?? '暂无成员'}
+            setDataScope={setDataScope}
+          />
 
           {dataScope === 'personal' ? (
-            <>
-              <OverviewPanel history={history} onEditRecent={openRecentForEdit} />
-
-              <View style={styles.statGrid}>
-                <StatTile label="我的本周训练次数" value={`${history.weeklySessionCount} 次`} />
-                <StatTile label="我的本周完成组数" value={`${history.weeklyCompletedSets} 组`} />
-                <StatTile label="最近一次训练" value={history.recentSessions[0]?.session.date ?? '暂无'} />
-                <StatTile label="本周训练口径" value="当前成员" />
-              </View>
-
-              <AnalysisPanel analysis={history.analysis} exerciseName={history.exercise?.name} trend={history.weeklyTrend} />
-
-              <AppCard style={styles.calendarCard}>
-                <View style={styles.calendarHeader}>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => setSelectedDate(getLocalDateString(addDays(new Date(`${selectedDate}T12:00:00`), -7)))}
-                    style={styles.smallIconButton}
-                  >
-                    <Ionicons color={colors.text} name="chevron-back-outline" size={18} />
-                  </Pressable>
-                  <View style={styles.calendarTitle}>
-                    <AppText variant="subtitle">{formatMonthLabel(new Date(`${selectedDate}T12:00:00`))}</AppText>
-                    <AppText tone="muted" variant="caption">
-                      点击日期查看当天我的训练记录
-                    </AppText>
-                  </View>
-                  <Pressable accessibilityRole="button" onPress={() => setMonthVisible(true)} style={styles.smallIconButton}>
-                    <Ionicons color={colors.text} name="options-outline" size={18} />
-                  </Pressable>
-                </View>
-                <View style={styles.weekRow}>
-                  {weekDates.map((date) => {
-                    const key = getLocalDateString(date);
-                    const active = key === selectedDate;
-                    const hasTraining =
-                      history.monthlyTrainingDates.has(key) || history.recentSessions.some((summary) => summary.session.date === key);
-                    return (
-                      <Pressable
-                        accessibilityRole="button"
-                        key={key}
-                        onPress={() => setSelectedDate(key)}
-                        style={[styles.dateCell, active && styles.dateCellActive]}
-                      >
-                        <AppText tone={active ? 'inverse' : 'muted'} variant="caption">
-                          {'日一二三四五六'[date.getDay()]}
-                        </AppText>
-                        <AppText tone={active ? 'inverse' : 'default'} variant="bodySmall" weight="900">
-                          {date.getDate()}
-                        </AppText>
-                        <View style={[styles.dot, hasTraining && styles.dotActive, active && styles.dotActiveInverse]} />
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </AppCard>
-
-              <SectionHeader
-                actionLabel="补录"
-                onActionPress={() => router.push({ pathname: '/history/manual', params: { date: selectedDate } } as never)}
-                title={`${selectedDate} 我的训练`}
-              />
-              {history.selectedDateSessions.length === 0 ? (
-                <AppCard style={styles.emptyCard} tone="soft">
-                  <Ionicons color={colors.textMuted} name="calendar-clear-outline" size={24} />
-                  <View style={styles.emptyText}>
-                    <AppText variant="bodySmall" weight="900">
-                      这一天暂无训练记录
-                    </AppText>
-                    <AppText tone="muted" variant="caption">
-                      可以补录过去完成的训练，休息时间允许留空。
-                    </AppText>
-                  </View>
-                </AppCard>
-              ) : (
-                <View style={styles.sessionList}>
-                  {history.selectedDateSessions.map((summary) => (
-                    <SessionCard key={summary.session.id} memberName={history.currentMember?.displayName ?? '成员'} summary={summary} />
-                  ))}
-                </View>
-              )}
-
-              <SectionHeader actionLabel="月视图" onActionPress={() => setMonthVisible(true)} title="最近训练" />
-              {history.recentSessions.length === 0 ? (
-                <EmptyState
-                  actionLabel="去训练"
-                  description="完成一次训练后，这里会显示训练摘要、训练量和进步趋势。"
-                  onActionPress={() => router.push('/(tabs)/today')}
-                  title="还没有训练记录"
-                />
-              ) : (
-                <View style={styles.sessionList}>
-                  {history.recentSessions.slice(0, 6).map((summary) => (
-                    <SessionCard key={summary.session.id} memberName={history.currentMember?.displayName ?? '成员'} summary={summary} />
-                  ))}
-                </View>
-              )}
-            </>
+            <PersonalHistoryPanel
+              history={history}
+              monthCursor={monthCursor}
+              monthDates={monthDates}
+              selectedDate={selectedDate}
+              setMonthCursor={setMonthCursor}
+              setSelectedDate={setSelectedDate}
+            />
           ) : (
-            <AppCard style={styles.groupPendingCard} tone="soft">
-              <Tag label="开发中" tone="warning" />
-              <AppText variant="subtitle">小组汇总功能开发中</AppText>
-              <AppText tone="muted" variant="bodySmall">
-                当前版本仅统计本机当前成员数据，不会把个人数据和小组数据混在一起。
-              </AppText>
-            </AppCard>
+            <GroupReservedPanel analysis={history.groupAnalysis} />
           )}
         </>
       ) : null}
-
-      <Modal animationType="slide" transparent visible={isMonthVisible} onRequestClose={() => setMonthVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <AppCard style={styles.monthPanel}>
-            <View style={styles.calendarHeader}>
-              <Pressable accessibilityRole="button" onPress={() => setMonthCursor((current) => addMonths(current, -1))} style={styles.smallIconButton}>
-                <Ionicons color={colors.text} name="chevron-back-outline" size={20} />
-              </Pressable>
-              <AppText variant="subtitle">{formatMonthLabel(monthCursor)}</AppText>
-              <Pressable accessibilityRole="button" onPress={() => setMonthCursor((current) => addMonths(current, 1))} style={styles.smallIconButton}>
-                <Ionicons color={colors.text} name="chevron-forward-outline" size={20} />
-              </Pressable>
-            </View>
-            <View style={styles.monthGrid}>
-              {monthDates.map((date) => {
-                const key = getLocalDateString(date);
-                const active = key === selectedDate;
-                const hasTraining = history.monthlyTrainingDates.has(key);
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={key}
-                    onPress={() => {
-                      setSelectedDate(key);
-                      setMonthVisible(false);
-                    }}
-                    style={[styles.monthDay, active && styles.dateCellActive]}
-                  >
-                    <AppText tone={active ? 'inverse' : 'default'} variant="bodySmall" weight="900">
-                      {date.getDate()}
-                    </AppText>
-                    <View style={[styles.dot, hasTraining && styles.dotActive, active && styles.dotActiveInverse]} />
-                  </Pressable>
-                );
-              })}
-            </View>
-            <AppButton onPress={() => setMonthVisible(false)} variant="secondary">
-              关闭
-            </AppButton>
-          </AppCard>
-        </View>
-      </Modal>
     </Screen>
   );
 }
 
-function ScopeStrip({
+function ScopeSegment({
   dataScope,
   memberName,
   setDataScope,
@@ -519,25 +288,23 @@ function ScopeStrip({
 }) {
   return (
     <AppCard style={styles.scopeCard}>
-      <View style={styles.scopeText}>
-        <AppText variant="bodySmall" weight="900">
-          当前成员：{memberName}
-        </AppText>
+      <View style={styles.scopeCopy}>
         <AppText tone="muted" variant="caption">
-          记录页默认展示当前成员个人数据
+          当前成员
         </AppText>
+        <AppText variant="subtitle">{memberName}</AppText>
       </View>
-      <View style={styles.scopeSwitch}>
-        <ScopeButton active={dataScope === 'personal'} label="我的数据" onPress={() => setDataScope('personal')} />
-        <ScopeButton active={dataScope === 'group'} label="小组汇总" onPress={() => setDataScope('group')} />
+      <View style={styles.segment}>
+        <SegmentButton active={dataScope === 'personal'} label="个人记录" onPress={() => setDataScope('personal')} />
+        <SegmentButton active={dataScope === 'group'} label="小组记录" onPress={() => setDataScope('group')} />
       </View>
     </AppCard>
   );
 }
 
-function ScopeButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+function SegmentButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.scopeButton, active && styles.scopeButtonActive]}>
+    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.segmentButton, active && styles.segmentButtonActive]}>
       <AppText tone={active ? 'inverse' : 'muted'} variant="caption">
         {label}
       </AppText>
@@ -545,127 +312,318 @@ function ScopeButton({ active, label, onPress }: { active: boolean; label: strin
   );
 }
 
-function OverviewPanel({ history, onEditRecent }: { history: HistoryState; onEditRecent: () => void }) {
+function PersonalHistoryPanel({
+  history,
+  monthCursor,
+  monthDates,
+  selectedDate,
+  setMonthCursor,
+  setSelectedDate,
+}: {
+  history: HistoryState;
+  monthCursor: Date;
+  monthDates: Date[];
+  selectedDate: string;
+  setMonthCursor: (date: Date | ((current: Date) => Date)) => void;
+  setSelectedDate: (date: string) => void;
+}) {
+  const analysis = history.personalAnalysis;
+  const selectedDateSessions = history.recentSessions.filter((summary) => summary.session.date === selectedDate);
+
+  if (!analysis) {
+    return (
+      <EmptyState
+        actionLabel="去训练"
+        description="完成一次训练后，这里会显示训练摘要、训练量和进步趋势。"
+        onActionPress={() => router.push('/(tabs)/today')}
+        title="还没有训练记录"
+      />
+    );
+  }
+
   return (
-    <AppCard style={styles.overviewCard} tone="dark">
-      <View style={styles.overviewTop}>
-        <View style={styles.overviewMain}>
-          <AppText style={styles.darkMutedText} variant="bodySmall">
-            我的本周训练量
-          </AppText>
-          <AppText tone="inverse" variant="headline">
-            {formatKg(history.weeklyVolume)}
-          </AppText>
-          <AppText style={styles.darkMutedText} variant="caption">
-            当前成员：{history.currentMember?.displayName ?? '暂无成员'}
+    <>
+      <WeeklySummaryCard analysis={analysis} memberName={history.currentMember?.displayName ?? '成员'} />
+      <TrendOverviewCard analysis={analysis} />
+      <MonthCalendar
+        monthCursor={monthCursor}
+        monthDates={monthDates}
+        selectedDate={selectedDate}
+        setMonthCursor={setMonthCursor}
+        setSelectedDate={setSelectedDate}
+        trainingDates={history.monthlyTrainingDates}
+      />
+
+      <SectionHeader
+        actionLabel="补录"
+        onActionPress={() => router.push({ pathname: '/history/manual', params: { date: selectedDate } } as never)}
+        title={`${selectedDate} 训练`}
+      />
+      {selectedDateSessions.length === 0 ? (
+        <AppCard style={styles.emptyCard} tone="soft">
+          <Ionicons color={colors.textMuted} name="calendar-clear-outline" size={24} />
+          <View style={styles.emptyText}>
+            <AppText variant="bodySmall" weight="900">
+              这一天暂无训练记录
+            </AppText>
+            <AppText tone="muted" variant="caption">
+              点击其他日期查看记录，或补录过去完成的训练。
+            </AppText>
+          </View>
+        </AppCard>
+      ) : (
+        <View style={styles.sessionList}>
+          {selectedDateSessions.map((summary) => (
+            <SessionCard key={summary.session.id} memberName={history.currentMember?.displayName ?? '成员'} summary={summary} />
+          ))}
+        </View>
+      )}
+
+      <SectionHeader title="最近训练" />
+      {history.recentSessions.length === 0 ? (
+        <EmptyState
+          actionLabel="去训练"
+          description="完成一次训练后，这里会显示训练摘要、训练量和进步趋势。"
+          onActionPress={() => router.push('/(tabs)/today')}
+          title="还没有训练记录"
+        />
+      ) : (
+        <View style={styles.recentGrid}>
+          {history.recentSessions.slice(0, 6).map((summary) => (
+            <RecentSessionItem key={summary.session.id} summary={summary} />
+          ))}
+        </View>
+      )}
+    </>
+  );
+}
+
+function WeeklySummaryCard({ analysis, memberName }: { analysis: PersonalHistoryAnalysis; memberName: string }) {
+  const week = analysis.currentWeek;
+
+  return (
+    <AppCard style={styles.weekCard}>
+      <View style={styles.cardHeaderRow}>
+        <View>
+          <AppText variant="subtitle">本周数据</AppText>
+          <AppText tone="muted" variant="caption">
+            当前成员：{memberName}
           </AppText>
         </View>
-        <View style={styles.overviewSide}>
-          <DarkStat label="训练" value={`${history.weeklySessionCount} 次`} />
-          <DarkStat label="完成" value={`${history.weeklyCompletedSets} 组`} />
-        </View>
+        <Tag label="个人记录" tone="brand" />
       </View>
-      <View style={styles.overviewActions}>
-        <Pressable accessibilityRole="button" onPress={() => router.push('/history/manual' as never)} style={styles.darkAction}>
-          <Ionicons color={colors.surface} name="add-outline" size={16} />
-          <AppText tone="inverse" variant="caption">
-            补录训练
-          </AppText>
-        </Pressable>
-        <Pressable accessibilityRole="button" onPress={onEditRecent} style={styles.darkAction}>
-          <Ionicons color={colors.surface} name="create-outline" size={16} />
-          <AppText tone="inverse" variant="caption">
-            编辑最近
-          </AppText>
-        </Pressable>
+      <View style={styles.metricGrid}>
+        <MetricBlock label="训练量" value={formatKg(week.volume)} />
+        <MetricBlock label="训练次数" value={`${week.sessionCount} 次`} />
+        <MetricBlock label="完成组数" value={`${week.completedSets} 组`} />
+        <MetricBlock label="完成率" value={formatPercent(week.completionRate)} />
       </View>
     </AppCard>
   );
 }
 
-function DarkStat({ label, value }: { label: string; value: string }) {
+function TrendOverviewCard({ analysis }: { analysis: PersonalHistoryAnalysis }) {
   return (
-    <View style={styles.darkStat}>
-      <AppText tone="inverse" variant="subtitle">
-        {value}
-      </AppText>
-      <AppText style={styles.darkMutedText} variant="caption">
+    <Pressable accessibilityRole="button" onPress={() => router.push('/history/analytics' as never)} style={({ pressed }) => pressed && styles.pressed}>
+      <AppCard style={styles.trendCard}>
+        <View style={styles.cardHeaderRow}>
+          <View>
+            <AppText variant="subtitle">最近 4 周趋势</AppText>
+            <AppText tone="muted" variant="caption">
+              训练频率、训练量、完成率和 PR 动态
+            </AppText>
+          </View>
+          <View style={styles.moreAnalysis}>
+            <AppText tone="brand" variant="caption">
+              更多分析
+            </AppText>
+            <Ionicons color={colors.primary} name="chevron-forward" size={18} />
+          </View>
+        </View>
+
+        <View style={styles.trendStatRow}>
+          <TrendStat label="训练量" value={formatSignedPercent(analysis.volumeChangePercent)} tone="brand" />
+          <TrendStat label="训练次数" value={analysis.sessionTrendLabel} tone="accent" />
+          <TrendStat label="完成率" value={formatSignedPercent(analysis.completionChangePercent)} tone="success" />
+          <TrendStat label="PR" value={`${analysis.prCount} 项`} tone="warning" />
+        </View>
+
+        <MiniBarChart buckets={analysis.weeklyBuckets} />
+        <View style={styles.insightStrip}>
+          <Ionicons color={colors.primary} name="sparkles-outline" size={16} />
+          <AppText numberOfLines={2} variant="bodySmall" weight="900">
+            {analysis.insights[0]}
+          </AppText>
+        </View>
+      </AppCard>
+    </Pressable>
+  );
+}
+
+function MetricBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.metricBlock}>
+      <AppText tone="muted" variant="caption">
         {label}
+      </AppText>
+      <AppText numberOfLines={1} variant="subtitle">
+        {value}
       </AppText>
     </View>
   );
 }
 
-function StatTile({ label, value }: { label: string; value: string }) {
+function TrendStat({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: 'brand' | 'accent' | 'success' | 'warning';
+  value: string;
+}) {
+  const toneStyle = {
+    accent: styles.accentTrendStat,
+    brand: styles.brandTrendStat,
+    success: styles.successTrendStat,
+    warning: styles.warningTrendStat,
+  }[tone];
+
   return (
-    <AppCard style={styles.statTile}>
+    <View style={[styles.trendStat, toneStyle]}>
       <AppText tone="muted" variant="caption">
         {label}
       </AppText>
-      <AppText variant="subtitle">{value}</AppText>
+      <AppText variant="bodySmall" weight="900">
+        {value}
+      </AppText>
+    </View>
+  );
+}
+
+function MiniBarChart({ buckets }: { buckets: WeeklyHistoryBucket[] }) {
+  const maxVolume = Math.max(1, ...buckets.map((bucket) => bucket.volume));
+
+  return (
+    <View style={styles.miniChart}>
+      {buckets.map((bucket) => (
+        <View key={bucket.label} style={styles.barColumn}>
+          <View style={styles.barTrack}>
+            <View style={[styles.volumeBar, { height: 12 + Math.round((bucket.volume / maxVolume) * 54) }]} />
+          </View>
+          <AppText tone="muted" variant="caption">
+            {bucket.label}
+          </AppText>
+          <AppText variant="caption" weight="900">
+            {bucket.sessionCount} 次
+          </AppText>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function MonthCalendar({
+  monthCursor,
+  monthDates,
+  selectedDate,
+  setMonthCursor,
+  setSelectedDate,
+  trainingDates,
+}: {
+  monthCursor: Date;
+  monthDates: Date[];
+  selectedDate: string;
+  setMonthCursor: (date: Date | ((current: Date) => Date)) => void;
+  setSelectedDate: (date: string) => void;
+  trainingDates: Set<string>;
+}) {
+  return (
+    <AppCard style={styles.calendarCard}>
+      <View style={styles.cardHeaderRow}>
+        <Pressable accessibilityRole="button" onPress={() => setMonthCursor((current) => addMonths(current, -1))} style={styles.smallIconButton}>
+          <Ionicons color={colors.text} name="chevron-back-outline" size={18} />
+        </Pressable>
+        <View style={styles.calendarTitle}>
+          <AppText variant="subtitle">本月日历</AppText>
+          <AppText tone="muted" variant="caption">
+            {formatMonthLabel(monthCursor)} · 小哑铃表示有训练
+          </AppText>
+        </View>
+        <Pressable accessibilityRole="button" onPress={() => setMonthCursor((current) => addMonths(current, 1))} style={styles.smallIconButton}>
+          <Ionicons color={colors.text} name="chevron-forward-outline" size={18} />
+        </Pressable>
+      </View>
+      <View style={styles.weekdayRow}>
+        {['日', '一', '二', '三', '四', '五', '六'].map((label) => (
+          <AppText key={label} style={styles.weekdayText} tone="muted" variant="caption">
+            {label}
+          </AppText>
+        ))}
+      </View>
+      <View style={styles.monthGrid}>
+        {Array.from({ length: monthDates[0]?.getDay() ?? 0 }, (_, index) => (
+          <View key={`blank-${index}`} style={styles.monthDayBlank} />
+        ))}
+        {monthDates.map((date) => {
+          const key = getLocalDateString(date);
+          const active = key === selectedDate;
+          const hasTraining = trainingDates.has(key);
+          return (
+            <Pressable
+              accessibilityRole="button"
+              key={key}
+              onPress={() => setSelectedDate(key)}
+              style={[styles.monthDay, active && styles.monthDayActive]}
+            >
+              <AppText tone={active ? 'inverse' : 'default'} variant="caption" weight="900">
+                {date.getDate()}
+              </AppText>
+              <View style={styles.trainingMarkSlot}>
+                {hasTraining ? (
+                  <Ionicons
+                    color={active ? colors.surface : colors.primary}
+                    name={active ? 'barbell' : 'barbell-outline'}
+                    size={10}
+                  />
+                ) : null}
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
     </AppCard>
   );
 }
 
-function AnalysisPanel({
-  analysis,
-  exerciseName,
-  trend,
-}: {
-  analysis: HistoryAnalysis | null;
-  exerciseName?: string;
-  trend: WeekTrendPoint[];
-}) {
-  const maxVolume = Math.max(1, ...trend.map((point) => point.volume));
-  const primarySuggestion = analysis?.suggestions[0] ?? '完成更多训练后生成基础规则建议';
+function RecentSessionItem({ summary }: { summary: SessionSummary }) {
+  const session = summary.session;
+  const durationLabel = summary.durationMinutes ? `${summary.durationMinutes}分钟` : '';
 
   return (
-    <AppCard style={styles.analysisCard}>
-      <View style={styles.analysisHeader}>
-        <View>
-          <AppText variant="subtitle">训练趋势</AppText>
-          <AppText tone="muted" variant="caption">
-            近 7 天总量 · {exerciseName ?? '暂无重点动作'}
-          </AppText>
-        </View>
-        <Tag label="训练建议" tone="warning" />
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => router.push({ pathname: '/history/[sessionId]', params: { sessionId: session.id } } as never)}
+      style={({ pressed }) => [styles.recentItem, pressed && styles.pressed]}
+    >
+      <View style={styles.recentItemHeader}>
+        <AppText variant="caption" weight="600">{formatShortDate(session.date)}</AppText>
+        {durationLabel ? <AppText tone="muted" variant="caption">{durationLabel}</AppText> : null}
       </View>
-      <View style={styles.analysisBody}>
-        <View style={styles.trendBars}>
-          {trend.length === 0
-            ? Array.from({ length: 7 }, (_, index) => <View key={index} style={styles.emptyBar} />)
-            : trend.map((point) => (
-                <View key={point.date} style={styles.barColumn}>
-                  <View style={[styles.trendBar, { height: 24 + Math.round((point.volume / maxVolume) * 68) }]} />
-                  <AppText tone="muted" variant="caption">
-                    {formatShortDate(point.date).slice(3)}
-                  </AppText>
-                </View>
-              ))}
-        </View>
-        <View style={styles.analysisSummary}>
-          <AppText variant="bodySmall" weight="900">
-            {primarySuggestion}
-          </AppText>
-          <AppText tone="muted" variant="caption">
-            根据你的完成组、RPE/RIR 和历史趋势生成。
-          </AppText>
-        </View>
+      <AppText numberOfLines={1} variant="bodySmall" weight="600">{session.title}</AppText>
+      <View style={styles.recentItemMetrics}>
+        <AppText tone="muted" variant="caption">{summary.exerciseCount}动作</AppText>
+        <AppText tone="muted" variant="caption">·</AppText>
+        <AppText tone="muted" variant="caption">{summary.setCount}组</AppText>
+        <AppText tone="muted" variant="caption">·</AppText>
+        <AppText tone="muted" variant="caption">{formatKg(summary.volume)}</AppText>
       </View>
-      {analysis ? (
-        <View style={styles.trendRows}>
-          <TrendRow label="重量趋势" value={formatTrend(analysis.weightTrend)} />
-          <TrendRow label="完成率" value={formatPercent(analysis.completionRate)} />
-          <TrendRow label="疲劳提示" value={analysis.fatigueFlags.length > 0 ? analysis.fatigueFlags.join('、') : '暂无明显疲劳提示'} />
-        </View>
-      ) : null}
-    </AppCard>
+    </Pressable>
   );
 }
 
 function SessionCard({ memberName, summary }: { memberName: string; summary: SessionSummary }) {
   const session = summary.session;
-  const detailRoute = { pathname: '/history/[sessionId]', params: { sessionId: session.id } } as never;
   const durationLabel = summary.durationMinutes ? `${summary.durationMinutes} 分钟` : '时长待补充';
   const trendLabel =
     summary.bestEstimatedOneRM && summary.bestEstimatedOneRM > 0
@@ -675,13 +633,16 @@ function SessionCard({ memberName, summary }: { memberName: string; summary: Ses
   const extraExerciseCount = Math.max(0, summary.mainExerciseNames.length - visibleExercises.length);
 
   return (
-    <Pressable accessibilityRole="button" onPress={() => router.push(detailRoute)} style={({ pressed }) => [styles.sessionCard, pressed && styles.pressed]}>
-      <View style={styles.sessionAccent}>
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => router.push({ pathname: '/history/[sessionId]', params: { sessionId: session.id } } as never)}
+      style={({ pressed }) => [styles.sessionCard, pressed && styles.pressed]}
+    >
+      <View style={styles.sessionDateBadge}>
         <AppText tone="inverse" variant="caption" weight="900">
           {formatShortDate(session.date)}
         </AppText>
       </View>
-
       <View style={styles.sessionBody}>
         <View style={styles.sessionTop}>
           <View style={styles.sessionTitleBlock}>
@@ -712,9 +673,8 @@ function SessionCard({ memberName, summary }: { memberName: string; summary: Ses
 
         <View style={styles.sessionTags}>
           <Tag label={memberName} tone="neutral" />
-          <Tag label={session.status === 'completed' ? '已完成' : '进行中'} tone={session.status === 'completed' ? 'success' : 'warning'} />
-          {summary.topSetLabel ? <Tag label={`PR 参考 ${summary.topSetLabel}`} tone="brand" /> : null}
           <Tag label={trendLabel} tone="accent" />
+          {summary.topSetLabel ? <Tag label={`PR 参考 ${summary.topSetLabel}`} tone="brand" /> : null}
         </View>
       </View>
     </Pressable>
@@ -734,16 +694,32 @@ function SessionMetric({ label, value, wide = false }: { label: string; value: s
   );
 }
 
-function TrendRow({ label, value }: { label: string; value: string }) {
+function GroupReservedPanel({ analysis }: { analysis: GroupHistoryAnalysis | null }) {
+  const futureMetrics = analysis?.futureMetrics ?? ['小组本周训练次数', '小组总训练量', '成员完成率排行', '成员 PR 动态', '小组训练日历'];
+
   return (
-    <View style={styles.trendRow}>
-      <AppText tone="muted" variant="caption">
-        {label}
-      </AppText>
-      <AppText variant="caption" weight="900">
-        {value}
-      </AppText>
-    </View>
+    <AppCard style={styles.groupPanel} tone="soft">
+      <View style={styles.groupIcon}>
+        <Ionicons color={colors.primary} name="people-outline" size={24} />
+      </View>
+      <View style={styles.groupCopy}>
+        <Tag label="接口预留" tone="warning" />
+        <AppText variant="subtitle">小组记录</AppText>
+        <AppText tone="muted" variant="bodySmall">
+          本地小组汇总正在开发中。
+        </AppText>
+      </View>
+      <View style={styles.futureList}>
+        {futureMetrics.map((item) => (
+          <View key={item} style={styles.futureRow}>
+            <View style={styles.futureDot} />
+            <AppText tone="muted" variant="bodySmall">
+              {item}
+            </AppText>
+          </View>
+        ))}
+      </View>
+    </AppCard>
   );
 }
 
@@ -772,171 +748,158 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     justifyContent: 'space-between',
   },
-  scopeText: {
+  scopeCopy: {
     flex: 1,
     gap: 2,
   },
-  scopeSwitch: {
+  segment: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.sm,
     flexDirection: 'row',
     padding: 3,
-    width: 160,
+    width: 166,
   },
-  scopeButton: {
+  segmentButton: {
     alignItems: 'center',
     borderRadius: radius.sm,
     flex: 1,
-    minHeight: 32,
     justifyContent: 'center',
+    minHeight: 32,
   },
-  scopeButtonActive: {
+  segmentButtonActive: {
     backgroundColor: colors.primary,
   },
-  overviewCard: {
-    gap: spacing.lg,
+  weekCard: {
+    gap: spacing.md,
   },
-  overviewTop: {
+  cardHeaderRow: {
+    alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.md,
     justifyContent: 'space-between',
   },
-  overviewMain: {
-    flex: 1,
-    gap: spacing.xs,
-  },
-  overviewSide: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  darkMutedText: {
-    color: colors.darkMuted,
-  },
-  darkStat: {
-    alignItems: 'center',
-    gap: 2,
-    minWidth: 66,
-  },
-  overviewActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  darkAction: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    minHeight: 34,
-    paddingHorizontal: spacing.md,
-  },
-  statGrid: {
+  metricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
-  statTile: {
+  metricBlock: {
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    borderWidth: 1,
     flexBasis: '48%',
     flexGrow: 1,
-    gap: spacing.xs,
-    minHeight: 86,
+    gap: 2,
+    minHeight: 72,
     padding: spacing.md,
   },
-  analysisCard: {
+  trendCard: {
     gap: spacing.md,
   },
-  analysisHeader: {
+  moreAnalysis: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'space-between',
+    gap: 2,
   },
-  analysisBody: {
+  trendStatRow: {
     flexDirection: 'row',
-    gap: spacing.md,
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
-  trendBars: {
+  trendStat: {
+    borderRadius: radius.sm,
+    flexBasis: '22%',
+    flexGrow: 1,
+    gap: 2,
+    minHeight: 58,
+    padding: spacing.sm,
+  },
+  brandTrendStat: {
+    backgroundColor: colors.primarySoft,
+  },
+  accentTrendStat: {
+    backgroundColor: colors.accentSoft,
+  },
+  successTrendStat: {
+    backgroundColor: colors.successSoft,
+  },
+  warningTrendStat: {
+    backgroundColor: colors.warningSoft,
+  },
+  miniChart: {
     alignItems: 'flex-end',
-    flex: 1,
     flexDirection: 'row',
-    gap: spacing.xs,
+    gap: spacing.sm,
     minHeight: 104,
   },
   barColumn: {
     alignItems: 'center',
     flex: 1,
     gap: spacing.xs,
-    justifyContent: 'flex-end',
   },
-  trendBar: {
+  barTrack: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    height: 74,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    width: 18,
+  },
+  volumeBar: {
     backgroundColor: colors.primary,
     borderRadius: radius.pill,
-    width: '72%',
+    width: 18,
   },
-  emptyBar: {
-    backgroundColor: colors.border,
-    borderRadius: radius.pill,
-    flex: 1,
-    height: 32,
-  },
-  analysisSummary: {
-    flex: 1,
-    gap: spacing.sm,
-    justifyContent: 'center',
-  },
-  trendRows: {
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
+  insightStrip: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.sm,
     flexDirection: 'row',
     gap: spacing.sm,
-    paddingTop: spacing.md,
-  },
-  trendRow: {
-    flex: 1,
-    gap: 2,
+    padding: spacing.md,
   },
   calendarCard: {
     gap: spacing.md,
-  },
-  calendarHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'space-between',
   },
   calendarTitle: {
     alignItems: 'center',
     flex: 1,
     gap: 2,
   },
-  weekRow: {
+  weekdayRow: {
     flexDirection: 'row',
-    gap: spacing.xs,
-    justifyContent: 'space-between',
   },
-  dateCell: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
+  weekdayText: {
     flex: 1,
-    gap: 2,
-    minHeight: 62,
-    paddingVertical: spacing.sm,
+    textAlign: 'center',
   },
-  dateCellActive: {
-    backgroundColor: colors.primary,
+  monthGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 0,
   },
-  dot: {
-    backgroundColor: colors.transparent,
+  monthDayBlank: {
+    aspectRatio: 1,
+    width: `${100 / 7}%`,
+  },
+  monthDay: {
+    alignItems: 'center',
+    aspectRatio: 1,
     borderRadius: radius.pill,
-    height: 6,
-    width: 6,
+    gap: 2,
+    justifyContent: 'center',
+    width: `${100 / 7}%`,
   },
-  dotActive: {
+  monthDayActive: {
     backgroundColor: colors.primary,
   },
-  dotActiveInverse: {
-    backgroundColor: colors.surface,
+  trainingMarkSlot: {
+    alignItems: 'center',
+    height: 12,
+    justifyContent: 'center',
+    width: 18,
   },
   emptyCard: {
     alignItems: 'center',
@@ -948,7 +911,27 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   sessionList: {
+    gap: spacing.md,
+  },
+  recentGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  recentItem: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    gap: spacing.xs,
+    padding: spacing.md,
+    width: '48%',
+  },
+  recentItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  recentItemMetrics: {
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
   sessionCard: {
     backgroundColor: colors.surface,
@@ -958,17 +941,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     overflow: 'hidden',
+    padding: spacing.md,
   },
-  sessionAccent: {
+  pressed: {
+    opacity: 0.78,
+  },
+  sessionDateBadge: {
     alignItems: 'center',
-    backgroundColor: colors.dark,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
     justifyContent: 'center',
-    width: 58,
+    minHeight: 42,
+    paddingHorizontal: spacing.sm,
   },
   sessionBody: {
     flex: 1,
     gap: spacing.sm,
-    padding: spacing.md,
   },
   sessionTop: {
     alignItems: 'center',
@@ -984,54 +973,58 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
   },
+  sessionMetric: {
+    backgroundColor: colors.backgroundElevated,
+    borderRadius: radius.sm,
+    minWidth: 58,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  sessionMetricWide: {
+    flex: 1,
+  },
   sessionExerciseRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
-  },
-  sessionMetric: {
-    backgroundColor: colors.backgroundElevated,
-    borderRadius: radius.sm,
-    flex: 1,
-    gap: 2,
-    minHeight: 54,
-    padding: spacing.sm,
-  },
-  sessionMetricWide: {
-    flex: 1.5,
   },
   sessionTags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
   },
-  groupPendingCard: {
+  groupPanel: {
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  groupIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.pill,
+    height: 54,
+    justifyContent: 'center',
+    width: 54,
+  },
+  groupCopy: {
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  futureList: {
+    alignSelf: 'stretch',
     gap: spacing.sm,
   },
-  modalBackdrop: {
-    backgroundColor: colors.overlay,
-    flex: 1,
-    justifyContent: 'flex-end',
-    padding: spacing.lg,
-  },
-  monthPanel: {
-    gap: spacing.lg,
-  },
-  monthGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  monthDay: {
+  futureRow: {
     alignItems: 'center',
-    borderRadius: radius.md,
-    gap: spacing.xs,
-    minHeight: 48,
-    paddingVertical: spacing.sm,
-    width: '13.4%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.sm,
   },
-  pressed: {
-    opacity: 0.84,
-    transform: [{ scale: 0.99 }],
+  futureDot: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    height: 6,
+    width: 6,
   },
 });

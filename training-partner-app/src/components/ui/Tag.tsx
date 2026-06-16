@@ -30,14 +30,15 @@ export function PriorityTag({ priority }: { priority: string }) {
 const styles = StyleSheet.create({
   tag: {
     alignItems: 'center',
-    borderRadius: radius.xs,
+    borderRadius: radius.sm,
     justifyContent: 'center',
     minHeight: 24,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 4,
   },
   text: {
-    fontWeight: '900',
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   brand: {
     backgroundColor: colors.primarySoft,
@@ -58,7 +59,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
   },
   dark: {
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   darkText: {
     color: colors.surface,

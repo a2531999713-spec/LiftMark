@@ -16,8 +16,6 @@ import {
   type SystemTrainingScheme,
 } from '@/domain/plan/systemSchemes';
 import { liftmarkImages } from '@/assets/images';
-import { pickImportedPlanDocument } from '@/services/planDocumentService';
-import { PlanFileError } from '@/services/planFileService';
 import { colors, radius, shadows, spacing } from '@/theme';
 
 type NoticeState = {
@@ -170,43 +168,6 @@ export default function ExploreRoute() {
     openScheme(pplScheme);
   }, [openScheme, pplScheme]);
 
-  const importPlan = useCallback(async () => {
-    setIsWorking(true);
-    try {
-      const picked = await pickImportedPlanDocument();
-      if (!picked) {
-        return;
-      }
-
-      const importedPlan = await repositories.planRepository.importUserPlan({
-        alternatives: picked.draft.alternatives,
-        days: picked.draft.plan.days,
-        exercises: picked.draft.exercises,
-        phases: picked.draft.plan.phases,
-        planExercises: picked.draft.plan.exercises,
-        template: picked.draft.plan.template,
-      });
-      await loadExploreState();
-      setActivationPrompt({
-        plan: importedPlan,
-        title: '计划已导入',
-        message: `“${importedPlan.name}”已成为我的计划。是否设为当前训练计划？`,
-      });
-    } catch (error) {
-      if (error instanceof PlanFileError) {
-        setNotice({
-          title: '计划文件格式不兼容',
-          message: '这个文件不是练刻 LiftMark 支持的计划文件。',
-        });
-        return;
-      }
-
-      setNotice({ title: '导入失败', message: error instanceof Error ? error.message : '计划导入失败。' });
-    } finally {
-      setIsWorking(false);
-    }
-  }, [loadExploreState, repositories]);
-
   return (
     <Screen
       headerRight={
@@ -219,41 +180,38 @@ export default function ExploreRoute() {
       <View style={styles.searchBox}>
         <Ionicons color={colors.textMuted} name="search-outline" size={18} />
         <AppText tone="muted" variant="bodySmall">
-          搜索计划、动作（开发中）
+          搜索计划、动作
         </AppText>
       </View>
 
       <VisualHeroCard
-        eyebrow="科学计划 · 精准训练"
+        eyebrow="推荐方案"
         icon="barbell-outline"
         imageSource={liftmarkImages.exploreHero}
-        subtitle="系统方案、个性化计划、文件导入，帮你高效训练、持续进步。"
-        title="选择或创建你的训练计划"
+        subtitle="推 / 拉 / 腿三天循环，适合每周训练 3 天，兼顾增肌和基础力量。"
+        title="经典三分化 PPL"
       >
         <View style={styles.heroActions}>
           <AppButton icon="barbell-outline" onPress={openPpl} size="sm">
             使用 PPL
           </AppButton>
-          <AppButton icon="add-outline" onPress={() => router.push('/plan/create')} size="sm" variant="dark">
-            创建计划
+          <AppButton icon="calendar-outline" onPress={() => router.push('/(tabs)/today')} size="sm" variant="dark">
+            去训练
           </AppButton>
         </View>
       </VisualHeroCard>
 
-      <AppCard style={styles.toolCard}>
+      <AppCard style={styles.myPlanCard}>
         <View style={styles.toolHeader}>
-          <View>
-            <AppText variant="subtitle">计划工具</AppText>
+          <View style={styles.partnerText}>
+            <AppText variant="subtitle">我的计划</AppText>
             <AppText tone="muted" variant="caption">
-              创建空白计划或导入 .liftmark.json
+              {userPlans.length > 0 ? `已有 ${userPlans.length} 个可执行计划` : '复制系统方案后会出现在这里'}
             </AppText>
           </View>
-          <Tag label={`${userPlans.length} 个我的计划`} tone="neutral" />
-        </View>
-        <View style={styles.toolRows}>
-          <ToolRow icon="add-circle-outline" label="创建空白计划" onPress={() => router.push('/plan/create')} />
-          <ToolRow icon="download-outline" label="导入 .liftmark.json" onPress={() => void importPlan()} />
-          <ToolRow icon="calendar-outline" label="管理我的计划" onPress={() => router.push('/(tabs)/plan')} />
+          <AppButton onPress={() => router.push('/(tabs)/plan')} size="sm" variant="secondary">
+            查看
+          </AppButton>
         </View>
       </AppCard>
 
@@ -268,6 +226,11 @@ export default function ExploreRoute() {
           去找搭子
         </AppButton>
       </AppCard>
+
+      <View style={styles.quickGrid}>
+        <QuickEntry icon="add-circle-outline" label="补录训练" onPress={() => router.push('/history/manual' as never)} />
+        <QuickEntry icon="bar-chart-outline" label="训练分析" onPress={() => router.push('/history/analytics' as never)} />
+      </View>
 
       <SectionHeader subtitle="推荐方案最多展示 3 个，更多模板会逐步开放。" title="推荐计划" />
 
@@ -402,9 +365,9 @@ export default function ExploreRoute() {
   );
 }
 
-function ToolRow({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
+function QuickEntry({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.toolRow, pressed && styles.pressed]}>
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.quickEntry, pressed && styles.pressed]}>
       <View style={styles.toolIcon}>
         <Ionicons color={colors.primary} name={icon} size={18} />
       </View>
@@ -419,29 +382,32 @@ function ToolRow({ icon, label, onPress }: { icon: IconName; label: string; onPr
 const styles = StyleSheet.create({
   iconButton: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.pill,
-    borderWidth: 1,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
   searchBox: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     flexDirection: 'row',
     gap: spacing.sm,
-    minHeight: 42,
-    paddingHorizontal: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   heroActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
-  toolCard: {
+  myPlanCard: {
     gap: spacing.md,
   },
   toolHeader: {
@@ -450,25 +416,32 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     justifyContent: 'space-between',
   },
-  toolRows: {
-    gap: spacing.xs,
-  },
-  toolRow: {
-    alignItems: 'center',
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
+  quickGrid: {
     flexDirection: 'row',
     gap: spacing.md,
-    minHeight: 48,
-    paddingTop: spacing.sm,
+  },
+  quickEntry: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 60,
+    padding: spacing.lg,
+    flex: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
   toolIcon: {
     alignItems: 'center',
     backgroundColor: colors.primarySoft,
-    borderRadius: radius.sm,
-    height: 34,
+    borderRadius: radius.md,
+    height: 36,
     justifyContent: 'center',
-    width: 34,
+    width: 36,
   },
   toolLabel: {
     flex: 1,
@@ -483,26 +456,28 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   planList: {
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   planCard: {
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
+    borderRadius: radius.lg,
     flexDirection: 'row',
     gap: spacing.md,
-    padding: spacing.md,
-    ...shadows.card,
+    padding: spacing.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   planThumb: {
     alignItems: 'center',
-    backgroundColor: colors.dark,
-    borderRadius: radius.sm,
-    height: 48,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    height: 52,
     justifyContent: 'center',
-    width: 48,
+    width: 52,
   },
   planBody: {
     flex: 1,
@@ -532,5 +507,6 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.82,
+    transform: [{ scale: 0.98 }],
   },
 });

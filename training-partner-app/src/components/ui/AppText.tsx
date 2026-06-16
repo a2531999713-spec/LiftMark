@@ -42,35 +42,37 @@ const styles = StyleSheet.create({
   },
   display: {
     fontSize: typography.sizes.display,
-    fontWeight: '900',
+    fontWeight: '700',
     lineHeight: typography.lineHeights.display,
   },
   headline: {
     fontSize: typography.sizes.headline,
-    fontWeight: '900',
+    fontWeight: '700',
     lineHeight: typography.lineHeights.headline,
   },
   title: {
     fontSize: typography.sizes.title,
-    fontWeight: '900',
+    fontWeight: '700',
     lineHeight: typography.lineHeights.title,
   },
   subtitle: {
     fontSize: typography.sizes.subtitle,
-    fontWeight: '800',
+    fontWeight: '600',
     lineHeight: typography.lineHeights.subtitle,
   },
   body: {
     fontSize: typography.sizes.body,
+    fontWeight: '400',
     lineHeight: typography.lineHeights.body,
   },
   bodySmall: {
     fontSize: typography.sizes.bodySmall,
+    fontWeight: '400',
     lineHeight: typography.lineHeights.bodySmall,
   },
   caption: {
     fontSize: typography.sizes.caption,
-    fontWeight: '800',
+    fontWeight: '500',
     lineHeight: typography.lineHeights.caption,
   },
   default: {

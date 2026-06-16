@@ -17,38 +17,27 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
+        tabBarInactiveTintColor: colors.textSubtle,
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '800',
+          fontSize: 10,
+          fontWeight: '600',
+          marginTop: 2,
         },
         tabBarStyle: {
+          backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          height: 72,
-          paddingBottom: 10,
-          paddingTop: 8,
+          borderTopWidth: 0.5,
+          height: 68,
+          paddingBottom: 8,
+          paddingTop: 6,
         },
       }}
     >
       <Tabs.Screen
-        name="explore"
-        options={{
-          title: '探索',
-          tabBarIcon: ({ color, size }) => <TabIcon color={color} name="search-outline" size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="members"
-        options={{
-          title: '搭子',
-          tabBarIcon: ({ color, size }) => <TabIcon color={color} name="people-outline" size={size} />,
-        }}
-      />
-      <Tabs.Screen
         name="today"
         options={{
-          title: '训练',
-          tabBarIcon: ({ color, size }) => <TabIcon color={color} name="barbell-outline" size={size} />,
+          title: '首页',
+          tabBarIcon: ({ color, size }) => <TabIcon color={color} name="home-outline" size={size} />,
         }}
       />
       <Tabs.Screen
@@ -68,9 +57,20 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          title: '设置',
+          title: '我的',
+          tabBarIcon: ({ color, size }) => <TabIcon color={color} name="person-outline" size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
           href: null,
-          tabBarIcon: ({ color, size }) => <TabIcon color={color} name="settings-outline" size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="members"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

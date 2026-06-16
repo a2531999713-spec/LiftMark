@@ -6,19 +6,32 @@ import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 
 type ScreenProps = {
-  title: string;
+  title?: string;
   subtitle?: string;
   children: ReactNode;
+  headerRight?: ReactNode;
 };
 
-export function Screen({ title, subtitle, children }: ScreenProps) {
+export function Screen({ title, subtitle, children, headerRight }: ScreenProps) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <Text style={styles.title}>{title}</Text>
-          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-        </View>
+        {headerRight ? (
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              {title ? <Text style={styles.title}>{title}</Text> : null}
+              {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+            </View>
+            {headerRight}
+          </View>
+        ) : title ? (
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.title}>{title}</Text>
+              {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+            </View>
+          </View>
+        ) : null}
         {children}
       </ScrollView>
     </SafeAreaView>
@@ -31,21 +44,28 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    gap: spacing.md,
-    padding: spacing.md,
-    paddingBottom: spacing.xl,
+    gap: spacing.lg,
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
   },
   header: {
-    gap: spacing.xs,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  headerLeft: {
+    flex: 1,
+    gap: spacing.xxs,
   },
   title: {
-    color: colors.text,
+    color: colors.textStrong,
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: '700',
+    letterSpacing: -0.5,
   },
   subtitle: {
     color: colors.textMuted,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

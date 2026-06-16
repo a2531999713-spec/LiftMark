@@ -284,6 +284,7 @@ type CompletedSetCardProps = {
 function CompletedSetCard({ memberName, onDelete, onSavePatch, set }: CompletedSetCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [notesDraft, setNotesDraft] = useState(set.notes ?? '');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
     <View style={styles.completedSetCard}>
@@ -333,27 +334,42 @@ function CompletedSetCard({ memberName, onDelete, onSavePatch, set }: CompletedS
               value={set.actualReps ?? set.plannedReps}
             />
           </View>
-          <OptionButtons
-            label="RPE"
-            onChange={(value) => onSavePatch({ rpe: value })}
-            options={rpeOptions}
-            value={set.rpe}
-          />
-          <OptionButtons
-            label="RIR"
-            onChange={(value) => onSavePatch({ rir: value })}
-            options={rirOptions}
-            value={set.rir}
-          />
-          <TextInput
-            multiline
-            onBlur={() => onSavePatch({ notes: notesDraft.trim() || undefined })}
-            onChangeText={setNotesDraft}
-            placeholder="备注，可留空"
-            placeholderTextColor={colors.textMuted}
-            style={styles.notesInput}
-            value={notesDraft}
-          />
+          <Pressable accessibilityRole="button" onPress={() => setShowAdvanced((current) => !current)} style={styles.advancedToggleDark}>
+            <View>
+              <AppText tone="inverse" variant="bodySmall" weight="900">
+                高级记录
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                RPE/RIR 和备注，适合进阶训练者
+              </AppText>
+            </View>
+            <Tag label={showAdvanced ? '收起' : '展开'} tone="neutral" />
+          </Pressable>
+          {showAdvanced ? (
+            <>
+              <OptionButtons
+                label="RPE"
+                onChange={(value) => onSavePatch({ rpe: value })}
+                options={rpeOptions}
+                value={set.rpe}
+              />
+              <OptionButtons
+                label="RIR"
+                onChange={(value) => onSavePatch({ rir: value })}
+                options={rirOptions}
+                value={set.rir}
+              />
+              <TextInput
+                multiline
+                onBlur={() => onSavePatch({ notes: notesDraft.trim() || undefined })}
+                onChangeText={setNotesDraft}
+                placeholder="备注，可留空"
+                placeholderTextColor={colors.textMuted}
+                style={styles.notesInput}
+                value={notesDraft}
+              />
+            </>
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -372,6 +388,7 @@ export default function WorkoutRoute() {
   const [restSecondsRemaining, setRestSecondsRemaining] = useState(0);
   const [isResting, setIsResting] = useState(false);
   const [isWorkoutReadyToFinish, setWorkoutReadyToFinish] = useState(false);
+  const [advancedSetIds, setAdvancedSetIds] = useState<Record<string, boolean>>({});
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFinishing, setIsFinishing] = useState(false);
@@ -739,7 +756,7 @@ export default function WorkoutRoute() {
                       <View style={styles.memberInfo}>
                         <AppText variant="subtitle">{member.displayName}</AppText>
                         <AppText tone="muted" variant="caption">
-                          第 {workoutSet.setNumber} 组 · 计划 {formatNumber(workoutSet.plannedWeight)} kg x {workoutSet.plannedReps ?? getWorkoutRecordInitialReps(activeRecord) ?? 0}
+                          第 {workoutSet.setNumber} 组
                         </AppText>
                       </View>
                       {workoutSet.completed ? <Tag label="已完成" tone="success" /> : null}
@@ -771,20 +788,6 @@ export default function WorkoutRoute() {
                         value={workoutSet.actualReps ?? workoutSet.plannedReps}
                       />
                     </View>
-                    <OptionButtons
-                      key={`${workoutSet.id}-rpe`}
-                      label="RPE"
-                      onChange={(value) => void saveSetPatch(workoutSet, { rpe: value })}
-                      options={rpeOptions}
-                      value={workoutSet.rpe}
-                    />
-                    <OptionButtons
-                      key={`${workoutSet.id}-rir`}
-                      label="RIR"
-                      onChange={(value) => void saveSetPatch(workoutSet, { rir: value })}
-                      options={rirOptions}
-                      value={workoutSet.rir}
-                    />
                   </View>
                 );
               })}
@@ -792,22 +795,18 @@ export default function WorkoutRoute() {
 
             <View style={styles.completedSection}>
               <View style={styles.sectionHeader}>
-                <View>
-                  <AppText tone="inverse" variant="subtitle">
-                    已完成组
-                  </AppText>
-                  <AppText tone="muted" variant="caption">
-                    输入错误可以返回编辑或删除
-                  </AppText>
-                </View>
-                <AppButton
+                <AppText tone="inverse" variant="subtitle">
+                  已完成组
+                </AppText>
+                <Pressable
+                  accessibilityRole="button"
                   disabled={completedActiveSets.length === 0}
                   onPress={confirmUndoLatestRound}
-                  size="sm"
-                  variant="dark"
+                  style={styles.undoButton}
                 >
-                  撤销上一组
-                </AppButton>
+                  <Ionicons color={colors.primary} name="arrow-undo-outline" size={16} />
+                  <AppText tone="brand" variant="caption">撤销</AppText>
+                </Pressable>
               </View>
 
               {completedActiveSets.length === 0 ? (
@@ -834,15 +833,18 @@ export default function WorkoutRoute() {
             </AppButton>
 
             <View style={styles.auxRow}>
-              <AppButton onPress={showSkipComingSoon} style={styles.auxButton} variant="dark">
-                跳过
-              </AppButton>
-              <AppButton onPress={showReplaceComingSoon} style={styles.auxButton} variant="dark">
-                替换动作
-              </AppButton>
-              <AppButton disabled={!hasNextExercise} onPress={goNextExercise} style={styles.auxButton} variant="dark">
-                下一个动作
-              </AppButton>
+              <Pressable accessibilityRole="button" onPress={showSkipComingSoon} style={styles.auxButton}>
+                <Ionicons color={colors.textMuted} name="play-skip-forward-outline" size={18} />
+                <AppText tone="muted" variant="caption">跳过</AppText>
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={showReplaceComingSoon} style={styles.auxButton}>
+                <Ionicons color={colors.textMuted} name="swap-horizontal-outline" size={18} />
+                <AppText tone="muted" variant="caption">替换</AppText>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={!hasNextExercise} onPress={goNextExercise} style={styles.auxButton}>
+                <Ionicons color={hasNextExercise ? colors.primary : colors.textMuted} name="arrow-forward-outline" size={18} />
+                <AppText tone={hasNextExercise ? 'brand' : 'muted'} variant="caption">下一个</AppText>
+              </Pressable>
             </View>
 
             <View style={styles.footerStatus}>
@@ -987,6 +989,24 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  advancedToggle: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  advancedToggleDark: {
+    alignItems: 'center',
+    backgroundColor: colors.darkCard,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
   stepperGrid: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -1052,8 +1072,12 @@ const styles = StyleSheet.create({
   sectionHeader: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.md,
     justifyContent: 'space-between',
+  },
+  undoButton: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
   completedEmpty: {
     alignItems: 'center',

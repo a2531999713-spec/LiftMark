@@ -51,7 +51,7 @@ export function AppButton({
         <AppText
           style={[styles.text, isSecondary && styles.secondaryText, variant === 'danger' && styles.dangerText]}
           variant="bodySmall"
-          weight={typography.weights.black}
+          weight={typography.weights.semibold}
         >
           {children}
         </AppText>
@@ -63,7 +63,7 @@ export function AppButton({
 const styles = StyleSheet.create({
   button: {
     alignItems: 'center',
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     justifyContent: 'center',
   },
   inner: {
@@ -74,17 +74,17 @@ const styles = StyleSheet.create({
   },
   sm: {
     minHeight: 38,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.md + 2,
     paddingVertical: spacing.xs,
   },
   md: {
     minHeight: 48,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.xl,
     paddingVertical: spacing.sm,
   },
   lg: {
     minHeight: 56,
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: spacing.xxl,
     paddingVertical: spacing.md,
   },
   primary: {
@@ -102,14 +102,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
   },
   dark: {
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   disabled: {
-    opacity: 0.45,
+    opacity: 0.4,
   },
   pressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.99 }],
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
   },
   text: {
     color: colors.surface,
