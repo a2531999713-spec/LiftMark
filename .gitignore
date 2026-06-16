@@ -50,6 +50,7 @@ yarn-error.*
 .idea/
 .vscode/
 .claude/
+.deveco/
 
 # local AI development materials
 ai-doc-driven-development/
