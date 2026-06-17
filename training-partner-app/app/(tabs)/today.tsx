@@ -13,9 +13,7 @@ import {
   Screen,
   SectionHeader,
   Tag,
-  VisualHeroCard,
 } from '@/components/ui';
-import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
@@ -485,275 +483,169 @@ export default function TodayRoute() {
 
       {!isLoading && !error && group ? (
         <>
-          {/* ═══ Hero Card ═══ */}
-          <VisualHeroCard
-            eyebrow={activePlan?.name ?? '练刻'}
-            icon="barbell-outline"
-            imageSource={liftmarkImages.trainingHero}
-            subtitle={`${getGreetingByHour()}，今天的主题是 ${heroTheme}`}
-            title={heroTheme}
-          >
-            <View style={styles.heroStats}>
-              <View style={styles.heroStatBlock}>
-                <AppText tone="inverse" variant="caption">
-                  周期进度
-                </AppText>
-                <AppText tone="inverse" variant="subtitle">
-                  {activePlanProgress}%
-                </AppText>
-              </View>
-              <View style={styles.heroDivider} />
-              <View style={styles.heroStatBlock}>
-                <AppText tone="inverse" variant="caption">
-                  今日动作
-                </AppText>
-                <AppText tone="inverse" variant="subtitle">
-                  {planExercises.length > 0 ? `${planExercises.length} 个` : '自由训练'}
-                </AppText>
-              </View>
-              <View style={styles.heroDivider} />
-              <View style={styles.heroStatBlock}>
-                <AppText tone="inverse" variant="caption">
-                  周五策略
-                </AppText>
-                <AppText tone="inverse" variant="subtitle">
-                  {formatFridayStrategy(group.fridayStrategy)}
-                </AppText>
-              </View>
+          {/* ═══ Header ═══ */}
+          <View style={styles.headerSection}>
+            <View>
+              <AppText variant="title" weight="900">{getGreetingByHour()}</AppText>
+              <AppText tone="muted" variant="caption">
+                {new Date().toLocaleDateString('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' })}
+              </AppText>
             </View>
-            <View style={styles.heroButtonRow}>
-              <AppButton disabled={!canStartWorkout || isStarting} icon="play-outline" onPress={() => void startWorkout()} size="lg">
-                {isStarting ? '正在开始...' : '开始训练'}
-              </AppButton>
+            <View style={styles.statusBar}>
+              <Tag label={activePlan?.name ?? '无计划'} tone="dark" />
+              <AppText variant="bodySmall" weight="900">{cycleLabel}</AppText>
             </View>
-          </VisualHeroCard>
+          </View>
 
-          {/* ═══ Quick Actions ═══ */}
-          <View style={styles.quickActions}>
+          {/* ═══ Quick Actions Grid ═══ */}
+          <View style={styles.quickActionsGrid}>
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push('/(tabs)/plan')}
-              style={({ pressed }) => [styles.quickActionItem, pressed && styles.quickActionPressed]}
+              style={({ pressed }) => [styles.quickActionCard, pressed && styles.quickActionPressed]}
             >
               <View style={[styles.quickActionIcon, { backgroundColor: colors.brandSoft }]}>
                 <Ionicons color={colors.brand} name="clipboard-outline" size={20} />
               </View>
-              <AppText variant="bodySmall" weight="800">
-                今日计划
-              </AppText>
-              <AppText tone="muted" variant="caption">
-                {activePlan?.name ?? '去查看'}
-              </AppText>
+              <AppText variant="bodySmall" weight="800">今日训练</AppText>
+              <AppText tone="muted" variant="caption">{activePlan?.name ?? '去查看'}</AppText>
             </Pressable>
 
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push('/(tabs)/history')}
-              style={({ pressed }) => [styles.quickActionItem, pressed && styles.quickActionPressed]}
+              style={({ pressed }) => [styles.quickActionCard, pressed && styles.quickActionPressed]}
             >
               <View style={[styles.quickActionIcon, { backgroundColor: colors.accentSoft }]}>
                 <Ionicons color={colors.accent} name="time-outline" size={20} />
               </View>
-              <AppText variant="bodySmall" weight="800">
-                训练记录
-              </AppText>
-              <AppText tone="muted" variant="caption">
-                查看历史
-              </AppText>
+              <AppText variant="bodySmall" weight="800">训练记录</AppText>
+              <AppText tone="muted" variant="caption">查看历史</AppText>
             </Pressable>
 
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push('/history/analytics' as never)}
-              style={({ pressed }) => [styles.quickActionItem, pressed && styles.quickActionPressed]}
+              style={({ pressed }) => [styles.quickActionCard, pressed && styles.quickActionPressed]}
             >
               <View style={[styles.quickActionIcon, { backgroundColor: colors.warningSoft }]}>
                 <Ionicons color={colors.warning} name="trending-up-outline" size={20} />
               </View>
-              <AppText variant="bodySmall" weight="800">
-                训练分析
-              </AppText>
+              <AppText variant="bodySmall" weight="800">训练分析</AppText>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push('/(tabs)/members')}
+              style={({ pressed }) => [styles.quickActionCard, pressed && styles.quickActionPressed]}
+            >
+              <View style={[styles.quickActionIcon, { backgroundColor: colors.successSoft }]}>
+                <Ionicons color={colors.success} name="people-outline" size={20} />
+              </View>
+              <AppText variant="bodySmall" weight="800">训练搭子</AppText>
+              <AppText tone="muted" variant="caption">开发中</AppText>
             </Pressable>
           </View>
 
-          {/* ═══ Plan Switcher Card ═══ */}
-          <AppCard style={styles.planSwitchCard}>
-            <View style={styles.planSwitchHeader}>
-              <View style={styles.planSwitchInfo}>
-                <AppText variant="subtitle">{activePlan?.name ?? '还没有当前计划'}</AppText>
-                <AppText tone="muted" variant="bodySmall">
-                  第 {group.currentWeek} / {activePlanWeeks} 周
-                </AppText>
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setPlanSwitcherVisible(true)}
-                style={styles.planSwitchBtn}
-              >
-                <AppText variant="bodySmall" weight="900">
-                  切换
-                </AppText>
-              </Pressable>
-            </View>
-            <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: `${activePlanProgress}%` }]} />
-            </View>
-          </AppCard>
+          {/* ═══ Today Workout Card ═══ */}
+          <AppCard style={styles.todayWorkoutCard}>
+            <SectionHeader subtitle="基于今日计划" title="今日训练" />
 
-          {/* ═══ Recovery Status ═══ */}
-          <AppCard style={styles.recoveryCard}>
-            <SectionHeader subtitle="状态会影响动作数量" title="今日状态" />
-            <View style={styles.recoveryRow}>
-              {recoveryOptions.map((option) => {
-                const isActive = recoveryMode === option.mode;
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={option.mode}
-                    onPress={() => setRecoveryMode(option.mode)}
-                    style={[styles.recoveryChip, isActive && styles.recoveryChipActive]}
-                  >
-                    <Ionicons color={isActive ? colors.surface : colors.textMuted} name={option.icon} size={16} />
-                    <AppText tone={isActive ? 'inverse' : 'muted'} variant="caption">
-                      {option.label}
-                    </AppText>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </AppCard>
+            {selectedChoice.free || (selectedChoice.key === 'weak' && planExercises.length === 0) ? (
+              <>
+                {freeExerciseRows.map((exercise, index) => (
+                  <View key={exercise.id} style={styles.exerciseRow}>
+                    <PriorityTag priority={index === 0 ? 'A' : index === 1 ? 'B' : 'C'} />
+                    <View style={styles.exerciseInfo}>
+                      <AppText variant="bodySmall" weight="900">{exercise.name}</AppText>
+                      <AppText tone="muted" variant="caption">自由训练建议 · 现场设置重量</AppText>
+                    </View>
+                  </View>
+                ))}
+              </>
+            ) : (
+              <>
+                {planExercises.slice(0, 3).map((planExercise) => {
+                  const exercise = exerciseMap[planExercise.exerciseId] ?? null;
+                  return (
+                    <View key={planExercise.id} style={styles.exerciseRow}>
+                      <PriorityTag priority={planExercise.priority} />
+                      <View style={styles.exerciseInfo}>
+                        <AppText variant="bodySmall" weight="900">{exercise?.name ?? planExercise.exerciseId}</AppText>
+                        <AppText tone="muted" variant="caption">{formatPrescription(planExercise)} · {formatIntensity(planExercise)}</AppText>
+                      </View>
+                    </View>
+                  );
+                })}
+                {planExercises.length > 3 && (
+                  <AppText tone="muted" variant="caption">还有 {planExercises.length - 3} 个动作...</AppText>
+                )}
+              </>
+            )}
 
-          {/* ═══ Friday rest card ═══ */}
-          {isDefaultFridayRest ? (
-            <AppCard style={styles.fridayCard} tone="brand">
-              <View style={styles.fridayHeader}>
-                <Ionicons color={colors.brand} name="moon-outline" size={20} />
-                <AppText variant="subtitle">周五休息日</AppText>
-              </View>
-              <AppText tone="muted" variant="bodySmall">
-                默认建议恢复。你仍然可以手动选择其他训练日。
-              </AppText>
-              <View style={styles.fridayActions}>
-                <AppButton onPress={() => setSelectedChoiceKey('weak')} size="sm">
-                  开启补弱
-                </AppButton>
-                <AppButton onPress={() => setSelectedChoiceKey('day1')} size="sm" variant="secondary">
-                  选择训练日
-                </AppButton>
-                <AppButton onPress={() => setSelectedChoiceKey('free')} size="sm" variant="secondary">
-                  自由训练
-                </AppButton>
-              </View>
-            </AppCard>
-          ) : null}
-
-          {/* ═══ Day Selector ═══ */}
-          <AppCard style={styles.daySelectorCard}>
-            <SectionHeader subtitle="不想按默认安排？可以手动切换" title="训练日选择" />
-            <View style={styles.dayPillRow}>
-              {trainingChoices.map((choice) => {
-                const isActive = selectedChoiceKey === choice.key;
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={choice.key}
-                    onPress={() => setSelectedChoiceKey(choice.key)}
-                    style={[styles.dayPill, isActive && styles.dayPillActive]}
-                  >
-                    <AppText tone={isActive ? 'inverse' : 'default'} variant="bodySmall" weight="900">
-                      {choice.label}
-                    </AppText>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </AppCard>
-
-          {/* ═══ Members ═══ */}
-          {members.length === 0 ? (
-            <EmptyState
-              actionLabel="去添加搭子"
-              description="添加成员后可以看到每个人的建议重量，并开始多人轮换训练。"
-              onActionPress={() => router.push('/(tabs)/members')}
-              title="还没有训练搭子"
-            />
-          ) : (
-            <>
-              <SectionHeader subtitle="基于今日动作估算" title="成员建议重量" />
-              <AppCard style={styles.weightCard}>
-                {members.map((member) => {
+            {members.length > 0 && (
+              <>
+                <View style={styles.divider} />
+                <AppText variant="bodySmall" weight="900">成员建议重量</AppText>
+                {members.slice(0, 2).map((member) => {
                   const suggestedWeight = formatSuggestedWeight(firstPlanExercise, firstExercise, profiles[member.id] ?? null);
                   return (
                     <View key={member.id} style={styles.weightRow}>
                       <View style={styles.avatarSmall}>
-                        <AppText tone="inverse" variant="caption">
-                          {member.displayName.slice(0, 1)}
-                        </AppText>
+                        <AppText tone="inverse" variant="caption">{member.displayName.slice(0, 1)}</AppText>
                       </View>
                       <View style={styles.weightInfo}>
-                        <AppText variant="bodySmall" weight="900">
-                          {member.displayName}
-                        </AppText>
-                        <AppText tone="muted" variant="caption">
-                          {suggestedWeight.hint}
-                        </AppText>
+                        <AppText variant="bodySmall" weight="900">{member.displayName}</AppText>
+                        <AppText tone="muted" variant="caption">{suggestedWeight.hint}</AppText>
                       </View>
-                      <AppText variant="bodySmall" weight="900">
-                        {suggestedWeight.value}
-                      </AppText>
+                      <AppText variant="bodySmall" weight="900">{suggestedWeight.value}</AppText>
                     </View>
                   );
                 })}
-              </AppCard>
-            </>
-          )}
+                {members.length > 2 && (
+                  <AppText tone="muted" variant="caption">还有 {members.length - 2} 位成员...</AppText>
+                )}
+              </>
+            )}
 
-          {/* ═══ Exercise List ═══ */}
-          <SectionHeader subtitle="今日动作已按优先级安排" title="训练内容" />
-          <View style={styles.exerciseList}>
-            {selectedChoice.free || (selectedChoice.key === 'weak' && planExercises.length === 0)
-              ? freeExerciseRows.map((exercise, index) => (
-                  <AppCard key={exercise.id} style={styles.exerciseCard}>
-                    <View style={styles.exerciseRow}>
-                      <PriorityTag priority={index === 0 ? 'A' : index === 1 ? 'B' : 'C'} />
-                      <View style={styles.exerciseInfo}>
-                        <AppText variant="bodySmall" weight="900">
-                          {exercise.name}
-                        </AppText>
-                        <AppText tone="muted" variant="caption">
-                          自由训练建议 · 现场设置重量
-                        </AppText>
-                      </View>
-                      <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
-                    </View>
-                  </AppCard>
-                ))
-              : planExercises.map((planExercise) => {
-                  const exercise = exerciseMap[planExercise.exerciseId] ?? null;
+            <AppButton
+              disabled={!canStartWorkout || isStarting}
+              icon="play-outline"
+              onPress={() => void startWorkout()}
+              size="lg"
+              style={styles.startButton}
+            >
+              {isStarting ? '正在开始...' : '开始训练'}
+            </AppButton>
+          </AppCard>
 
-                  return (
-                    <AppCard key={planExercise.id} style={styles.exerciseCard}>
-                      <View style={styles.exerciseRow}>
-                        <PriorityTag priority={planExercise.priority} />
-                        <View style={styles.exerciseInfo}>
-                          <AppText variant="bodySmall" weight="900">
-                            {exercise?.name ?? planExercise.exerciseId}
-                          </AppText>
-                          <AppText tone="muted" variant="caption">
-                            {formatPrescription(planExercise)} · {formatIntensity(planExercise)}
-                          </AppText>
-                        </View>
-                        <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
-                      </View>
-                      {planExercise.notes ? (
-                        <AppText style={styles.exerciseNote} tone="muted" variant="caption">
-                          {planExercise.notes}
-                        </AppText>
-                      ) : null}
-                    </AppCard>
-                  );
-                })}
+          {/* ═══ Plan Switcher ═══ */}
+          <View style={styles.planSwitchRow}>
+            <View style={styles.planSwitchInfo}>
+              <AppText variant="bodySmall" weight="900">{activePlan?.name ?? '无计划'}</AppText>
+              <AppText tone="muted" variant="caption">第 {group.currentWeek} / {activePlanWeeks} 周</AppText>
+            </View>
+            <View style={styles.progressFillWrap}>
+              <View style={[styles.progressFill, { width: `${activePlanProgress}%` }]} />
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setPlanSwitcherVisible(true)}
+              style={styles.planSwitchBtn}
+            >
+              <AppText variant="bodySmall" weight="900">切换</AppText>
+            </Pressable>
           </View>
+
+          {/* ═══ Empty State ═══ */}
+          {!todayPlan && !selectedChoice.free && (
+            <EmptyState
+              actionLabel="创建计划"
+              description="当前没有训练计划，去创建或导入一个计划开始训练。"
+              onActionPress={() => router.push('/(tabs)/plan')}
+              title="还没有训练计划"
+            />
+          )}
         </>
       ) : null}
 
@@ -862,38 +754,31 @@ const styles = StyleSheet.create({
     width: 40,
   },
 
-  heroStats: {
-    alignItems: 'center',
+  headerSection: {
     flexDirection: 'row',
-    gap: spacing.md,
-    marginTop: spacing.sm,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
   },
-  heroStatBlock: {
-    alignItems: 'center',
-    flex: 1,
-    gap: 2,
-  },
-  heroDivider: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    height: 36,
-    width: 1,
-  },
-  heroButtonRow: {
-    marginTop: spacing.sm,
+  statusBar: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
   },
 
-  quickActions: {
+  quickActionsGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  quickActionItem: {
+  quickActionCard: {
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
-    flex: 1,
     gap: spacing.xs,
+    minWidth: '47%',
     paddingVertical: spacing.md,
     ...shadows.card,
   },
@@ -904,131 +789,24 @@ const styles = StyleSheet.create({
   quickActionIcon: {
     alignItems: 'center',
     borderRadius: radius.sm,
-    height: 36,
+    height: 32,
     justifyContent: 'center',
-    width: 36,
+    width: 32,
   },
 
-  planSwitchCard: {
-    gap: spacing.md,
+  todayWorkoutCard: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  planSwitchHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  divider: {
+    backgroundColor: colors.border,
+    height: 1,
+    marginVertical: spacing.xs,
   },
-  planSwitchInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  planSwitchBtn: {
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  progressBar: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    height: 6,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    backgroundColor: colors.brand,
-    borderRadius: radius.pill,
-    height: '100%',
+  startButton: {
+    marginTop: spacing.sm,
   },
 
-  recoveryCard: {
-    gap: spacing.md,
-  },
-  recoveryRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  recoveryChip: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-  },
-  recoveryChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-
-  fridayCard: {
-    gap: spacing.md,
-  },
-  fridayHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  fridayActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-
-  daySelectorCard: {
-    gap: spacing.md,
-  },
-  dayPillRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  dayPill: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  dayPillActive: {
-    backgroundColor: colors.dark,
-    borderColor: colors.dark,
-  },
-
-  weightCard: {
-    gap: spacing.sm,
-  },
-  weightRow: {
-    alignItems: 'center',
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
-  avatarSmall: {
-    alignItems: 'center',
-    backgroundColor: colors.dark,
-    borderRadius: radius.pill,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  weightInfo: {
-    flex: 1,
-    gap: 2,
-  },
-
-  exerciseList: {
-    gap: spacing.sm,
-  },
-  exerciseCard: {
-    gap: spacing.sm,
-  },
   exerciseRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1038,8 +816,53 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  exerciseNote: {
-    marginTop: spacing.xs,
+  weightRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  avatarSmall: {
+    alignItems: 'center',
+    backgroundColor: colors.dark,
+    borderRadius: radius.pill,
+    height: 24,
+    justifyContent: 'center',
+    width: 24,
+  },
+  weightInfo: {
+    flex: 1,
+    gap: 2,
+  },
+
+  planSwitchRow: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+  },
+  planSwitchInfo: {
+    gap: 2,
+  },
+  planSwitchBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  progressFillWrap: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    height: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    backgroundColor: colors.brand,
+    borderRadius: radius.pill,
+    height: '100%',
   },
 
   planSwitchList: {
@@ -1053,7 +876,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
-    minHeight: 74,
+    minHeight: 64,
     padding: spacing.md,
   },
   planSwitchItemActive: {
@@ -1064,9 +887,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.primarySoft,
     borderRadius: radius.md,
-    height: 38,
+    height: 36,
     justifyContent: 'center',
-    width: 38,
+    width: 36,
   },
   exerciseText: {
     flex: 1,

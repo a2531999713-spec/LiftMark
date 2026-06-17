@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { router, useFocusEffect, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppCard, AppText, EmptyState, Screen, Tag } from '@/components/ui';
@@ -65,10 +65,15 @@ function formatSignedPercent(value?: number): string {
 }
 
 export default function HistoryAnalyticsRoute() {
+  const navigation = useNavigation();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const [rangeWeeks, setRangeWeeks] = useState<HistoryRangeWeeks>(4);
   const [state, setState] = useState<AnalyticsState>({ analysis: null, currentMember: null });
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
   const [error, setError] = useState<string | null>(null);
 
   const loadAnalytics = useCallback(async () => {
