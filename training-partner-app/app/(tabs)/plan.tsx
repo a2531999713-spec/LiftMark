@@ -4,14 +4,13 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
+import { ActionCard, AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
 import { DEFAULT_CYCLE_WEEK_COUNT } from '@/domain/plan/defaultCycle';
 import type { PhaseType, PlanDay, PlanTemplate } from '@/domain/plan/plan.types';
-import { createPlanProgressionView } from '@/domain/plan/planProgression';
 import {
   describeSchemeGoal,
   describeSchemeLevel,
@@ -60,8 +59,6 @@ const emptyStats: PlanDashboardStats = {
   weeklySessionCount: 0,
   weeklyVolume: 0,
 };
-
-const weekTrendLabels = ['3周前', '2周前', '上周', '本周'];
 
 function describePlanSource(source: PlanTemplate['source']) {
   const labels: Record<PlanTemplate['source'], string> = {
@@ -435,21 +432,13 @@ export default function PlanRoute() {
   }, [exportPrompt]);
 
   const activePlanWeeks = activePlan?.durationWeeks ?? DEFAULT_CYCLE_WEEK_COUNT;
+  const activePlanProgress = Math.min(100, Math.round(((group?.currentWeek ?? 1) / activePlanWeeks) * 100));
   const activeUserPlan = userPlans.find((plan) => plan.id === group?.activePlanId) ?? activePlan;
   const previewUserPlans = [
     ...(activeUserPlan ? [activeUserPlan] : []),
     ...userPlans.filter((plan) => plan.id !== activeUserPlan?.id),
   ].slice(0, 3);
   const maxTrend = Math.max(1, ...stats.lastFourWeeks);
-  const progressionView = createPlanProgressionView({
-    currentWeek: group?.currentWeek ?? 1,
-    dayCount: daySummaries.length,
-    dayTitles: daySummaries.map((summary) => summary.day.title),
-    plan: activePlan,
-    sourceLabel: describePlanSource(activePlan?.source ?? 'blank_created'),
-  });
-  const weeklyTarget = progressionView.mode === 'weekly' ? (activePlan?.frequencyPerWeek ?? 0) : 0;
-  const completionRate = weeklyTarget > 0 ? Math.min(100, Math.round((stats.weeklySessionCount / weeklyTarget) * 100)) : 0;
 
   return (
     <Screen
@@ -458,6 +447,7 @@ export default function PlanRoute() {
           <Ionicons color={colors.text} name="add-circle-outline" size={21} />
         </Pressable>
       }
+
     >
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
 
@@ -470,26 +460,17 @@ export default function PlanRoute() {
             icon="clipboard-outline"
             imageSource={liftmarkImages.planHero}
             minHeight={230}
-            subtitle={progressionView.heroSubtitle}
+            subtitle={`第 ${group.currentWeek}/${activePlanWeeks} 周 · ${describePlanSource(activePlan?.source ?? 'blank_created')}`}
             title={activePlan?.name ?? '还没有当前计划'}
           >
             <View style={styles.planMetaRow}>
-              <Tag label={progressionView.sequenceLabel} tone="dark" />
-              <Tag label={progressionView.progressLabel} tone="dark" />
-              <Tag label={progressionView.mode === 'weekly' ? `${activePlanWeeks} 周周期` : '非自然周推进'} tone="dark" />
+              <Tag label={`${activePlan?.frequencyPerWeek ?? 0} 天/周`} tone="dark" />
+              <Tag label={`${activePlanWeeks} 周周期`} tone="dark" />
+              <Tag label={`${activePlanProgress}%`} tone="dark" />
             </View>
-            {progressionView.progressPercent !== undefined ? (
-              <View style={styles.progressTrackDark}>
-                <View style={[styles.progressFill, { width: `${progressionView.progressPercent}%` }]} />
-              </View>
-            ) : (
-              <View style={styles.cycleStripDark}>
-                <Ionicons color={colors.surface} name="repeat-outline" size={16} />
-                <AppText tone="inverse" variant="caption">
-                  {progressionView.scheduleSubtitle}
-                </AppText>
-              </View>
-            )}
+            <View style={styles.progressTrackDark}>
+              <View style={[styles.progressFill, { width: `${activePlanProgress}%` }]} />
+            </View>
             <View style={styles.inlineActions}>
               <AppButton onPress={() => router.push('/(tabs)/today')} size="sm">
                 去训练页
@@ -502,66 +483,43 @@ export default function PlanRoute() {
             </View>
           </VisualHeroCard>
 
-          {progressionView.showWeekControls ? (
-            <View style={styles.weekControls}>
-              <AppButton disabled={group.currentWeek <= 1} onPress={() => void saveWeek(group.currentWeek - 1)} size="sm" variant="secondary">
-                上一周
-              </AppButton>
-              <AppButton disabled={group.currentWeek >= activePlanWeeks} onPress={() => void saveWeek(group.currentWeek + 1)} size="sm">
-                下一周
-              </AppButton>
-            </View>
-          ) : (
-            <AppCard style={styles.cycleCard} tone="soft">
-              <Ionicons color={colors.primary} name="repeat-outline" size={20} />
-              <View style={styles.cycleCardText}>
-                <AppText variant="bodySmall" weight="900">
-                  {progressionView.sequenceLabel}
-                </AppText>
-                <AppText tone="muted" variant="caption">
-                  {progressionView.scheduleSubtitle}
-                </AppText>
-              </View>
-            </AppCard>
-          )}
+          <View style={styles.weekControls}>
+            <AppButton disabled={group.currentWeek <= 1} onPress={() => void saveWeek(group.currentWeek - 1)} size="sm" variant="secondary">
+              上一周
+            </AppButton>
+            <AppButton disabled={group.currentWeek >= activePlanWeeks} onPress={() => void saveWeek(group.currentWeek + 1)} size="sm">
+              下一周
+            </AppButton>
+          </View>
 
           <AppCard style={styles.dashboardCard}>
             <View style={styles.dashboardHeader}>
               <View>
-                <AppText variant="subtitle">近期执行</AppText>
+                <AppText variant="subtitle">本周执行</AppText>
                 <AppText tone="muted" variant="caption">
-                  当前计划下最近 7 天的本机训练记录
+                  当前计划下的本机训练记录
                 </AppText>
               </View>
               <Tag label={stats.recentSessionDate ? `最近 ${stats.recentSessionDate}` : '暂无训练'} tone={stats.recentSessionDate ? 'success' : 'neutral'} />
             </View>
             <View style={styles.statGrid}>
-              <StatTile label="已完成" value={weeklyTarget > 0 ? `${stats.weeklySessionCount}/${weeklyTarget} 次` : `${stats.weeklySessionCount} 次`} />
+              <StatTile label="完成训练" value={`${stats.weeklySessionCount} 次`} />
               <StatTile label="完成组数" value={`${stats.weeklyCompletedSets} 组`} />
-              <StatTile label="完成率" value={weeklyTarget > 0 ? `${completionRate}%` : '--'} />
               <StatTile label="训练量" value={formatKg(stats.weeklyVolume)} wide />
             </View>
-            <View style={styles.weekTrendList}>
-              <AppText variant="bodySmall" weight="900">
-                最近 4 周
-              </AppText>
+            <View style={styles.trendRow}>
               {stats.lastFourWeeks.map((count, index) => (
-                <View key={weekTrendLabels[index]} style={styles.weekTrendItem}>
-                  <AppText style={styles.weekTrendLabel} tone="muted" variant="caption">
-                    {weekTrendLabels[index]}
-                  </AppText>
-                  <View style={styles.weekTrendTrack}>
-                    <View style={[styles.weekTrendFill, { width: `${Math.round((count / maxTrend) * 100)}%` }]} />
-                  </View>
-                  <AppText style={styles.weekTrendValue} variant="caption" weight="900">
-                    {count} 次
+                <View key={index} style={styles.trendItem}>
+                  <View style={[styles.trendBar, { height: 18 + Math.round((count / maxTrend) * 46) }]} />
+                  <AppText tone="muted" variant="caption">
+                    W-{3 - index}
                   </AppText>
                 </View>
               ))}
             </View>
           </AppCard>
 
-          <SectionHeader subtitle={progressionView.scheduleSubtitle} title={progressionView.scheduleTitle} />
+          <SectionHeader subtitle="按当前周展示，训练页会读取完整计划。" title="本周安排" />
           {daySummaries.length === 0 ? (
             <AppCard style={styles.emptyPlanCard} tone="soft">
               <AppText variant="bodySmall" weight="900">
@@ -573,7 +531,7 @@ export default function PlanRoute() {
             </AppCard>
           ) : (
             <View style={styles.dayList}>
-              {daySummaries.map((summary, index) => (
+              {daySummaries.map((summary) => (
                 <AppCard key={summary.day.id} style={styles.dayCard}>
                   <View style={styles.dayHeader}>
                     <View style={styles.dayBadge}>
@@ -589,7 +547,7 @@ export default function PlanRoute() {
                         {summary.day.focus} · {summary.exerciseCount} 个动作
                       </AppText>
                     </View>
-                    <Tag label={progressionView.mode === 'weekly' ? `周 ${summary.day.week}` : `第 ${index + 1} 天`} tone="neutral" />
+                    <Tag label={`周 ${summary.day.week}`} tone="neutral" />
                   </View>
                   {summary.exerciseNames.length > 0 ? (
                     <View style={styles.tagRow}>
@@ -606,13 +564,69 @@ export default function PlanRoute() {
             </View>
           )}
 
-          <AppButton
-            icon="add-circle-outline"
-            onPress={() => setNotice({ title: '管理计划', message: '点击右上角 + 按钮创建新计划，或长按计划卡片管理。' })}
-            variant="secondary"
-          >
-            管理我的计划 ({userPlans.length})
-          </AppButton>
+          <SectionHeader actionLabel="管理全部" onActionPress={() => setManageVisible(true)} title="我的计划" />
+          {userPlans.length === 0 ? (
+            <EmptyState
+              actionLabel="选择系统方案"
+              description="你还没有自己的训练计划。可以从系统方案开始，也可以从空白创建。"
+              onActionPress={() => setNotice({ title: '选择系统方案', message: '向下浏览系统方案卡片，点击“使用此方案”即可复制为我的计划。' })}
+              title="你还没有自己的训练计划"
+            />
+          ) : (
+            <View style={styles.list}>
+              {previewUserPlans.map((plan) => (
+                <PlanSummaryCard
+                  active={plan.id === group.activePlanId}
+                  key={plan.id}
+                  onOpen={() => router.push({ pathname: '/plan/[planId]', params: { planId: plan.id } })}
+                  plan={plan}
+                />
+              ))}
+            </View>
+          )}
+
+          <AppCard style={styles.toolCard}>
+            <View style={styles.toolHeader}>
+              <View>
+                <AppText variant="subtitle">计划工具</AppText>
+                <AppText tone="muted" variant="caption">
+                  创建空白计划或导入 .liftmark.json
+                </AppText>
+              </View>
+              <Tag label={`${userPlans.length} 个我的计划`} tone="neutral" />
+            </View>
+            <View style={styles.actionGrid}>
+              <ActionCard icon="add-outline" label="创建计划" onPress={() => router.push('/plan/create')} />
+              <ActionCard icon="download-outline" label="导入计划" onPress={() => void importPlan()} />
+            </View>
+          </AppCard>
+
+          <SectionHeader subtitle="系统方案只是模板，点击使用后才会复制为我的计划。" title="系统方案" />
+          <View style={styles.list}>
+            {availableSchemes.map((scheme) => (
+              <SchemeCard key={scheme.id} onPreview={() => setPreviewScheme(scheme)} onUse={() => openUseScheme(scheme)} scheme={scheme} />
+            ))}
+            {upcomingSchemes.length > 0 ? (
+              <AppCard style={styles.upcomingCard} tone="soft">
+                <View style={styles.planRow}>
+                  <View style={styles.schemeIconMuted}>
+                    <Ionicons color={colors.textMuted} name="layers-outline" size={20} />
+                  </View>
+                  <View style={styles.planRowText}>
+                    <AppText variant="subtitle">更多方案开发中</AppText>
+                    <AppText tone="muted" variant="caption">
+                      {upcomingSchemes
+                        .slice(0, 4)
+                        .map((scheme) => scheme.title)
+                        .join('、')}
+                      {upcomingSchemes.length > 4 ? ` 等 ${upcomingSchemes.length} 个` : ''}
+                    </AppText>
+                  </View>
+                  <Tag label="收起展示" tone="neutral" />
+                </View>
+              </AppCard>
+            ) : null}
+          </View>
 
           {isWorking ? (
             <AppText tone="muted" variant="bodySmall">
@@ -630,14 +644,6 @@ export default function PlanRoute() {
         visible={isManageVisible}
       >
         <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={styles.manageToolbar}>
-            <AppButton icon="download-outline" onPress={() => void importPlan()} variant="secondary">
-              导入计划文件
-            </AppButton>
-            <AppText tone="muted" variant="caption">
-              导入后会成为“我的计划”，不会覆盖系统方案或历史记录。
-            </AppText>
-          </View>
           <View style={styles.list}>
             {userPlans.map((plan) => {
               const isActive = plan.id === group?.activePlanId;
@@ -650,7 +656,7 @@ export default function PlanRoute() {
                         {plan.name}
                       </AppText>
                       <AppText tone="muted" variant="caption">
-                        {describePlanSource(plan.source)} · {plan.durationWeeks} 周 · 每周 {plan.frequencyPerWeek} 练
+                        {plan.durationWeeks} 周 · 每周 {plan.frequencyPerWeek} 练
                       </AppText>
                     </View>
                     <Tag label={isActive ? '当前计划' : '我的计划'} tone={isActive ? 'success' : 'neutral'} />
@@ -910,6 +916,10 @@ function SchemeCard({
 }
 
 const styles = StyleSheet.create({
+  actionGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   compactPreview: {
     gap: spacing.md,
     padding: spacing.md,
@@ -947,24 +957,6 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  cycleCard: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-    padding: spacing.md,
-  },
-  cycleCardText: {
-    flex: 1,
-    gap: 2,
-  },
-  cycleStripDark: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderRadius: radius.sm,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    padding: spacing.sm,
-  },
   emptyPlanCard: {
     gap: spacing.xs,
     padding: spacing.md,
@@ -993,10 +985,6 @@ const styles = StyleSheet.create({
   managePlanCard: {
     gap: spacing.md,
     padding: spacing.md,
-  },
-  manageToolbar: {
-    gap: spacing.sm,
-    marginBottom: spacing.md,
   },
   modalButtons: {
     gap: spacing.sm,
@@ -1050,7 +1038,6 @@ const styles = StyleSheet.create({
   },
   statGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   statTile: {
@@ -1080,38 +1067,37 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.xs,
   },
+  toolCard: {
+    gap: spacing.md,
+  },
+  toolHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+  },
+  trendBar: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    width: '74%',
+  },
+  trendItem: {
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing.xs,
+    justifyContent: 'flex-end',
+    minHeight: 82,
+  },
+  trendRow: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   upcomingCard: {
     gap: spacing.md,
   },
   weekControls: {
     flexDirection: 'row',
     gap: spacing.sm,
-  },
-  weekTrendFill: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    height: '100%',
-  },
-  weekTrendItem: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  weekTrendLabel: {
-    width: 46,
-  },
-  weekTrendList: {
-    gap: spacing.sm,
-  },
-  weekTrendTrack: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    flex: 1,
-    height: 8,
-    overflow: 'hidden',
-  },
-  weekTrendValue: {
-    textAlign: 'right',
-    width: 42,
   },
 });

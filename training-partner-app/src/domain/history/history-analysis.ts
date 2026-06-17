@@ -1,3 +1,5 @@
+import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
+
 export type HistorySetEntry = {
   sessionId: string;
   exerciseId: string;
@@ -32,12 +34,405 @@ export type HistorySeries = {
   entries: HistorySetEntry[];
 };
 
+export type HistoryRangeWeeks = 4 | 8;
+
+export type HistoryAnalysisRangeOption = {
+  label: string;
+  weeks: HistoryRangeWeeks;
+};
+
+export const historyAnalysisRangeOptions: HistoryAnalysisRangeOption[] = [
+  { label: '最近 4 周', weeks: 4 },
+  { label: '最近 8 周', weeks: 8 },
+];
+
+export function getAvailableHistoryAnalysisRanges(): HistoryAnalysisRangeOption[] {
+  return historyAnalysisRangeOptions;
+}
+
+export type WeeklyHistoryBucket = {
+  label: string;
+  startDate: string;
+  endDate: string;
+  volume: number;
+  sessionCount: number;
+  completedSets: number;
+  totalSets: number;
+  completionRate: number;
+  prCount: number;
+};
+
+export type CoreLiftTrend = {
+  key: 'bench' | 'squat' | 'deadlift' | 'press';
+  name: string;
+  currentEstimatedOneRM?: number;
+  change?: number;
+  direction: HistoryTrendDirection;
+  points: {
+    label: string;
+    estimatedOneRM?: number;
+  }[];
+};
+
+export type PrTimelineItem = {
+  id: string;
+  date: string;
+  exerciseId: string;
+  exerciseName: string;
+  weight: number;
+  reps: number;
+  estimatedOneRM: number;
+  tag: '新 PR' | '接近 PR' | '稳定';
+};
+
+export type PersonalHistoryAnalysis = {
+  memberId: string;
+  rangeWeeks: HistoryRangeWeeks;
+  totalVolume: number;
+  sessionCount: number;
+  completedSets: number;
+  totalSets: number;
+  completionRate: number;
+  volumeChangePercent?: number;
+  completionChangePercent?: number;
+  sessionTrendLabel: string;
+  prCount: number;
+  weeklyBuckets: WeeklyHistoryBucket[];
+  currentWeek: WeeklyHistoryBucket;
+  coreLifts: CoreLiftTrend[];
+  prTimeline: PrTimelineItem[];
+  insights: string[];
+};
+
+export type GroupHistoryAnalysis = {
+  groupId: string;
+  rangeWeeks: HistoryRangeWeeks;
+  status: 'reserved';
+  title: string;
+  futureMetrics: string[];
+};
+
 export function estimateOneRM(weight: number, reps: number): number {
   if (!Number.isFinite(weight) || !Number.isFinite(reps) || weight <= 0 || reps < 1 || reps > 12) {
     return 0;
   }
 
   return Math.round(weight * (1 + reps / 30) * 10) / 10;
+}
+
+function parseLocalDate(date: string): Date {
+  return new Date(`${date}T12:00:00`);
+}
+
+function toLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date: Date, count: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + count);
+  return next;
+}
+
+function getRangeLabels(rangeWeeks: HistoryRangeWeeks): string[] {
+  if (rangeWeeks === 4) {
+    return ['3周前', '2周前', '上周', '本周'];
+  }
+
+  return ['7周前', '6周前', '5周前', '4周前', '3周前', '2周前', '上周', '本周'];
+}
+
+function getChangePercent(current: number, previous: number): number | undefined {
+  if (previous <= 0) {
+    return current > 0 ? 100 : undefined;
+  }
+
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+function formatChangeLabel(current: number, previous: number): string {
+  const change = getChangePercent(current, previous);
+  if (change === undefined || Math.abs(change) < 3) {
+    return '持平';
+  }
+
+  return `${change > 0 ? '+' : ''}${change}%`;
+}
+
+function getDirectionFromValues(values: number[]): HistoryTrendDirection {
+  const active = values.filter((value) => value > 0);
+  if (active.length < 2) {
+    return 'unknown';
+  }
+
+  return getTrend([active[0], active.at(-1)!], 0.03);
+}
+
+function normalizeExerciseName(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '');
+}
+
+function getCoreLiftKey(name: string): CoreLiftTrend['key'] | null {
+  const normalized = normalizeExerciseName(name);
+
+  if (normalized.includes('卧推') || normalized.includes('benchpress')) {
+    return 'bench';
+  }
+
+  if (normalized.includes('深蹲') || normalized.includes('squat')) {
+    return 'squat';
+  }
+
+  if (normalized.includes('硬拉') || normalized.includes('deadlift')) {
+    return 'deadlift';
+  }
+
+  if (normalized.includes('肩推') || normalized.includes('推举') || normalized.includes('overheadpress')) {
+    return 'press';
+  }
+
+  return null;
+}
+
+function getCoreLiftName(key: CoreLiftTrend['key']): string {
+  const names: Record<CoreLiftTrend['key'], string> = {
+    bench: '卧推',
+    squat: '深蹲',
+    deadlift: '硬拉',
+    press: '肩推',
+  };
+
+  return names[key];
+}
+
+function getBucketIndex(date: string, rangeStart: Date, rangeWeeks: HistoryRangeWeeks): number {
+  const diffDays = Math.floor((parseLocalDate(date).getTime() - rangeStart.getTime()) / 86400000);
+  const index = Math.floor(diffDays / 7);
+  if (index < 0 || index >= rangeWeeks) {
+    return -1;
+  }
+
+  return index;
+}
+
+function getSessionSortValue(detail: WorkoutSessionDetail): string {
+  return `${detail.session.date} ${detail.session.updatedAt}`;
+}
+
+type SetPerformance = {
+  id: string;
+  bucketIndex: number;
+  date: string;
+  exerciseId: string;
+  exerciseName: string;
+  weight: number;
+  reps: number;
+  estimatedOneRM: number;
+};
+
+export function getPersonalHistoryAnalysis(
+  details: WorkoutSessionDetail[],
+  memberId: string,
+  exerciseNamesById: Record<string, string> = {},
+  rangeWeeks: HistoryRangeWeeks = 4,
+  today = new Date(),
+): PersonalHistoryAnalysis {
+  const labels = getRangeLabels(rangeWeeks);
+  const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
+  const rangeStart = addDays(endDate, -(rangeWeeks * 7 - 1));
+  const buckets: WeeklyHistoryBucket[] = labels.map((label, index) => {
+    const start = addDays(rangeStart, index * 7);
+    const end = addDays(start, 6);
+    return {
+      label,
+      startDate: toLocalDateString(start),
+      endDate: toLocalDateString(end),
+      volume: 0,
+      sessionCount: 0,
+      completedSets: 0,
+      totalSets: 0,
+      completionRate: 0,
+      prCount: 0,
+    };
+  });
+
+  const sessionIdsByBucket = new Map<number, Set<string>>();
+  const performances: SetPerformance[] = [];
+
+  const chronologicalDetails = [...details].sort((left, right) => getSessionSortValue(left).localeCompare(getSessionSortValue(right)));
+
+  for (const detail of chronologicalDetails) {
+    const bucketIndex = getBucketIndex(detail.session.date, rangeStart, rangeWeeks);
+    if (bucketIndex < 0) {
+      continue;
+    }
+
+    const memberSets = detail.sets.filter((set) => set.memberId === memberId);
+    if (memberSets.length === 0) {
+      continue;
+    }
+
+    if (!sessionIdsByBucket.has(bucketIndex)) {
+      sessionIdsByBucket.set(bucketIndex, new Set());
+    }
+    sessionIdsByBucket.get(bucketIndex)!.add(detail.session.id);
+
+    for (const set of memberSets) {
+      const record = detail.exercises.find((exercise) => exercise.id === set.exerciseRecordId);
+      const exerciseId = record?.exerciseId ?? set.exerciseRecordId;
+      const exerciseName = exerciseNamesById[exerciseId] ?? '未知动作';
+      const weight = set.actualWeight ?? set.plannedWeight ?? 0;
+      const reps = set.actualReps ?? set.plannedReps ?? 0;
+      buckets[bucketIndex].totalSets += 1;
+
+      if (!set.completed) {
+        continue;
+      }
+
+      buckets[bucketIndex].completedSets += 1;
+      buckets[bucketIndex].volume += weight * reps;
+
+      const estimatedOneRM = estimateOneRM(weight, reps);
+      if (estimatedOneRM > 0) {
+        performances.push({
+          id: `${detail.session.id}:${set.id}`,
+          bucketIndex,
+          date: detail.session.date,
+          exerciseId,
+          exerciseName,
+          weight,
+          reps,
+          estimatedOneRM,
+        });
+      }
+    }
+  }
+
+  buckets.forEach((bucket, index) => {
+    bucket.sessionCount = sessionIdsByBucket.get(index)?.size ?? 0;
+    bucket.completionRate = bucket.totalSets > 0 ? bucket.completedSets / bucket.totalSets : 0;
+  });
+
+  const bestByExercise = new Map<string, number>();
+  const timeline: PrTimelineItem[] = [];
+  for (const performance of performances) {
+    const previousBest = bestByExercise.get(performance.exerciseId) ?? 0;
+    let tag: PrTimelineItem['tag'] = '稳定';
+    if (performance.estimatedOneRM > previousBest + 0.1) {
+      tag = '新 PR';
+      bestByExercise.set(performance.exerciseId, performance.estimatedOneRM);
+    } else if (previousBest > 0 && performance.estimatedOneRM >= previousBest * 0.97) {
+      tag = '接近 PR';
+    }
+
+    if (tag !== '稳定') {
+      timeline.push({ ...performance, tag });
+    }
+  }
+
+  const prTimeline = timeline.sort((left, right) => right.date.localeCompare(left.date)).slice(0, 12);
+  const prCountByBucket = new Map<number, number>();
+  prTimeline
+    .filter((item) => item.tag === '新 PR')
+    .forEach((item) => {
+      const bucketIndex = getBucketIndex(item.date, rangeStart, rangeWeeks);
+      if (bucketIndex >= 0) {
+        prCountByBucket.set(bucketIndex, (prCountByBucket.get(bucketIndex) ?? 0) + 1);
+      }
+    });
+  buckets.forEach((bucket, index) => {
+    bucket.prCount = prCountByBucket.get(index) ?? 0;
+  });
+
+  const coreLiftKeys: CoreLiftTrend['key'][] = ['bench', 'squat', 'deadlift', 'press'];
+  const coreLifts = coreLiftKeys.map((key) => {
+    const values = buckets.map(() => 0);
+    performances.forEach((performance) => {
+      if (getCoreLiftKey(performance.exerciseName) === key) {
+        values[performance.bucketIndex] = Math.max(values[performance.bucketIndex], performance.estimatedOneRM);
+      }
+    });
+    const activeValues = values.filter((value) => value > 0);
+    const currentEstimatedOneRM = activeValues.at(-1);
+    const previousEstimatedOneRM = activeValues.length > 1 ? activeValues.at(-2) : undefined;
+
+    return {
+      key,
+      name: getCoreLiftName(key),
+      currentEstimatedOneRM,
+      change:
+        currentEstimatedOneRM !== undefined && previousEstimatedOneRM !== undefined
+          ? Math.round((currentEstimatedOneRM - previousEstimatedOneRM) * 10) / 10
+          : undefined,
+      direction: getDirectionFromValues(values),
+      points: values.map((estimatedOneRM, index) => ({
+        label: labels[index],
+        estimatedOneRM: estimatedOneRM > 0 ? estimatedOneRM : undefined,
+      })),
+    };
+  });
+
+  const currentWeek = buckets.at(-1)!;
+  const previousWeek = buckets.at(-2) ?? buckets[0];
+  const totalVolume = buckets.reduce((sum, bucket) => sum + bucket.volume, 0);
+  const sessionCount = buckets.reduce((sum, bucket) => sum + bucket.sessionCount, 0);
+  const completedSets = buckets.reduce((sum, bucket) => sum + bucket.completedSets, 0);
+  const totalSets = buckets.reduce((sum, bucket) => sum + bucket.totalSets, 0);
+  const completionRate = totalSets > 0 ? completedSets / totalSets : 0;
+  const prCount = buckets.reduce((sum, bucket) => sum + bucket.prCount, 0);
+  const topImprovingLift = coreLifts.find((lift) => lift.direction === 'up');
+
+  const insights = [
+    currentWeek.volume > previousWeek.volume * 1.05
+      ? `本周训练量较上周提升 ${formatChangeLabel(currentWeek.volume, previousWeek.volume)}`
+      : currentWeek.volume < previousWeek.volume * 0.95 && previousWeek.volume > 0
+        ? '本周训练量较上周回落，建议控制恢复节奏'
+        : '最近训练量整体稳定',
+    currentWeek.sessionCount >= previousWeek.sessionCount
+      ? '最近训练频率保持稳定'
+      : '本周训练次数减少，可优先保证下一次训练完成',
+    completionRate >= 0.85
+      ? '完成率较好，可以继续按计划推进'
+      : completionRate >= 0.6
+        ? '完成率处于可观察区间，下一周优先保证目标组'
+        : '完成率偏低，建议下周降低总量或从保守重量恢复',
+    prCount > 0 ? `本周期记录到 ${prCount} 项 PR 动态` : '本周期暂无新 PR，继续积累有效训练样本',
+    topImprovingLift
+      ? `${topImprovingLift.name}趋势上升，下一周可小幅推进`
+      : '核心动作趋势样本仍在积累，可先保持技术质量',
+  ];
+
+  return {
+    memberId,
+    rangeWeeks,
+    totalVolume,
+    sessionCount,
+    completedSets,
+    totalSets,
+    completionRate,
+    volumeChangePercent: getChangePercent(currentWeek.volume, previousWeek.volume),
+    completionChangePercent: getChangePercent(currentWeek.completionRate, previousWeek.completionRate),
+    sessionTrendLabel: formatChangeLabel(currentWeek.sessionCount, previousWeek.sessionCount),
+    prCount,
+    weeklyBuckets: buckets,
+    currentWeek,
+    coreLifts,
+    prTimeline,
+    insights,
+  };
+}
+
+export function getGroupHistoryAnalysis(groupId: string, rangeWeeks: HistoryRangeWeeks = 4): GroupHistoryAnalysis {
+  return {
+    groupId,
+    rangeWeeks,
+    status: 'reserved',
+    title: '本地小组汇总正在开发中',
+    futureMetrics: ['小组本周训练次数', '小组总训练量', '成员完成率排行', '成员 PR 动态', '小组训练日历'],
+  };
 }
 
 function takeRecentFive(entries: HistorySetEntry[]): HistorySetEntry[] {
