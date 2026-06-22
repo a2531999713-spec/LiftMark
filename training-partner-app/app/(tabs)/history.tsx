@@ -360,7 +360,7 @@ export default function HistoryRoute() {
             <>
               <PersonalOverview history={history} />
 
-              <QuickActions onAdd={() => router.push('/history/manual' as never)} onEdit={openRecentForEdit} />
+              <QuickActions onAdd={() => router.push('/history/manual' as never)} onEdit={openRecentForEdit} onAnalytics={() => router.push('/history/analytics' as never)} />
 
               <View style={styles.statGrid}>
                 <MiniStat icon="barbell-outline" label="本周训练" value={`${history.weeklySessionCount} 次`} accent={history.weeklySessionCount > 0} />
@@ -569,7 +569,7 @@ function PersonalOverview({ history }: { history: HistoryState }) {
   );
 }
 
-function QuickActions({ onAdd, onEdit }: { onAdd: () => void; onEdit: () => void }) {
+function QuickActions({ onAdd, onEdit, onAnalytics }: { onAdd: () => void; onEdit: () => void; onAnalytics: () => void }) {
   return (
     <View style={styles.quickActions}>
       <Pressable accessibilityRole="button" onPress={onAdd} style={styles.quickBtn}>
@@ -586,6 +586,14 @@ function QuickActions({ onAdd, onEdit }: { onAdd: () => void; onEdit: () => void
         </View>
         <AppText variant="bodySmall" weight="900">
           编辑最近
+        </AppText>
+      </Pressable>
+      <Pressable accessibilityRole="button" onPress={onAnalytics} style={styles.quickBtn}>
+        <View style={[styles.quickBtnIcon, { backgroundColor: colors.successSoft }]}>
+          <Ionicons color={colors.success} name="bar-chart-outline" size={16} />
+        </View>
+        <AppText variant="bodySmall" weight="900">
+          训练分析
         </AppText>
       </Pressable>
     </View>

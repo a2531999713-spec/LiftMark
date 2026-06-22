@@ -16,6 +16,8 @@ export function AppCard({ children, padded = true, style, tone = 'default' }: Ap
 
 const styles = StyleSheet.create({
   card: {
+    borderColor: colors.border,
+    borderWidth: 1,
     borderRadius: radius.lg,
     ...shadows.card,
   },

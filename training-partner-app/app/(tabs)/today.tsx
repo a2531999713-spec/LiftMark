@@ -483,158 +483,168 @@ export default function TodayRoute() {
 
       {!isLoading && !error && group ? (
         <>
-          {/* ═══ Header ═══ */}
-          <View style={styles.headerSection}>
+          {/* ═══ Greeting ═══ */}
+          <View style={styles.greeting}>
             <View>
               <AppText variant="title" weight="900">{getGreetingByHour()}</AppText>
               <AppText tone="muted" variant="caption">
                 {new Date().toLocaleDateString('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' })}
               </AppText>
             </View>
-            <View style={styles.statusBar}>
-              <Tag label={activePlan?.name ?? '无计划'} tone="dark" />
-              <AppText variant="bodySmall" weight="900">{cycleLabel}</AppText>
-            </View>
-          </View>
-
-          {/* ═══ Quick Actions Grid ═══ */}
-          <View style={styles.quickActionsGrid}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push('/(tabs)/plan')}
-              style={({ pressed }) => [styles.quickActionCard, pressed && styles.quickActionPressed]}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: colors.brandSoft }]}>
-                <Ionicons color={colors.brand} name="clipboard-outline" size={20} />
-              </View>
-              <AppText variant="bodySmall" weight="800">今日训练</AppText>
-              <AppText tone="muted" variant="caption">{activePlan?.name ?? '去查看'}</AppText>
-            </Pressable>
-
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push('/(tabs)/history')}
-              style={({ pressed }) => [styles.quickActionCard, pressed && styles.quickActionPressed]}
+              style={styles.greetingAction}
             >
-              <View style={[styles.quickActionIcon, { backgroundColor: colors.accentSoft }]}>
-                <Ionicons color={colors.accent} name="time-outline" size={20} />
-              </View>
-              <AppText variant="bodySmall" weight="800">训练记录</AppText>
-              <AppText tone="muted" variant="caption">查看历史</AppText>
+              <Ionicons color={colors.textMuted} name="bar-chart-outline" size={22} />
             </Pressable>
+          </View>
+
+          {/* ═══ Hero Card ═══ */}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/(tabs)/plan')}
+            style={({ pressed }) => [styles.hero, pressed && styles.heroPressed]}
+          >
+            <View style={styles.heroAccent} />
+            <View style={styles.heroContent}>
+              <View style={styles.heroHeader}>
+                <View style={styles.heroBadge}>
+                  <Ionicons color={colors.primary} name="flame" size={12} />
+                  <AppText variant="caption" weight="900" style={styles.heroBadgeText}>
+                    {selectedChoice.free ? '自由训练' : heroTheme}
+                  </AppText>
+                </View>
+                <AppText variant="caption" style={styles.heroWeek}>{cycleLabel}</AppText>
+              </View>
+
+              <AppText variant="headline" weight="900" style={styles.heroTitle}>
+                今日训练
+              </AppText>
+              <AppText variant="bodySmall" style={styles.heroSubtitle}>
+                {activePlan?.name ?? '开始你的训练'}
+              </AppText>
+
+              <View style={styles.heroStats}>
+                <View style={styles.heroStat}>
+                  <AppText variant="subtitle" weight="900" style={styles.heroStatValue}>
+                    {planExercises.length}
+                  </AppText>
+                  <AppText variant="caption" style={styles.heroStatLabel}>动作</AppText>
+                </View>
+                <View style={styles.heroStatDivider} />
+                <View style={styles.heroStat}>
+                  <AppText variant="subtitle" weight="900" style={styles.heroStatValue}>
+                    {members.length}
+                  </AppText>
+                  <AppText variant="caption" style={styles.heroStatLabel}>成员</AppText>
+                </View>
+                <View style={styles.heroStatDivider} />
+                <View style={styles.heroStat}>
+                  <Ionicons color={colors.primary} name="chevron-forward" size={18} />
+                </View>
+              </View>
+            </View>
+          </Pressable>
+
+          {/* ═══ Quick Nav ═══ */}
+          <View style={styles.navRow}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push('/(tabs)/history')}
+              style={({ pressed }) => [styles.navItem, pressed && styles.navPressed]}
+            >
+              <Ionicons color={colors.accent} name="time-outline" size={18} />
+              <AppText variant="caption" weight="800">记录</AppText>
+            </Pressable>
+
+            <View style={styles.navDivider} />
 
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push('/history/analytics' as never)}
-              style={({ pressed }) => [styles.quickActionCard, pressed && styles.quickActionPressed]}
+              style={({ pressed }) => [styles.navItem, pressed && styles.navPressed]}
             >
-              <View style={[styles.quickActionIcon, { backgroundColor: colors.warningSoft }]}>
-                <Ionicons color={colors.warning} name="trending-up-outline" size={20} />
-              </View>
-              <AppText variant="bodySmall" weight="800">训练分析</AppText>
+              <Ionicons color={colors.warning} name="trending-up-outline" size={18} />
+              <AppText variant="caption" weight="800">分析</AppText>
             </Pressable>
 
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push('/(tabs)/members')}
-              style={({ pressed }) => [styles.quickActionCard, pressed && styles.quickActionPressed]}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: colors.successSoft }]}>
-                <Ionicons color={colors.success} name="people-outline" size={20} />
-              </View>
-              <AppText variant="bodySmall" weight="800">训练搭子</AppText>
-              <AppText tone="muted" variant="caption">开发中</AppText>
-            </Pressable>
-          </View>
+            <View style={styles.navDivider} />
 
-          {/* ═══ Today Workout Card ═══ */}
-          <AppCard style={styles.todayWorkoutCard}>
-            <SectionHeader subtitle="基于今日计划" title="今日训练" />
-
-            {selectedChoice.free || (selectedChoice.key === 'weak' && planExercises.length === 0) ? (
-              <>
-                {freeExerciseRows.map((exercise, index) => (
-                  <View key={exercise.id} style={styles.exerciseRow}>
-                    <PriorityTag priority={index === 0 ? 'A' : index === 1 ? 'B' : 'C'} />
-                    <View style={styles.exerciseInfo}>
-                      <AppText variant="bodySmall" weight="900">{exercise.name}</AppText>
-                      <AppText tone="muted" variant="caption">自由训练建议 · 现场设置重量</AppText>
-                    </View>
-                  </View>
-                ))}
-              </>
-            ) : (
-              <>
-                {planExercises.slice(0, 3).map((planExercise) => {
-                  const exercise = exerciseMap[planExercise.exerciseId] ?? null;
-                  return (
-                    <View key={planExercise.id} style={styles.exerciseRow}>
-                      <PriorityTag priority={planExercise.priority} />
-                      <View style={styles.exerciseInfo}>
-                        <AppText variant="bodySmall" weight="900">{exercise?.name ?? planExercise.exerciseId}</AppText>
-                        <AppText tone="muted" variant="caption">{formatPrescription(planExercise)} · {formatIntensity(planExercise)}</AppText>
-                      </View>
-                    </View>
-                  );
-                })}
-                {planExercises.length > 3 && (
-                  <AppText tone="muted" variant="caption">还有 {planExercises.length - 3} 个动作...</AppText>
-                )}
-              </>
-            )}
-
-            {members.length > 0 && (
-              <>
-                <View style={styles.divider} />
-                <AppText variant="bodySmall" weight="900">成员建议重量</AppText>
-                {members.slice(0, 2).map((member) => {
-                  const suggestedWeight = formatSuggestedWeight(firstPlanExercise, firstExercise, profiles[member.id] ?? null);
-                  return (
-                    <View key={member.id} style={styles.weightRow}>
-                      <View style={styles.avatarSmall}>
-                        <AppText tone="inverse" variant="caption">{member.displayName.slice(0, 1)}</AppText>
-                      </View>
-                      <View style={styles.weightInfo}>
-                        <AppText variant="bodySmall" weight="900">{member.displayName}</AppText>
-                        <AppText tone="muted" variant="caption">{suggestedWeight.hint}</AppText>
-                      </View>
-                      <AppText variant="bodySmall" weight="900">{suggestedWeight.value}</AppText>
-                    </View>
-                  );
-                })}
-                {members.length > 2 && (
-                  <AppText tone="muted" variant="caption">还有 {members.length - 2} 位成员...</AppText>
-                )}
-              </>
-            )}
-
-            <AppButton
-              disabled={!canStartWorkout || isStarting}
-              icon="play-outline"
-              onPress={() => void startWorkout()}
-              size="lg"
-              style={styles.startButton}
-            >
-              {isStarting ? '正在开始...' : '开始训练'}
-            </AppButton>
-          </AppCard>
-
-          {/* ═══ Plan Switcher ═══ */}
-          <View style={styles.planSwitchRow}>
-            <View style={styles.planSwitchInfo}>
-              <AppText variant="bodySmall" weight="900">{activePlan?.name ?? '无计划'}</AppText>
-              <AppText tone="muted" variant="caption">第 {group.currentWeek} / {activePlanWeeks} 周</AppText>
-            </View>
-            <View style={styles.progressFillWrap}>
-              <View style={[styles.progressFill, { width: `${activePlanProgress}%` }]} />
-            </View>
             <Pressable
               accessibilityRole="button"
               onPress={() => setPlanSwitcherVisible(true)}
-              style={styles.planSwitchBtn}
+              style={({ pressed }) => [styles.navItem, pressed && styles.navPressed]}
             >
-              <AppText variant="bodySmall" weight="900">切换</AppText>
+              <Ionicons color={colors.success} name="swap-horizontal-outline" size={18} />
+              <AppText variant="caption" weight="800">切换</AppText>
             </Pressable>
+          </View>
+
+          {/* ═══ Exercise Chips ═══ */}
+          {(planExercises.length > 0 || selectedChoice.free) && (
+            <View style={styles.exercises}>
+              <View style={styles.exercisesHeader}>
+                <AppText variant="subtitle" weight="900">训练内容</AppText>
+                <AppText tone="muted" variant="caption">
+                  {selectedChoice.free ? '自由训练' : `${planExercises.length} 个动作`}
+                </AppText>
+              </View>
+              <View style={styles.chipRow}>
+                {(selectedChoice.free ? freeExerciseRows : planExercises.slice(0, 6)).map((item, index) => {
+                  const name = selectedChoice.free
+                    ? (item as typeof freeExerciseRows[0]).name
+                    : exerciseMap[(item as typeof planExercises[0]).exerciseId]?.name ?? '动作';
+                  return (
+                    <View key={selectedChoice.free ? (item as typeof freeExerciseRows[0]).id : (item as typeof planExercises[0]).id} style={styles.chip}>
+                      <View style={styles.chipDot}>
+                        <AppText variant="caption" weight="900" style={styles.chipDotText}>{index + 1}</AppText>
+                      </View>
+                      <AppText numberOfLines={1} variant="bodySmall" weight="800">{name}</AppText>
+                    </View>
+                  );
+                })}
+              </View>
+              {planExercises.length > 6 && (
+                <AppText tone="muted" variant="caption" style={styles.chipMore}>
+                  +{planExercises.length - 6} 更多
+                </AppText>
+              )}
+            </View>
+          )}
+
+          {/* ═══ CTA ═══ */}
+          <Pressable
+            accessibilityRole="button"
+            disabled={!canStartWorkout || isStarting}
+            onPress={() => void startWorkout()}
+            style={({ pressed }) => [
+              styles.cta,
+              pressed && styles.ctaPressed,
+              (!canStartWorkout || isStarting) && styles.ctaDisabled,
+            ]}
+          >
+            <Ionicons color={colors.surface} name="play" size={20} />
+            <AppText variant="bodySmall" weight="900" style={styles.ctaText}>
+              {isStarting ? '正在开始...' : '开始训练'}
+            </AppText>
+          </Pressable>
+
+          {/* ═══ Progress ═══ */}
+          <View style={styles.progress}>
+            <View style={styles.progressTop}>
+              <AppText variant="caption" weight="800">训练进度</AppText>
+              <AppText variant="caption" weight="900" style={styles.progressValue}>{activePlanProgress}%</AppText>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${activePlanProgress}%` }]} />
+            </View>
+            <View style={styles.progressBottom}>
+              <AppText tone="muted" variant="caption">第 {group.currentWeek} / {activePlanWeeks} 周</AppText>
+              <Pressable accessibilityRole="button" onPress={() => setPlanSwitcherVisible(true)}>
+                <AppText variant="caption" weight="800" style={styles.progressLink}>切换计划</AppText>
+              </Pressable>
+            </View>
           </View>
 
           {/* ═══ Empty State ═══ */}
@@ -745,124 +755,226 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.pill,
-    borderWidth: 1,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+
+  greeting: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.xxl,
+  },
+  greetingAction: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
 
-  headerSection: {
+  hero: {
+    backgroundColor: colors.dark,
+    borderRadius: radius.xl,
+    marginBottom: spacing.xxl,
+    overflow: 'hidden',
+  },
+  heroPressed: {
+    opacity: 0.95,
+  },
+  heroAccent: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: colors.primary,
+    opacity: 0.15,
+    transform: [{ translateX: 30 }, { translateY: -30 }],
+  },
+  heroContent: {
+    padding: spacing.xl,
+  },
+  heroHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.xl,
   },
-  statusBar: {
-    alignItems: 'flex-end',
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
+    backgroundColor: colors.primarySoft,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+  },
+  heroBadgeText: {
+    color: colors.primary,
+  },
+  heroWeek: {
+    color: 'rgba(255,255,255,0.5)',
+  },
+  heroTitle: {
+    color: colors.surface,
+    marginBottom: spacing.xs,
+  },
+  heroSubtitle: {
+    color: 'rgba(255,255,255,0.6)',
+    marginBottom: spacing.xl,
+  },
+  heroStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: radius.lg,
+    padding: spacing.md,
+  },
+  heroStat: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  heroStatValue: {
+    color: colors.surface,
+  },
+  heroStatLabel: {
+    color: 'rgba(255,255,255,0.5)',
+  },
+  heroStatDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
 
-  quickActionsGrid: {
+  navRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    marginBottom: spacing.xxl,
+    ...shadows.card,
+  },
+  navItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+  },
+  navPressed: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.lg,
+  },
+  navDivider: {
+    width: 1,
+    height: '60%',
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+  },
+
+  exercises: {
+    marginBottom: spacing.xxl,
+  },
+  exercisesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-    marginBottom: spacing.md,
   },
-  quickActionCard: {
+  chip: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
     backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    gap: spacing.xs,
-    minWidth: '47%',
-    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     ...shadows.card,
   },
-  quickActionPressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.98 }],
-  },
-  quickActionIcon: {
+  chipDot: {
     alignItems: 'center',
-    borderRadius: radius.sm,
-    height: 32,
     justifyContent: 'center',
-    width: 32,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.primarySoft,
   },
-
-  todayWorkoutCard: {
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+  chipDotText: {
+    color: colors.primary,
+    fontSize: 10,
   },
-  divider: {
-    backgroundColor: colors.border,
-    height: 1,
-    marginVertical: spacing.xs,
-  },
-  startButton: {
+  chipMore: {
     marginTop: spacing.sm,
   },
 
-  exerciseRow: {
-    alignItems: 'center',
+  cta: {
     flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  exerciseInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  weightRow: {
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  avatarSmall: {
-    alignItems: 'center',
-    backgroundColor: colors.dark,
-    borderRadius: radius.pill,
-    height: 24,
     justifyContent: 'center',
-    width: 24,
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.lg,
+    marginBottom: spacing.xxl,
   },
-  weightInfo: {
-    flex: 1,
-    gap: 2,
+  ctaPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
+  },
+  ctaDisabled: {
+    opacity: 0.5,
+  },
+  ctaText: {
+    color: colors.surface,
   },
 
-  planSwitchRow: {
+  progress: {
     backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    gap: spacing.xs,
-    marginBottom: spacing.md,
-    padding: spacing.md,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.xxl,
+    ...shadows.card,
   },
-  planSwitchInfo: {
-    gap: 2,
+  progressTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
   },
-  planSwitchBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+  progressValue: {
+    color: colors.primary,
   },
-  progressFillWrap: {
+  progressTrack: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.pill,
     height: 4,
     overflow: 'hidden',
+    marginBottom: spacing.sm,
   },
   progressFill: {
-    backgroundColor: colors.brand,
+    backgroundColor: colors.primary,
     borderRadius: radius.pill,
     height: '100%',
+  },
+  progressBottom: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  progressLink: {
+    color: colors.primary,
   },
 
   planSwitchList: {
@@ -871,17 +983,15 @@ const styles = StyleSheet.create({
   planSwitchItem: {
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderColor: colors.border,
     borderRadius: radius.md,
-    borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
     minHeight: 64,
     padding: spacing.md,
+    ...shadows.card,
   },
   planSwitchItemActive: {
     backgroundColor: colors.dark,
-    borderColor: colors.dark,
   },
   planSwitchIcon: {
     alignItems: 'center',

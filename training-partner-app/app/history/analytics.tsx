@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect, useNavigation } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppCard, AppText, EmptyState, Screen, Tag } from '@/components/ui';
@@ -65,15 +65,11 @@ function formatSignedPercent(value?: number): string {
 }
 
 export default function HistoryAnalyticsRoute() {
-  const navigation = useNavigation();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const [rangeWeeks, setRangeWeeks] = useState<HistoryRangeWeeks>(4);
   const [state, setState] = useState<AnalyticsState>({ analysis: null, currentMember: null });
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    navigation.setOptions({ headerShown: false });
-  }, [navigation]);
   const [error, setError] = useState<string | null>(null);
 
   const loadAnalytics = useCallback(async () => {
@@ -131,9 +127,13 @@ export default function HistoryAnalyticsRoute() {
           <Ionicons color={colors.text} name="close-outline" size={22} />
         </Pressable>
       }
-      subtitle={state.currentMember ? `当前成员：${state.currentMember.displayName}` : '个人记录分析'}
-      title="训练分析"
     >
+      <View style={styles.customHeader}>
+        <AppText variant="headline" weight="900">训练分析</AppText>
+        <AppText tone="muted" variant="bodySmall">
+          {state.currentMember ? `当前成员：${state.currentMember.displayName}` : '个人记录分析'}
+        </AppText>
+      </View>
       <RangeTabs rangeWeeks={rangeWeeks} setRangeWeeks={setRangeWeeks} />
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="训练分析暂时无法加载" description={error} /> : null}
@@ -440,6 +440,13 @@ function TrendPill({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
+  customHeader: {
+    gap: spacing.xs,
+  },
+  headerLabel: {
+    color: colors.primary,
+    letterSpacing: 1,
+  },
   iconButton: {
     alignItems: 'center',
     backgroundColor: colors.surface,

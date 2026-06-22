@@ -412,8 +412,8 @@ export default function SettingsRoute() {
             <SettingsCell
               description={activation?.deviceId ?? '生成中'}
               icon="phone-portrait-outline"
-              iconBg={colors.surfaceMuted}
-              iconColor={colors.textMuted}
+              iconBg={colors.accentSoft}
+              iconColor={colors.accent}
               label="设备 ID"
             />
             <SettingsCell
@@ -462,16 +462,16 @@ export default function SettingsRoute() {
             />
             <SettingsCell
               icon="server-outline"
-              iconBg={colors.surfaceMuted}
-              iconColor={colors.textMuted}
+              iconBg={colors.accentSoft}
+              iconColor={colors.accent}
               label="备份数据库"
               onPress={() => setNotice({ title: '备份数据库', message: '文件保存和分享能力接入后开放。当前训练记录仍保存在本机 SQLite。' })}
               tag="开发中"
             />
             <SettingsCell
               icon="refresh-outline"
-              iconBg={colors.surfaceMuted}
-              iconColor={colors.textMuted}
+              iconBg={colors.accentSoft}
+              iconColor={colors.accent}
               label="恢复数据库"
               onPress={() => setNotice({ title: '恢复数据库', message: '恢复能力会在备份文件校验完成后开放，当前版本不会覆盖本机数据。' })}
               tag="开发中"
@@ -518,15 +518,15 @@ export default function SettingsRoute() {
           <SettingsSection title="开发与诊断">
             <SettingsCell
               icon="server-outline"
-              iconBg={colors.surfaceMuted}
-              iconColor={colors.textMuted}
+              iconBg={colors.accentSoft}
+              iconColor={colors.accent}
               label="SQLite 状态"
               trailing={diagnostics?.sqliteStatus ?? '未知'}
             />
             <SettingsCell
               icon="git-branch-outline"
-              iconBg={colors.surfaceMuted}
-              iconColor={colors.textMuted}
+              iconBg={colors.accentSoft}
+              iconColor={colors.accent}
               label="数据库版本"
               trailing={`${diagnostics?.databaseVersion ?? 0}`}
             />
@@ -637,7 +637,7 @@ function BrandCard({
     <View style={styles.brandCard}>
       <View style={styles.brandCardInner}>
         <View style={styles.brandCardHeader}>
-          <Image resizeMode="contain" source={liftmarkBrandAssets.logoPrimary} style={styles.brandLogo} />
+          <Image resizeMode="contain" source={liftmarkBrandAssets.logoLightCard} style={styles.brandLogo} />
           <Tag label={activation?.isActivated ? '已激活' : '试用模式'} tone={activation?.isActivated ? 'success' : 'warning'} />
         </View>
 
@@ -769,7 +769,7 @@ function SettingsCell({
           </AppText>
         ) : null}
         {isPressable ? (
-          <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
+          <Ionicons color={colors.textMuted} name="chevron-forward" size={16} />
         ) : null}
       </View>
     </Pressable>
@@ -786,8 +786,8 @@ const styles = StyleSheet.create({
   },
 
   brandCard: {
-    backgroundColor: colors.darkCard,
-    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
     borderRadius: radius.lg,
     borderWidth: 1,
     overflow: 'hidden',
@@ -795,7 +795,7 @@ const styles = StyleSheet.create({
       ios: {
         shadowColor: colors.brand,
         shadowOffset: { height: 4, width: 0 },
-        shadowOpacity: 0.12,
+        shadowOpacity: 0.08,
         shadowRadius: 12,
       },
       android: { elevation: 4 },
@@ -819,7 +819,7 @@ const styles = StyleSheet.create({
   },
   brandCardStats: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.surface,
     borderRadius: radius.sm,
     flexDirection: 'row',
     paddingVertical: spacing.md,
@@ -830,7 +830,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   brandStatDivider: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.border,
     height: 24,
     width: 1,
   },

@@ -1,6 +1,7 @@
-import { StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { type DimensionValue, type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing } from '@/theme';
+import { colors, spacing } from '@/theme';
 
 import { AppText } from './AppText';
 
@@ -60,12 +61,11 @@ export function MiniLineChart({
 
   return (
     <View style={styles.container}>
-      <View style={[styles.chartArea, { height: effectiveChartHeight }]}>
-        {renderConnectingLines(points, effectiveChartHeight)}
-        {points.map((point, arrayIndex) =>
-          renderPoint(point, arrayIndex, effectiveChartHeight, highlightIndex),
-        )}
-      </View>
+      <ChartArea
+        chartHeight={effectiveChartHeight}
+        highlightIndex={highlightIndex}
+        points={points}
+      />
       <View style={styles.labelRow}>
         {labels.map((label, index) => (
           <View key={label} style={styles.labelColumn}>
@@ -98,17 +98,46 @@ export function MiniLineChart({
   );
 }
 
+type ChartPoint = { index: number; value: number; xPercent: number; yPercent: number };
+
+type ChartAreaProps = {
+  chartHeight: number;
+  highlightIndex?: number;
+  points: ChartPoint[];
+};
+
+function ChartArea({ chartHeight, highlightIndex, points }: ChartAreaProps) {
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  function handleLayout(event: LayoutChangeEvent) {
+    setContainerWidth(event.nativeEvent.layout.width);
+  }
+
+  return (
+    <View style={[styles.chartArea, { height: chartHeight }]} onLayout={handleLayout}>
+      {containerWidth > 0
+        ? renderConnectingLines(points, chartHeight, containerWidth).concat(
+            points.map((point, arrayIndex) =>
+              renderPoint(point, arrayIndex, chartHeight, containerWidth, highlightIndex),
+            ),
+          )
+        : null}
+    </View>
+  );
+}
+
 function renderConnectingLines(
-  points: { xPercent: number; yPercent: number }[],
+  points: ChartPoint[],
   chartHeight: number,
+  containerWidth: number,
 ) {
   const lines: React.ReactNode[] = [];
   for (let index = 0; index < points.length - 1; index++) {
     const left = points[index];
     const right = points[index + 1];
-    const leftX = left.xPercent * 100;
+    const leftX = left.xPercent * containerWidth;
     const leftY = (1 - left.yPercent) * chartHeight;
-    const rightX = right.xPercent * 100;
+    const rightX = right.xPercent * containerWidth;
     const rightY = (1 - right.yPercent) * chartHeight;
 
     const dx = rightX - leftX;
@@ -124,7 +153,7 @@ function renderConnectingLines(
             styles.connectingLine,
             {
               height: 2,
-              left: `${leftX}%`,
+              left: leftX as DimensionValue,
               top: leftY - 1,
               transform: [{ rotate: `${angle}deg` }],
               width: length,
@@ -138,13 +167,14 @@ function renderConnectingLines(
 }
 
 function renderPoint(
-  point: { index: number; value: number; xPercent: number; yPercent: number },
+  point: ChartPoint,
   arrayIndex: number,
   chartHeight: number,
+  containerWidth: number,
   highlightIndex?: number,
 ) {
   const isHighlighted = point.index === highlightIndex;
-  const left = `${point.xPercent * 100}%`;
+  const leftPx = point.xPercent * containerWidth;
   const top = (1 - point.yPercent) * chartHeight;
   const dotSize = isHighlighted ? 10 : point.value > 0 ? 7 : 5;
 
@@ -154,9 +184,8 @@ function renderPoint(
       style={[
         styles.pointWrapper,
         {
-          left: left,
+          left: (leftPx - dotSize / 2) as DimensionValue,
           top: top - dotSize / 2,
-          marginLeft: -dotSize / 2,
         },
       ]}
     >
@@ -226,12 +255,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderWidth: 2,
     borderColor: colors.surface,
-    ...{
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.3,
-      shadowRadius: 3,
-    } as any,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
   },
   pointEmpty: {
     backgroundColor: colors.borderStrong,
