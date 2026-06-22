@@ -100,8 +100,7 @@ export default function WorkoutRoute() {
   const [exerciseMap, setExerciseMap] = useState<Record<string, Exercise>>({});
   const [activeExerciseIndex, setActiveExerciseIndex] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [restSecondsRemaining, setRestSecondsRemaining] = useState(0);
-  const [isResting, setIsResting] = useState(false);
+  const [memberRestState, setMemberRestState] = useState<Record<string, { remaining: number; endTime: number; isResting: boolean }>>({});
   const [isWorkoutReadyToFinish, setWorkoutReadyToFinish] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -119,20 +118,30 @@ export default function WorkoutRoute() {
   }, [detail?.session.startedAt]);
 
   useEffect(() => {
-    if (!isResting || restSecondsRemaining <= 0) {
+    const activeRestMembers = Object.entries(memberRestState).filter(([, state]) => state.isResting && state.remaining > 0);
+    if (activeRestMembers.length === 0) {
       return;
     }
     const timer = setInterval(() => {
-      const remaining = Math.max(0, Math.ceil((restEndTimeRef.current - Date.now()) / 1000));
-      if (remaining <= 0) {
-        setRestSecondsRemaining(0);
-        setIsResting(false);
-      } else {
-        setRestSecondsRemaining(remaining);
-      }
+      setMemberRestState((prev) => {
+        const next = { ...prev };
+        let hasActive = false;
+        Object.entries(next).forEach(([memberId, state]) => {
+          if (state.isResting && state.remaining > 0) {
+            const remaining = Math.max(0, Math.ceil((state.endTime - Date.now()) / 1000));
+            if (remaining <= 0) {
+              next[memberId] = { ...state, remaining: 0, isResting: false };
+            } else {
+              next[memberId] = { ...state, remaining };
+              hasActive = true;
+            }
+          }
+        });
+        return hasActive ? next : prev;
+      });
     }, 250);
     return () => clearInterval(timer);
-  }, [isResting]);
+  }, [memberRestState]);
 
   const loadWorkout = useCallback(async () => {
     if (!sessionId) {
@@ -265,37 +274,49 @@ export default function WorkoutRoute() {
   const nextMemberName = members.length > 1 ? members[nextMemberIndex]?.displayName : undefined;
   function goNextExercise() {
     if (!detail) return;
-    setIsResting(false);
-    setRestSecondsRemaining(0);
+    setMemberRestState({});
     setWorkoutReadyToFinish(false);
     setActiveExerciseIndex((index) => Math.min(detail.exercises.length - 1, index + 1));
   }
 
-  function skipRest() {
-    setIsResting(false);
-    setRestSecondsRemaining(0);
+  function skipMemberRest(memberId: string) {
+    setMemberRestState((prev) => ({
+      ...prev,
+      [memberId]: { remaining: 0, endTime: 0, isResting: false },
+    }));
   }
+
+  const currentMemberRest = memberRestState[currentMemberId];
+  const isCurrentMemberResting = currentMemberRest?.isResting ?? false;
+  const currentMemberRestSeconds = currentMemberRest?.remaining ?? 0;
 
   async function completeCurrentRound() {
     if (isWorkoutReadyToFinish) {
       await finishWorkout();
       return;
     }
-    if (isResting) {
-      skipRest();
+    const currentRestState = memberRestState[currentMemberId];
+    if (currentRestState?.isResting) {
+      skipMemberRest(currentMemberId);
       return;
     }
-    const targetSets = roundSets.filter((set) => !set.completed && !set.skipped);
+    const targetSets = roundSets.filter((set) => !set.completed && !set.skipped && set.memberId === currentMemberId);
     if (targetSets.length === 0) {
-      if (hasNextExercise) {
-        goNextExercise();
-      } else {
-        setWorkoutReadyToFinish(true);
+      const allMembersCompleted = members.every((m) => {
+        const memberSets = roundSets.filter((set) => set.memberId === m.id);
+        return memberSets.every((set) => set.completed || set.skipped);
+      });
+      if (allMembersCompleted) {
+        if (hasNextExercise) {
+          goNextExercise();
+        } else {
+          setWorkoutReadyToFinish(true);
+        }
       }
       return;
     }
     const currentSetNumber = Math.min(...targetSets.map((set) => set.setNumber));
-    const hasNextSet = activeSets.some((set) => set.setNumber > currentSetNumber && !set.skipped);
+    const hasNextSet = activeSets.some((set) => set.setNumber > currentSetNumber && !set.skipped && set.memberId === currentMemberId);
     await Promise.all(
       targetSets.map((set) =>
         saveSetPatch(set, {
@@ -309,19 +330,29 @@ export default function WorkoutRoute() {
     if (hasNextSet) {
       const restSeconds = activeRecord?.plannedRestSeconds ?? 0;
       if (restSeconds > 0) {
-        setRestSecondsRemaining(restSeconds);
-        restEndTimeRef.current = Date.now() + restSeconds * 1000;
-        setIsResting(true);
-      } else {
-        skipRest();
+        setMemberRestState((prev) => ({
+          ...prev,
+          [currentMemberId]: {
+            remaining: restSeconds,
+            endTime: Date.now() + restSeconds * 1000,
+            isResting: true,
+          },
+        }));
       }
       return;
     }
-    if (hasNextExercise) {
-      goNextExercise();
-      return;
+    const allMembersCompleted = members.every((m) => {
+      if (m.id === currentMemberId) return true;
+      const memberSets = roundSets.filter((set) => set.memberId === m.id);
+      return memberSets.every((set) => set.completed || set.skipped);
+    });
+    if (allMembersCompleted) {
+      if (hasNextExercise) {
+        goNextExercise();
+        return;
+      }
+      setWorkoutReadyToFinish(true);
     }
-    setWorkoutReadyToFinish(true);
   }
 
   function handleDeleteSet(setId: string) {
@@ -341,8 +372,7 @@ export default function WorkoutRoute() {
     const targetSets = completedActiveSets.filter((set) => set.setNumber === latestSetNumber);
     if (targetSets.length === 0) return;
     setWorkoutReadyToFinish(false);
-    setIsResting(false);
-    setRestSecondsRemaining(0);
+    setMemberRestState({});
     void Promise.all(
       targetSets.map((set) =>
         saveSetPatch(set, {
@@ -457,7 +487,7 @@ export default function WorkoutRoute() {
               {currentDisplaySet ? (
                 <CurrentSetRecorder
                   exercise={activeExercise}
-                  isResting={isResting}
+                  isResting={isCurrentMemberResting}
                   isWorkoutReadyToFinish={isWorkoutReadyToFinish}
                   memberName={membersById.get(currentDisplaySet.memberId)?.displayName ?? '成员'}
                   onClearRpe={() => void saveSetPatch(currentDisplaySet, { rpe: undefined })}
@@ -466,7 +496,8 @@ export default function WorkoutRoute() {
                   onRepsChange={(v) => void saveSetPatch(currentDisplaySet, { actualReps: v })}
                   onRpeChange={(v) => void saveSetPatch(currentDisplaySet, { rpe: v })}
                   onRirChange={(v) => void saveSetPatch(currentDisplaySet, { rir: v })}
-                  onSkipRest={skipRest}
+                  onSkipExercise={goNextExercise}
+                  onSkipRest={() => skipMemberRest(currentMemberId)}
                   onWeightChange={(v) => void saveSetPatch(currentDisplaySet, { actualWeight: v })}
                   profile={currentProfile}
                   record={activeRecord}
@@ -479,7 +510,7 @@ export default function WorkoutRoute() {
                 />
               ) : null}
 
-              {isResting ? (
+              {isCurrentMemberResting ? (
                 <View style={styles.restCard}>
                   <View style={styles.restHeader}>
                     <View style={styles.restIndicator} />
@@ -488,13 +519,32 @@ export default function WorkoutRoute() {
                         休息中
                       </AppText>
                       <AppText tone="muted" variant="caption">
-                        结束后自动进入下一组
+                        {membersById.get(currentMemberId)?.displayName} 正在休息
                       </AppText>
                     </View>
                   </View>
                   <AppText tone="inverse" variant="headline" weight="900">
-                    {formatTimer(restSecondsRemaining)}
+                    {formatTimer(currentMemberRestSeconds)}
                   </AppText>
+                  <Pressable accessibilityRole="button" onPress={() => skipMemberRest(currentMemberId)} style={styles.restSkipButton}>
+                    <Ionicons color={colors.surface} name="play-forward" size={16} />
+                    <AppText variant="caption" weight="700" style={{ color: colors.surface }}>跳过休息</AppText>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              {members.length > 1 && Object.entries(memberRestState).some(([, s]) => s.isResting) ? (
+                <View style={styles.otherMembersRest}>
+                  <AppText variant="caption" weight="700">其他成员休息状态</AppText>
+                  <View style={styles.otherMembersRow}>
+                    {members.filter((m) => m.id !== currentMemberId && memberRestState[m.id]?.isResting).map((member) => (
+                      <View key={member.id} style={styles.otherMemberChip}>
+                        <View style={[styles.otherMemberDot, { backgroundColor: colors.warning }]} />
+                        <AppText variant="caption">{member.displayName}</AppText>
+                        <AppText variant="caption" weight="800">{formatTimer(memberRestState[member.id]?.remaining ?? 0)}</AppText>
+                      </View>
+                    ))}
+                  </View>
                 </View>
               ) : null}
 
@@ -543,8 +593,7 @@ export default function WorkoutRoute() {
               <Pressable
                 disabled={activeExerciseIndex === 0}
                 onPress={() => {
-                  setIsResting(false);
-                  setRestSecondsRemaining(0);
+                  setMemberRestState({});
                   setWorkoutReadyToFinish(false);
                   setActiveExerciseIndex((index) => Math.max(0, index - 1));
                 }}
@@ -664,9 +713,54 @@ const styles = StyleSheet.create({
     height: 8,
     width: 8,
   },
-  restSkipButton: {
+  restMembers: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    justifyContent: 'center',
+  },
+  restMemberChip: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  restMemberDot: {
+    borderRadius: radius.pill,
+    height: 6,
+    width: 6,
+  },
+  restMemberText: {
+    color: colors.surface,
+  },
+  otherMembersRest: {
+    gap: spacing.sm,
+  },
+  otherMembersRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  otherMemberChip: {
     alignItems: 'center',
     backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  otherMemberDot: {
+    borderRadius: radius.pill,
+    height: 6,
+    width: 6,
+  },
+  restSkipButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
     borderRadius: radius.pill,
     flexDirection: 'row',
     gap: spacing.xs,

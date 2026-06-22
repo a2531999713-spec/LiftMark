@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { AppCard, AppText } from '@/components/ui';
+import { AppText } from '@/components/ui';
 import { colors, radius, spacing } from '@/theme';
 
 type ExerciseProgressItem = {
@@ -34,13 +34,18 @@ export function WorkoutProgressStrip({
       <View style={styles.dock}>
         <View style={styles.dockHeader}>
           <AppText variant="caption" weight="800">
-            本次训练进度
+            训练进度
           </AppText>
           <AppText tone="brand" variant="caption" weight="900">
-            {currentIndex + 1} / {exercises.length}
+            {currentIndex + 1}/{exercises.length}
           </AppText>
         </View>
-        <View style={styles.dockNodes}>
+        <View style={styles.dockProgress}>
+          <View style={styles.dockTrack}>
+            <View style={[styles.dockFill, { width: `${((currentIndex + 1) / exercises.length) * 100}%` }]} />
+          </View>
+        </View>
+        <View style={styles.dockExercises}>
           {exercises.map((exercise, index) => {
             const isCompleted = exercise.status === 'completed';
             const isCurrent = exercise.status === 'current';
@@ -51,15 +56,17 @@ export function WorkoutProgressStrip({
                 disabled={!onJumpToExercise || isCurrent}
                 key={exercise.id}
                 onPress={() => onJumpToExercise?.(index)}
-                style={styles.dockNodeSlot}
+                style={[styles.dockExercise, isCurrent && styles.dockExerciseCurrent]}
               >
-                <View
-                  style={[
-                    styles.dockNode,
-                    isCompleted && styles.dockNodeCompleted,
-                    isCurrent && styles.dockNodeCurrent,
-                  ]}
-                />
+                <View style={[styles.dockExerciseDot, isCompleted && styles.dockExerciseDotCompleted, isCurrent && styles.dockExerciseDotCurrent]} />
+                <AppText
+                  numberOfLines={1}
+                  variant="caption"
+                  weight={isCurrent ? '800' : '400'}
+                  style={[styles.dockExerciseName, isCurrent && styles.dockExerciseNameCurrent]}
+                >
+                  {exercise.name}
+                </AppText>
               </Pressable>
             );
           })}
@@ -69,63 +76,60 @@ export function WorkoutProgressStrip({
   }
 
   return (
-    <AppCard style={styles.card}>
+    <View style={styles.card}>
       <View style={styles.headerRow}>
-        <AppText variant="bodySmall" weight="700">
-          本次训练进度
-        </AppText>
-        <AppText tone="brand" variant="caption" weight="700">
-          {completedCount + 1} / {exercises.length} 个动作
+        <AppText variant="subtitle" weight="900">训练动作</AppText>
+        <AppText tone="brand" variant="caption" weight="800">
+          {completedCount}/{exercises.length} 完成
         </AppText>
       </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.progressContent}
-      >
+      <View style={styles.exerciseList}>
         {exercises.map((exercise, index) => {
           const isCompleted = exercise.status === 'completed';
           const isCurrent = exercise.status === 'current';
-          const isUpcoming = exercise.status === 'upcoming';
 
           return (
-            <View key={exercise.id} style={styles.nodeContainer}>
-              {index > 0 ? (
-                <View style={styles.connector}>
-                  <View style={[styles.connectorLine, isCompleted && styles.connectorLineCompleted]} />
-                </View>
-              ) : null}
-              <Pressable
-                accessibilityRole="button"
-                disabled={!onJumpToExercise || isCurrent}
-                onPress={() => onJumpToExercise?.(index)}
-                style={[
-                  styles.nodeCircle,
-                  isCompleted && styles.nodeCompleted,
-                  isCurrent && styles.nodeCurrent,
-                  isUpcoming && styles.nodeUpcoming,
-                ]}
-              >
+            <Pressable
+              accessibilityRole="button"
+              disabled={!onJumpToExercise || isCurrent}
+              key={exercise.id}
+              onPress={() => onJumpToExercise?.(index)}
+              style={[
+                styles.exerciseCard,
+                isCompleted && styles.exerciseCardCompleted,
+                isCurrent && styles.exerciseCardCurrent,
+              ]}
+            >
+              <View style={[styles.exerciseIndex, isCompleted && styles.exerciseIndexCompleted, isCurrent && styles.exerciseIndexCurrent]}>
                 {isCompleted ? (
                   <Ionicons color={colors.surface} name="checkmark" size={12} />
-                ) : isCurrent ? (
-                  <View style={styles.nodeInnerCurrent} />
-                ) : null}
-              </Pressable>
+                ) : (
+                  <AppText variant="caption" weight="900" style={[styles.exerciseIndexText, isCurrent && styles.exerciseIndexTextCurrent]}>
+                    {index + 1}
+                  </AppText>
+                )}
+              </View>
               <AppText
-                tone={isCurrent ? 'brand' : isCompleted ? 'muted' : 'subtle'}
-                variant="caption"
-                weight={isCurrent ? '700' : '400'}
                 numberOfLines={1}
-                style={styles.nodeName}
+                variant="bodySmall"
+                weight={isCurrent ? '900' : '700'}
+                style={[styles.exerciseName, isCurrent && styles.exerciseNameCurrent]}
               >
-                {exercise.name.length > 4 ? exercise.name.slice(0, 4) : exercise.name}
+                {exercise.name}
               </AppText>
-            </View>
+              {isCurrent && (
+                <View style={styles.currentBadge}>
+                  <AppText variant="caption" weight="800" style={styles.currentBadgeText}>当前</AppText>
+                </View>
+              )}
+              {isCompleted && (
+                <Ionicons color={colors.success} name="checkmark-circle" size={16} />
+              )}
+            </Pressable>
           );
         })}
-      </ScrollView>
-    </AppCard>
+      </View>
+    </View>
   );
 }
 
@@ -133,95 +137,125 @@ const styles = StyleSheet.create({
   card: {
     gap: spacing.md,
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  exerciseList: {
+    gap: spacing.sm,
+  },
+  exerciseCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  exerciseCardCompleted: {
+    backgroundColor: colors.surfaceMuted,
+    opacity: 0.7,
+  },
+  exerciseCardCurrent: {
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  exerciseIndex: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.border,
+  },
+  exerciseIndexCompleted: {
+    backgroundColor: colors.success,
+  },
+  exerciseIndexCurrent: {
+    backgroundColor: colors.primary,
+  },
+  exerciseIndexText: {
+    color: colors.textMuted,
+  },
+  exerciseIndexTextCurrent: {
+    color: colors.surface,
+  },
+  exerciseName: {
+    flex: 1,
+    color: colors.textMuted,
+  },
+  exerciseNameCurrent: {
+    color: colors.textStrong,
+  },
+  currentBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+  },
+  currentBadgeText: {
+    color: colors.surface,
+  },
+
   dock: {
-    gap: spacing.xxs,
+    gap: spacing.sm,
   },
   dockHeader: {
-    alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  dockNodes: {
     alignItems: 'center',
-    flexDirection: 'row',
+  },
+  dockProgress: {
     gap: spacing.xs,
   },
-  dockNodeSlot: {
-    flex: 1,
-    height: 10,
-    justifyContent: 'center',
-  },
-  dockNode: {
-    backgroundColor: colors.border,
+  dockTrack: {
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.pill,
     height: 4,
+    overflow: 'hidden',
   },
-  dockNodeCompleted: {
-    backgroundColor: colors.textSubtle,
+  dockFill: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    height: '100%',
   },
-  dockNodeCurrent: {
-    backgroundColor: colors.brand,
+  dockExercises: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  dockExercise: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+  },
+  dockExerciseCurrent: {
+    backgroundColor: colors.primarySoft,
+  },
+  dockExerciseDot: {
+    width: 6,
     height: 6,
-  },
-  headerRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  progressContent: {
-    alignItems: 'flex-start',
-    gap: 0,
-    paddingVertical: spacing.xs,
-  },
-  nodeContainer: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 0,
-  },
-  connector: {
-    alignItems: 'center',
-    height: 32,
-    justifyContent: 'center',
-    width: 10,
-  },
-  connectorLine: {
+    borderRadius: 3,
     backgroundColor: colors.border,
-    height: 2,
-    width: 10,
   },
-  connectorLineCompleted: {
-    backgroundColor: '#7F8A98',
+  dockExerciseDotCompleted: {
+    backgroundColor: colors.success,
   },
-  nodeCircle: {
-    alignItems: 'center',
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 2,
-    height: 32,
-    justifyContent: 'center',
-    width: 32,
+  dockExerciseDotCurrent: {
+    backgroundColor: colors.primary,
   },
-  nodeCompleted: {
-    backgroundColor: '#7F8A98',
-    borderColor: '#7F8A98',
+  dockExerciseName: {
+    color: colors.textMuted,
+    maxWidth: 80,
   },
-  nodeCurrent: {
-    backgroundColor: colors.brand,
-    borderColor: colors.brand,
-  },
-  nodeUpcoming: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-  },
-  nodeInnerCurrent: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    height: 10,
-    width: 10,
-  },
-  nodeName: {
-    marginTop: spacing.xxs,
-    maxWidth: 54,
-    textAlign: 'center',
+  dockExerciseNameCurrent: {
+    color: colors.primary,
   },
 });

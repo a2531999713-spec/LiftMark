@@ -53,32 +53,46 @@ function CompletedSetItem({ memberName, onDelete, onSavePatch, set }: CompletedS
 
   return (
     <View style={styles.item}>
-      <View style={styles.itemHeader}>
-        <View style={styles.itemInfo}>
-          <View style={styles.itemTitleRow}>
-            <AppText variant="bodySmall" weight="800">
-              {set.setNumber} 组
-            </AppText>
-            <AppText tone="brand" variant="caption" weight="900">
-              {memberName}
-            </AppText>
+      <View style={styles.itemTop}>
+        <View style={styles.setItemBadge}>
+          <AppText variant="caption" weight="900" style={styles.setItemBadgeText}>{set.setNumber}</AppText>
+        </View>
+        <View style={styles.setItemInfo}>
+          <AppText variant="bodySmall" weight="800">{memberName}</AppText>
+          <View style={styles.setItemValues}>
+            <View style={styles.valueChip}>
+              <AppText variant="caption" weight="900" style={styles.valueChipText}>
+                {formatNumber(set.actualWeight ?? set.plannedWeight)} kg
+              </AppText>
+            </View>
+            <AppText tone="muted" variant="caption">×</AppText>
+            <View style={styles.valueChip}>
+              <AppText variant="caption" weight="900" style={styles.valueChipText}>
+                {set.actualReps ?? set.plannedReps ?? 0} 次
+              </AppText>
+            </View>
+            {set.rpe !== undefined ? (
+              <View style={[styles.valueChip, styles.rpeChip]}>
+                <AppText variant="caption" weight="800" style={styles.rpeChipText}>RPE {formatNumber(set.rpe)}</AppText>
+              </View>
+            ) : null}
+            {set.rir !== undefined ? (
+              <View style={[styles.valueChip, styles.rirChip]}>
+                <AppText variant="caption" weight="800" style={styles.rirChipText}>RIR {formatNumber(set.rir)}</AppText>
+              </View>
+            ) : null}
           </View>
-          <AppText tone="muted" variant="caption">
-            {formatNumber(set.actualWeight ?? set.plannedWeight)} kg × {set.actualReps ?? set.plannedReps ?? 0}
-            {set.rpe !== undefined ? ` · RPE ${formatNumber(set.rpe)}` : ''}
-            {set.rir !== undefined ? ` · RIR ${formatNumber(set.rir)}` : ''}
-          </AppText>
         </View>
         <View style={styles.itemActions}>
           <Pressable accessibilityRole="button" onPress={toggleEdit} style={styles.editButton}>
             <Ionicons
               color={isEditing ? colors.brand : colors.darkMuted}
               name={isEditing ? 'checkmark-outline' : 'create-outline'}
-              size={16}
+              size={14}
             />
           </Pressable>
           <Pressable accessibilityRole="button" onPress={handleDelete} style={styles.deleteButton}>
-            <Ionicons color={colors.danger} name="trash-outline" size={16} />
+            <Ionicons color={colors.danger} name="trash-outline" size={14} />
           </Pressable>
         </View>
       </View>
@@ -214,25 +228,57 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   item: {
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    borderWidth: 1,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
     gap: spacing.sm,
-    padding: spacing.sm,
+    padding: spacing.md,
   },
-  itemHeader: {
-    alignItems: 'center',
+  itemTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: spacing.md,
+    alignItems: 'center',
   },
-  itemInfo: {
+  setItemBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.brand,
+    borderRadius: radius.sm,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  setItemBadgeText: {
+    color: colors.surface,
+  },
+  setItemInfo: {
     flex: 1,
-    gap: 2,
-  },
-  itemTitleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
     gap: spacing.xs,
+  },
+  setItemValues: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexWrap: 'wrap',
+  },
+  valueChip: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+  },
+  valueChipText: {
+    color: colors.textStrong,
+  },
+  rpeChip: {
+    backgroundColor: colors.primarySoft,
+  },
+  rpeChipText: {
+    color: colors.primary,
+  },
+  rirChip: {
+    backgroundColor: colors.accentSoft,
+  },
+  rirChipText: {
+    color: colors.accent,
   },
   itemActions: {
     flexDirection: 'row',
@@ -240,19 +286,19 @@ const styles = StyleSheet.create({
   },
   editButton: {
     alignItems: 'center',
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.surface,
     borderRadius: radius.sm,
-    height: 34,
+    height: 30,
     justifyContent: 'center',
-    width: 34,
+    width: 30,
   },
   deleteButton: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.surface,
     borderRadius: radius.sm,
-    height: 34,
+    height: 30,
     justifyContent: 'center',
-    width: 34,
+    width: 30,
   },
   editArea: {
     gap: spacing.sm,
@@ -262,7 +308,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   editInput: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.surface,
     borderRadius: radius.sm,
     color: colors.textStrong,
     flex: 1,
@@ -278,7 +324,7 @@ const styles = StyleSheet.create({
   },
   editPill: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.surface,
     borderRadius: radius.sm,
     height: 28,
     justifyContent: 'center',

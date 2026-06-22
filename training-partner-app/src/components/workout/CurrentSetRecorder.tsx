@@ -186,6 +186,7 @@ type CurrentSetRecorderProps = {
   onRpeChange: (value: number) => void;
   onRirChange: (value: number) => void;
   onSkipRest: () => void;
+  onSkipExercise: () => void;
   onWeightChange: (value: number) => void;
   onRepsChange: (value: number) => void;
   profile: MemberProfile | null;
@@ -204,6 +205,7 @@ export function CurrentSetRecorder({
   memberName,
   onCompleteSet,
   onSkipRest,
+  onSkipExercise,
   onWeightChange,
   onRepsChange,
   onRpeChange,
@@ -218,12 +220,20 @@ export function CurrentSetRecorder({
   weightIncrement,
 }: CurrentSetRecorderProps) {
   const primaryLabel = isWorkoutReadyToFinish
-    ? '完成训练并查看总结'
+    ? '完成训练'
     : isResting
-      ? '跳过休息，进入下一组'
+      ? '跳过休息'
       : '完成本组';
 
-  const secondaryLabel = isResting ? '跳过休息' : '跳过';
+  const secondaryLabel = isResting ? '跳过休息' : '跳过动作';
+
+  function handleSecondaryPress() {
+    if (isResting) {
+      onSkipRest();
+    } else {
+      onSkipExercise();
+    }
+  }
 
   return (
     <AppCard padded={false} style={styles.card}>
@@ -286,15 +296,15 @@ export function CurrentSetRecorder({
           <Ionicons
             color={colors.surface}
             name={isWorkoutReadyToFinish ? 'flag-outline' : 'checkmark-circle-outline'}
-            size={20}
+            size={18}
           />
-          <AppText tone="inverse" variant="body" weight="800">
+          <AppText tone="inverse" variant="bodySmall" weight="800">
             {primaryLabel}
           </AppText>
         </Pressable>
-        <Pressable accessibilityRole="button" onPress={onSkipRest} style={styles.secondaryButton}>
-          <Ionicons color={colors.brand} name="timer-outline" size={16} />
-          <AppText tone="brand" variant="caption" weight="600">
+        <Pressable accessibilityRole="button" onPress={handleSecondaryPress} style={styles.secondaryButton}>
+          <Ionicons color={colors.brand} name={isResting ? 'play-forward-outline' : 'arrow-forward-outline'} size={16} />
+          <AppText tone="brand" variant="caption" weight="700">
             {secondaryLabel}
           </AppText>
         </Pressable>
@@ -305,8 +315,8 @@ export function CurrentSetRecorder({
 
 const styles = StyleSheet.create({
   card: {
-    gap: spacing.xs,
-    padding: spacing.sm + 2,
+    gap: spacing.sm,
+    padding: spacing.md,
   },
   cardHeader: {
     alignItems: 'center',
@@ -316,98 +326,92 @@ const styles = StyleSheet.create({
   cardTitleRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.xxs,
+    gap: spacing.xs,
   },
   setBadge: {
     backgroundColor: colors.primarySoft,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xxs,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
   inputGrid: {
-    alignItems: 'stretch',
-    flexDirection: 'row',
-    gap: spacing.xs,
+    gap: spacing.md,
   },
   inputLeft: {
-    flex: 1,
-    gap: spacing.xxs,
-    minWidth: 116,
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   inputRight: {
-    flex: 1.55,
-    gap: spacing.xxs,
-    minWidth: 0,
+    gap: spacing.sm,
   },
   stepper: {
     flex: 1,
-    gap: spacing.xxs,
+    gap: spacing.xs,
   },
   stepperLabelRow: {
     flexDirection: 'row',
-    gap: spacing.xs,
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   stepperControls: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.xxs,
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    height: 44,
+    paddingHorizontal: spacing.xs,
   },
   stepperButton: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.surface,
     borderRadius: radius.sm,
-    height: 34,
+    height: 32,
     justifyContent: 'center',
-    width: 30,
+    width: 32,
   },
   stepperInput: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.sm,
     color: colors.textStrong,
     flex: 1,
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '900',
-    height: 34,
-    paddingHorizontal: spacing.xs,
+    height: 44,
     textAlign: 'center',
   },
   optionGroup: {
-    gap: spacing.xxs,
+    gap: spacing.xs,
   },
   optionRow: {
     flexDirection: 'row',
-    flexWrap: 'nowrap',
-    gap: spacing.xxs,
+    flexWrap: 'wrap',
+    gap: spacing.xs,
   },
   optionPill: {
     alignItems: 'center',
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.sm,
-    height: 26,
+    borderRadius: radius.pill,
+    height: 32,
     justifyContent: 'center',
-    minWidth: 28,
-    paddingHorizontal: spacing.xxs,
+    minWidth: 36,
+    paddingHorizontal: spacing.sm,
   },
   optionPillActive: {
     backgroundColor: colors.brand,
   },
   actionRow: {
     flexDirection: 'row',
-    gap: spacing.xs,
-    paddingTop: spacing.xxs,
+    gap: spacing.sm,
   },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: colors.brand,
-    borderColor: colors.brand,
-    borderRadius: radius.sm,
-    borderWidth: 1,
+    borderRadius: radius.md,
     flex: 2,
     flexDirection: 'row',
-    gap: spacing.xs,
+    gap: spacing.sm,
     justifyContent: 'center',
-    minHeight: 42,
-    paddingHorizontal: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
   },
   primaryButtonFinish: {
     backgroundColor: colors.brandDark,
@@ -415,13 +419,13 @@ const styles = StyleSheet.create({
   secondaryButton: {
     alignItems: 'center',
     borderColor: colors.brand,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     borderWidth: 1.5,
-    flex: 0.95,
+    flex: 1,
     flexDirection: 'row',
     gap: spacing.xs,
     justifyContent: 'center',
-    minHeight: 42,
-    paddingHorizontal: spacing.xs,
+    minHeight: 48,
+    paddingHorizontal: spacing.sm,
   },
 });

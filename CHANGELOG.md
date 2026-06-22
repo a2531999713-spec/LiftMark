@@ -4,7 +4,70 @@
 
 ---
 
-## v1.1.0 - 2026-06-15 (远程最新)
+## v1.2.0 - 2026-06-22
+
+---
+
+### `5b00e0e` - 2026-06-22 feat: 训练执行页全面重构 + 多处UI优化
+
+- **26 files changed** | +5753 / -1188
+
+#### 训练执行页 (`app/workout/[sessionId].tsx`)
+- **顶部导航栏重构**：深色背景 → 浅色背景，关闭按钮 → 返回箭头，居中标题 → 左侧标题+副标题（"训练中" / "增力阶段 · 第 3 周 · Day 2"），更多选项 → 红色文字按钮"结束训练"
+- **移除旧进度条**：删除 progressPanel/progressInfo/progressTrack 样式
+- **整体主题色切换**：safeArea 背景从 `colors.dark` 改为 `colors.background`；errorContainer/emptyContainer 背景从 `darkCard` 改为 `surface`；restCard 背景从 `darkCard` 改为 `surface`；bottomBar 背景从 `dark` 改为 `surface`，边框从半透明白改为 `colors.border`
+- **布局重排**：StatsBar → HeroCard → MemberStrip → CurrentSetRecorder → RestCard → CompletedSetList → RotationOrder → ProgressStrip
+- **成员轮换**：新增 `activeMemberId` 状态，`onSelectMember` 接线为 `setActiveMemberId(id)`
+- **移除底部重复按钮**：删除底部栏重复的"完成本组"按钮（CurrentSetRecorder 中已有）
+- **新增"上一个动作"按钮**：替换底部栏的"跳过"占位按钮
+- **移除休息卡片中的独立"跳过休息"按钮**：只保留 CurrentSetRecorder 中的动态按钮
+
+#### 记录卡片 (`src/components/workout/CurrentSetRecorder.tsx`)
+- **左右分栏布局**：左侧重量/次数输入，右侧 RPE/RIR 选择器
+- **主按钮和跳过按钮并排显示**：flex:2 + flex:1 布局
+- **按钮尺寸和间距优化**：stepperButton 48→44，stepperInput fontSize 18→17
+
+#### 训练进度条 (`src/components/workout/WorkoutProgressStrip.tsx`)
+- **新增 dock 模式**：紧凑进度条+动作列表，适用于底部固定栏
+- **允许点击未开始的动作切换**：移除 `isUpcoming` disabled 限制
+
+#### "我的"页面 (`app/(tabs)/settings.tsx`)
+- **Banner 背景色**：从深色 `#1A2332` 改为浅色 `surfaceMuted`
+- **Logo 切换**：使用 `logoLightCard` 适配浅色背景
+- **Icon 对比度提升**：5 个 SettingsCell 的 `iconBg` 从 `surfaceMuted` 改为 `accentSoft`
+- **Chevron 颜色**：从 `textSubtle` 改为 `textMuted`
+
+#### 记录页 (`app/(tabs)/history.tsx`)
+- **新增训练分析入口**：QuickActions 新增"训练分析"按钮，点击跳转 `/history/analytics`
+
+#### 分析页 (`app/history/analytics.tsx`)
+- **修复 header 显示**：移除 `useEffect` header hack，改为 layout 中 `headerShown: false`
+- **移除 "History / Analytics" 文字**：只保留"训练分析"标题
+
+#### 根布局 (`app/_layout.tsx`)
+- **新增 analytics 路由**：`<Stack.Screen name="history/analytics" options={{ headerShown: false }} />`
+
+#### 主题系统 (`src/theme/*`)
+- **colors.ts**：新增/调整多个颜色 token
+- **radius.ts**：圆角值微调
+- **shadows.ts**：阴影样式适配浅色卡片
+
+#### 品牌资源 (`src/assets/brand/index.ts`)
+- **新增 `logoLightCard`**：浅色背景 Logo 变体
+
+#### 新增组件
+- `src/components/workout/CompletedSetList.tsx` - 已完成组列表（支持编辑/删除）
+- `src/components/workout/CurrentSetRecorder.tsx` - 当前记录卡片
+- `src/components/workout/ExerciseHeroCard.tsx` - 动作 Hero 卡片
+- `src/components/workout/GroupMemberStrip.tsx` - 成员轮换条
+- `src/components/workout/RotationOrderCard.tsx` - 轮换顺序卡片
+- `src/components/workout/WorkoutProgressStrip.tsx` - 训练进度条
+- `src/components/workout/WorkoutStatsBar.tsx` - 训练统计条
+- `src/components/workout/WorkoutHeader.tsx` - 训练页头部
+
+#### 构建配置
+- **新增 `metro.config.js`**：支持 `@/` 别名打包
+- **新增 `@react-native-community/cli` 依赖**
 
 ---
 
@@ -39,6 +102,34 @@
 
 - **1 file changed** | +65
 - 新增项目 README.md
+
+---
+
+## v1.1.0 - 2026-06-17 ~ 2026-06-22
+
+---
+
+### `250f8ee` - 2026-06-22 fix: 训练分析header修复 + 首页仪表盘重设计
+
+- 修复 analytics 页面 header 显示问题
+- 首页仪表盘布局优化
+
+### `46715ee` - 2026-06-22 feat: 全面UI重新设计 + 功能修复 + skills设计规范应用
+
+- 应用 taste-skill / impeccable 设计规范
+- 多处 UI 组件优化
+
+### `b5e6cc6` - 2026-06-18 feat: 新增MiniLineChart组件、更新日志、训练计划和设计参考资源
+
+- 新增 `MiniLineChart` 迷你折线图组件
+- 新增训练计划 JSON 文件
+- 新增设计参考图片资源
+
+### `a732e73` - 2026-06-17 feat: UI全面重新设计 - 4Tab布局、主题系统优化、训练页简化
+
+- 4Tab 布局重构（首页/计划/记录/我的）
+- 主题系统全面优化
+- 训练页交互简化
 
 ---
 
