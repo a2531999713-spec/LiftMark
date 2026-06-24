@@ -1,53 +1,37 @@
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import * as Clipboard from 'expo-clipboard';
 import { router, useFocusEffect } from 'expo-router';
-import { type ComponentProps, type ReactNode, useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
-import { liftmarkBrandAssets } from '@/assets/brand';
-import { AppButton, AppModalSheet, AppText, EmptyState, Screen, Tag } from '@/components/ui';
+import { AppButton, AppModalSheet, AppText, EmptyState, Screen } from '@/components/ui';
+import {
+  LogoutButton,
+  ProfileHeader,
+  ProfileHeroCard,
+  ProfileMenuItem,
+  ProfileSection,
+} from '@/components/profile';
 import { createLocalRepositories, getDatabase, initializeLocalDatabase } from '@/data/local';
-import { createActivationService } from '@/services/activationService';
-import { exportLocalDataJson, exportWorkoutDataJson, resetDefaultPlanData } from '@/services/exportService';
-import { pickImportedPlanDocument } from '@/services/planDocumentService';
-import { createCurrentPlanFile, PlanFileError, serializePlanFile } from '@/services/planFileService';
-import { getTrialDaysLeft } from '@/domain/activation/activation.service';
-import type { ActivationState } from '@/domain/activation/activation.types';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
-import type { PhaseType, PlanTemplate } from '@/domain/plan/plan.types';
-import { colors, radius, spacing } from '@/theme';
-
-type IconName = ComponentProps<typeof Ionicons>['name'];
-
-type Diagnostics = {
-  databaseVersion: number;
-  exerciseCount: number;
-  planCount: number;
-  seedStatus: string;
-  sqliteStatus: string;
-};
-
-type CountRow = {
-  count: number;
-};
+import { useAuthStore } from '@/store/authStore';
+import { colors, spacing } from '@/theme';
 
 type NoticeState = {
   message: string;
   title: string;
 };
 
-type ExportPrompt = {
-  content: string;
-  message: string;
-  title: string;
+type Diagnostics = {
+  databaseVersion: number;
+  exerciseCount: number;
+  seedStatus: string;
+  sqliteStatus: string;
 };
 
-type ActivationPrompt = {
-  message: string;
-  plan: PlanTemplate;
-  title: string;
+type CountRow = {
+  count: number;
 };
 
 async function loadDiagnostics(): Promise<Diagnostics> {
@@ -62,58 +46,44 @@ async function loadDiagnostics(): Promise<Diagnostics> {
   return {
     databaseVersion: migration?.version ?? 0,
     exerciseCount: exerciseCount?.count ?? 0,
-    planCount: planCount?.count ?? 0,
     seedStatus: (exerciseCount?.count ?? 0) > 0 && (planCount?.count ?? 0) > 0 ? '已初始化' : '待初始化',
     sqliteStatus: '已连接',
   };
 }
 
-function formatMembersValue(members: GroupMember[]) {
-  return members.length > 0 ? `${members.length} 位成员` : '添加成员';
-}
-
-function formatMembersDescription(members: GroupMember[]) {
-  if (members.length === 0) {
-    return '管理本地训练成员资料';
+function getMemberSummary(member: GroupMember | null, profile: MemberProfile | null) {
+  if (!member) {
+    return '还没有训练身份';
   }
 
-  return members.map((member) => member.displayName).join(' / ');
-}
-
-function formatMemberUnitsDescription(members: GroupMember[], profilesByMemberId: Record<string, MemberProfile | null>) {
-  if (members.length === 0) {
-    return '按成员分别设置杠铃 / 哑铃加重单位';
-  }
-
-  return members
-    .map((member) => {
-      const profile = profilesByMemberId[member.id];
-      return `${member.displayName} ${profile?.barbellIncrement ?? 2.5}/${profile?.dumbbellIncrement ?? 2}kg`;
-    })
-    .join(' · ');
+  const bodyweight = profile?.bodyweight ? `${profile.bodyweight} kg` : '体重未设置';
+  const bench = profile?.bench1RM ? `卧推 ${profile.bench1RM} kg` : '1RM 待补充';
+  return `${member.displayName} · ${bodyweight} · ${bench}`;
 }
 
 export default function SettingsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
-  const activationService = useMemo(() => createActivationService(), []);
+  const { isLoggedIn, isLoading: isAuthLoading, loadCurrentUser, logout, user } = useAuthStore();
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profilesByMemberId, setProfilesByMemberId] = useState<Record<string, MemberProfile | null>>({});
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
-  const [activation, setActivation] = useState<ActivationState | null>(null);
-  const [activationPrompt, setActivationPrompt] = useState<ActivationPrompt | null>(null);
-  const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
+  const [developerTapCount, setDeveloperTapCount] = useState(0);
+  const [isDeveloperMode, setDeveloperMode] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadSettings = useCallback(async () => {
+  const currentMember = members[0] ?? null;
+  const currentProfile = currentMember ? (profilesByMemberId[currentMember.id] ?? null) : null;
+
+  const loadProfile = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
     try {
       await initializeLocalDatabase();
+      await loadCurrentUser();
       const nextGroup = await repositories.groupRepository.getDefaultGroup();
       if (!nextGroup) {
         throw new Error('默认小组尚未初始化。');
@@ -130,486 +100,302 @@ export default function SettingsRoute() {
       setGroup(nextGroup);
       setMembers(nextMembers);
       setProfilesByMemberId(Object.fromEntries(profiles));
-      setDiagnostics(await loadDiagnostics());
-      setActivation(await activationService.getState());
+      if (isDeveloperMode) {
+        setDiagnostics(await loadDiagnostics());
+      }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '设置加载失败。');
+      setError(loadError instanceof Error ? loadError.message : '我的页面加载失败。');
     } finally {
       setIsLoading(false);
     }
-  }, [activationService, repositories]);
+  }, [isDeveloperMode, loadCurrentUser, repositories]);
 
   useFocusEffect(
     useCallback(() => {
-      void loadSettings();
-    }, [loadSettings]),
+      void loadProfile();
+    }, [loadProfile]),
   );
 
-  const showExportSuccess = useCallback((title: string, json: string) => {
-    setExportPrompt({
-      content: json,
-      title,
-      message: `内容已生成，大小约 ${Math.ceil(json.length / 1024)} KB。当前版本暂未保存到文件，你可以先复制内容；后续版本会接入保存和分享。`,
-    });
+  const showDeveloping = useCallback((title = '功能开发中') => {
+    setNotice({ title, message: '该功能正在开发中，后续版本开放。' });
   }, []);
 
-  const copyExportContent = useCallback(async () => {
-    if (!exportPrompt) {
-      return;
-    }
-
-    await Clipboard.setStringAsync(exportPrompt.content);
-    setExportPrompt(null);
-    setNotice({
-      title: '已复制内容',
-      message: '导出内容已复制到剪贴板。当前版本还不会自动保存文件。',
-    });
-  }, [exportPrompt]);
-
-  const resolvePhaseTypeForPlan = useCallback(
-    async (planId: string): Promise<PhaseType> => {
-      const phases = await repositories.planRepository.listPlanPhases(planId);
-      return phases[0]?.type ?? 'custom';
-    },
-    [repositories],
-  );
-
-  const setCurrentPlan = useCallback(
-    async (plan: PlanTemplate) => {
-      const currentGroup = await repositories.groupRepository.getDefaultGroup();
-      if (!currentGroup) {
-        setNotice({ title: '设置失败', message: '默认小组尚未初始化。' });
-        return;
-      }
-
-      setIsWorking(true);
-      try {
-        const updatedGroup = await repositories.groupRepository.updateGroup(currentGroup.id, {
-          activePlanId: plan.id,
-          currentPhaseType: await resolvePhaseTypeForPlan(plan.id),
-          currentWeek: 1,
-        });
-        setGroup(updatedGroup);
-        setActivationPrompt(null);
-        setNotice({
-          title: '已设为当前计划',
-          message: `训练页将读取"${plan.name}"。历史记录不会受影响。`,
-        });
-      } catch (error) {
-        setNotice({ title: '设置失败', message: error instanceof Error ? error.message : '设置当前计划失败。' });
-      } finally {
-        setIsWorking(false);
-      }
-    },
-    [repositories, resolvePhaseTypeForPlan],
-  );
-
-  const exportAllData = useCallback(async () => {
-    setIsWorking(true);
-    try {
-      showExportSuccess('导出全部数据', await exportLocalDataJson());
-    } catch (exportError) {
-      setNotice({ title: '导出失败', message: exportError instanceof Error ? exportError.message : '导出全部数据失败。' });
-    } finally {
-      setIsWorking(false);
-    }
-  }, [showExportSuccess]);
-
-  const exportWorkoutData = useCallback(async () => {
-    setIsWorking(true);
-    try {
-      showExportSuccess('导出训练记录', await exportWorkoutDataJson());
-    } catch (exportError) {
-      setNotice({ title: '导出失败', message: exportError instanceof Error ? exportError.message : '导出训练记录失败。' });
-    } finally {
-      setIsWorking(false);
-    }
-  }, [showExportSuccess]);
-
-  const exportCurrentPlan = useCallback(async () => {
-    if (!group) {
-      return;
-    }
-
-    setIsWorking(true);
-    try {
-      const planFile = await createCurrentPlanFile(repositories, group.activePlanId);
-      showExportSuccess('导出当前计划', serializePlanFile(planFile));
-    } catch (exportError) {
-      setNotice({ title: '导出失败', message: exportError instanceof Error ? exportError.message : '导出当前计划失败。' });
-    } finally {
-      setIsWorking(false);
-    }
-  }, [group, repositories, showExportSuccess]);
-
-  const importPlan = useCallback(async () => {
-    setIsWorking(true);
-    try {
-      const picked = await pickImportedPlanDocument();
-      if (!picked) {
-        return;
-      }
-
-      const importedPlan = await repositories.planRepository.importUserPlan({
-        alternatives: picked.draft.alternatives,
-        days: picked.draft.plan.days,
-        exercises: picked.draft.exercises,
-        phases: picked.draft.plan.phases,
-        planExercises: picked.draft.plan.exercises,
-        template: picked.draft.plan.template,
-      });
-      await loadSettings();
-
-      setActivationPrompt({
-        plan: importedPlan,
-        title: '计划已导入',
-        message: `"${importedPlan.name}"已成为我的计划。是否设为当前训练计划？`,
-      });
-    } catch (importError) {
-      if (importError instanceof PlanFileError) {
-        setNotice({
-          title: '计划文件格式不兼容',
-          message: '这个文件不是练刻 LiftMark 支持的计划文件。',
-        });
-        return;
-      }
-
-      setNotice({ title: '导入失败', message: importError instanceof Error ? importError.message : '计划导入失败。' });
-    } finally {
-      setIsWorking(false);
-    }
-  }, [loadSettings, repositories]);
-
-  const confirmResetDefaultPlan = useCallback(() => {
-    Alert.alert('重置默认计划？', '将重新检查系统方案 seed，并补齐缺失的用户计划副本，不会删除已有训练记录。确认继续？', [
+  const confirmLogout = useCallback(() => {
+    Alert.alert('确定退出当前账号？', '退出后，当前设备上的本地数据仍会保留。未同步的数据请确认已经备份。', [
       { text: '取消', style: 'cancel' },
       {
-        text: '重置',
+        text: '退出登录',
         style: 'destructive',
         onPress: () => {
-          void (async () => {
-            setIsWorking(true);
-            try {
-              await resetDefaultPlanData();
-              await loadSettings();
-              setNotice({ title: '已完成', message: '默认计划数据已重新检查并写入缺失数据。' });
-            } catch (resetError) {
-              setNotice({ title: '重置失败', message: resetError instanceof Error ? resetError.message : '重置默认计划失败。' });
-            } finally {
-              setIsWorking(false);
-            }
-          })();
+          void logout();
         },
       },
     ]);
-  }, [loadSettings]);
+  }, [logout]);
 
-  const confirmDanger = useCallback((title: string) => {
-    Alert.alert(title, '这是危险操作。为了避免误删真实训练数据，本版本只保留入口和二次确认。', [
+  const confirmAccountDeletion = useCallback(() => {
+    Alert.alert('注销账号并处理相关数据？', '账号注销需要单独确认。当前版本后端接口尚未接入，不会静默删除任何本机训练数据。', [
       { text: '取消', style: 'cancel' },
       {
-        text: '我知道了',
+        text: '注销账号',
         style: 'destructive',
-        onPress: () =>
-          setNotice({
-            title,
-            message: '当前版本不会执行该危险操作，真实训练记录仍保存在本机 SQLite。',
-          }),
+        onPress: () => showDeveloping('账号注销'),
       },
     ]);
-  }, []);
+  }, [showDeveloping]);
+
+  const handleVersionPress = useCallback(() => {
+    if (isDeveloperMode) {
+      return;
+    }
+
+    const nextCount = developerTapCount + 1;
+    setDeveloperTapCount(nextCount);
+    if (nextCount >= 7) {
+      setDeveloperMode(true);
+      void loadDiagnostics().then(setDiagnostics).catch(() => undefined);
+      setNotice({ title: '开发者模式已开启', message: '开发与诊断信息已显示在页面底部。' });
+    }
+  }, [developerTapCount, isDeveloperMode]);
 
   return (
-    <Screen>
-      {isLoading ? (
+    <Screen contentStyle={styles.screen}>
+      <ProfileHeader
+        actions={[
+          {
+            dot: true,
+            icon: 'notifications-outline',
+            label: '通知',
+            onPress: () => showDeveloping('通知'),
+          },
+          {
+            icon: 'settings-outline',
+            label: '设置',
+            onPress: () => router.push('/profile/preferences' as never),
+          },
+        ]}
+        subtitle="你的力量训练计划执行器"
+        title="我的"
+      />
+
+      {isLoading || isAuthLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator color={colors.primary} size="large" />
+          <ActivityIndicator color={colors.primary} />
         </View>
       ) : null}
 
-      {error ? <EmptyState title="设置暂时无法加载" description={error} /> : null}
+      {error ? (
+        <EmptyState
+          actionLabel="重新加载"
+          description="请重试"
+          onActionPress={() => void loadProfile()}
+          title="数据加载失败"
+        />
+      ) : null}
 
       {!isLoading && !error ? (
-        <View style={styles.sections}>
-          <BrandCard activation={activation} group={group} members={members} />
+        <>
+          <ProfileHeroCard
+            currentMember={currentMember}
+            group={group}
+            isLoggedIn={isLoggedIn}
+            onContinue={() =>
+              setNotice({
+                title: '继续浏览',
+                message: '当前版本仍可继续使用本机训练、计划和记录功能，数据保存在本机 SQLite。',
+              })
+            }
+            onLogin={() => router.push('/account/login' as never)}
+            onPress={() => router.push((isLoggedIn ? '/account' : '/account/login') as never)}
+            user={user}
+          />
 
-          <SettingsSection title="通用设置">
-            <SettingsCell
+          {!currentMember ? (
+            <EmptyState
+              actionLabel="创建训练身份"
+              description="创建训练身份后，可以计算建议重量并记录训练。"
+              onActionPress={() => router.push('/member/new' as never)}
+              title="还没有训练身份"
+            />
+          ) : null}
+
+          {!group ? (
+            <EmptyState
+              actionLabel="创建小组"
+              description="创建小组后，可以和搭子一起执行同一个训练计划。"
+              onActionPress={() => showDeveloping('创建小组')}
+              title="还没有训练小组"
+            />
+          ) : null}
+
+          <ProfileSection icon="barbell-outline" title="训练相关">
+            <ProfileMenuItem
+              description={getMemberSummary(currentMember, currentProfile)}
+              icon="id-card-outline"
+              label="我的训练身份"
+              onPress={() => router.push('/profile/training-identity' as never)}
+              trailing={currentMember ? '查看' : '创建'}
+            />
+            <ProfileMenuItem
+              description="成员管理、权限设置、邀请管理"
               icon="people-outline"
-              iconBg={colors.primarySoft}
-              iconColor={colors.primary}
-              label="当前小组"
-              trailing={group?.name ?? '本地训练小组'}
+              label="我的小组"
+              onPress={() => router.push('/profile/groups' as never)}
+              trailing={members.length > 0 ? `${members.length} 成员` : '创建'}
             />
-            <SettingsCell
-              description={formatMembersDescription(members)}
-              icon="person-circle-outline"
-              iconBg={colors.accentSoft}
-              iconColor={colors.accent}
-              label="成员资料"
-              onPress={() => router.push('/settings/members')}
-              trailing={formatMembersValue(members)}
-            />
-            <SettingsCell
-              description="同一设备多人轮换，本机保存"
-              icon="information-circle-outline"
-              iconBg={colors.successSoft}
-              iconColor={colors.success}
-              label="本地小组规则"
-              onPress={() =>
-                setNotice({
-                  title: '本地小组规则',
-                  message:
-                    '当前版本的小组适合同一台设备多人轮换记录，数据保存在本机，不会自动同步到其他手机。组长可以查看本机保存的所有本地成员训练数据；未来云同步版本再支持账号登录、邀请成员加入、多设备同步，以及组长查看成员授权共享的数据。',
-                })
-              }
-              trailing="了解"
-            />
-          </SettingsSection>
-
-          <SettingsSection title="训练设置">
-            <SettingsCell
-              icon="scale-outline"
-              iconBg={colors.warningSoft}
-              iconColor={colors.warning}
-              label="默认单位"
+            <ProfileMenuItem
+              description="单位、记录方式、休息计时等"
+              icon="options-outline"
+              label="训练偏好"
+              onPress={() => router.push('/profile/preferences' as never)}
               trailing="kg"
             />
-            <SettingsCell
-              description={formatMemberUnitsDescription(members, profilesByMemberId)}
-              icon="barbell-outline"
-              iconBg={colors.primarySoft}
-              iconColor={colors.primary}
-              label="加重单位"
-              onPress={() => router.push('/settings/member-units')}
-              trailing={formatMembersValue(members)}
-            />
-            <SettingsCell
-              icon="pulse-outline"
-              iconBg={colors.accentSoft}
-              iconColor={colors.accent}
-              label="默认记录方式"
-              trailing="RPE / RIR"
-            />
-          </SettingsSection>
+          </ProfileSection>
 
-          <SettingsSection title="试用与激活">
-            <SettingsCell
-              icon="shield-checkmark-outline"
-              iconBg={activation?.isActivated ? colors.successSoft : colors.warningSoft}
-              iconColor={activation?.isActivated ? colors.success : colors.warning}
-              label="当前模式"
-              trailing={activation?.isActivated ? '已激活' : '试用模式'}
-              trailingTone={activation?.isActivated ? 'success' : 'warning'}
+          <ProfileSection icon="shield-checkmark-outline" title="账号与服务">
+            <ProfileMenuItem
+              description="手机号、邮箱、密码与登录设备"
+              icon="lock-closed-outline"
+              label="账号安全"
+              onPress={() => router.push('/account/security' as never)}
+              tag={isLoggedIn ? undefined : '未登录'}
             />
-            <SettingsCell
-              icon="time-outline"
-              iconBg={colors.primarySoft}
-              iconColor={colors.primary}
-              label="试用剩余天数"
-              trailing={`${activation ? getTrialDaysLeft(activation) : 0} 天`}
+            <ProfileMenuItem
+              description="备份与换机恢复"
+              icon="cloud-outline"
+              label="云同步"
+              onPress={() => router.push('/profile/sync' as never)}
+              tag="预留"
             />
-            <SettingsCell
-              description={activation?.deviceId ?? '生成中'}
-              icon="phone-portrait-outline"
-              iconBg={colors.accentSoft}
-              iconColor={colors.accent}
-              label="设备 ID"
+            <ProfileMenuItem
+              description="权益、激活码、购买记录"
+              icon="diamond-outline"
+              label="会员与激活"
+              onPress={() => router.push('/profile/membership' as never)}
             />
-            <SettingsCell
-              icon="key-outline"
-              iconBg={colors.brandSoft}
-              iconColor={colors.brand}
-              label="输入激活码"
-              onPress={() => router.push('/activation' as never)}
-              trailing="打开"
-            />
-          </SettingsSection>
+          </ProfileSection>
 
-          <SettingsSection title="数据管理">
-            <SettingsCell
-              disabled={isWorking}
-              icon="download-outline"
-              iconBg={colors.accentSoft}
-              iconColor={colors.accent}
-              label="导出全部数据"
-              onPress={() => void exportAllData()}
+          <ProfileSection icon="settings-outline" title="通用设置">
+            <ProfileMenuItem
+              description="跟随系统"
+              icon="contrast-outline"
+              label="外观与主题"
+              onPress={() => showDeveloping('外观与主题')}
+              trailing="跟随系统"
             />
-            <SettingsCell
-              disabled={isWorking}
-              icon="document-text-outline"
-              iconBg={colors.primarySoft}
-              iconColor={colors.primary}
-              label="导出当前计划"
-              onPress={() => void exportCurrentPlan()}
+            <ProfileMenuItem
+              description="消息、提醒、训练提示等"
+              icon="notifications-outline"
+              label="通知设置"
+              onPress={() => showDeveloping('通知设置')}
             />
-            <SettingsCell
-              disabled={isWorking}
-              icon="bar-chart-outline"
-              iconBg={colors.successSoft}
-              iconColor={colors.success}
-              label="导出训练记录"
-              onPress={() => void exportWorkoutData()}
+            <ProfileMenuItem
+              description="简体中文"
+              icon="language-outline"
+              label="语言"
+              onPress={() => showDeveloping('语言')}
+              trailing="简体中文"
             />
-            <SettingsCell
-              disabled={isWorking}
-              icon="cloud-upload-outline"
-              iconBg={colors.brandSoft}
-              iconColor={colors.brand}
-              label="导入计划"
-              onPress={() => void importPlan()}
-              trailing="选择文件"
+            <ProfileMenuItem
+              description="清理临时缓存"
+              icon="file-tray-outline"
+              label="缓存管理"
+              onPress={() => showDeveloping('缓存管理')}
             />
-            <SettingsCell
-              icon="server-outline"
-              iconBg={colors.accentSoft}
-              iconColor={colors.accent}
-              label="备份数据库"
-              onPress={() => setNotice({ title: '备份数据库', message: '文件保存和分享能力接入后开放。当前训练记录仍保存在本机 SQLite。' })}
-              tag="开发中"
-            />
-            <SettingsCell
-              icon="refresh-outline"
-              iconBg={colors.accentSoft}
-              iconColor={colors.accent}
-              label="恢复数据库"
-              onPress={() => setNotice({ title: '恢复数据库', message: '恢复能力会在备份文件校验完成后开放，当前版本不会覆盖本机数据。' })}
-              tag="开发中"
-            />
-          </SettingsSection>
+          </ProfileSection>
 
-          <SettingsSection title="计划管理">
-            <SettingsCell
-              description="补齐缺失 seed，不删除已有训练记录"
-              disabled={isWorking}
-              icon="reload-outline"
-              iconBg={colors.warningSoft}
-              iconColor={colors.warning}
-              label="重置默认计划"
-              onPress={confirmResetDefaultPlan}
-              trailing="执行"
+          <ProfileSection icon="finger-print-outline" title="数据与隐私">
+            <ProfileMenuItem
+              description="训练数据可见范围"
+              icon="eye-off-outline"
+              label="隐私设置"
+              onPress={() => router.push('/profile/privacy' as never)}
             />
-            <SettingsCell
-              icon="layers-outline"
-              iconBg={colors.accentSoft}
-              iconColor={colors.accent}
-              label="系统方案版本"
-              onPress={() =>
-                setNotice({
-                  title: '系统方案版本',
-                  message: '系统方案版本：1。四练增力增肌与经典三分化 PPL 已可复制使用，其他方案会逐步补齐。',
-                })
-              }
-              trailing={`${diagnostics?.planCount ?? 0} 个模板`}
+            <ProfileMenuItem
+              description="清空本机数据、删除云端数据"
+              icon="trash-outline"
+              label="数据删除"
+              onPress={() => router.push('/profile/privacy' as never)}
+              tag="需确认"
             />
-          </SettingsSection>
+            <ProfileMenuItem
+              danger
+              description="注销账号并处理相关数据"
+              icon="person-remove-outline"
+              label="账号注销"
+              onPress={confirmAccountDeletion}
+            />
+          </ProfileSection>
 
-          <SettingsSection title="关于">
-            <SettingsCell
-              icon="sparkles-outline"
-              iconBg={colors.brandSoft}
-              iconColor={colors.brand}
+          <ProfileSection icon="help-circle-outline" title="帮助与关于">
+            <ProfileMenuItem
+              description="使用帮助、意见反馈、常见问题"
+              icon="chatbubble-ellipses-outline"
+              label="帮助与反馈"
+              onPress={() => showDeveloping('帮助与反馈')}
+            />
+            <ProfileMenuItem
+              description="版本信息、用户协议、隐私政策"
+              icon="information-circle-outline"
               label="关于练刻"
               onPress={() => router.push('/about' as never)}
               trailing={Constants.expoConfig?.version ?? '0.1.0'}
             />
-          </SettingsSection>
+            <ProfileMenuItem
+              description="查看协议"
+              icon="document-text-outline"
+              label="用户协议"
+              onPress={() => showDeveloping('用户协议')}
+            />
+            <ProfileMenuItem
+              description="查看隐私政策"
+              icon="document-lock-outline"
+              label="隐私政策"
+              onPress={() => showDeveloping('隐私政策')}
+            />
+          </ProfileSection>
 
-          <SettingsSection title="开发与诊断">
-            <SettingsCell
-              icon="server-outline"
-              iconBg={colors.accentSoft}
-              iconColor={colors.accent}
-              label="SQLite 状态"
-              trailing={diagnostics?.sqliteStatus ?? '未知'}
-            />
-            <SettingsCell
-              icon="git-branch-outline"
-              iconBg={colors.accentSoft}
-              iconColor={colors.accent}
-              label="数据库版本"
-              trailing={`${diagnostics?.databaseVersion ?? 0}`}
-            />
-            <SettingsCell
-              icon="leaf-outline"
-              iconBg={colors.successSoft}
-              iconColor={colors.success}
-              label="seed 状态"
-              trailing={diagnostics?.seedStatus ?? '未知'}
-            />
-            <SettingsCell
-              icon="people-outline"
-              iconBg={colors.accentSoft}
-              iconColor={colors.accent}
-              label="成员数量"
-              trailing={`${members.length}`}
-            />
-            <SettingsCell
-              icon="fitness-outline"
-              iconBg={colors.primarySoft}
-              iconColor={colors.primary}
-              label="动作数量"
-              trailing={`${diagnostics?.exerciseCount ?? 0}`}
-            />
-          </SettingsSection>
+          {isLoggedIn ? <LogoutButton disabled={isAuthLoading} onPress={confirmLogout} /> : null}
 
-          <SettingsSection title="危险操作" danger>
-            <SettingsCell
-              danger
-              disabled={isWorking}
-              icon="warning-outline"
-              label="清空测试数据"
-              onPress={() => confirmDanger('清空测试数据')}
-            />
-            <SettingsCell
-              danger
-              disabled={isWorking}
-              icon="trash-outline"
-              label="清空训练记录"
-              onPress={() => confirmDanger('清空训练记录')}
-            />
-            <SettingsCell
-              danger
-              disabled={isWorking}
-              icon="nuclear-outline"
-              label="重置整个 App"
-              onPress={() => confirmDanger('重置整个 App')}
-            />
-          </SettingsSection>
-        </View>
+          {isDeveloperMode ? (
+            <ProfileSection icon="terminal-outline" title="开发者诊断">
+              <ProfileMenuItem
+                description="隐藏入口，仅开发者模式显示"
+                icon="server-outline"
+                label="SQLite 状态"
+                trailing={diagnostics?.sqliteStatus ?? '未知'}
+              />
+              <ProfileMenuItem
+                icon="git-branch-outline"
+                label="数据库版本"
+                trailing={`${diagnostics?.databaseVersion ?? 0}`}
+              />
+              <ProfileMenuItem
+                icon="leaf-outline"
+                label="seed 状态"
+                trailing={diagnostics?.seedStatus ?? '未知'}
+              />
+              <ProfileMenuItem
+                icon="fitness-outline"
+                label="动作数量"
+                trailing={`${diagnostics?.exerciseCount ?? 0}`}
+              />
+            </ProfileSection>
+          ) : null}
+
+          <Pressable accessibilityRole="button" onPress={handleVersionPress} style={styles.versionFooter}>
+            <View style={styles.versionBrand}>
+              <Ionicons color={colors.primary} name="flash-outline" size={18} />
+              <AppText variant="bodySmall" weight="900">
+                练刻 LiftMark
+              </AppText>
+            </View>
+            <AppText tone="muted" variant="caption">
+              Version {Constants.expoConfig?.version ?? '0.1.0'}
+            </AppText>
+          </Pressable>
+        </>
       ) : null}
-
-      <AppModalSheet
-        onClose={() => setExportPrompt(null)}
-        subtitle={exportPrompt?.message}
-        title={exportPrompt?.title ?? '内容已生成'}
-        visible={Boolean(exportPrompt)}
-      >
-        <View style={styles.modalActions}>
-          <AppButton disabled={isWorking} onPress={() => void copyExportContent()}>
-            复制内容
-          </AppButton>
-          <AppButton onPress={() => setExportPrompt(null)} variant="secondary">
-            知道了
-          </AppButton>
-        </View>
-      </AppModalSheet>
-
-      <AppModalSheet
-        onClose={() => setActivationPrompt(null)}
-        subtitle={activationPrompt?.message}
-        title={activationPrompt?.title ?? '计划已导入'}
-        visible={Boolean(activationPrompt)}
-      >
-        <View style={styles.modalActions}>
-          <AppButton onPress={() => setActivationPrompt(null)} variant="secondary">
-            稍后
-          </AppButton>
-          <AppButton disabled={isWorking} onPress={() => (activationPrompt ? void setCurrentPlan(activationPrompt.plan) : undefined)}>
-            设为当前
-          </AppButton>
-        </View>
-      </AppModalSheet>
 
       <AppModalSheet
         onClose={() => setNotice(null)}
@@ -624,275 +410,24 @@ export default function SettingsRoute() {
   );
 }
 
-function BrandCard({
-  activation,
-  group,
-  members,
-}: {
-  activation: ActivationState | null;
-  group: Group | null;
-  members: GroupMember[];
-}) {
-  return (
-    <View style={styles.brandCard}>
-      <View style={styles.brandCardInner}>
-        <View style={styles.brandCardHeader}>
-          <Image resizeMode="contain" source={liftmarkBrandAssets.logoLightCard} style={styles.brandLogo} />
-          <Tag label={activation?.isActivated ? '已激活' : '试用模式'} tone={activation?.isActivated ? 'success' : 'warning'} />
-        </View>
-
-        <View style={styles.brandCardBody}>
-          <AppText variant="subtitle" weight="900">
-            练刻 LiftMark
-          </AppText>
-          <AppText tone="muted" variant="caption">
-            你的力量训练计划执行器
-          </AppText>
-        </View>
-
-        <View style={styles.brandCardStats}>
-          <BrandStat label="成员" value={`${members.length}`} />
-          <View style={styles.brandStatDivider} />
-          <BrandStat label="小组" value={group?.name ?? '本地'} />
-          <View style={styles.brandStatDivider} />
-          <BrandStat label="同步" value="本机" />
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function BrandStat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.brandStat}>
-      <AppText variant="body" weight="900">
-        {value}
-      </AppText>
-      <AppText tone="subtle" variant="caption">
-        {label}
-      </AppText>
-    </View>
-  );
-}
-
-function SettingsSection({
-  children,
-  danger = false,
-  title,
-}: {
-  children: ReactNode;
-  danger?: boolean;
-  title: string;
-}) {
-  return (
-    <View style={styles.section}>
-      <AppText
-        style={[styles.sectionTitle, danger && styles.sectionTitleDanger]}
-        variant="caption"
-        weight="800"
-      >
-        {title}
-      </AppText>
-      <View style={[styles.sectionCard, danger && styles.sectionCardDanger]}>
-        {children}
-      </View>
-    </View>
-  );
-}
-
-function SettingsCell({
-  danger = false,
-  description,
-  disabled = false,
-  icon,
-  iconBg,
-  iconColor,
-  label,
-  onPress,
-  tag,
-  trailing,
-  trailingTone,
-}: {
-  danger?: boolean;
-  description?: string;
-  disabled?: boolean;
-  icon: IconName;
-  iconBg?: string;
-  iconColor?: string;
-  label: string;
-  onPress?: () => void;
-  tag?: string;
-  trailing?: string;
-  trailingTone?: 'default' | 'success' | 'warning' | 'danger';
-}) {
-  const isPressable = Boolean(onPress);
-  const iconBackground = danger ? colors.dangerSoft : iconBg ?? colors.primarySoft;
-  const iconForeground = danger ? colors.danger : iconColor ?? colors.primary;
-
-  return (
-    <Pressable
-      accessibilityRole={isPressable ? 'button' : undefined}
-      disabled={disabled || !isPressable}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.cell,
-        disabled && styles.cellDisabled,
-        pressed && isPressable && styles.cellPressed,
-      ]}
-    >
-      <View style={[styles.cellIcon, { backgroundColor: iconBackground }]}>
-        <Ionicons color={iconForeground} name={icon} size={18} />
-      </View>
-
-      <View style={styles.cellBody}>
-        <AppText tone={danger ? 'danger' : 'default'} variant="body" weight="600">
-          {label}
-        </AppText>
-        {description ? (
-          <AppText numberOfLines={1} tone="muted" variant="caption">
-            {description}
-          </AppText>
-        ) : null}
-      </View>
-
-      <View style={styles.cellTrailing}>
-        {tag ? <Tag label={tag} tone="neutral" /> : null}
-        {trailing ? (
-          <AppText
-            numberOfLines={1}
-            style={styles.trailingText}
-            tone={trailingTone === 'success' ? 'success' : trailingTone === 'warning' ? 'warning' : 'muted'}
-            variant="caption"
-            weight="600"
-          >
-            {trailing}
-          </AppText>
-        ) : null}
-        {isPressable ? (
-          <Ionicons color={colors.textMuted} name="chevron-forward" size={16} />
-        ) : null}
-      </View>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   loadingContainer: {
     alignItems: 'center',
-    paddingVertical: spacing.xxxl,
+    paddingVertical: spacing.xl,
   },
-  sections: {
+  screen: {
     gap: spacing.xl,
+    paddingBottom: spacing.xxxxl,
   },
-
-  brandCard: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: colors.brand,
-        shadowOffset: { height: 4, width: 0 },
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-      },
-      android: { elevation: 4 },
-    }),
-  },
-  brandCardInner: {
-    gap: spacing.lg,
-    padding: spacing.xl,
-  },
-  brandCardHeader: {
+  versionBrand: {
     alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  brandLogo: {
-    height: 40,
-    width: 120,
-  },
-  brandCardBody: {
     gap: spacing.xs,
   },
-  brandCardStats: {
+  versionFooter: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.sm,
-    flexDirection: 'row',
-    paddingVertical: spacing.md,
-  },
-  brandStat: {
-    alignItems: 'center',
-    flex: 1,
-    gap: 2,
-  },
-  brandStatDivider: {
-    backgroundColor: colors.border,
-    height: 24,
-    width: 1,
-  },
-
-  section: {
-    gap: spacing.sm,
-  },
-  sectionTitle: {
-    color: colors.textMuted,
-    letterSpacing: 0.5,
-    paddingHorizontal: spacing.xs,
-    textTransform: 'uppercase',
-  },
-  sectionTitleDanger: {
-    color: colors.danger,
-  },
-  sectionCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-  },
-  sectionCardDanger: {
-    borderColor: colors.dangerSoft,
-  },
-
-  cell: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-    minHeight: 52,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  cellDisabled: {
-    opacity: 0.45,
-  },
-  cellPressed: {
-    backgroundColor: colors.surfaceMuted,
-  },
-  cellIcon: {
-    alignItems: 'center',
-    borderRadius: radius.sm,
-    height: 32,
-    justifyContent: 'center',
-    width: 32,
-  },
-  cellBody: {
-    flex: 1,
-    gap: 1,
-  },
-  cellTrailing: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  trailingText: {
-    maxWidth: 120,
-  },
-
-  modalActions: {
-    gap: spacing.sm,
+    gap: spacing.xs,
+    paddingBottom: spacing.lg,
+    paddingTop: spacing.sm,
   },
 });

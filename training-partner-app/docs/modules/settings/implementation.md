@@ -3,6 +3,19 @@
 更新时间：2026-06-14  
 对应代码目录：`training-partner-app/`
 
+## 2026-06-24 实现更新
+
+| 文件 | 说明 |
+|---|---|
+| `app/(tabs)/settings.tsx` | 重做为我的页，组织账号身份、训练相关、账号与服务、通用设置、数据与隐私、帮助与关于。 |
+| `src/components/profile/*` | 我的页专用 Header、Hero、Section、MenuItem 和 Logout 组件。 |
+| `app/account/*` | 账号资料、登录 / 注册占位、账号安全二级页。 |
+| `app/profile/*` | 训练身份、小组、偏好、数据、隐私、云同步、会员与激活二级页。 |
+| `src/services/auth/*`、`src/store/authStore.ts` | 认证占位边界，当前不接真实后端。 |
+| `src/sync/syncService.ts`、`src/store/syncStore.ts` | 云同步占位边界，继续遵守本地 SQLite 先写。 |
+
+旧设置页中的试用模式、清空测试数据、重置默认计划和 SQLite/seed 常驻诊断不再出现在普通我的页；激活码入口迁移为“会员与激活 / 激活码兑换”。
+
 ## 1. 主要文件
 
 | 文件 | 说明 |
@@ -27,7 +40,7 @@
 ### ActivationService.activate()
 
 文件：`src/domain/activation/activation.service.ts`  
-职责：校验本地测试激活码 `LIFTMARK-TEST-2026` 并保存激活状态。  
+职责：旧本地激活兼容服务；普通用户入口已迁移到“会员与激活 / 激活码兑换”，以后端会员权益为准。  
 调用方：`app/activation.tsx`、`app/(tabs)/settings.tsx`。
 
 ### exportLocalDataJson()

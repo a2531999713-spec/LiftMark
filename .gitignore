@@ -34,6 +34,8 @@ yarn-error.*
 .env
 .env.*
 .env*.local
+!.env.example
+!**/.env.example
 
 # typescript
 *.tsbuildinfo
@@ -74,3 +76,17 @@ training-partner-app/android/app/.cxx/
 *.apk
 *.aab
 *.keystore
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*accesskey*
+*AccessKey*
+创建用户结果_*.csv
+aliyun-ram-accesskey.csv
+*.log
+*.err.log
+expo-*.log
+expo-*.err.log

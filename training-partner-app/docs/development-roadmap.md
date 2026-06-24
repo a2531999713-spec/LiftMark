@@ -1,5 +1,22 @@
 # 开发路径图
 
+## 2026-06-24 cloud-service-v1-sprint
+
+- 已完成：新增 `apps/liftmark-api` 后端工程，使用 Fastify + TypeScript + PostgreSQL + Knex migration。
+- 已完成：落地账号、短信验证码、JWT、会员/激活码、小组、同步、训练聚合、成就、公告、反馈和后台管理 API 第一版。
+- 已完成：App 账号页接入真实登录、注册、验证码登录、token 安全存储、启动恢复和退出登录；会员与激活页改为后端会员状态与云端激活码兑换。
+- 已完成：删除普通用户“我的”页中的训练数据、导出备份类主入口；激活页不再显示开发期本地测试码。
+- 保持不变：本地 SQLite 训练闭环、训练执行和本地 Repository 公共接口未修改，训练现场不依赖网络。
+- 风险/后续：App 本地 SQLite 到 `/api/sync/push` 的自动队列映射尚未接入；HTTP 明文仅用于当前开发阶段，正式上线应切换 HTTPS。
+
+## 2026-06-24 profile-account-sync-boundary-sprint
+
+- 已完成：我的页重做为账号与训练身份中心，顶部主卡不再展示云同步、会员、Pro、试用或待同步信息。
+- 已完成：底部主 Tab 确认为首页 / 计划 / 记录 / 我的；`members` 和 `explore` 仍保留为隐藏路由或二级入口。
+- 已完成：新增账号安全、训练身份、我的小组、训练偏好、训练数据、数据与隐私、云同步、会员与激活等二级页面，占位能力均有明确提示。
+- 已完成：新增 auth 占位 service/store 和 sync store/service 边界；未接真实登录和云同步，不改变 SQLite、本地 Repository 或训练执行链路。
+- 后续：接入真实后端登录、云同步队列持久化、远程邀请、会员支付和权益同步。
+
 ## 2026-06-15 plan-dashboard-exercise-library-custom-exercise-member-limit-weight-git-sprint
 
 - 已完成：系统动作库修复历史中文编码污染并扩展为 100+ 个系统动作，覆盖胸、背、肩、腿、手臂、核心和热身/有氧。

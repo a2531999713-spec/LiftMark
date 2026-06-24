@@ -1,3 +1,13 @@
+## 2026-06-24 云服务第一版架构补充
+
+- 新增后端工程：`apps/liftmark-api`。
+- 后端栈：Node.js、TypeScript、Fastify、PostgreSQL、Knex migration、JWT、PM2、Nginx。
+- 公网访问边界：Node 只监听 `127.0.0.1:3000`，公网通过 Nginx `/api` 反向代理。
+- App API 地址通过 `EXPO_PUBLIC_API_BASE_URL` 配置，默认开发地址为 `http://47.100.239.29/api`。
+- App token 使用 `expo-secure-store` 保存；App 不保存阿里云 AccessKey，也不直接调用阿里云短信接口。
+- 本次没有修改本地 SQLite schema，也没有把训练记录改存 AsyncStorage。
+- 云同步第一版服务端表已创建，但 App 端自动同步队列尚未把本地 SQLite 训练记录打包上传；训练记录仍先写本机 SQLite。
+
 # 技术架构文档
 ## 2026-06-14 品牌与 Android 包名迁移
 
