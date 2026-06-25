@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ExercisePickerSheet, formatExerciseEquipment } from '@/components/exercises/ExercisePickerSheet';
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { CreateCustomExerciseInput } from '@/data/repositories/exerciseRepository';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing, typography } from '@/theme';
 
 type NoticeState = {
@@ -24,6 +26,7 @@ function parseInteger(value: string, fallback: number): number {
 
 export default function CreatePlanRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>([]);
   const [isExercisePickerVisible, setExercisePickerVisible] = useState(false);
@@ -93,6 +96,10 @@ export default function CreatePlanRoute() {
   };
 
   const createCustomExercise = async (input: CreateCustomExerciseInput) => {
+    if (!guardFeature('create_plan')) {
+      throw new Error('请先登录后再创建自定义动作。');
+    }
+
     const exercise = await repositories.exerciseRepository.createCustomExercise(input);
     setExercises((current) => [exercise, ...current]);
     addExercise(exercise);
@@ -100,6 +107,10 @@ export default function CreatePlanRoute() {
   };
 
   const savePlan = async () => {
+    if (!guardFeature('create_plan')) {
+      return;
+    }
+
     if (selectedExerciseIds.length === 0) {
       setNotice({
         title: '请选择动作',
@@ -192,7 +203,9 @@ export default function CreatePlanRoute() {
           <AppCard style={styles.card}>
             <SectionHeader
               actionLabel="添加动作"
-              onActionPress={() => setExercisePickerVisible(true)}
+              onActionPress={() => {
+                if (guardFeature('create_plan')) setExercisePickerVisible(true);
+              }}
               subtitle="从动作库选择；没有就快速新建自定义动作。"
               title="训练动作"
             />
@@ -200,7 +213,9 @@ export default function CreatePlanRoute() {
               <EmptyState
                 actionLabel="添加动作"
                 description="添加动作后，这个训练日就可以保存为我的计划。"
-                onActionPress={() => setExercisePickerVisible(true)}
+                onActionPress={() => {
+                  if (guardFeature('create_plan')) setExercisePickerVisible(true);
+                }}
                 title="还没有动作"
               />
             ) : (
@@ -269,6 +284,8 @@ export default function CreatePlanRoute() {
           </AppButton>
         </View>
       </AppModalSheet>
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

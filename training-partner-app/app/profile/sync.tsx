@@ -2,8 +2,10 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, StyleSheet, Switch, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppModalSheet, AppText, Screen, SettingsRow, Tag } from '@/components/ui';
 import { useSyncStore } from '@/store/syncStore';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, spacing } from '@/theme';
 
 type NoticeState = {
@@ -12,6 +14,7 @@ type NoticeState = {
 };
 
 export default function ProfileSyncRoute() {
+  const { guardFeature, sheets } = useAuthGate();
   const {
     lastSyncedAt,
     loadSyncState,
@@ -30,6 +33,10 @@ export default function ProfileSyncRoute() {
   );
 
   const enableSync = () => {
+    if (!guardFeature('cloud_sync')) {
+      return;
+    }
+
     Alert.alert(
       '开启云同步？',
       '开启后，练刻会将你的成员档案、训练计划、训练记录和训练进度同步到云端。你卸载重装、换手机或重新登录后，可以恢复数据。你可以随时在设置中关闭云同步。',
@@ -37,8 +44,8 @@ export default function ProfileSyncRoute() {
         { text: '暂不开启', style: 'cancel' },
         {
           text: '开启云同步',
-            onPress: () => {
-              void setPreferences({ ...preferences, enabled: true });
+          onPress: () => {
+            void setPreferences({ ...preferences, enabled: true });
             setNotice({ title: '云同步', message: '云同步服务已接入。当前版本仍保持训练数据先保存到本机 SQLite。' });
           },
         },
@@ -47,6 +54,10 @@ export default function ProfileSyncRoute() {
   };
 
   const disableSync = () => {
+    if (!guardFeature('cloud_sync')) {
+      return;
+    }
+
     Alert.alert(
       '关闭云同步？',
       '关闭云同步后，新产生的训练数据只会保存在当前设备。卸载 App、清空数据或更换手机后，未上传的数据将无法自动恢复。',
@@ -62,12 +73,16 @@ export default function ProfileSyncRoute() {
   };
 
   const syncNow = async () => {
+    if (!guardFeature('cloud_sync')) {
+      return;
+    }
+
     const message = await requestSync();
     setNotice({ title: '立即同步', message: message ?? '同步请求已提交。' });
   };
 
   return (
-    <Screen title="云同步" subtitle="备份与换机恢复。">
+    <Screen title="云同步" subtitle="云同步开发中 / 可测试。">
       <AppCard style={styles.card}>
         <View style={styles.headerRow}>
           <View>
@@ -75,7 +90,7 @@ export default function ProfileSyncRoute() {
               云同步
             </AppText>
             <AppText tone="muted" variant="bodySmall">
-              训练现场仍然本地优先
+              训练现场仍然本地优先，当前先测试服务连通性
             </AppText>
           </View>
           <Tag label={preferences.enabled ? '已开启' : '未开启'} tone={preferences.enabled ? 'success' : 'neutral'} />
@@ -102,10 +117,24 @@ export default function ProfileSyncRoute() {
         <AppButton onPress={() => void syncNow()} variant="secondary">
           立即同步
         </AppButton>
-        <AppButton onPress={() => setNotice({ title: '从云端恢复', message: '该功能正在开发中，后续版本开放。' })} variant="secondary">
+        <AppButton
+          onPress={() => {
+            if (guardFeature('cloud_sync')) {
+              setNotice({ title: '从云端恢复', message: '该功能正在开发中，后续版本开放。' });
+            }
+          }}
+          variant="secondary"
+        >
           从云端恢复
         </AppButton>
-        <AppButton onPress={() => setNotice({ title: '清空云端数据', message: '该功能正在开发中，后续版本开放。' })} variant="secondary">
+        <AppButton
+          onPress={() => {
+            if (guardFeature('cloud_sync')) {
+              setNotice({ title: '清空云端数据', message: '该功能正在开发中，后续版本开放。' });
+            }
+          }}
+          variant="secondary"
+        >
           清空云端数据
         </AppButton>
       </View>
@@ -128,6 +157,8 @@ export default function ProfileSyncRoute() {
       >
         <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
       </AppModalSheet>
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

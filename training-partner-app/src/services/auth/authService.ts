@@ -1,4 +1,4 @@
-import { ApiClientError, apiRequest } from '@/services/apiClient';
+import { ApiClientError, apiRequest } from '@/services/httpClient';
 
 import type {
   AuthService,
@@ -8,12 +8,13 @@ import type {
   CodeLoginInput,
   LoginInput,
   RegisterInput,
+  SendCodeResult,
   SendCodeInput,
 } from './authTypes';
 import { clearStoredSession, readStoredSession, saveStoredSession } from './tokenStorage';
 
 export const AUTH_NOT_CONFIGURED_MESSAGE = '登录接口待接入，请配置服务器地址和认证接口。';
-export const AUTH_SERVER_UNAVAILABLE_MESSAGE = '服务器暂时不可用，本机训练功能仍可继续使用。';
+export const AUTH_SERVER_UNAVAILABLE_MESSAGE = '无法连接服务器，请检查网络后重试。';
 
 type ApiUser = {
   avatar_url?: string | null;
@@ -57,10 +58,27 @@ function toSession(response: AuthResponse): AuthSession {
   };
 }
 
-function messageFromError(error: unknown) {
-  if (error instanceof ApiClientError) return error.message;
+function messageFromError(error: unknown, scope: 'auth' | 'sms' | 'code_login' = 'auth') {
+  if (error instanceof ApiClientError) {
+    if (error.code === 'NETWORK_ERROR') return AUTH_SERVER_UNAVAILABLE_MESSAGE;
+    if (error.code === 'REQUEST_TIMEOUT') return '请求超时，请稍后重试。';
+    if (error.status === 429) return '验证码发送过于频繁，请稍后再试。';
+    if (scope === 'sms' && error.status === 404) return '验证码服务正在配置中，请稍后再试。';
+    if (scope === 'sms' && error.status >= 500) return '验证码发送失败，请稍后再试。';
+    if (scope === 'code_login' && (error.status === 400 || error.status === 401 || error.status === 422)) {
+      return '验证码错误或已过期。';
+    }
+    return error.message;
+  }
   if (error instanceof TypeError) return AUTH_SERVER_UNAVAILABLE_MESSAGE;
   return error instanceof Error ? error.message : '账号请求失败。';
+}
+
+function isTransientNetworkError(error: unknown) {
+  return (
+    error instanceof ApiClientError &&
+    (error.code === 'NETWORK_ERROR' || error.code === 'REQUEST_TIMEOUT' || error.status >= 500)
+  );
 }
 
 class ApiAuthService implements AuthService {
@@ -78,7 +96,10 @@ class ApiAuthService implements AuthService {
     } catch (error) {
       if (error instanceof ApiClientError && error.status === 401) {
         const refreshed = await this.refreshToken(stored.refreshToken);
-        return refreshed.ok ? refreshed.session : null;
+        if (refreshed.ok) return refreshed.session;
+
+        const preserved = await readStoredSession();
+        return preserved ? { ...preserved, isOffline: true } : null;
       }
 
       return {
@@ -100,7 +121,7 @@ class ApiAuthService implements AuthService {
       await saveStoredSession(session);
       return { ok: true, session };
     } catch (error) {
-      return { ok: false, message: messageFromError(error) };
+      return { ok: false, message: messageFromError(error, 'code_login') };
     }
   }
 
@@ -142,7 +163,9 @@ class ApiAuthService implements AuthService {
       await saveStoredSession(session);
       return { ok: true, session };
     } catch (error) {
-      await clearStoredSession();
+      if (!isTransientNetworkError(error)) {
+        await clearStoredSession();
+      }
       return { ok: false, message: messageFromError(error) };
     }
   }
@@ -164,13 +187,14 @@ class ApiAuthService implements AuthService {
     }
   }
 
-  async sendCode(input: SendCodeInput) {
+  async sendCode(input: SendCodeInput): Promise<SendCodeResult> {
     try {
-      return await apiRequest<{ debugCode?: string; ok: true }>('/auth/send-code', {
+      return await apiRequest<{ debugCode?: string; message?: string; ok: true }>('/auth/send-code', {
         body: input,
       });
     } catch (error) {
-      return { ok: false as const, message: messageFromError(error) };
+      console.warn('[auth] sendCode failed', error instanceof Error ? error.message : 'unknown error');
+      return { ok: false as const, message: messageFromError(error, 'sms') };
     }
   }
 }

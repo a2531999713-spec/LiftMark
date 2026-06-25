@@ -1,5 +1,77 @@
 # 变更记录
 
+## 2026-06-26 - ui-workout-homepage-redesign
+
+### 首页重新设计
+- `app/(tabs)/today.tsx` 全面重构为现代 Bento 风格布局
+- 新增 Hero 卡片：深色背景 + 品牌色装饰，显示训练主题、计划、动作数、成员数
+- 快捷入口改为 3 个图标导航（训练记录、训练分析、切换计划）
+- 训练内容以药丸标签展示，替代长列表
+- CTA 按钮全宽品牌色设计
+- 进度条显示训练完成百分比
+- 使用 impeccable skill 设计原则：无边框卡片、品牌色强调、大量留白
+
+### 训练分析页
+- `app/history/analytics.tsx` 顶部增加 "History / Analytics" 标题标签
+- 标题下方显示 "训练分析" 大标题和成员信息
+
+### 训练中 UI 优化
+- `app/workout/[sessionId].tsx` 已完成记录只显示当前成员（过滤 `memberId === currentMemberId`）
+- 休息时间改为成员独立（`memberRestState` 替代全局 `isResting`）
+- 每个成员可独立跳过休息
+
+### 训练中组件重设计
+- `src/components/workout/CurrentSetRecorder.tsx` 移除"跳过动作"按钮
+- RPE/RIR 改为折叠式设计，默认不展开，点击切换
+- 休息倒计时集成到"跳过休息"按钮上（显示计时器徽章）
+- 删除独立的休息倒计时卡片
+
+### 训练中已完成记录
+- `src/components/workout/CompletedSetList.tsx` 重设计为 chip 样式
+- 重量和次数独立显示，不再被截断
+- RPE/RIR 使用品牌色 chip 区分
+- 编号徽章更醒目
+
+### 训练中动作列表
+- `src/components/workout/WorkoutProgressStrip.tsx` 重设计
+- Dock 模式：进度条 + 成员 chip 标签
+- Card 模式：垂直卡片列表，每个动作独立一行
+- 当前动作高亮（品牌色边框 + "当前"徽章）
+
+### SMS 验证码服务
+- 后端配置阿里云 dypns 短信服务
+- 服务器返回 `provider: "dypns"` 表示真实短信发送
+
+## 2026-06-24 - phone-code-auth-gate
+
+- `app/account/login.tsx` 改为手机号验证码唯一登录 / 注册表单，删除账号密码入口、继续浏览、预览模式和功能卖点标签。
+- `app/_layout.tsx` 和 `app/index.tsx` 增加启动门禁：无 session 进入登录页，有 session 离线进入本机模式。
+- `src/store/authStore.ts` 新增 `authStatus`：`checking / unauthenticated / authenticated / offline_authenticated`。
+- `src/services/httpClient.ts` 作为业务 API 统一入口，复用 `apiClient` 的 base URL、超时和中文错误映射。
+- `src/services/auth/authService.ts` 调整 refresh 失败策略：网络、超时或 5xx 不清空本地 session。
+- 首页增加“当前离线，已进入本机模式”提示。
+- 更新 auth、UI、settings、handoff、product-design 和 roadmap 文档。
+
+## 2026-06-24 - auth-minimal-login-network-fix
+
+- 极简重做 `app/account/login.tsx`：登录 / 注册首页只保留品牌、价值说明、三个轻量标签、手机号登录 / 注册主入口和账号密码登录次入口；表单后置到下一步。后续已由 `phone-code-auth-gate` 调整为手机号验证码表单唯一入口。
+- 重做 `AuthRequiredSheet`：弹窗只做登录价值提示，保留右上角关闭、遮罩关闭和一个“登录 / 注册”主按钮，不再显示“继续浏览”按钮或表单。后续已移除关闭入口。
+- `src/services/apiClient.ts` 增加统一超时、非 JSON 响应和网络异常映射；`fetch failed` / `ConnectException` 不再直接展示给用户。
+- 验证码发送增加手机号格式校验、发送 loading、60 秒倒计时和中文错误提示。
+- 新增 `src/tests/api-client-errors.test.ts` 覆盖网络失败和超时错误映射。
+
+## 2026-06-24 - auth-preview-access-sprint
+
+- 重构 `app/account/login.tsx`：新增账号价值说明、验证码登录、密码登录、注册、本机数据保护提示和云同步开启提示。
+- 新增 `src/domain/auth/*`：集中定义 `AuthMode`、`MembershipTier`、`FeatureKey` 和 `decideFeatureAccess()`。
+- 新增统一拦截组件 `src/components/auth/*` 与 `src/hooks/useAuthGate.ts`，登录要求和 Pro 要求使用统一弹层。
+- `authStore` 增加 `authMode`、会员等级、会员状态、访客预览和同步提示状态；登录后尝试读取后端会员状态，失败时降级为登录免费版。
+- 首页、计划、记录、成员、激活码、云同步、训练执行和隐藏探索页的正式写入入口接入权限 gate。
+- 访客不再读取真实历史列表、训练详情或高级训练分析；未登录不能创建正式 workout session。
+- 新增 `src/services/localDataStatusService.ts` 检测本机成员、我的计划和训练记录，用于登录后本地数据保护提示。
+- 新增 `src/tests/auth-access.test.ts` 覆盖访客、免费版、Pro 和退出登录不清本地训练数据策略。
+- 数据库影响：未修改 SQLite schema；训练记录仍写入本地 SQLite，不使用 AsyncStorage。
+
 ## 2026-06-15 - plan-dashboard-exercise-library-custom-exercise-member-limit-weight-git-sprint
 
 - 系统动作库修复历史中文编码污染并扩展为 100+ 个系统动作，新增 `exercises.source` 区分系统动作和自定义动作。

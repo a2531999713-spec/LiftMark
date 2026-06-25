@@ -186,11 +186,11 @@ type CurrentSetRecorderProps = {
   onRpeChange: (value: number) => void;
   onRirChange: (value: number) => void;
   onSkipRest: () => void;
-  onSkipExercise: () => void;
   onWeightChange: (value: number) => void;
   onRepsChange: (value: number) => void;
   profile: MemberProfile | null;
   record: WorkoutExerciseRecord;
+  restSeconds?: number;
   setNumber: number;
   weight: number | undefined;
   reps: number | undefined;
@@ -205,7 +205,6 @@ export function CurrentSetRecorder({
   memberName,
   onCompleteSet,
   onSkipRest,
-  onSkipExercise,
   onWeightChange,
   onRepsChange,
   onRpeChange,
@@ -213,26 +212,20 @@ export function CurrentSetRecorder({
   onClearRpe,
   onClearRir,
   setNumber,
+  restSeconds,
   weight,
   reps,
   rpe,
   rir,
   weightIncrement,
 }: CurrentSetRecorderProps) {
-  const primaryLabel = isWorkoutReadyToFinish
-    ? '完成训练'
-    : isResting
-      ? '跳过休息'
-      : '完成本组';
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const hasAdvancedValues = rpe !== undefined || rir !== undefined;
 
-  const secondaryLabel = isResting ? '跳过休息' : '跳过动作';
-
-  function handleSecondaryPress() {
-    if (isResting) {
-      onSkipRest();
-    } else {
-      onSkipExercise();
-    }
+  function formatTimer(seconds: number): string {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
   return (
@@ -253,61 +246,98 @@ export function CurrentSetRecorder({
         </View>
       </View>
 
-      <View style={styles.inputGrid}>
-        <View style={styles.inputLeft}>
-          <NumberStepper
-            label="重量"
-            onChange={(v) => { if (v !== undefined) onWeightChange(v); }}
-            step={weightIncrement}
-            unit="kg"
-            value={weight}
-          />
-          <NumberStepper
-            integer
-            label="次数"
-            onChange={(v) => { if (v !== undefined) onRepsChange(v); }}
-            step={1}
-            unit="次"
-            value={reps}
-          />
-        </View>
-        <View style={styles.inputRight}>
+      <View style={styles.inputRow}>
+        <NumberStepper
+          label="重量"
+          onChange={(v) => { if (v !== undefined) onWeightChange(v); }}
+          step={weightIncrement}
+          unit="kg"
+          value={weight}
+        />
+        <NumberStepper
+          integer
+          label="次数"
+          onChange={(v) => { if (v !== undefined) onRepsChange(v); }}
+          step={1}
+          unit="次"
+          value={reps}
+        />
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setShowAdvanced(!showAdvanced)}
+        style={styles.advancedToggle}
+      >
+        <Ionicons
+          color={colors.textMuted}
+          name={showAdvanced ? 'chevron-up' : 'chevron-down'}
+          size={16}
+        />
+        <AppText tone="muted" variant="caption" weight="600">
+          {showAdvanced ? '收起 RPE/RIR' : hasAdvancedValues ? '编辑 RPE/RIR' : '添加 RPE/RIR'}
+        </AppText>
+        {hasAdvancedValues && !showAdvanced ? (
+          <View style={styles.advancedBadge}>
+            <AppText variant="caption" weight="700" style={styles.advancedBadgeText}>已设置</AppText>
+          </View>
+        ) : null}
+      </Pressable>
+
+      {showAdvanced ? (
+        <View style={styles.advancedSection}>
           <OptionButtons
-            label="RPE"
+            label="RPE (主观疲劳度)"
             onChange={(v) => v !== undefined ? onRpeChange(v) : onClearRpe()}
             options={rpeOptions}
             value={rpe}
           />
           <OptionButtons
-            label="RIR"
+            label="RIR (剩余次数)"
             onChange={(v) => v !== undefined ? onRirChange(v) : onClearRir()}
             options={rirOptions}
             value={rir}
           />
         </View>
-      </View>
+      ) : null}
 
       <View style={styles.actionRow}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={onCompleteSet}
-          style={[styles.primaryButton, isWorkoutReadyToFinish && styles.primaryButtonFinish]}
-        >
-          <Ionicons
-            color={colors.surface}
-            name={isWorkoutReadyToFinish ? 'flag-outline' : 'checkmark-circle-outline'}
-            size={18}
-          />
-          <AppText tone="inverse" variant="bodySmall" weight="800">
-            {primaryLabel}
-          </AppText>
-        </Pressable>
-        <Pressable accessibilityRole="button" onPress={handleSecondaryPress} style={styles.secondaryButton}>
-          <Ionicons color={colors.brand} name={isResting ? 'play-forward-outline' : 'arrow-forward-outline'} size={16} />
-          <AppText tone="brand" variant="caption" weight="700">
-            {secondaryLabel}
-          </AppText>
-        </Pressable>
+        {isResting ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={onSkipRest}
+            style={styles.restButton}
+          >
+            <View style={styles.restButtonContent}>
+              <Ionicons color={colors.primary} name="play-forward" size={18} />
+              <AppText variant="bodySmall" weight="800" style={styles.restButtonText}>
+                跳过休息
+              </AppText>
+            </View>
+            {restSeconds !== undefined && restSeconds > 0 ? (
+              <View style={styles.restTimerBadge}>
+                <AppText variant="caption" weight="900" style={styles.restTimerText}>
+                  {formatTimer(restSeconds)}
+                </AppText>
+              </View>
+            ) : null}
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            onPress={onCompleteSet}
+            style={[styles.primaryButton, isWorkoutReadyToFinish && styles.primaryButtonFinish]}
+          >
+            <Ionicons
+              color={colors.surface}
+              name={isWorkoutReadyToFinish ? 'flag-outline' : 'checkmark-circle-outline'}
+              size={18}
+            />
+            <AppText tone="inverse" variant="bodySmall" weight="800">
+              {isWorkoutReadyToFinish ? '完成训练' : '完成本组'}
+            </AppText>
+          </Pressable>
+        )}
       </View>
     </AppCard>
   );
@@ -334,14 +364,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
-  inputGrid: {
-    gap: spacing.md,
-  },
-  inputLeft: {
+  inputRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  inputRight: {
     gap: spacing.sm,
   },
   stepper: {
@@ -359,24 +383,46 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.md,
-    height: 44,
-    paddingHorizontal: spacing.xs,
+    height: 48,
+    paddingHorizontal: spacing.sm,
   },
   stepperButton: {
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: radius.sm,
-    height: 32,
+    height: 36,
     justifyContent: 'center',
-    width: 32,
+    width: 36,
   },
   stepperInput: {
     color: colors.textStrong,
     flex: 1,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '900',
-    height: 44,
+    height: 48,
     textAlign: 'center',
+  },
+  advancedToggle: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+  },
+  advancedBadge: {
+    backgroundColor: colors.brand,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  advancedBadgeText: {
+    color: colors.surface,
+    fontSize: 10,
+  },
+  advancedSection: {
+    gap: spacing.sm,
   },
   optionGroup: {
     gap: spacing.xs,
@@ -406,26 +452,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.brand,
     borderRadius: radius.md,
-    flex: 2,
+    flex: 1,
     flexDirection: 'row',
     gap: spacing.sm,
     justifyContent: 'center',
-    minHeight: 48,
+    minHeight: 52,
     paddingHorizontal: spacing.md,
   },
   primaryButtonFinish: {
     backgroundColor: colors.brandDark,
   },
-  secondaryButton: {
+  restButton: {
     alignItems: 'center',
-    borderColor: colors.brand,
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
     borderRadius: radius.md,
     borderWidth: 1.5,
     flex: 1,
     flexDirection: 'row',
-    gap: spacing.xs,
-    justifyContent: 'center',
-    minHeight: 48,
+    justifyContent: 'space-between',
+    minHeight: 52,
+    paddingHorizontal: spacing.md,
+  },
+  restButtonContent: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  restButtonText: {
+    color: colors.primary,
+  },
+  restTimerBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
     paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+  },
+  restTimerText: {
+    color: colors.surface,
   },
 });

@@ -1,4 +1,4 @@
-import { apiRequest, ApiClientError } from './apiClient';
+import { apiRequest, ApiClientError } from './httpClient';
 import { readStoredSession } from './auth/tokenStorage';
 
 export type Membership = {
@@ -50,4 +50,3 @@ export async function redeemActivationCode(code: string) {
     };
   }
 }
-

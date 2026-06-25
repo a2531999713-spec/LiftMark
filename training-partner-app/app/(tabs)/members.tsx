@@ -3,12 +3,14 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MetricCard, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { MAX_GROUP_MEMBERS } from '@/domain/member/member.validation';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing } from '@/theme';
 
 type PartnerStats = {
@@ -45,6 +47,7 @@ function calculateStreakDays(dates: string[]): number {
 
 export default function MembersRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
@@ -112,7 +115,7 @@ export default function MembersRoute() {
           accessibilityRole="button"
           onPress={() =>
             canAddMember
-              ? router.push('/member/new')
+              ? guardFeature('add_member', { memberCount: members.length }) && router.push('/member/new')
               : setNotice({
                   title: `本地小组最多支持 ${MAX_GROUP_MEMBERS} 位训练成员`,
                   message: '适合一台设备多人轮换记录。后续云同步版本会支持更多小组能力。',
@@ -198,7 +201,13 @@ export default function MembersRoute() {
 
           <SectionHeader
             actionLabel={canAddMember ? '添加' : undefined}
-            onActionPress={canAddMember ? () => router.push('/member/new') : undefined}
+            onActionPress={
+              canAddMember
+                ? () => {
+                    if (guardFeature('add_member', { memberCount: members.length })) router.push('/member/new');
+                  }
+                : undefined
+            }
             subtitle={`已配置 ${members.length}/${MAX_GROUP_MEMBERS} 人`}
             title="成员"
           />
@@ -207,7 +216,9 @@ export default function MembersRoute() {
             <EmptyState
               actionLabel="添加成员"
               description="先添加第一位成员，再输入 1RM 和加重单位。"
-              onActionPress={() => router.push('/member/new')}
+              onActionPress={() => {
+                if (guardFeature('add_member', { memberCount: members.length })) router.push('/member/new');
+              }}
               title="还没有训练搭子"
             />
           ) : null}
@@ -233,7 +244,12 @@ export default function MembersRoute() {
               </AppText>
             </AppCard>
           ) : (
-            <AppButton icon="add-outline" onPress={() => router.push('/member/new')}>
+            <AppButton
+              icon="add-outline"
+              onPress={() => {
+                if (guardFeature('add_member', { memberCount: members.length })) router.push('/member/new');
+              }}
+            >
               添加成员
             </AppButton>
           )}
@@ -277,6 +293,8 @@ export default function MembersRoute() {
           >
             <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
           </AppModalSheet>
+
+          <AuthGateSheets {...sheets} />
         </>
       ) : null}
     </Screen>

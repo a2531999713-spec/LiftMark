@@ -3,6 +3,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
@@ -15,6 +16,7 @@ import {
 } from '@/domain/history/history-analysis';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutSession, WorkoutSessionDetail } from '@/domain/workout/workout.types';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, shadows, spacing } from '@/theme';
 
 type DataScope = 'personal' | 'group';
@@ -216,6 +218,7 @@ function buildWeeklyTrend(startDate: Date, summaries: SessionSummary[]): WeekTre
 
 export default function HistoryRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { authMode, guardFeature, sheets } = useAuthGate();
   const [selectedDate, setSelectedDate] = useState(getLocalDateString());
   const [monthCursor, setMonthCursor] = useState(new Date());
   const [isMonthVisible, setMonthVisible] = useState(false);
@@ -229,6 +232,11 @@ export default function HistoryRoute() {
     setError(null);
 
     try {
+      if (authMode === 'guest_preview') {
+        setHistory(createEmptyHistory());
+        return;
+      }
+
       await initializeLocalDatabase();
       const group = await repositories.groupRepository.getDefaultGroup();
       if (!group) {
@@ -309,7 +317,7 @@ export default function HistoryRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [monthCursor, repositories, selectedDate]);
+  }, [authMode, monthCursor, repositories, selectedDate]);
 
   useFocusEffect(
     useCallback(() => {
@@ -321,6 +329,10 @@ export default function HistoryRoute() {
   const monthDates = useMemo(() => getMonthDates(monthCursor), [monthCursor]);
 
   const openRecentForEdit = useCallback(() => {
+    if (!guardFeature('manual_history')) {
+      return;
+    }
+
     const latest = history.recentSessions[0]?.session;
     if (!latest) {
       Alert.alert('暂无训练', '完成或补录一次训练后，就可以编辑最近训练。');
@@ -328,7 +340,9 @@ export default function HistoryRoute() {
     }
 
     router.push({ pathname: '/history/[sessionId]', params: { sessionId: latest.id } } as never);
-  }, [history.recentSessions]);
+  }, [guardFeature, history.recentSessions]);
+
+  const isGuestPreview = authMode === 'guest_preview';
 
   return (
     <Screen
@@ -354,13 +368,39 @@ export default function HistoryRoute() {
 
       {!isLoading && !error ? (
         <>
-          <ScopeToggle dataScope={dataScope} memberName={history.currentMember?.displayName ?? '暂无成员'} setDataScope={setDataScope} />
+          {isGuestPreview ? (
+            <EmptyState
+              actionLabel="登录 / 注册"
+              description="登录后可以查看真实训练历史、补录训练、编辑记录和生成训练分析。"
+              onActionPress={() => guardFeature('view_real_history')}
+              title="登录后查看训练历史"
+            />
+          ) : (
+            <>
+          <ScopeToggle
+            dataScope={dataScope}
+            memberName={history.currentMember?.displayName ?? '暂无成员'}
+            setDataScope={(scope) => {
+              if (scope === 'group' && !guardFeature('group_analytics')) {
+                return;
+              }
+              setDataScope(scope);
+            }}
+          />
 
           {dataScope === 'personal' ? (
             <>
               <PersonalOverview history={history} />
 
-              <QuickActions onAdd={() => router.push('/history/manual' as never)} onEdit={openRecentForEdit} onAnalytics={() => router.push('/history/analytics' as never)} />
+              <QuickActions
+                onAdd={() => {
+                  if (guardFeature('manual_history')) router.push('/history/manual' as never);
+                }}
+                onEdit={openRecentForEdit}
+                onAnalytics={() => {
+                  if (guardFeature('advanced_history')) router.push('/history/analytics' as never);
+                }}
+              />
 
               <View style={styles.statGrid}>
                 <MiniStat icon="barbell-outline" label="本周训练" value={`${history.weeklySessionCount} 次`} accent={history.weeklySessionCount > 0} />
@@ -382,7 +422,11 @@ export default function HistoryRoute() {
 
               <SectionHeader
                 actionLabel="补录"
-                onActionPress={() => router.push({ pathname: '/history/manual', params: { date: selectedDate } } as never)}
+                onActionPress={() => {
+                  if (guardFeature('manual_history')) {
+                    router.push({ pathname: '/history/manual', params: { date: selectedDate } } as never);
+                  }
+                }}
                 title={`${formatShortDate(selectedDate)} 训练`}
               />
               {history.selectedDateSessions.length === 0 ? (
@@ -407,7 +451,9 @@ export default function HistoryRoute() {
 
               <SectionHeader
                 actionLabel="全部"
-                onActionPress={() => router.push('/history/manual' as never)}
+                onActionPress={() => {
+                  if (guardFeature('manual_history')) router.push('/history/manual' as never);
+                }}
                 subtitle={`${history.recentSessions.length} 条`}
                 title="最近训练"
               />
@@ -415,7 +461,9 @@ export default function HistoryRoute() {
                 <EmptyState
                   actionLabel="去训练"
                   description="完成一次训练后，这里会显示训练摘要和趋势。"
-                  onActionPress={() => router.push('/(tabs)/today')}
+                  onActionPress={() => {
+                    if (guardFeature('start_workout')) router.push('/(tabs)/today');
+                  }}
                   title="还没有训练记录"
                 />
               ) : (
@@ -434,6 +482,8 @@ export default function HistoryRoute() {
                 当前版本仅统计本机当前成员数据，不会把个人数据和小组数据混在一起。
               </AppText>
             </AppCard>
+          )}
+            </>
           )}
         </>
       ) : null}
@@ -487,6 +537,8 @@ export default function HistoryRoute() {
           </AppCard>
         </View>
       </Modal>
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

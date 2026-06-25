@@ -18,7 +18,6 @@ type ProfileHeroCardProps = {
   currentMember: GroupMember | null;
   group: Group | null;
   isLoggedIn: boolean;
-  onContinue: () => void;
   onLogin: () => void;
   onPress: () => void;
   user: AuthUser | null;
@@ -28,7 +27,6 @@ export function ProfileHeroCard({
   currentMember,
   group,
   isLoggedIn,
-  onContinue,
   onLogin,
   onPress,
   user,
@@ -51,9 +49,6 @@ export function ProfileHeroCard({
           <View style={styles.heroActions}>
             <AppButton onPress={onLogin} size="sm">
               登录 / 注册
-            </AppButton>
-            <AppButton onPress={onContinue} size="sm" variant="dark">
-              继续浏览
             </AppButton>
           </View>
         </View>

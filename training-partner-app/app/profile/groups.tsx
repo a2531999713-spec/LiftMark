@@ -2,11 +2,13 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, spacing } from '@/theme';
 
 type NoticeState = {
@@ -16,6 +18,7 @@ type NoticeState = {
 
 export default function ProfileGroupsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [plan, setPlan] = useState<PlanTemplate | null>(null);
@@ -81,14 +84,35 @@ export default function ProfileGroupsRoute() {
           </AppCard>
 
           <View style={styles.actions}>
-            <AppButton onPress={() => router.push('/settings/members' as never)}>管理成员</AppButton>
-            <AppButton onPress={() => showDeveloping('创建小组')} variant="secondary">
+            <AppButton
+              onPress={() => {
+                if (guardFeature('start_workout')) router.push('/settings/members' as never);
+              }}
+            >
+              管理成员
+            </AppButton>
+            <AppButton
+              onPress={() => {
+                if (guardFeature('create_group', { groupCount: group ? 1 : 0 })) showDeveloping('创建小组');
+              }}
+              variant="secondary"
+            >
               创建小组
             </AppButton>
-            <AppButton onPress={() => showDeveloping('加入小组')} variant="secondary">
+            <AppButton
+              onPress={() => {
+                if (guardFeature('online_training')) showDeveloping('加入小组');
+              }}
+              variant="secondary"
+            >
               加入小组
             </AppButton>
-            <AppButton onPress={showInvitePending} variant="secondary">
+            <AppButton
+              onPress={() => {
+                if (guardFeature('online_training')) showInvitePending();
+              }}
+              variant="secondary"
+            >
               邀请成员
             </AppButton>
           </View>
@@ -113,6 +137,8 @@ export default function ProfileGroupsRoute() {
       >
         <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
       </AppModalSheet>
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

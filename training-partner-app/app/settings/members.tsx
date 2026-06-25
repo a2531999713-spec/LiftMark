@@ -3,10 +3,12 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppText, EmptyState, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { MAX_GROUP_MEMBERS } from '@/domain/member/member.validation';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing } from '@/theme';
 
 type MemberWithProfile = {
@@ -31,6 +33,7 @@ function formatProfileSummary(profile: MemberProfile | null): string {
 
 export default function SettingsMembersRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const [items, setItems] = useState<MemberWithProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +90,11 @@ export default function SettingsMembersRoute() {
             <EmptyState
               actionLabel="新增成员"
               description="添加成员后，设置页会显示全部成员摘要。"
-              onActionPress={() => router.push({ pathname: '/member/new', params: { returnTo: 'settings' } })}
+              onActionPress={() => {
+                if (guardFeature('add_member', { memberCount: items.length })) {
+                  router.push({ pathname: '/member/new', params: { returnTo: 'settings' } });
+                }
+              }}
               title="还没有成员"
             />
           ) : (
@@ -96,7 +103,11 @@ export default function SettingsMembersRoute() {
                 <Pressable
                   accessibilityRole="button"
                   key={member.id}
-                  onPress={() => router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } })}
+                  onPress={() => {
+                    if (guardFeature('start_workout')) {
+                      router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } });
+                    }
+                  }}
                   style={({ pressed }) => [styles.memberCard, pressed && styles.pressed]}
                 >
                   <View style={styles.avatar}>
@@ -120,7 +131,15 @@ export default function SettingsMembersRoute() {
           )}
 
           {canAddMember ? (
-            <AppButton icon="person-add-outline" onPress={() => router.push({ pathname: '/member/new', params: { returnTo: 'settings' } })} variant="secondary">
+            <AppButton
+              icon="person-add-outline"
+              onPress={() => {
+                if (guardFeature('add_member', { memberCount: items.length })) {
+                  router.push({ pathname: '/member/new', params: { returnTo: 'settings' } });
+                }
+              }}
+              variant="secondary"
+            >
               新增成员
             </AppButton>
           ) : (
@@ -135,6 +154,8 @@ export default function SettingsMembersRoute() {
           )}
         </>
       ) : null}
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

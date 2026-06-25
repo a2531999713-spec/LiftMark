@@ -2,9 +2,11 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
 import { getMembership, type Membership } from '@/services/membershipService';
 import { useAuthStore } from '@/store/authStore';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, spacing } from '@/theme';
 
 type NoticeState = {
@@ -14,6 +16,7 @@ type NoticeState = {
 
 export default function ProfileMembershipRoute() {
   const { isLoggedIn } = useAuthStore();
+  const { guardFeature, sheets } = useAuthGate();
   const [membership, setMembership] = useState<Membership | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -87,13 +90,19 @@ export default function ProfileMembershipRoute() {
           </AppCard>
 
           <View style={styles.actions}>
-            <AppButton onPress={() => router.push('/activation' as never)}>激活码兑换</AppButton>
+            <AppButton
+              onPress={() => {
+                if (guardFeature('activate_code')) router.push('/activation' as never);
+              }}
+            >
+              激活码兑换
+            </AppButton>
             {!isLoggedIn ? (
-              <AppButton onPress={() => router.push('/account/login' as never)} variant="secondary">
+              <AppButton onPress={() => guardFeature('activate_code')} variant="secondary">
                 登录 / 注册
               </AppButton>
             ) : null}
-            <AppButton onPress={() => showDeveloping('购买入口')} variant="secondary">
+            <AppButton onPress={() => guardFeature('purchase_membership')} variant="secondary">
               购买入口
             </AppButton>
             <AppButton onPress={() => showDeveloping('恢复权益 / 同步权益')} variant="secondary">
@@ -112,6 +121,8 @@ export default function ProfileMembershipRoute() {
       >
         <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
       </AppModalSheet>
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

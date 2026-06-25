@@ -1,5 +1,20 @@
 # LiftMark 项目交接记录
 
+## 2026-06-24 phone-code-auth-gate-sprint 交接
+
+- 当前实际项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`；所有命令执行前先 `cd` 到该路径。
+- 登录页 `app/account/login.tsx` 已重构为手机号验证码唯一入口：品牌、手机号、验证码、获取验证码、协议勾选和“登录 / 注册”。
+- 当前 UI 不展示继续浏览、预览模式、账号密码登录、账号密码注册、第三方登录、会员权益或小组协作卖点。
+- 根布局 `app/_layout.tsx` 根据 `authStatus` 做路由保护：无 session 跳转 `/account/login`；有 session 且离线进入本机模式。
+- 登录拦截弹窗 `AuthRequiredSheet` 不再显示关闭入口或“继续浏览”文案，只保留登录按钮。
+- 真实认证仍复用 `src/services/auth/*` 和 `src/store/authStore.ts`，token 存储在 SecureStore；后端不可用时本地训练不被阻断。
+- API base URL 仍集中在 `src/config/api.ts`，默认 `http://47.100.239.29/api`；业务服务通过 `src/services/httpClient.ts`，底层由 `src/services/apiClient.ts` 转换中文错误。
+- `src/domain/auth/access-control.ts` 集中管理未登录、免费版、Pro 和永久会员权限，不要在页面里新增散落规则。
+- 新增 `src/components/auth/*` 和 `src/hooks/useAuthGate.ts`，页面应通过 `guardFeature()` 和统一 sheet 做登录/Pro 拦截。
+- 已接入拦截的关键路径包括首页开始训练、计划创建/导入/复制/导出、记录补录/编辑/分析、成员新增/编辑、激活码、云同步和隐藏探索页写入入口。
+- 未登录不能进入主 Tab；有本地 session 离线重启时可以进入默认主界面，但不拉取云端完整数据、不做全量同步。
+- 本次未修改 SQLite schema、未修改 Repository 公共接口、未把训练记录改存 AsyncStorage、未让训练执行依赖网络。
+
 ## 2026-06-15 plan-dashboard-exercise-library-custom-exercise-member-limit-weight-git-sprint 交接
 
 - 当前实际项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`；所有命令执行前先 `cd` 到该路径并用 `Get-Location` 校验。

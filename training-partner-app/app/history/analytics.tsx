@@ -3,8 +3,10 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppCard, AppText, EmptyState, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
+import { decideFeatureAccess } from '@/domain/auth';
 import {
   getPersonalHistoryAnalysis,
   getAvailableHistoryAnalysisRanges,
@@ -16,6 +18,7 @@ import {
 } from '@/domain/history/history-analysis';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing } from '@/theme';
 
 type AnalyticsState = {
@@ -66,6 +69,7 @@ function formatSignedPercent(value?: number): string {
 
 export default function HistoryAnalyticsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { authMode, guardFeature, sheets } = useAuthGate();
   const [rangeWeeks, setRangeWeeks] = useState<HistoryRangeWeeks>(4);
   const [state, setState] = useState<AnalyticsState>({ analysis: null, currentMember: null });
   const [isLoading, setIsLoading] = useState(true);
@@ -77,6 +81,12 @@ export default function HistoryAnalyticsRoute() {
     setError(null);
 
     try {
+      const access = decideFeatureAccess('advanced_history', { authMode });
+      if (!access.allowed) {
+        setState({ analysis: null, currentMember: null });
+        return;
+      }
+
       await initializeLocalDatabase();
       const group = await repositories.groupRepository.getDefaultGroup();
       if (!group) {
@@ -112,7 +122,7 @@ export default function HistoryAnalyticsRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [rangeWeeks, repositories]);
+  }, [authMode, rangeWeeks, repositories]);
 
   useFocusEffect(
     useCallback(() => {
@@ -134,9 +144,20 @@ export default function HistoryAnalyticsRoute() {
           {state.currentMember ? `当前成员：${state.currentMember.displayName}` : '个人记录分析'}
         </AppText>
       </View>
-      <RangeTabs rangeWeeks={rangeWeeks} setRangeWeeks={setRangeWeeks} />
+      {decideFeatureAccess('advanced_history', { authMode }).allowed ? (
+        <RangeTabs rangeWeeks={rangeWeeks} setRangeWeeks={setRangeWeeks} />
+      ) : null}
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="训练分析暂时无法加载" description={error} /> : null}
+
+      {!isLoading && !error && !decideFeatureAccess('advanced_history', { authMode }).allowed ? (
+        <EmptyState
+          actionLabel={authMode === 'guest_preview' ? '登录 / 注册' : '查看 Pro 权益'}
+          description="高级历史趋势、PR 曲线和完整训练分析属于 Pro 权益。"
+          onActionPress={() => guardFeature('advanced_history')}
+          title={authMode === 'guest_preview' ? '登录后查看训练分析' : '开通 Pro 查看高级分析'}
+        />
+      ) : null}
 
       {!isLoading && !error && state.analysis ? (
         <>
@@ -149,9 +170,11 @@ export default function HistoryAnalyticsRoute() {
         </>
       ) : null}
 
-      {!isLoading && !error && !state.analysis ? (
+      {!isLoading && !error && decideFeatureAccess('advanced_history', { authMode }).allowed && !state.analysis ? (
         <EmptyState title="还没有训练记录" description="完成训练后，这里会展示训练频率、训练量、PR 和核心动作趋势。" />
       ) : null}
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

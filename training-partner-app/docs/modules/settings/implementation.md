@@ -1,7 +1,21 @@
 # Settings 模块实现文档
 
-更新时间：2026-06-14  
+更新时间：2026-06-24  
 对应代码目录：`training-partner-app/`
+
+## 2026-06-24 登录接入实现补充
+
+| 文件 | 说明 |
+|---|---|
+| `app/account/login.tsx` | 手机号验证码唯一登录 / 注册页；登录成功后直接进入主 App。 |
+| `app/_layout.tsx`、`app/index.tsx` | 启动门禁：无 session 进入登录页，有 session 离线进入本机模式。 |
+| `src/domain/auth/*` | 未登录、免费版、Pro、永久会员的权限与退出策略集中定义。 |
+| `src/components/auth/*` | 登录要求、Pro 要求、云同步提示和 gate sheets；登录要求弹窗不再提供关闭后浏览。 |
+| `src/hooks/useAuthGate.ts` | 页面统一调用 `guardFeature()`，不在页面散写权限判断。 |
+| `src/services/httpClient.ts`、`src/services/apiClient.ts` | API base URL、超时、JSON 解析和网络错误中文映射。 |
+| `src/store/authStore.ts` | 保存 `authStatus`、当前用户、会员状态和 token 恢复动作。 |
+
+实现边界：本次不修改 SQLite schema，不修改 Repository 公共接口，不把训练记录迁移到 AsyncStorage，不让训练执行依赖网络。
 
 ## 2026-06-24 实现更新
 
@@ -11,7 +25,7 @@
 | `src/components/profile/*` | 我的页专用 Header、Hero、Section、MenuItem 和 Logout 组件。 |
 | `app/account/*` | 账号资料、登录 / 注册占位、账号安全二级页。 |
 | `app/profile/*` | 训练身份、小组、偏好、数据、隐私、云同步、会员与激活二级页。 |
-| `src/services/auth/*`、`src/store/authStore.ts` | 认证占位边界，当前不接真实后端。 |
+| `src/services/auth/*`、`src/store/authStore.ts` | 真实认证服务边界，接后端登录、注册、验证码登录、token 保存/刷新和会员等级派生。 |
 | `src/sync/syncService.ts`、`src/store/syncStore.ts` | 云同步占位边界，继续遵守本地 SQLite 先写。 |
 
 旧设置页中的试用模式、清空测试数据、重置默认计划和 SQLite/seed 常驻诊断不再出现在普通我的页；激活码入口迁移为“会员与激活 / 激活码兑换”。

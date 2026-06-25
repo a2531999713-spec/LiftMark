@@ -3,11 +3,13 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutExerciseRecord, WorkoutSessionDetail, WorkoutSet } from '@/domain/workout/workout.types';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing, typography } from '@/theme';
 
 function formatVolume(sets: WorkoutSet[]) {
@@ -20,6 +22,7 @@ function formatVolume(sets: WorkoutSet[]) {
 export default function HistoryDetailRoute() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { authMode, guardFeature, sheets } = useAuthGate();
   const [detail, setDetail] = useState<WorkoutSessionDetail | null>(null);
   const [members, setMembers] = useState<Record<string, GroupMember>>({});
   const [exercises, setExercises] = useState<Record<string, Exercise>>({});
@@ -39,6 +42,11 @@ export default function HistoryDetailRoute() {
     setError(null);
 
     try {
+      if (authMode === 'guest_preview') {
+        setDetail(null);
+        return;
+      }
+
       await initializeLocalDatabase();
       const nextDetail = await repositories.workoutRepository.getSessionDetail(sessionId);
       const group = await repositories.groupRepository.getDefaultGroup();
@@ -61,7 +69,7 @@ export default function HistoryDetailRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories, sessionId]);
+  }, [authMode, repositories, sessionId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -71,6 +79,10 @@ export default function HistoryDetailRoute() {
 
   const saveSession = useCallback(async () => {
     if (!detail) {
+      return;
+    }
+
+    if (!guardFeature('manual_history')) {
       return;
     }
 
@@ -88,10 +100,14 @@ export default function HistoryDetailRoute() {
     } finally {
       setIsSaving(false);
     }
-  }, [date, detail, repositories, title]);
+  }, [date, detail, guardFeature, repositories, title]);
 
   const saveSetPatch = useCallback(
     async (set: WorkoutSet, patch: Partial<WorkoutSet>) => {
+      if (!guardFeature('manual_history')) {
+        return;
+      }
+
       const saved = await repositories.workoutRepository.saveSet({
         id: set.id,
         actualWeight: patch.actualWeight ?? set.actualWeight,
@@ -111,11 +127,15 @@ export default function HistoryDetailRoute() {
           : current,
       );
     },
-    [repositories],
+    [guardFeature, repositories],
   );
 
   const confirmDeleteSet = useCallback(
     (set: WorkoutSet) => {
+      if (!guardFeature('manual_history')) {
+        return;
+      }
+
       Alert.alert('删除这一组？', '删除后该组训练数据不会出现在统计中。', [
         { text: '取消', style: 'cancel' },
         {
@@ -132,11 +152,15 @@ export default function HistoryDetailRoute() {
         },
       ]);
     },
-    [repositories],
+    [guardFeature, repositories],
   );
 
   const changeExercise = useCallback(
     async (record: WorkoutExerciseRecord) => {
+      if (!guardFeature('manual_history')) {
+        return;
+      }
+
       if (allExercises.length === 0) {
         Alert.alert('暂无动作', '动作库暂时没有可选择的动作。');
         return;
@@ -159,11 +183,15 @@ export default function HistoryDetailRoute() {
       setExercises((current) => ({ ...current, [nextExercise.id]: nextExercise }));
       Alert.alert('已更换动作', `该条历史记录已改为“${nextExercise.name}”。`);
     },
-    [allExercises, repositories],
+    [allExercises, guardFeature, repositories],
   );
 
   const confirmDeleteExercise = useCallback(
     (record: WorkoutExerciseRecord) => {
+      if (!guardFeature('manual_history')) {
+        return;
+      }
+
       Alert.alert('删除这个动作？', '该动作下的所有组都会被删除。', [
         { text: '取消', style: 'cancel' },
         {
@@ -186,11 +214,15 @@ export default function HistoryDetailRoute() {
         },
       ]);
     },
-    [repositories],
+    [guardFeature, repositories],
   );
 
   const confirmDeleteSession = useCallback(() => {
     if (!detail) {
+      return;
+    }
+
+    if (!guardFeature('manual_history')) {
       return;
     }
 
@@ -207,12 +239,21 @@ export default function HistoryDetailRoute() {
         },
       },
     ]);
-  }, [detail, repositories]);
+  }, [detail, guardFeature, repositories]);
 
   return (
     <Screen title="训练详情" subtitle="可编辑历史记录，不会修改原计划。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="训练详情暂时无法加载" description={error} /> : null}
+
+      {!isLoading && authMode === 'guest_preview' ? (
+        <EmptyState
+          actionLabel="登录 / 注册"
+          description="登录后可以查看和编辑真实训练记录。"
+          onActionPress={() => guardFeature('view_real_history')}
+          title="登录后查看训练详情"
+        />
+      ) : null}
 
       {!isLoading && detail ? (
         <>
@@ -285,6 +326,8 @@ export default function HistoryDetailRoute() {
           </AppButton>
         </>
       ) : null}
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

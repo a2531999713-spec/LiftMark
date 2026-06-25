@@ -1,10 +1,23 @@
 # 开发路径图
 
+## 2026-06-24 phone-code-auth-gate-sprint
+
+- 已完成：登录页重构为手机号验证码唯一登录 / 注册表单，不再展示账号密码、继续浏览、预览模式或第三方登录入口。
+- 已完成：根路由增加登录保护；无 session 首次启动进入 `/account/login`，不能进入主 Tab。
+- 已完成：有本地 session 但服务器不可达时进入 `offline_authenticated`，允许进入默认主界面并显示本机模式提示。
+- 已完成：验证码发送接入统一网络错误映射、请求超时、手机号格式校验、发送 loading 和 60 秒倒计时。
+- 已完成：新增 `AuthMode` / `MembershipTier` / `FeatureKey` / `decideFeatureAccess()`，集中管理未登录、免费版、Pro 和永久会员权限。
+- 已完成：登录 required 弹层不再提供关闭后浏览；关键入口不再散写页面级权限规则。
+- 已完成：登录成功直接进入主 App；当前不会删除、覆盖或自动上传 SQLite 数据。
+- 保持不变：训练执行的 set 保存、完成训练和 Repository 仍然本地 SQLite 优先，不新增联网前置条件。
+- 后续：完整云同步队列、登录后本机数据绑定到账号、支付购买和在线同练仍待后续版本。
+
 ## 2026-06-24 cloud-service-v1-sprint
 
 - 已完成：新增 `apps/liftmark-api` 后端工程，使用 Fastify + TypeScript + PostgreSQL + Knex migration。
 - 已完成：落地账号、短信验证码、JWT、会员/激活码、小组、同步、训练聚合、成就、公告、反馈和后台管理 API 第一版。
 - 已完成：App 账号页接入真实登录、注册、验证码登录、token 安全存储、启动恢复和退出登录；会员与激活页改为后端会员状态与云端激活码兑换。
+- 已完成：设置页显示当前服务器连接状态；新增最小 API smoke 脚本覆盖 health、注册、登录、me 和 refresh。
 - 已完成：删除普通用户“我的”页中的训练数据、导出备份类主入口；激活页不再显示开发期本地测试码。
 - 保持不变：本地 SQLite 训练闭环、训练执行和本地 Repository 公共接口未修改，训练现场不依赖网络。
 - 风险/后续：App 本地 SQLite 到 `/api/sync/push` 的自动队列映射尚未接入；HTTP 明文仅用于当前开发阶段，正式上线应切换 HTTPS。

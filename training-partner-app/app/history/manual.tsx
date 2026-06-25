@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { ExercisePickerSheet, formatExerciseEquipment } from '@/components/exercises/ExercisePickerSheet';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { liftmarkImages } from '@/assets/images';
@@ -11,6 +12,7 @@ import type { CreateCustomExerciseInput } from '@/data/repositories/exerciseRepo
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember } from '@/domain/member/member.types';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing, typography } from '@/theme';
 
 type NoticeState = {
@@ -58,6 +60,7 @@ function assertOptionalRange(label: string, value: number | undefined, min: numb
 export default function ManualHistoryRoute() {
   const params = useLocalSearchParams<{ date?: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -124,6 +127,10 @@ export default function ManualHistoryRoute() {
   const selectedExercise = exercises.find((exercise) => exercise.id === selectedExerciseId) ?? null;
 
   const createCustomExercise = async (input: CreateCustomExerciseInput) => {
+    if (!guardFeature('manual_history')) {
+      throw new Error('请先登录后再创建补录动作。');
+    }
+
     const exercise = await repositories.exerciseRepository.createCustomExercise(input);
     setExercises((current) => [exercise, ...current]);
     setSelectedExerciseId(exercise.id);
@@ -131,6 +138,10 @@ export default function ManualHistoryRoute() {
   };
 
   const saveManualSession = async () => {
+    if (!guardFeature('manual_history')) {
+      return;
+    }
+
     if (!group || !selectedMemberId || !selectedExerciseId) {
       setNotice({
         title: '信息不完整',
@@ -224,12 +235,20 @@ export default function ManualHistoryRoute() {
           <AppCard style={styles.card}>
             <SectionHeader
               actionLabel="选择动作"
-              onActionPress={() => setExercisePickerVisible(true)}
+              onActionPress={() => {
+                if (guardFeature('manual_history')) setExercisePickerVisible(true);
+              }}
               subtitle="可选择系统动作，也可快速新建自定义动作。"
               title="动作"
             />
             {selectedExercise ? (
-              <Pressable accessibilityRole="button" onPress={() => setExercisePickerVisible(true)} style={styles.selectedExerciseCard}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  if (guardFeature('manual_history')) setExercisePickerVisible(true);
+                }}
+                style={styles.selectedExerciseCard}
+              >
                 <View style={styles.exerciseIcon}>
                   <Ionicons color={colors.primary} name="barbell-outline" size={20} />
                 </View>
@@ -248,7 +267,9 @@ export default function ManualHistoryRoute() {
               <EmptyState
                 actionLabel="选择动作"
                 description="选择一个动作后再保存补录训练。"
-                onActionPress={() => setExercisePickerVisible(true)}
+                onActionPress={() => {
+                  if (guardFeature('manual_history')) setExercisePickerVisible(true);
+                }}
                 title="还没有选择动作"
               />
             )}
@@ -312,6 +333,8 @@ export default function ManualHistoryRoute() {
           </AppButton>
         </View>
       </AppModalSheet>
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

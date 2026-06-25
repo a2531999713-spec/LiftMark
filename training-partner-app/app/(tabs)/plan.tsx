@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ActionCard, AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
+import { AuthGateSheets } from '@/components/auth';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
@@ -20,6 +21,7 @@ import {
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import { pickImportedPlanDocument } from '@/services/planDocumentService';
 import { createCurrentPlanFile, PlanFileError, serializePlanFile } from '@/services/planFileService';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing } from '@/theme';
 
 type PlanNotice = {
@@ -126,6 +128,7 @@ function buildLastFourWeeks(details: WorkoutSessionDetail[]) {
 export default function PlanRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const systemSchemes = useMemo(() => listSystemTrainingSchemes(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const [group, setGroup] = useState<Group | null>(null);
   const [activePlan, setActivePlan] = useState<PlanTemplate | null>(null);
   const [userPlans, setUserPlans] = useState<PlanTemplate[]>([]);
@@ -242,6 +245,10 @@ export default function PlanRoute() {
         return;
       }
 
+      if (!guardFeature('edit_plan')) {
+        return;
+      }
+
       const currentWeek = clampPlanWeek(week, activePlan);
       const updated = await repositories.groupRepository.updateGroup(group.id, {
         currentPhaseType: await resolvePhaseTypeForWeek(group.activePlanId, currentWeek),
@@ -250,12 +257,16 @@ export default function PlanRoute() {
       setGroup(updated);
       await loadPlans();
     },
-    [activePlan, group, loadPlans, repositories, resolvePhaseTypeForWeek],
+    [activePlan, group, guardFeature, loadPlans, repositories, resolvePhaseTypeForWeek],
   );
 
   const setCurrentPlan = useCallback(
     async (plan: PlanTemplate, showNotice = true) => {
       if (!group) {
+        return;
+      }
+
+      if (!guardFeature('edit_plan')) {
         return;
       }
 
@@ -285,11 +296,15 @@ export default function PlanRoute() {
         setIsWorking(false);
       }
     },
-    [group, loadPlans, repositories, resolvePhaseTypeForWeek],
+    [group, guardFeature, loadPlans, repositories, resolvePhaseTypeForWeek],
   );
 
   const exportPlan = useCallback(
     async (plan: PlanTemplate) => {
+      if (!guardFeature('share_plan')) {
+        return;
+      }
+
       setIsWorking(true);
       try {
         const planFile = await createCurrentPlanFile(repositories, plan.id);
@@ -310,10 +325,14 @@ export default function PlanRoute() {
         setIsWorking(false);
       }
     },
-    [repositories],
+    [guardFeature, repositories],
   );
 
   const importPlan = useCallback(async () => {
+    if (!guardFeature('import_plan')) {
+      return;
+    }
+
     setIsWorking(true);
     try {
       const picked = await pickImportedPlanDocument();
@@ -352,7 +371,7 @@ export default function PlanRoute() {
     } finally {
       setIsWorking(false);
     }
-  }, [loadPlans, repositories]);
+  }, [guardFeature, loadPlans, repositories]);
 
   const openUseScheme = useCallback((scheme: SystemTrainingScheme) => {
     if (!scheme.isAvailable || !scheme.templatePlanId) {
@@ -363,11 +382,19 @@ export default function PlanRoute() {
       return;
     }
 
+    if (!guardFeature('create_plan', { userPlanCount: userPlans.length })) {
+      return;
+    }
+
     setSelectedScheme(scheme);
-  }, []);
+  }, [guardFeature, userPlans.length]);
 
   const confirmUseSelectedScheme = useCallback(async () => {
     if (!selectedScheme) {
+      return;
+    }
+
+    if (!guardFeature('create_plan', { userPlanCount: userPlans.length })) {
       return;
     }
 
@@ -392,10 +419,14 @@ export default function PlanRoute() {
     } finally {
       setIsWorking(false);
     }
-  }, [loadPlans, repositories, selectedScheme]);
+  }, [guardFeature, loadPlans, repositories, selectedScheme, userPlans.length]);
 
   const deletePlan = useCallback(async () => {
     if (!deletePromptPlan) {
+      return;
+    }
+
+    if (!guardFeature('edit_plan')) {
       return;
     }
 
@@ -416,7 +447,7 @@ export default function PlanRoute() {
     } finally {
       setIsWorking(false);
     }
-  }, [deletePromptPlan, loadPlans, repositories]);
+  }, [deletePromptPlan, guardFeature, loadPlans, repositories]);
 
   const copyExportContent = useCallback(async () => {
     if (!exportPrompt) {
@@ -443,7 +474,15 @@ export default function PlanRoute() {
   return (
     <Screen
       headerRight={
-        <Pressable accessibilityRole="button" onPress={() => router.push('/plan/create')} style={styles.iconButton}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
+              router.push('/plan/create' as never);
+            }
+          }}
+          style={styles.iconButton}
+        >
           <Ionicons color={colors.text} name="add-circle-outline" size={21} />
         </Pressable>
       }
@@ -596,7 +635,15 @@ export default function PlanRoute() {
               <Tag label={`${userPlans.length} 个我的计划`} tone="neutral" />
             </View>
             <View style={styles.actionGrid}>
-              <ActionCard icon="add-outline" label="创建计划" onPress={() => router.push('/plan/create')} />
+              <ActionCard
+                icon="add-outline"
+                label="创建计划"
+                onPress={() => {
+                  if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
+                    router.push('/plan/create' as never);
+                  }
+                }}
+              />
               <ActionCard icon="download-outline" label="导入计划" onPress={() => void importPlan()} />
             </View>
           </AppCard>
@@ -829,6 +876,8 @@ export default function PlanRoute() {
       >
         <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
       </AppModalSheet>
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

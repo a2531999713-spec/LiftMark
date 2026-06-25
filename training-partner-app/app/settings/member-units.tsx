@@ -3,9 +3,11 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppCard, AppText, EmptyState, Screen } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing } from '@/theme';
 
 type MemberUnitRow = {
@@ -19,6 +21,7 @@ function formatIncrement(value: number | undefined, fallback: number): string {
 
 export default function SettingsMemberUnitsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const [rows, setRows] = useState<MemberUnitRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +80,11 @@ export default function SettingsMemberUnitsRoute() {
                 <Pressable
                   accessibilityRole="button"
                   key={member.id}
-                  onPress={() => router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } })}
+                  onPress={() => {
+                    if (guardFeature('start_workout')) {
+                      router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } });
+                    }
+                  }}
                   style={({ pressed }) => [styles.unitCard, pressed && styles.pressed]}
                 >
                   <View style={styles.iconBox}>
@@ -99,6 +106,8 @@ export default function SettingsMemberUnitsRoute() {
           )}
         </>
       ) : null}
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

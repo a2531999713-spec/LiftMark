@@ -2,9 +2,11 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing } from '@/theme';
 
 type NoticeState = {
@@ -18,6 +20,7 @@ function formatKg(value?: number) {
 
 export default function TrainingIdentityRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const [member, setMember] = useState<GroupMember | null>(null);
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -57,7 +60,9 @@ export default function TrainingIdentityRoute() {
         <EmptyState
           actionLabel="创建训练身份"
           description="创建训练身份后，可以计算建议重量并记录训练。"
-          onActionPress={() => router.push('/member/new' as never)}
+          onActionPress={() => {
+            if (guardFeature('add_member', { memberCount: 0 })) router.push('/member/new' as never);
+          }}
           title="还没有训练身份"
         />
       ) : null}
@@ -98,13 +103,31 @@ export default function TrainingIdentityRoute() {
           </AppCard>
 
           <View style={styles.actions}>
-            <AppButton onPress={() => router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } })}>
+            <AppButton
+              onPress={() => {
+                if (guardFeature('start_workout')) {
+                  router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } });
+                }
+              }}
+            >
               编辑训练档案
             </AppButton>
-            <AppButton onPress={() => router.push('/settings/members' as never)} variant="secondary">
+            <AppButton
+              onPress={() => {
+                if (guardFeature('start_workout')) router.push('/settings/members' as never);
+              }}
+              variant="secondary"
+            >
               切换当前成员
             </AppButton>
-            <AppButton onPress={() => setNotice({ title: '认领本机成员', message: '该功能正在开发中，后续版本开放。' })} variant="secondary">
+            <AppButton
+              onPress={() => {
+                if (guardFeature('start_workout')) {
+                  setNotice({ title: '认领本机成员', message: '该功能正在开发中，后续版本开放。' });
+                }
+              }}
+              variant="secondary"
+            >
               认领本机成员
             </AppButton>
           </View>
@@ -120,6 +143,8 @@ export default function TrainingIdentityRoute() {
       >
         <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
       </AppModalSheet>
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

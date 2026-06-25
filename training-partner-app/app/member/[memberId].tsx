@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton } from '@/components/common/AppButton';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Screen } from '@/components/common/Screen';
@@ -9,6 +10,7 @@ import { MemberForm } from '@/components/members/MemberForm';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { MemberFormValues } from '@/domain/member/member.validation';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors } from '@/theme/colors';
 
 function createInitialValues(member: GroupMember, profile: MemberProfile | null): MemberFormValues {
@@ -28,6 +30,7 @@ function createInitialValues(member: GroupMember, profile: MemberProfile | null)
 export default function MemberDetailRoute() {
   const { memberId } = useLocalSearchParams<{ memberId: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const [member, setMember] = useState<GroupMember | null>(null);
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -90,6 +93,10 @@ export default function MemberDetailRoute() {
         return;
       }
 
+      if (!guardFeature('start_workout')) {
+        return;
+      }
+
       setIsSaving(true);
       setError(null);
 
@@ -117,7 +124,7 @@ export default function MemberDetailRoute() {
         setIsSaving(false);
       }
     },
-    [member, repositories],
+    [guardFeature, member, repositories],
   );
 
   return (
@@ -143,6 +150,8 @@ export default function MemberDetailRoute() {
           返回成员
         </AppButton>
       ) : null}
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

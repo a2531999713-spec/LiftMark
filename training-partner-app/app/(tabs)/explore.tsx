@@ -4,7 +4,9 @@ import type { ComponentProps } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppModalSheet, AppText, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
+import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { PhaseType, PlanTemplate } from '@/domain/plan/plan.types';
@@ -15,7 +17,7 @@ import {
   SYSTEM_SCHEME_CLASSIC_PPL_ID,
   type SystemTrainingScheme,
 } from '@/domain/plan/systemSchemes';
-import { liftmarkImages } from '@/assets/images';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, shadows, spacing } from '@/theme';
 
 type NoticeState = {
@@ -45,6 +47,7 @@ function describePlanSource(source: PlanTemplate['source']) {
 
 export default function ExploreRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const systemSchemes = useMemo(() => listSystemTrainingSchemes(), []);
   const featuredSchemes = useMemo(() => systemSchemes.filter((scheme) => scheme.isAvailable).slice(0, 3), [systemSchemes]);
   const upcomingSchemes = useMemo(() => systemSchemes.filter((scheme) => !scheme.isAvailable), [systemSchemes]);
@@ -95,6 +98,10 @@ export default function ExploreRoute() {
         return;
       }
 
+      if (!guardFeature('edit_plan')) {
+        return;
+      }
+
       setIsWorking(true);
       try {
         await repositories.groupRepository.updateGroup(group.id, {
@@ -114,11 +121,15 @@ export default function ExploreRoute() {
         setIsWorking(false);
       }
     },
-    [group, loadExploreState, repositories, resolvePhaseTypeForPlan],
+    [group, guardFeature, loadExploreState, repositories, resolvePhaseTypeForPlan],
   );
 
   const copyScheme = useCallback(
     async (scheme: SystemTrainingScheme) => {
+      if (!guardFeature('create_plan', { userPlanCount: userPlans.length })) {
+        return;
+      }
+
       setIsWorking(true);
       try {
         const plan = await repositories.planRepository.copySystemSchemeToUserPlan({
@@ -139,7 +150,7 @@ export default function ExploreRoute() {
         setIsWorking(false);
       }
     },
-    [repositories],
+    [guardFeature, repositories, userPlans.length],
   );
 
   const openScheme = useCallback(
@@ -228,8 +239,20 @@ export default function ExploreRoute() {
       </AppCard>
 
       <View style={styles.quickGrid}>
-        <QuickEntry icon="add-circle-outline" label="补录训练" onPress={() => router.push('/history/manual' as never)} />
-        <QuickEntry icon="bar-chart-outline" label="训练分析" onPress={() => router.push('/history/analytics' as never)} />
+        <QuickEntry
+          icon="add-circle-outline"
+          label="补录训练"
+          onPress={() => {
+            if (guardFeature('manual_history')) router.push('/history/manual' as never);
+          }}
+        />
+        <QuickEntry
+          icon="bar-chart-outline"
+          label="训练分析"
+          onPress={() => {
+            if (guardFeature('advanced_history')) router.push('/history/analytics' as never);
+          }}
+        />
       </View>
 
       <SectionHeader subtitle="推荐方案最多展示 3 个，更多模板会逐步开放。" title="推荐计划" />
@@ -361,6 +384,8 @@ export default function ExploreRoute() {
       >
         <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
       </AppModalSheet>
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

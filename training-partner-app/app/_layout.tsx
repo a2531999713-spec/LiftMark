@@ -1,22 +1,48 @@
-import { Stack } from 'expo-router';
+import { router, Stack, useSegments } from 'expo-router';
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 
 import { initializeLocalDatabase } from '@/data/local';
 import { useAuthStore } from '@/store/authStore';
+import { colors, spacing } from '@/theme';
 
 export default function RootLayout() {
+  const authStatus = useAuthStore((state) => state.authStatus);
+  const segments = useSegments();
+
   useEffect(() => {
-    if (Platform.OS === 'web') {
+    if (Platform.OS !== 'web') {
+      void initializeLocalDatabase().catch((error) => {
+        console.error('本地数据库初始化失败', error);
+      });
+    } else {
       console.warn('Web 暂不作为第一阶段验收目标，跳过 native SQLite 初始化。');
+    }
+
+    void useAuthStore.getState().loadCurrentUser();
+  }, []);
+
+  useEffect(() => {
+    if (authStatus === 'checking') return;
+
+    const isLoginRoute = segments[0] === 'account' && segments[1] === 'login';
+    if (authStatus === 'unauthenticated' && !isLoginRoute) {
+      router.replace('/account/login' as never);
       return;
     }
 
-    void initializeLocalDatabase().catch((error) => {
-      console.error('本地数据库初始化失败', error);
-    });
-    void useAuthStore.getState().loadCurrentUser();
-  }, []);
+    if ((authStatus === 'authenticated' || authStatus === 'offline_authenticated') && isLoginRoute) {
+      router.replace('/(tabs)/today' as never);
+    }
+  }, [authStatus, segments]);
+
+  if (authStatus === 'checking') {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <Stack>
@@ -31,7 +57,7 @@ export default function RootLayout() {
       <Stack.Screen name="plan/[planId]" options={{ title: '计划详情' }} />
       <Stack.Screen name="plan/create" options={{ title: '创建计划' }} />
       <Stack.Screen name="account/index" options={{ title: '账号资料' }} />
-      <Stack.Screen name="account/login" options={{ title: '登录 / 注册' }} />
+      <Stack.Screen name="account/login" options={{ headerShown: false }} />
       <Stack.Screen name="account/security" options={{ title: '账号安全' }} />
       <Stack.Screen name="profile/training-identity" options={{ title: '训练身份' }} />
       <Stack.Screen name="profile/groups" options={{ title: '我的小组' }} />
@@ -47,3 +73,13 @@ export default function RootLayout() {
     </Stack>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingScreen: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    flex: 1,
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+});

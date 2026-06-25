@@ -16,6 +16,12 @@ export type AuthSession = {
   user: AuthUser;
 };
 
+export type AuthStatus =
+  | 'checking'
+  | 'unauthenticated'
+  | 'authenticated'
+  | 'offline_authenticated';
+
 export type LoginInput = {
   identifier: string;
   password: string;
@@ -39,6 +45,10 @@ export type AuthServiceResult =
   | { ok: true; session: AuthSession }
   | { ok: false; message: string };
 
+export type SendCodeResult =
+  | { debugCode?: string; message?: string; ok: true }
+  | { ok: false; message: string };
+
 export interface AuthService {
   getCurrentSession(): Promise<AuthSession | null>;
   loginWithCode(input: CodeLoginInput): Promise<AuthServiceResult>;
@@ -46,5 +56,5 @@ export interface AuthService {
   logout(): Promise<void>;
   refreshToken(refreshToken?: string): Promise<AuthServiceResult>;
   register(input: RegisterInput): Promise<AuthServiceResult>;
-  sendCode(input: SendCodeInput): Promise<{ debugCode?: string; ok: true } | { ok: false; message: string }>;
+  sendCode(input: SendCodeInput): Promise<SendCodeResult>;
 }

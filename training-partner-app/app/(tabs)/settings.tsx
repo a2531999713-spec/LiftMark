@@ -4,6 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppModalSheet, AppText, EmptyState, Screen } from '@/components/ui';
 import {
   LogoutButton,
@@ -15,6 +16,12 @@ import {
 import { createLocalRepositories, getDatabase, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
+import { useAuthGate } from '@/hooks/useAuthGate';
+import {
+  checkServerHealth,
+  getInitialServerStatus,
+  type ServerConnectionStatus,
+} from '@/services/serverStatusService';
 import { useAuthStore } from '@/store/authStore';
 import { colors, spacing } from '@/theme';
 
@@ -61,9 +68,29 @@ function getMemberSummary(member: GroupMember | null, profile: MemberProfile | n
   return `${member.displayName} · ${bodyweight} · ${bench}`;
 }
 
+function getAuthModeLabel(
+  authMode: ReturnType<typeof useAuthStore.getState>['authMode'],
+  authStatus: ReturnType<typeof useAuthStore.getState>['authStatus'],
+) {
+  if (authStatus === 'offline_authenticated') return '本机模式';
+  if (authMode === 'logged_in_lifetime') return '永久会员';
+  if (authMode === 'logged_in_pro') return 'Pro';
+  if (authMode === 'logged_in_free') return '免费版';
+  return '未登录';
+}
+
 export default function SettingsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
-  const { isLoggedIn, isLoading: isAuthLoading, loadCurrentUser, logout, user } = useAuthStore();
+  const {
+    authMode,
+    authStatus,
+    isLoggedIn,
+    isLoading: isAuthLoading,
+    loadCurrentUser,
+    logout,
+    user,
+  } = useAuthStore();
+  const { guardFeature, sheets } = useAuthGate();
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profilesByMemberId, setProfilesByMemberId] = useState<Record<string, MemberProfile | null>>({});
@@ -71,6 +98,7 @@ export default function SettingsRoute() {
   const [developerTapCount, setDeveloperTapCount] = useState(0);
   const [isDeveloperMode, setDeveloperMode] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [serverStatus, setServerStatus] = useState<ServerConnectionStatus>(() => getInitialServerStatus());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,10 +138,16 @@ export default function SettingsRoute() {
     }
   }, [isDeveloperMode, loadCurrentUser, repositories]);
 
+  const refreshServerStatus = useCallback(async () => {
+    setServerStatus((current) => ({ ...current, status: 'checking', message: '检测中' }));
+    setServerStatus(await checkServerHealth());
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       void loadProfile();
-    }, [loadProfile]),
+      void refreshServerStatus();
+    }, [loadProfile, refreshServerStatus]),
   );
 
   const showDeveloping = useCallback((title = '功能开发中') => {
@@ -199,12 +233,6 @@ export default function SettingsRoute() {
             currentMember={currentMember}
             group={group}
             isLoggedIn={isLoggedIn}
-            onContinue={() =>
-              setNotice({
-                title: '继续浏览',
-                message: '当前版本仍可继续使用本机训练、计划和记录功能，数据保存在本机 SQLite。',
-              })
-            }
             onLogin={() => router.push('/account/login' as never)}
             onPress={() => router.push((isLoggedIn ? '/account' : '/account/login') as never)}
             user={user}
@@ -214,7 +242,11 @@ export default function SettingsRoute() {
             <EmptyState
               actionLabel="创建训练身份"
               description="创建训练身份后，可以计算建议重量并记录训练。"
-              onActionPress={() => router.push('/member/new' as never)}
+              onActionPress={() => {
+                if (guardFeature('add_member', { memberCount: members.length })) {
+                  router.push('/member/new' as never);
+                }
+              }}
               title="还没有训练身份"
             />
           ) : null}
@@ -223,7 +255,11 @@ export default function SettingsRoute() {
             <EmptyState
               actionLabel="创建小组"
               description="创建小组后，可以和搭子一起执行同一个训练计划。"
-              onActionPress={() => showDeveloping('创建小组')}
+              onActionPress={() => {
+                if (guardFeature('create_group', { groupCount: group ? 1 : 0 })) {
+                  showDeveloping('创建小组');
+                }
+              }}
               title="还没有训练小组"
             />
           ) : null}
@@ -233,14 +269,22 @@ export default function SettingsRoute() {
               description={getMemberSummary(currentMember, currentProfile)}
               icon="id-card-outline"
               label="我的训练身份"
-              onPress={() => router.push('/profile/training-identity' as never)}
+              onPress={() => {
+                if (isLoggedIn || guardFeature('add_member', { memberCount: members.length })) {
+                  router.push('/profile/training-identity' as never);
+                }
+              }}
               trailing={currentMember ? '查看' : '创建'}
             />
             <ProfileMenuItem
               description="成员管理、权限设置、邀请管理"
               icon="people-outline"
               label="我的小组"
-              onPress={() => router.push('/profile/groups' as never)}
+              onPress={() => {
+                if (isLoggedIn || guardFeature('create_group', { groupCount: group ? 1 : 0 })) {
+                  router.push('/profile/groups' as never);
+                }
+              }}
               trailing={members.length > 0 ? `${members.length} 成员` : '创建'}
             />
             <ProfileMenuItem
@@ -254,18 +298,55 @@ export default function SettingsRoute() {
 
           <ProfileSection icon="shield-checkmark-outline" title="账号与服务">
             <ProfileMenuItem
+              description={
+                isLoggedIn
+                  ? user?.phone ?? user?.email ?? user?.displayName ?? '已登录账号'
+                  : '登录后可保存训练记录、开启云同步并恢复数据'
+              }
+              icon="person-circle-outline"
+              label={isLoggedIn ? '当前账号' : '当前未登录'}
+              onPress={() => router.push((isLoggedIn ? '/account' : '/account/login') as never)}
+              tag={getAuthModeLabel(authMode, authStatus)}
+            />
+            <ProfileMenuItem
+              description={serverStatus.baseUrl}
+              icon="server-outline"
+              label="服务器连接"
+              onPress={() => void refreshServerStatus()}
+              tag={
+                serverStatus.status === 'online'
+                  ? '已连接'
+                  : serverStatus.status === 'checking'
+                    ? '检测中'
+                    : '离线'
+              }
+              trailing={
+                serverStatus.status === 'online' && serverStatus.latencyMs
+                  ? `${serverStatus.latencyMs} ms`
+                  : undefined
+              }
+            />
+            <ProfileMenuItem
               description="手机号、邮箱、密码与登录设备"
               icon="lock-closed-outline"
               label="账号安全"
-              onPress={() => router.push('/account/security' as never)}
+              onPress={() => {
+                if (isLoggedIn) {
+                  router.push('/account/security' as never);
+                } else {
+                  guardFeature('activate_code');
+                }
+              }}
               tag={isLoggedIn ? undefined : '未登录'}
             />
             <ProfileMenuItem
-              description="备份与换机恢复"
+              description="云同步开发中 / 可测试"
               icon="cloud-outline"
               label="云同步"
-              onPress={() => router.push('/profile/sync' as never)}
-              tag="预留"
+              onPress={() => {
+                if (guardFeature('cloud_sync')) router.push('/profile/sync' as never);
+              }}
+              tag="可测试"
             />
             <ProfileMenuItem
               description="权益、激活码、购买记录"
@@ -406,6 +487,8 @@ export default function SettingsRoute() {
       >
         <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
       </AppModalSheet>
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

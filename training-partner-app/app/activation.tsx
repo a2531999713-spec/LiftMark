@@ -1,10 +1,11 @@
-import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppModalSheet, AppText, Screen, SettingsRow, Tag } from '@/components/ui';
 import { redeemActivationCode } from '@/services/membershipService';
 import { useAuthStore } from '@/store/authStore';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing, typography } from '@/theme';
 
 type NoticeState = {
@@ -14,11 +15,16 @@ type NoticeState = {
 
 export default function ActivationRoute() {
   const { isLoggedIn, user } = useAuthStore();
+  const { guardFeature, sheets } = useAuthGate();
   const [code, setCode] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
 
   const redeem = async () => {
+    if (!guardFeature('activate_code')) {
+      return;
+    }
+
     setIsSaving(true);
     try {
       const result = await redeemActivationCode(code);
@@ -50,9 +56,9 @@ export default function ActivationRoute() {
             请先登录
           </AppText>
           <AppText tone="muted" variant="bodySmall">
-            登录后才能将激活码绑定到你的账号。未登录仍可继续使用本机训练功能。
+            登录后才能将激活码绑定到你的账号。首次使用需要完成手机号登录。
           </AppText>
-          <AppButton onPress={() => router.push('/account/login' as never)}>登录 / 注册</AppButton>
+          <AppButton onPress={() => guardFeature('activate_code')}>登录 / 注册</AppButton>
         </AppCard>
       ) : (
         <>
@@ -94,6 +100,8 @@ export default function ActivationRoute() {
       >
         <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
       </AppModalSheet>
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }
@@ -121,4 +129,3 @@ const styles = StyleSheet.create({
     color: colors.darkMuted,
   },
 });
-

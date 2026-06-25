@@ -2,10 +2,12 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { MemberProfile } from '@/domain/member/member.types';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, spacing } from '@/theme';
 
 function fridayStrategyLabel(strategy?: Group['fridayStrategy']) {
@@ -16,6 +18,7 @@ function fridayStrategyLabel(strategy?: Group['fridayStrategy']) {
 
 export default function ProfilePreferencesRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const [group, setGroup] = useState<Group | null>(null);
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,7 +63,12 @@ export default function ProfilePreferencesRoute() {
             <SettingsRow label="周五策略" value={fridayStrategyLabel(group?.fridayStrategy)} />
           </AppCard>
 
-          <AppButton onPress={() => router.push('/settings/member-units' as never)} variant="secondary">
+          <AppButton
+            onPress={() => {
+              if (guardFeature('start_workout')) router.push('/settings/member-units' as never);
+            }}
+            variant="secondary"
+          >
             编辑加重单位
           </AppButton>
 
@@ -74,6 +82,8 @@ export default function ProfilePreferencesRoute() {
           </AppCard>
         </>
       ) : null}
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

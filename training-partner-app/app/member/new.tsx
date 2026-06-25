@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator } from 'react-native';
 
+import { AuthGateSheets } from '@/components/auth';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Screen } from '@/components/common/Screen';
 import { MemberForm } from '@/components/members/MemberForm';
@@ -9,11 +10,13 @@ import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { MemberFormValues } from '@/domain/member/member.validation';
 import { canAddGroupMember, MAX_GROUP_MEMBERS } from '@/domain/member/member.validation';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors } from '@/theme/colors';
 
 export default function NewMemberRoute() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { guardFeature, sheets } = useAuthGate();
   const [group, setGroup] = useState<Group | null>(null);
   const [memberCount, setMemberCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,6 +66,10 @@ export default function NewMemberRoute() {
         return;
       }
 
+      if (!guardFeature('add_member', { memberCount })) {
+        return;
+      }
+
       setIsSaving(true);
       setError(null);
 
@@ -89,7 +96,7 @@ export default function NewMemberRoute() {
         setIsSaving(false);
       }
     },
-    [group, repositories, returnTo],
+    [group, guardFeature, memberCount, repositories, returnTo],
   );
 
   const canCreateMember = canAddGroupMember(memberCount);
@@ -110,6 +117,8 @@ export default function NewMemberRoute() {
       {!isLoading && group && canCreateMember ? (
         <MemberForm isSubmitting={isSaving} onSubmit={handleSubmit} submitLabel="保存成员" />
       ) : null}
+
+      <AuthGateSheets {...sheets} />
     </Screen>
   );
 }

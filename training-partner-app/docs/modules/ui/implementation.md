@@ -13,6 +13,8 @@
 | `training-partner-app/assets/brand/` | Expo app icon、adaptive icon、splash、favicon 和源图。 |
 | `training-partner-app/android/app/src/main/res/` | Android 原生图标、adaptive icon layer、splash logo 和颜色。 |
 | `training-partner-app/app/about.tsx` | 关于练刻页面，展示品牌、版本和本地数据模式。 |
+| `training-partner-app/app/account/login.tsx` | 手机号验证码唯一登录 / 注册页，包含协议勾选、验证码发送、倒计时和中文错误提示。 |
+| `training-partner-app/src/components/auth/AuthRequiredSheet.tsx` | 登录要求弹窗，只保留登录 / 注册主按钮，不提供关闭后浏览。 |
 
 ## 当前资源清单
 

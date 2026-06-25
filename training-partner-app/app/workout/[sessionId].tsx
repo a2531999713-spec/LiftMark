@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppText, Tag } from '@/components/ui';
+import { AuthGateSheets } from '@/components/auth';
+import { AppButton, AppText, Tag } from '@/components/ui';
 import { CompletedSetList } from '@/components/workout/CompletedSetList';
 import { CurrentSetRecorder } from '@/components/workout/CurrentSetRecorder';
 import { ExerciseHeroCard } from '@/components/workout/ExerciseHeroCard';
@@ -29,6 +30,7 @@ import type {
   WorkoutSessionDetail,
   WorkoutSet,
 } from '@/domain/workout/workout.types';
+import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing } from '@/theme';
 
 function formatNumber(value: number | undefined, fallback = '0'): string {
@@ -94,6 +96,7 @@ function selectDisplaySet(memberSets: WorkoutSet[]): WorkoutSet | null {
 export default function WorkoutRoute() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const { authMode, guardFeature, sheets } = useAuthGate();
   const [detail, setDetail] = useState<WorkoutSessionDetail | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
@@ -150,6 +153,11 @@ export default function WorkoutRoute() {
     setIsLoading(true);
     setError(null);
     try {
+      if (authMode === 'guest_preview') {
+        setDetail(null);
+        return;
+      }
+
       await initializeLocalDatabase();
       const nextDetail = await repositories.workoutRepository.getSessionDetail(sessionId);
       const nextMembers = await repositories.memberRepository.listMembers(nextDetail.session.groupId);
@@ -174,7 +182,7 @@ export default function WorkoutRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories, sessionId]);
+  }, [authMode, repositories, sessionId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -184,6 +192,10 @@ export default function WorkoutRoute() {
 
   const saveSetPatch = useCallback(
     async (set: WorkoutSet, patch: Omit<SaveWorkoutSetInput, 'id'>): Promise<WorkoutSet | null> => {
+      if (!guardFeature('save_workout')) {
+        return null;
+      }
+
       const optimisticSet: WorkoutSet = {
         ...set,
         ...patch,
@@ -205,11 +217,14 @@ export default function WorkoutRoute() {
         return null;
       }
     },
-    [repositories],
+    [guardFeature, repositories],
   );
 
   const finishWorkout = useCallback(async () => {
     if (!sessionId) {
+      return;
+    }
+    if (!guardFeature('save_workout')) {
       return;
     }
     setIsFinishing(true);
@@ -222,7 +237,7 @@ export default function WorkoutRoute() {
     } finally {
       setIsFinishing(false);
     }
-  }, [repositories, sessionId]);
+  }, [guardFeature, repositories, sessionId]);
 
   const activeRecord = detail?.exercises[activeExerciseIndex] ?? null;
   const activeExercise = activeRecord ? exerciseMap[activeRecord.exerciseId] ?? null : null;
@@ -237,9 +252,6 @@ export default function WorkoutRoute() {
     .map((member) => activeSets.filter((set) => set.memberId === member.id).sort((a, b) => a.setNumber - b.setNumber))
     .map(selectDisplaySet)
     .filter((set): set is WorkoutSet => Boolean(set));
-  const completedActiveSets = [...activeSets]
-    .filter((set) => set.completed)
-    .sort((left, right) => left.setNumber - right.setNumber || left.memberId.localeCompare(right.memberId));
   const membersById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const memberNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -270,6 +282,9 @@ export default function WorkoutRoute() {
   const currentProfile = currentDisplaySet ? profiles[currentDisplaySet.memberId] ?? null : null;
   const currentIncrement = getWeightIncrement(currentProfile, activeExercise);
   const currentMemberId = currentDisplaySet?.memberId ?? members[0]?.id ?? '';
+  const completedActiveSets = [...activeSets]
+    .filter((set) => set.completed && set.memberId === currentMemberId)
+    .sort((left, right) => left.setNumber - right.setNumber);
   const nextMemberIndex = (members.findIndex((m) => m.id === currentMemberId) + 1) % members.length;
   const nextMemberName = members.length > 1 ? members[nextMemberIndex]?.displayName : undefined;
   function goNextExercise() {
@@ -302,16 +317,10 @@ export default function WorkoutRoute() {
     }
     const targetSets = roundSets.filter((set) => !set.completed && !set.skipped && set.memberId === currentMemberId);
     if (targetSets.length === 0) {
-      const allMembersCompleted = members.every((m) => {
-        const memberSets = roundSets.filter((set) => set.memberId === m.id);
-        return memberSets.every((set) => set.completed || set.skipped);
-      });
-      if (allMembersCompleted) {
-        if (hasNextExercise) {
-          goNextExercise();
-        } else {
-          setWorkoutReadyToFinish(true);
-        }
+      if (hasNextExercise) {
+        goNextExercise();
+      } else {
+        setWorkoutReadyToFinish(true);
       }
       return;
     }
@@ -341,18 +350,11 @@ export default function WorkoutRoute() {
       }
       return;
     }
-    const allMembersCompleted = members.every((m) => {
-      if (m.id === currentMemberId) return true;
-      const memberSets = roundSets.filter((set) => set.memberId === m.id);
-      return memberSets.every((set) => set.completed || set.skipped);
-    });
-    if (allMembersCompleted) {
-      if (hasNextExercise) {
-        goNextExercise();
-        return;
-      }
-      setWorkoutReadyToFinish(true);
+    if (hasNextExercise) {
+      goNextExercise();
+      return;
     }
+    setWorkoutReadyToFinish(true);
   }
 
   function handleDeleteSet(setId: string) {
@@ -455,8 +457,11 @@ export default function WorkoutRoute() {
             <View style={styles.emptyContainer}>
               <Ionicons color={colors.darkMuted} name="barbell-outline" size={40} />
               <AppText tone="muted" variant="bodySmall">
-                未找到训练记录
+                {authMode === 'guest_preview' ? '登录后才能进入正式训练 session' : '未找到训练记录'}
               </AppText>
+              {authMode === 'guest_preview' ? (
+                <AppButton onPress={() => guardFeature('start_workout')}>登录 / 注册</AppButton>
+              ) : null}
             </View>
           ) : null}
 
@@ -496,11 +501,11 @@ export default function WorkoutRoute() {
                   onRepsChange={(v) => void saveSetPatch(currentDisplaySet, { actualReps: v })}
                   onRpeChange={(v) => void saveSetPatch(currentDisplaySet, { rpe: v })}
                   onRirChange={(v) => void saveSetPatch(currentDisplaySet, { rir: v })}
-                  onSkipExercise={goNextExercise}
                   onSkipRest={() => skipMemberRest(currentMemberId)}
                   onWeightChange={(v) => void saveSetPatch(currentDisplaySet, { actualWeight: v })}
                   profile={currentProfile}
                   record={activeRecord}
+                  restSeconds={currentMemberRestSeconds}
                   rir={currentDisplaySet.rir}
                   rpe={currentDisplaySet.rpe}
                   reps={currentDisplaySet.actualReps ?? currentDisplaySet.plannedReps}
@@ -510,38 +515,16 @@ export default function WorkoutRoute() {
                 />
               ) : null}
 
-              {isCurrentMemberResting ? (
-                <View style={styles.restCard}>
-                  <View style={styles.restHeader}>
-                    <View style={styles.restIndicator} />
-                    <View>
-                      <AppText tone="inverse" variant="subtitle" weight="800">
-                        休息中
-                      </AppText>
-                      <AppText tone="muted" variant="caption">
-                        {membersById.get(currentMemberId)?.displayName} 正在休息
-                      </AppText>
-                    </View>
-                  </View>
-                  <AppText tone="inverse" variant="headline" weight="900">
-                    {formatTimer(currentMemberRestSeconds)}
-                  </AppText>
-                  <Pressable accessibilityRole="button" onPress={() => skipMemberRest(currentMemberId)} style={styles.restSkipButton}>
-                    <Ionicons color={colors.surface} name="play-forward" size={16} />
-                    <AppText variant="caption" weight="700" style={{ color: colors.surface }}>跳过休息</AppText>
-                  </Pressable>
-                </View>
-              ) : null}
-
               {members.length > 1 && Object.entries(memberRestState).some(([, s]) => s.isResting) ? (
-                <View style={styles.otherMembersRest}>
-                  <AppText variant="caption" weight="700">其他成员休息状态</AppText>
-                  <View style={styles.otherMembersRow}>
+                <View style={styles.otherMembersRestSection}>
+                  <AppText variant="caption" weight="700" style={styles.otherMembersTitle}>其他成员休息中</AppText>
+                  <View style={styles.otherMembersGrid}>
                     {members.filter((m) => m.id !== currentMemberId && memberRestState[m.id]?.isResting).map((member) => (
-                      <View key={member.id} style={styles.otherMemberChip}>
-                        <View style={[styles.otherMemberDot, { backgroundColor: colors.warning }]} />
-                        <AppText variant="caption">{member.displayName}</AppText>
-                        <AppText variant="caption" weight="800">{formatTimer(memberRestState[member.id]?.remaining ?? 0)}</AppText>
+                      <View key={member.id} style={styles.otherMemberCard}>
+                        <AppText variant="caption" weight="800">{member.displayName}</AppText>
+                        <AppText variant="caption" weight="900" style={styles.otherMemberTime}>
+                          {formatTimer(memberRestState[member.id]?.remaining ?? 0)}
+                        </AppText>
                       </View>
                     ))}
                   </View>
@@ -630,6 +613,7 @@ export default function WorkoutRoute() {
           </View>
         ) : null}
       </View>
+      <AuthGateSheets {...sheets} />
     </SafeAreaView>
   );
 }
@@ -693,14 +677,27 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.xxl,
   },
-  restCard: {
+  otherMembersRestSection: {
+    gap: spacing.sm,
+  },
+  otherMembersTitle: {
+    color: colors.textMuted,
+  },
+  otherMembersGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  otherMemberCard: {
     alignItems: 'center',
-    backgroundColor: colors.darkCard,
-    borderColor: colors.primary,
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.md,
-    borderWidth: 1,
-    gap: spacing.md,
-    padding: spacing.xl,
+    flex: 1,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  otherMemberTime: {
+    color: colors.primary,
   },
   restHeader: {
     alignItems: 'center',

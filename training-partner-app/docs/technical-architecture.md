@@ -4,6 +4,9 @@
 - 后端栈：Node.js、TypeScript、Fastify、PostgreSQL、Knex migration、JWT、PM2、Nginx。
 - 公网访问边界：Node 只监听 `127.0.0.1:3000`，公网通过 Nginx `/api` 反向代理。
 - App API 地址通过 `EXPO_PUBLIC_API_BASE_URL` 配置，默认开发地址为 `http://47.100.239.29/api`。
+- 客户端统一 API 配置位于 `src/config/api.ts`。
+- API smoke 脚本位于 `scripts/api-smoke-test.js`，通过 `npm run test:api-smoke` 执行。
+- Android Studio debug 运行需要 Expo Dev Client + Metro + 深链打开，步骤见 `docs/android-studio-run.md`。
 - App token 使用 `expo-secure-store` 保存；App 不保存阿里云 AccessKey，也不直接调用阿里云短信接口。
 - 本次没有修改本地 SQLite schema，也没有把训练记录改存 AsyncStorage。
 - 云同步第一版服务端表已创建，但 App 端自动同步队列尚未把本地 SQLite 训练记录打包上传；训练记录仍先写本机 SQLite。
@@ -146,7 +149,13 @@ Sprint 1 已创建上述 sync 目录骨架，但不执行远程同步。
 
 ## 7. 鉴权与权限
 
-第一阶段不做账号登录。模型保留 `ownerUserId`、成员 role 和后续 Supabase Auth 接入空间。
+当前已接入 LiftMark 后端账号服务。App 启动先读取 SecureStore session：
+
+- 无 session：进入 `/account/login`，必须通过手机号验证码登录 / 注册。
+- 有 session 且在线：轻量校验 `/auth/me`，再进入主 Tab。
+- 有 session 但服务器不可达：进入 `offline_authenticated` 本机模式，不拉取云端完整数据。
+
+账号 token 使用 `expo-secure-store` 保存。训练记录仍先写本地 SQLite，登录、刷新 token、会员状态或云同步失败都不得阻塞训练现场保存。
 
 ## 8. 文件存储
 
@@ -156,9 +165,10 @@ Sprint 1 已创建上述 sync 目录骨架，但不执行远程同步。
 
 ## 9. 第三方服务
 
-- 第一阶段：无必须联网服务。
-- 第二/三阶段：Supabase。
-- 远期：Apple Health、Garmin、Fitbit、小米/华为运动健康等健康数据源。
+- 当前后端：`http://47.100.239.29/api`，由 `src/config/api.ts` 配置，业务请求通过 `src/services/httpClient.ts`。
+- 当前短信：App 只调用自有后端 `/auth/send-code`，不直接调用阿里云。
+- 训练现场：无必须联网服务。
+- 远期：正式域名 + HTTPS、支付、Apple Health、Garmin、Fitbit、小米/华为运动健康等健康数据源。
 
 ## 10. 配置管理
 

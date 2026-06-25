@@ -1,13 +1,14 @@
-import type { SyncPreferences, SyncSnapshot } from './syncTypes';
-import { apiRequest } from '@/services/apiClient';
+import { apiRequest } from '@/services/httpClient';
 import { readStoredSession } from '@/services/auth/tokenStorage';
+
+import type { SyncPreferences, SyncSnapshot } from './syncTypes';
 
 const defaultPreferences: SyncPreferences = {
   enabled: false,
   wifiOnly: true,
 };
 
-export const SYNC_NOT_CONFIGURED_MESSAGE = '云同步接口待接入。当前训练数据仍会先保存到本机 SQLite。';
+export const SYNC_NOT_CONFIGURED_MESSAGE = '云同步开发中 / 可测试。当前训练数据仍会先保存到本机 SQLite。';
 
 export async function getSyncSnapshot(): Promise<SyncSnapshot> {
   const session = await readStoredSession();
@@ -20,15 +21,24 @@ export async function getSyncSnapshot(): Promise<SyncSnapshot> {
     };
   }
 
-  const status = await apiRequest<{ serverTime: string; syncedWorkoutSessions: number }>('/sync/status', {
-    accessToken: session.accessToken,
-  });
-  return {
-    lastSyncedAt: status.serverTime,
-    pendingCount: 0,
-    preferences: defaultPreferences,
-    status: 'idle',
-  };
+  try {
+    const status = await apiRequest<{ serverTime: string; syncedWorkoutSessions: number }>('/sync/status', {
+      accessToken: session.accessToken,
+    });
+    return {
+      lastSyncedAt: status.serverTime,
+      pendingCount: 0,
+      preferences: defaultPreferences,
+      status: 'idle',
+    };
+  } catch {
+    return {
+      lastSyncedAt: undefined,
+      pendingCount: 0,
+      preferences: defaultPreferences,
+      status: 'failed',
+    };
+  }
 }
 
 export async function updateSyncPreferences(preferences: SyncPreferences): Promise<SyncSnapshot> {
@@ -43,11 +53,18 @@ export async function updateSyncPreferences(preferences: SyncPreferences): Promi
 export async function requestImmediateSync(): Promise<{ ok: true; message?: string } | { ok: false; message: string }> {
   const session = await readStoredSession();
   if (!session) return { ok: false, message: '请先登录后再使用云同步。' };
-  await apiRequest('/sync/push', {
-    accessToken: session.accessToken,
-    body: {
-      changes: {},
-    },
-  });
-  return { ok: true, message: '同步服务已连接。本地训练队列会在后续版本接入。' };
+  try {
+    await apiRequest('/sync/push', {
+      accessToken: session.accessToken,
+      body: {
+        changes: {},
+      },
+    });
+    return { ok: true, message: '同步服务已连接。本地训练队列会在后续版本接入。' };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : '云同步服务连接失败，本地训练不受影响。',
+    };
+  }
 }
