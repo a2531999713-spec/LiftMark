@@ -6,7 +6,7 @@ import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
-import type { GroupMember } from '@/domain/member/member.types';
+import type { GroupMember, GroupMemberRole } from '@/domain/member/member.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, spacing } from '@/theme';
@@ -15,6 +15,13 @@ type NoticeState = {
   message: string;
   title: string;
 };
+
+function roleLabel(role: GroupMemberRole) {
+  if (role === 'owner') return '组长';
+  if (role === 'coach') return '教练';
+  if (role === 'guest') return '访客';
+  return '成员';
+}
 
 export default function ProfileGroupsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
@@ -41,7 +48,7 @@ export default function ProfileGroupsRoute() {
       setMembers(nextMembers);
       setPlan(nextPlan);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '小组加载失败。');
+      setError(loadError instanceof Error ? loadError.message : '小组成员加载失败。');
     } finally {
       setIsLoading(false);
     }
@@ -54,14 +61,9 @@ export default function ProfileGroupsRoute() {
   );
 
   const showDeveloping = (title: string) => setNotice({ title, message: '该功能正在开发中，后续版本开放。' });
-  const showInvitePending = () =>
-    setNotice({
-      title: '邀请成员',
-      message: '当前版本暂未开放云端邀请，后续版本支持在线加入小组。',
-    });
 
   return (
-    <Screen title="我的小组" subtitle="成员管理、权限设置、邀请管理。">
+    <Screen subtitle="管理训练成员和角色。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="数据加载失败" description={error} actionLabel="重新加载" onActionPress={() => void load()} /> : null}
 
@@ -69,18 +71,32 @@ export default function ProfileGroupsRoute() {
         <>
           <AppCard style={styles.card}>
             <View style={styles.headerRow}>
-              <View>
-                <AppText variant="title" weight="900">
-                  {group?.name ?? '还没有训练小组'}
+              <View style={styles.headerText}>
+                <AppText numberOfLines={1} variant="title" weight="900">
+                  {group?.name ?? '默认训练小组'}
                 </AppText>
                 <AppText tone="muted" variant="bodySmall">
-                  {members.length} 成员
+                  {members.length} 名成员
                 </AppText>
               </View>
-              <Tag label="本地小组" tone="neutral" />
             </View>
             <SettingsRow label="当前计划" value={plan?.name ?? '未设置'} />
-            <SettingsRow label="我的角色" value={members[0]?.role === 'owner' ? '组长' : '成员'} />
+            <SettingsRow label="当前周次" value={`第 ${group?.currentWeek ?? 1} 周`} />
+            <SettingsRow label="我的角色" value={members[0] ? roleLabel(members[0].role) : '未设置'} />
+          </AppCard>
+
+          <AppCard style={styles.memberCard}>
+            <AppText variant="bodySmall" weight="900">
+              成员列表
+            </AppText>
+            {members.map((member) => (
+              <SettingsRow key={member.id} label={member.displayName} value={roleLabel(member.role)} />
+            ))}
+            {members.length === 0 ? (
+              <AppText tone="muted" variant="bodySmall">
+                还没有成员，添加后可为不同训练者分别记录重量和计划表现。
+              </AppText>
+            ) : null}
           </AppCard>
 
           <View style={styles.actions}>
@@ -91,6 +107,9 @@ export default function ProfileGroupsRoute() {
             >
               管理成员
             </AppButton>
+            <AppButton onPress={() => showDeveloping('切换小组')} variant="secondary">
+              切换小组
+            </AppButton>
             <AppButton
               onPress={() => {
                 if (guardFeature('create_group', { groupCount: group ? 1 : 0 })) showDeveloping('创建小组');
@@ -99,32 +118,7 @@ export default function ProfileGroupsRoute() {
             >
               创建小组
             </AppButton>
-            <AppButton
-              onPress={() => {
-                if (guardFeature('online_training')) showDeveloping('加入小组');
-              }}
-              variant="secondary"
-            >
-              加入小组
-            </AppButton>
-            <AppButton
-              onPress={() => {
-                if (guardFeature('online_training')) showInvitePending();
-              }}
-              variant="secondary"
-            >
-              邀请成员
-            </AppButton>
           </View>
-
-          <AppCard style={styles.card} tone="soft">
-            <AppText variant="bodySmall" weight="900">
-              当前版本为本地小组
-            </AppText>
-            <AppText tone="muted" variant="caption">
-              适合同一台设备多人轮换记录。未来云同步版本再支持账号登录、邀请成员、多设备同步和授权共享数据。
-            </AppText>
-          </AppCard>
         </>
       ) : null}
 
@@ -155,5 +149,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     justifyContent: 'space-between',
+  },
+  headerText: {
+    flex: 1,
+    gap: spacing.xs,
+    minWidth: 0,
+  },
+  memberCard: {
+    gap: spacing.sm,
   },
 });

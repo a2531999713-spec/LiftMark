@@ -1,10 +1,14 @@
 # LiftMark 项目交接记录
 
-## 2026-06-24 phone-code-auth-gate-sprint 交接
+## 2026-06-28 profile-password-auth-avatar-sprint 交接
 
 - 当前实际项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`；所有命令执行前先 `cd` 到该路径。
-- 登录页 `app/account/login.tsx` 已重构为手机号验证码唯一入口：品牌、手机号、验证码、获取验证码、协议勾选和“登录 / 注册”。
-- 当前 UI 不展示继续浏览、预览模式、账号密码登录、账号密码注册、第三方登录、会员权益或小组协作卖点。
+- 登录页 `app/account/login.tsx` 当前为双态账号表单：登录使用手机号/邮箱/练刻账号 + 密码；注册使用手机号 + 验证码 + 密码 + 昵称。
+- 验证码用于注册绑定手机号，后续用于手机号换绑 / 找回密码等敏感流程；当前 UI 不把验证码登录作为唯一登录方式。
+- 当前 UI 不展示继续浏览、预览模式、验证码一键登录、第三方登录、会员权益或小组协作卖点。
+- "我的"页 `app/(tabs)/settings.tsx` 当前按参考图重做：深色账号主卡、训练档案、小组成员、偏好设置、账号设置、关于练刻、退出登录。HeroCard 小组和计划区域可点击跳转。
+- 账号头像与训练成员头像分离；账号头像走 `app/profile/avatar.tsx`、`src/components/avatar/*`、`src/services/avatar/*` 和 `account_profile_cache`。点击头像直接打开相册选择并上传服务器。
+- 头像压缩后上传服务器，SQLite 只保存 URL、缩略图 URL、本地缓存路径和更新时间。
 - 根布局 `app/_layout.tsx` 根据 `authStatus` 做路由保护：无 session 跳转 `/account/login`；有 session 且离线进入本机模式。
 - 登录拦截弹窗 `AuthRequiredSheet` 不再显示关闭入口或“继续浏览”文案，只保留登录按钮。
 - 真实认证仍复用 `src/services/auth/*` 和 `src/store/authStore.ts`，token 存储在 SecureStore；后端不可用时本地训练不被阻断。
@@ -13,7 +17,7 @@
 - 新增 `src/components/auth/*` 和 `src/hooks/useAuthGate.ts`，页面应通过 `guardFeature()` 和统一 sheet 做登录/Pro 拦截。
 - 已接入拦截的关键路径包括首页开始训练、计划创建/导入/复制/导出、记录补录/编辑/分析、成员新增/编辑、激活码、云同步和隐藏探索页写入入口。
 - 未登录不能进入主 Tab；有本地 session 离线重启时可以进入默认主界面，但不拉取云端完整数据、不做全量同步。
-- 本次未修改 SQLite schema、未修改 Repository 公共接口、未把训练记录改存 AsyncStorage、未让训练执行依赖网络。
+- 本次新增 SQLite migration v6，用于账号资料缓存和成员头像字段；未把训练记录改存 AsyncStorage，未让训练执行依赖网络。
 
 ## 2026-06-15 plan-dashboard-exercise-library-custom-exercise-member-limit-weight-git-sprint 交接
 

@@ -187,7 +187,7 @@ export default function ManualHistoryRoute() {
       setNotice({
         sessionId: session.id,
         title: '已保存',
-        message: '历史训练已保存到本地 SQLite。休息时间留空不会影响训练量、PR 或估算 1RM。',
+        message: '历史训练已保存。休息时间留空不会影响训练量、PR 或估算 1RM。',
       });
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存补录训练失败。');

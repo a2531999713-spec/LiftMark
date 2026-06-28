@@ -48,7 +48,7 @@ export default function ProfilePreferencesRoute() {
   );
 
   return (
-    <Screen title="训练偏好" subtitle="单位、记录方式、休息计时等。">
+    <Screen subtitle="单位、记录方式、休息计时。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="数据加载失败" description={error} actionLabel="重新加载" onActionPress={() => void load()} /> : null}
 
@@ -74,10 +74,10 @@ export default function ProfilePreferencesRoute() {
 
           <AppCard style={styles.card} tone="soft">
             <AppText variant="bodySmall" weight="900">
-              偏好优先复用现有本地设置
+              更多设置即将开放
             </AppText>
             <AppText tone="muted" variant="caption">
-              当前版本不新增重复数据结构。更完整的外观、语言和通知设置会在账号体系稳定后开放。
+              外观、语言和通知设置将在后续版本中开放。
             </AppText>
           </AppCard>
         </>

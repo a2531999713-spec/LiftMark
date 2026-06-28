@@ -74,15 +74,15 @@ export default function ProfileDataRoute() {
   };
 
   const confirmClearLocalData = () => {
-    Alert.alert('清空本机数据？', '该操作会影响当前设备上的训练身份、计划和训练记录。当前版本只保留二次确认，不会静默执行删除。', [
+    Alert.alert('确定清除所有数据？', '此操作将删除训练记录、计划和个人数据，且不可恢复。', [
       { text: '取消', style: 'cancel' },
       {
-        text: '清空本机数据',
+        text: '清除数据',
         style: 'destructive',
         onPress: () =>
           setNotice({
-            title: '清空本机数据',
-            message: '当前版本不会执行该危险操作，真实训练记录仍保存在本机 SQLite。',
+            title: '清除数据',
+            message: '数据清除功能正在完善中，即将开放。',
           }),
       },
     ]);
@@ -96,28 +96,19 @@ export default function ProfileDataRoute() {
   };
 
   return (
-    <Screen title="训练数据" subtitle="导出备份、清空、恢复等。">
+    <Screen title="训练数据" subtitle="导出备份、清除数据。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="数据加载失败" description={error} actionLabel="重新加载" onActionPress={() => void load()} /> : null}
 
       {!isLoading && !error ? (
         <>
           <ProfileSection icon="disc-outline" title="数据管理">
-            <ProfileMenuItem disabled={isWorking} icon="download-outline" label="导出个人数据" description="导出本机保存的成员、计划和训练记录" onPress={() => void runExport('all')} />
-            <ProfileMenuItem disabled={isWorking} icon="bar-chart-outline" label="导出训练记录" description="只导出训练记录、建议和恢复日志" onPress={() => void runExport('workout')} />
-            <ProfileMenuItem disabled={isWorking || !group} icon="document-text-outline" label="导出当前计划" description="导出 .liftmark.json，不包含 1RM 或训练记录" onPress={() => void runExport('plan')} />
+            <ProfileMenuItem disabled={isWorking} icon="download-outline" label="导出个人数据" description="导出成员、计划和训练记录" onPress={() => void runExport('all')} />
+            <ProfileMenuItem disabled={isWorking} icon="bar-chart-outline" label="导出训练记录" description="只导出训练记录和建议" onPress={() => void runExport('workout')} />
+            <ProfileMenuItem disabled={isWorking || !group} icon="document-text-outline" label="导出当前计划" description="导出训练计划文件" onPress={() => void runExport('plan')} />
             <ProfileMenuItem icon="cloud-download-outline" label="从备份恢复" description="恢复文件校验完成后开放" onPress={() => setNotice({ title: '从备份恢复', message: '该功能正在开发中，后续版本开放。' })} tag="开发中" />
-            <ProfileMenuItem danger icon="trash-outline" label="清空本机数据" description="删除类操作必须二次确认" onPress={confirmClearLocalData} />
+            <ProfileMenuItem danger icon="trash-outline" label="清除所有数据" description="删除前必须二次确认" onPress={confirmClearLocalData} />
           </ProfileSection>
-
-          <AppCard style={styles.card} tone="soft">
-            <AppText variant="bodySmall" weight="900">
-              训练数据先写本机 SQLite
-            </AppText>
-            <AppText tone="muted" variant="caption">
-              训练现场不依赖网络。后续云同步失败也不能导致训练记录丢失。
-            </AppText>
-          </AppCard>
         </>
       ) : null}
 

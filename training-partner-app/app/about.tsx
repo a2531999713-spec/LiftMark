@@ -1,66 +1,109 @@
 import Constants from 'expo-constants';
-import { Image, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
+import { useCallback } from 'react';
+import { Linking, StyleSheet, View } from 'react-native';
 
-import { liftmarkBrandAssets } from '@/assets/brand';
-import { AppCard, AppText, Screen, SectionHeader, SettingsRow, Tag } from '@/components/ui';
+import { AppText, Screen } from '@/components/ui';
+import { ProfileMenuItem, ProfileSection } from '@/components/profile';
 import { colors, radius, spacing } from '@/theme';
 
+const CONTACT_EMAIL = 'a2531999713@163.com';
+
 export default function AboutRoute() {
+  const handleEmail = useCallback(() => {
+    Linking.openURL(`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('练刻 LiftMark - 意见反馈')}`);
+  }, []);
+
   return (
-    <Screen title="关于练刻" subtitle="练刻 LiftMark 的品牌、版本和本地数据模式。">
-      <AppCard style={styles.brandCard}>
-        <Image resizeMode="contain" source={liftmarkBrandAssets.logoPrimary} style={styles.logo} />
-        <AppText style={styles.centerText} tone="muted" variant="bodySmall">
-          记录每次训练，刻下持续进步。
-        </AppText>
-      </AppCard>
-
-      <AppCard style={styles.card}>
-        <SectionHeader title="品牌信息" />
-        <SettingsRow label="中文名" value="练刻" />
-        <SettingsRow label="英文名" value="LiftMark" />
-        <SettingsRow label="完整品牌" value="练刻 LiftMark" />
-        <SettingsRow label="版本号" value={Constants.expoConfig?.version ?? '0.1.0'} />
-        <SettingsRow label="Android package" value="com.liftmark.app" />
-      </AppCard>
-
-      <AppCard style={styles.card}>
-        <SectionHeader title="数据模式" />
-        <View style={styles.tagRow}>
-          <Tag label="本地优先" tone="success" />
-          <Tag label="SQLite" tone="accent" />
-          <Tag label="Android APK 预览" tone="brand" />
+    <Screen contentStyle={styles.screen}>
+      <View style={styles.hero}>
+        <View style={styles.logoMark}>
+          <AppText variant="headline" weight="900" style={styles.logoText}>练刻</AppText>
         </View>
-        <AppText tone="muted" variant="bodySmall">
-          第一阶段训练计划、成员资料、训练记录和 seed 数据都保存在本机 SQLite 中，不依赖 Web 预览或 Expo Go。
+        <AppText variant="subtitle" weight="700" style={styles.heroName}>LiftMark</AppText>
+        <AppText variant="bodySmall" tone="muted">记录每次训练，刻下持续进步</AppText>
+      </View>
+
+      <ProfileSection title="关于">
+        <View style={styles.aboutBlock}>
+          <AppText variant="body" tone="muted" style={styles.aboutText}>
+            练刻是一款力量训练计划执行工具。它帮助你运行结构化训练计划，为每位成员保持独立的训练身份，记录训练历史，支持多人协作训练。
+          </AppText>
+          <AppText variant="body" tone="muted" style={styles.aboutText}>
+            核心理念：让每次训练都有据可依，让进步清晰可见。
+          </AppText>
+        </View>
+      </ProfileSection>
+
+      <ProfileSection title="意见反馈">
+        <ProfileMenuItem
+          description="发送邮件反馈问题或建议"
+          icon="mail-outline"
+          label="意见反馈"
+          onPress={handleEmail}
+          trailing={CONTACT_EMAIL}
+        />
+      </ProfileSection>
+
+      <ProfileSection title="服务条款">
+        <ProfileMenuItem
+          description="查看用户服务协议"
+          icon="document-text-outline"
+          label="用户协议"
+          onPress={() => router.push('/terms' as never)}
+        />
+        <ProfileMenuItem
+          description="查看隐私保护政策"
+          icon="document-lock-outline"
+          label="隐私政策"
+          onPress={() => router.push('/privacy' as never)}
+        />
+      </ProfileSection>
+
+      <View style={styles.versionBlock}>
+        <AppText variant="caption" tone="subtle">
+          版本 {Constants.expoConfig?.version ?? '0.1.0'}
         </AppText>
-      </AppCard>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  brandCard: {
+  aboutBlock: {
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+  },
+  aboutText: {
+    lineHeight: 22,
+  },
+  hero: {
     alignItems: 'center',
-    gap: spacing.md,
-  },
-  card: {
-    gap: spacing.md,
-  },
-  logo: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    height: 152,
-    width: '100%',
-  },
-  centerText: {
-    textAlign: 'center',
-  },
-  tagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
+    paddingVertical: spacing.xxl,
+  },
+  heroName: {
+    color: colors.textStrong,
+    letterSpacing: 1,
+  },
+  logoMark: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radius.xl,
+    height: 72,
+    justifyContent: 'center',
+    width: 72,
+  },
+  logoText: {
+    color: colors.surface,
+  },
+  screen: {
+    gap: spacing.lg,
+    paddingBottom: spacing.xxxxl,
+  },
+  versionBlock: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
   },
 });

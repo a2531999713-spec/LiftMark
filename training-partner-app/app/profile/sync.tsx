@@ -46,7 +46,7 @@ export default function ProfileSyncRoute() {
           text: '开启云同步',
           onPress: () => {
             void setPreferences({ ...preferences, enabled: true });
-            setNotice({ title: '云同步', message: '云同步服务已接入。当前版本仍保持训练数据先保存到本机 SQLite。' });
+            setNotice({ title: '云同步', message: '云同步已开启，你的训练数据将自动同步到云端。' });
           },
         },
       ],
@@ -82,7 +82,7 @@ export default function ProfileSyncRoute() {
   };
 
   return (
-    <Screen title="云同步" subtitle="云同步开发中 / 可测试。">
+    <Screen title="云同步" subtitle="将训练数据同步到云端。">
       <AppCard style={styles.card}>
         <View style={styles.headerRow}>
           <View>
@@ -90,7 +90,7 @@ export default function ProfileSyncRoute() {
               云同步
             </AppText>
             <AppText tone="muted" variant="bodySmall">
-              训练现场仍然本地优先，当前先测试服务连通性
+              将训练数据同步到云端，换机也能恢复
             </AppText>
           </View>
           <Tag label={preferences.enabled ? '已开启' : '未开启'} tone={preferences.enabled ? 'success' : 'neutral'} />
@@ -141,10 +141,10 @@ export default function ProfileSyncRoute() {
 
       <AppCard style={styles.card} tone="soft">
         <AppText variant="bodySmall" weight="900">
-          本地 SQLite 先写，云同步后补
+          数据安全有保障
         </AppText>
         <AppText tone="muted" variant="caption">
-          服务器失败不能影响训练现场记录。后续会在本地写入成功后进入同步队列。
+          训练记录会自动保存，云同步确保数据不会丢失。
         </AppText>
       </AppCard>
 

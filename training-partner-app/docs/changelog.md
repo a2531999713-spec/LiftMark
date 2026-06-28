@@ -1,5 +1,103 @@
 # 变更记录
 
+## 2026-06-28 - title-dedup-liftmark-login
+
+### 标题去重修复
+- 账号设置页面移除 Screen 标题，避免与 ProfileSection 标题重复
+- 关于练刻页面 ProfileSection 标题改为"关于"，避免与页面标题重复
+
+### 练刻账号登录支持
+- 后端 `findUserByAccount` 新增 `liftmark_id` 字段查询
+- 现在支持手机号、邮箱、练刻账号三种方式登录
+
+## 2026-06-28 - ui-title-dedup-hero-nav-login-rework
+
+### 二级菜单标题去重
+- 训练档案、小组成员、偏好设置页面移除 Screen 标题，避免与内容重复
+- 云同步页面移除"开发中 / 可测试"开发者文案
+
+### HeroCard 点击跳转
+- 小组名称区域点击跳转到小组成员页
+- 当前计划区域点击跳转到计划页
+- 新增 onGroupPress 和 onPlanPress 回调
+
+### 登录页重构
+- 品牌图标改为文字 Logo（练刻），更清晰
+- 登录方式从"手机号+密码"扩展为"手机号/邮箱/练刻账号+密码"
+- 输入框标签从"手机号"改为"账号"
+- 注册仍使用手机号接收验证码
+- 标语改为"记录每次训练，刻下持续进步"
+
+### 其他清理
+- 移除手动补录页面的"本地 SQLite"技术描述
+
+## 2026-06-28 - ui-copy-audit
+
+### 头像交互优化
+- 点击"我的"页头像直接打开相册选择，不再跳转头像设置页
+- 移除 avatar.tsx 路由跳转，改为内联 picker 调用
+
+### 菜单描述去重
+- "训练档案"描述改为"体重、力量记录、加重单位"
+- "小组成员"描述改为"管理训练成员和角色"
+- "偏好设置"描述改为"单位、记录方式、休息计时"
+- "账号设置"描述改为"安全、同步、会员"
+- "帮助与关于"重命名为"关于练刻"，图标改为 information-circle-outline
+
+### 去除技术术语
+- about.tsx：移除"本地优先"、"SQLite"、"预留清晰的边界"等技术描述
+- profile/data.tsx：移除"本机 SQLite"、"训练现场不依赖网络"等
+- profile/preferences.tsx：移除"偏好优先复用现有本地设置"
+- profile/sync.tsx：移除"本地 SQLite 先写"、"训练现场仍然本地优先"
+- groups.tsx：移除"本地小组"标签
+
+### 账户安全简化
+- 移除"退出所有设备"菜单项
+- 注销账号描述改为"删除账号数据，不可撤销"
+- 移除"不会删除本机训练数据"等旧版提示
+
+### 数据管理重构
+- "隐私与数据"重命名为"数据管理"
+- 移除重复的账号注销入口（仅保留在账户安全中）
+- 移除"删除云端数据"入口
+- 保留"清除所有数据"功能
+
+### 退出登录提示优化
+- 移除"本地缓存仍会保留"技术描述
+- 改为"退出后需要重新登录才能使用账号相关功能"
+
+## 2026-06-28 - avatar-upload-font-reduction
+
+### 头像上传
+- 重设计 `app/profile/avatar.tsx`：移除多余描述和按钮，点击头像直接打开相册选择
+- 新建 `src/services/avatar/avatarUploadService.ts` 实际上传服务：本地压缩后上传服务器
+- 后端新增 `PATCH /auth/avatar` 接口：接收 avatar_url 并更新 users 表
+- 移除 mock upload，改为真实 base64 上传到服务器
+- 压缩规则：1024x1024、JPEG 0.86 质量，目标 < 1MB，服务端限制 2MB
+
+### 全局字体缩小
+- `src/theme/typography.ts`：display 34→28、headline 28→24、title 22→20、subtitle 17→16、body 15→14、bodySmall 13→12、caption 11→10
+- 对应 lineHeight 同步缩减
+
+## 2026-06-28 - bugfix-and-about-redesign
+
+### Bug 修复
+- 修复密码登录提示"验证码错误或过期"的问题：`authService.login` 错误使用了 `code_login` scope，已改为 `password_login`，密码错误时正确提示"手机号或密码错误"
+- 修复首次安装小米手机时"我的"页面无法加载的问题：`_layout.tsx` 中数据库初始化和用户加载从并发改为顺序执行，确保迁移完成后再导航
+- 为 `getAccountProfileCache` 和 `upsertAccountProfileCache` 添加 `CREATE TABLE IF NOT EXISTS` 防护，解决真机上 `account_profile_cache` 表缺失的问题
+
+### 帮助与关于页面重设计
+- 移除重复的"帮助与关于"标题（Screen 标题 + ProfileSection 标题）
+- 移除"使用帮助"模块
+- 移除版本号连续点击 7 次开启开发者模式的功能
+- 新增"关于练刻"内容：应用介绍、核心理念说明
+- 新增"意见反馈"：联系方式 a2531999713@163.com，支持邮件客户端跳转
+- 新增品牌 Hero 区域：品牌色 Logo 标记 + 应用名 + 标语
+- 底部显示版本号（不可交互）
+
+### 编译文档
+- 新增 `docs/build-guide.md` 编译打包手册：Android Studio 编译、小米手机编译、发行版/测试版编译
+
 ## 2026-06-26 - ui-workout-homepage-redesign
 
 ### 首页重新设计

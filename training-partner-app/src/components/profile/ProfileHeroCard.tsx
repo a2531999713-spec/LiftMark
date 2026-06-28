@@ -1,114 +1,102 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { AppButton, AppText, Tag } from '@/components/ui';
+import { liftmarkBrandAssets } from '@/assets/brand';
+import { EditableAvatar } from '@/components/avatar';
+import { AppText } from '@/components/ui';
 import type { Group } from '@/domain/group/group.types';
-import type { GroupMember } from '@/domain/member/member.types';
 import type { AuthUser } from '@/services/auth/authTypes';
 import { colors, radius, shadows, spacing } from '@/theme';
 
-function formatRole(role?: GroupMember['role']) {
-  if (role === 'owner') return '组长';
-  if (role === 'coach') return '教练';
-  if (role === 'guest') return '访客';
-  return '成员';
-}
-
 type ProfileHeroCardProps = {
-  currentMember: GroupMember | null;
+  avatarLocalUri?: string;
+  avatarThumbUrl?: string;
+  avatarUrl?: string;
+  currentPlanName?: string;
   group: Group | null;
-  isLoggedIn: boolean;
-  onLogin: () => void;
+  memberCount: number;
+  onAvatarPress: () => void;
+  onGroupPress?: () => void;
+  onPlanPress?: () => void;
   onPress: () => void;
+  phoneMasked?: string;
   user: AuthUser | null;
 };
 
+function maskPhone(phone?: string) {
+  if (!phone) return '138****8888';
+  if (phone.length < 7) return phone;
+  return `${phone.slice(0, 3)}****${phone.slice(-4)}`;
+}
+
 export function ProfileHeroCard({
-  currentMember,
+  avatarLocalUri,
+  avatarThumbUrl,
+  avatarUrl,
+  currentPlanName,
   group,
-  isLoggedIn,
-  onLogin,
+  memberCount,
+  onAvatarPress,
+  onGroupPress,
+  onPlanPress,
   onPress,
+  phoneMasked,
   user,
 }: ProfileHeroCardProps) {
-  if (!isLoggedIn || !user) {
-    return (
-      <View style={styles.card}>
-        <View style={styles.loggedOutContent}>
-          <View style={styles.avatarGhost}>
-            <Ionicons color={colors.surface} name="person-outline" size={34} />
-          </View>
-          <View style={styles.loggedOutText}>
-            <AppText tone="inverse" variant="title" weight="900">
-              登录后开始记录训练
-            </AppText>
-            <AppText style={styles.heroMuted} variant="bodySmall">
-              登录后可以保存你的训练身份、小组、计划和训练记录。换手机或重装后，可以通过账号恢复数据。
-            </AppText>
-          </View>
-          <View style={styles.heroActions}>
-            <AppButton onPress={onLogin} size="sm">
-              登录 / 注册
-            </AppButton>
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  const memberName = currentMember?.displayName ?? '还没有训练身份';
-  const groupName = group?.name ?? '还没有训练小组';
-  const roleLabel = currentMember ? formatRole(currentMember.role) : '待创建';
+  const displayName = user?.displayName?.trim() || '练刻用户';
+  const liftmarkId = user?.liftmarkId ?? 'LM20260001';
+  const phone = phoneMasked ?? maskPhone(user?.phone);
+  const groupName = group?.name ?? '默认训练小组';
+  const planName = currentPlanName ?? '经典练三休一增肌计划';
 
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
+      <Image contentFit="contain" source={liftmarkBrandAssets.brandMark} style={styles.watermark} />
       <View style={styles.topRow}>
-        <View style={styles.avatarWrap}>
-          <View style={styles.avatar}>
-            <AppText tone="inverse" variant="title" weight="900">
-              {user.displayName.slice(0, 1)}
-            </AppText>
-          </View>
-          <View style={styles.cameraBadge}>
-            <Ionicons color={colors.textStrong} name="camera" size={17} />
-          </View>
-        </View>
+        <EditableAvatar
+          avatarLocalUri={avatarLocalUri}
+          avatarThumbUrl={avatarThumbUrl}
+          avatarUrl={avatarUrl}
+          name={displayName}
+          onPress={onAvatarPress}
+          size={88}
+        />
 
         <View style={styles.identityBlock}>
-          <View style={styles.nameRow}>
-            <AppText tone="inverse" variant="title" weight="900">
-              {user.displayName}
-            </AppText>
-            <Tag label={roleLabel} tone="danger" />
-          </View>
-          <AppText style={styles.heroMuted} variant="bodySmall">
-            练刻 ID: {user.liftmarkId}
+          <AppText numberOfLines={1} style={styles.name} tone="inverse" variant="title" weight="900">
+            {displayName}
           </AppText>
-          <View style={styles.loginRow}>
-            <Ionicons color={colors.success} name="checkmark-circle" size={16} />
-            <AppText tone="success" variant="caption" weight="800">
-              已登录
+          <View style={styles.idPill}>
+            <Ionicons color="rgba(255,255,255,0.86)" name="shield-checkmark-outline" size={16} />
+            <AppText numberOfLines={1} style={styles.idText} variant="bodySmall" weight="800">
+              练刻 ID：{liftmarkId}
             </AppText>
           </View>
+          <AppText style={styles.phone} variant="bodySmall" weight="700">
+            {phone}
+          </AppText>
         </View>
 
-        <Ionicons color="rgba(255,255,255,0.78)" name="chevron-forward" size={24} />
+        <Ionicons color="rgba(255,255,255,0.84)" name="chevron-forward" size={28} />
       </View>
 
       <View style={styles.divider} />
 
-      <View style={styles.statsRow}>
-        <HeroField icon="person-outline" label="当前成员" value={memberName} />
+      <View style={styles.bottomRow}>
+        <Pressable onPress={onGroupPress} style={styles.metricPressable}>
+          <ProfileHeroMetric icon="people-outline" label={groupName} value={`${memberCount || 4} 人`} />
+        </Pressable>
         <View style={styles.statDivider} />
-        <HeroField icon="people-outline" label="所在小组" value={groupName} />
-        <View style={styles.statDivider} />
-        <HeroField icon="ribbon-outline" label="训练角色" value={roleLabel} />
+        <Pressable onPress={onPlanPress} style={styles.metricPressable}>
+          <ProfileHeroMetric icon="calendar-outline" label="当前计划" value={planName} />
+        </Pressable>
       </View>
     </Pressable>
   );
 }
 
-function HeroField({
+function ProfileHeroMetric({
   icon,
   label,
   value,
@@ -118,14 +106,14 @@ function HeroField({
   value: string;
 }) {
   return (
-    <View style={styles.heroField}>
-      <View style={styles.fieldTitle}>
-        <Ionicons color="rgba(255,255,255,0.66)" name={icon} size={20} />
-        <AppText style={styles.heroLabel} variant="caption">
+    <View style={styles.metric}>
+      <View style={styles.metricTitle}>
+        <Ionicons color={colors.primary} name={icon} size={25} />
+        <AppText numberOfLines={1} style={styles.metricLabel} variant="bodySmall" weight="900">
           {label}
         </AppText>
       </View>
-      <AppText numberOfLines={1} tone="inverse" variant="bodySmall" weight="900">
+      <AppText numberOfLines={1} style={styles.metricValue} variant="bodySmall" weight="700">
         {value}
       </AppText>
     </View>
@@ -133,113 +121,90 @@ function HeroField({
 }
 
 const styles = StyleSheet.create({
-  avatar: {
+  bottomRow: {
     alignItems: 'center',
-    backgroundColor: colors.darkCard,
-    borderColor: 'rgba(255,255,255,0.78)',
-    borderRadius: radius.pill,
-    borderWidth: 2,
-    height: 78,
-    justifyContent: 'center',
-    width: 78,
-  },
-  avatarGhost: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderColor: 'rgba(255,255,255,0.26)',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 66,
-    justifyContent: 'center',
-    width: 66,
-  },
-  avatarWrap: {
-    position: 'relative',
-  },
-  cameraBadge: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.dark,
-    borderRadius: radius.pill,
-    borderWidth: 2,
-    bottom: -2,
-    height: 30,
-    justifyContent: 'center',
-    position: 'absolute',
-    right: -4,
-    width: 30,
+    flexDirection: 'row',
+    gap: spacing.lg,
   },
   card: {
     backgroundColor: colors.dark,
-    borderRadius: radius.xl,
-    gap: spacing.lg,
+    borderRadius: 22,
+    gap: spacing.md,
+    minHeight: 176,
     overflow: 'hidden',
-    padding: spacing.xl,
+    padding: spacing.lg,
     ...shadows.hero,
   },
   divider: {
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    height: StyleSheet.hairlineWidth,
   },
-  fieldTitle: {
+  idPill: {
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.13)',
+    borderRadius: radius.md,
     flexDirection: 'row',
     gap: spacing.xs,
+    maxWidth: '100%',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
-  heroActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  heroField: {
-    flex: 1,
-    gap: spacing.xs,
-    minWidth: 0,
-  },
-  heroLabel: {
-    color: 'rgba(255,255,255,0.62)',
-  },
-  heroMuted: {
-    color: 'rgba(255,255,255,0.72)',
+  idText: {
+    color: 'rgba(255,255,255,0.88)',
   },
   identityBlock: {
     flex: 1,
     gap: spacing.xs,
+    minWidth: 0,
   },
-  loggedOutContent: {
-    gap: spacing.md,
-  },
-  loggedOutText: {
+  metric: {
+    flex: 1,
     gap: spacing.xs,
+    minWidth: 0,
   },
-  loginRow: {
+  metricPressable: {
+    flex: 1,
+    minWidth: 0,
+  },
+  metricLabel: {
+    color: colors.surface,
+  },
+  metricTitle: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  nameRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
   },
+  metricValue: {
+    color: 'rgba(255,255,255,0.86)',
+    paddingLeft: 33,
+  },
+  name: {
+    color: colors.surface,
+  },
+  phone: {
+    color: 'rgba(255,255,255,0.88)',
+  },
   pressed: {
-    opacity: 0.9,
+    opacity: 0.92,
     transform: [{ scale: 0.995 }],
   },
   statDivider: {
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    height: 44,
-    width: 1,
-  },
-  statsRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    height: 48,
+    width: StyleSheet.hairlineWidth,
   },
   topRow: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.md,
+  },
+  watermark: {
+    height: 180,
+    opacity: 0.08,
+    position: 'absolute',
+    right: -14,
+    top: -10,
+    width: 180,
   },
 });

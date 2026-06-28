@@ -120,7 +120,11 @@ async function createSession(user: UserRow) {
 }
 
 async function findUserByAccount(account: string) {
-  return db('users').where({ phone: account }).orWhere({ email: account }).first<UserRow>();
+  return db('users')
+    .where({ phone: account })
+    .orWhere({ email: account })
+    .orWhere({ liftmark_id: account })
+    .first<UserRow>();
 }
 
 async function createUser(input: {
@@ -243,6 +247,13 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       await db('refresh_tokens').where({ user_id: authUser.id }).whereNull('revoked_at').update({ revoked_at: new Date() });
     }
     return { ok: true };
+  });
+
+  app.patch('/auth/avatar', { preHandler: requireAuth }, async (request) => {
+    const authUser = getAuthUser(request);
+    const body = z.object({ avatar_url: z.string().max(2048).nullable() }).parse(request.body);
+    await db('users').where({ id: authUser.id }).update({ avatar_url: body.avatar_url, updated_at: new Date() });
+    return { ok: true, avatar_url: body.avatar_url };
   });
 }
 

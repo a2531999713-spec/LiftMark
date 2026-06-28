@@ -4,10 +4,12 @@
 
 ## 2026-06-24 我的页 UI 更新
 
-- 我的页顶部改为账号与训练身份主卡，重点展示用户、登录状态、当前成员、所在小组和训练角色。
+- 我的页顶部改为深海军蓝账号主卡，重点展示用户昵称、练刻 ID、手机号掩码、默认训练小组人数和当前计划。HeroCard 小组和计划区域可点击跳转。
+- 我的页主入口固定为训练档案、小组成员、偏好设置、账号设置；关于练刻和退出登录独立成组。
 - 普通用户可见的我的页不再展示试用模式、SQLite/seed 诊断、清空测试数据、重置默认计划或云同步/会员主视觉广告。
-- 新增 `src/components/profile/` 组件：`ProfileHeader`、`ProfileHeroCard`、`ProfileSection`、`ProfileMenuItem` 和 `LogoutButton`。
-- 云同步、会员、激活码、账号安全、数据删除和开发诊断均进入二级入口或隐藏开发者模式。
+- 新增 / 更新 `src/components/profile/` 组件：`ProfileHeroCard`、`ProfileSection`、`ProfileMenuItem` 和 `LogoutButton`。
+- 新增 `src/components/avatar/`，账号头像与训练成员头像分离展示，点击头像直接打开相册选择并上传服务器。
+- 云同步、会员、激活码、账号安全和数据删除均进入二级入口。
 
 UI 模块负责“练刻 LiftMark”的移动端视觉系统、基础组件、品牌资源和核心页面布局规范。
 

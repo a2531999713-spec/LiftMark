@@ -3,16 +3,11 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing } from '@/theme';
-
-type NoticeState = {
-  message: string;
-  title: string;
-};
 
 function formatKg(value?: number) {
   return value ? `${value} kg` : '未设置';
@@ -23,7 +18,6 @@ export default function TrainingIdentityRoute() {
   const { guardFeature, sheets } = useAuthGate();
   const [member, setMember] = useState<GroupMember | null>(null);
   const [profile, setProfile] = useState<MemberProfile | null>(null);
-  const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,7 +33,7 @@ export default function TrainingIdentityRoute() {
       setMember(current);
       setProfile(current ? await repositories.memberRepository.getMemberProfile(current.id) : null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '训练身份加载失败。');
+      setError(loadError instanceof Error ? loadError.message : '训练档案加载失败。');
     } finally {
       setIsLoading(false);
     }
@@ -52,18 +46,18 @@ export default function TrainingIdentityRoute() {
   );
 
   return (
-    <Screen title="我的训练身份" subtitle="账号 user 和训练成员 member 分开管理。">
+    <Screen subtitle="管理你的力量训练数据。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="数据加载失败" description={error} actionLabel="重新加载" onActionPress={() => void load()} /> : null}
 
       {!isLoading && !error && !member ? (
         <EmptyState
-          actionLabel="创建训练身份"
-          description="创建训练身份后，可以计算建议重量并记录训练。"
+          actionLabel="创建训练档案"
+          description="创建训练档案后，可以计算建议重量并记录训练。"
           onActionPress={() => {
             if (guardFeature('add_member', { memberCount: 0 })) router.push('/member/new' as never);
           }}
-          title="还没有训练身份"
+          title="还没有训练档案"
         />
       ) : null}
 
@@ -77,7 +71,7 @@ export default function TrainingIdentityRoute() {
             </View>
             <View style={styles.identityText}>
               <AppText tone="inverse" variant="title" weight="900">
-                当前成员：{member.displayName}
+                {member.displayName}的训练档案
               </AppText>
               <Tag label={member.role === 'owner' ? '组长' : '成员'} tone="dark" />
             </View>
@@ -93,15 +87,6 @@ export default function TrainingIdentityRoute() {
             <SettingsRow label="哑铃加重单位" value={`${profile?.dumbbellIncrement ?? 2} kg`} />
           </AppCard>
 
-          <AppCard style={styles.card} tone="soft">
-            <AppText variant="bodySmall" weight="900">
-              账号 user 和训练成员 member 必须区分
-            </AppText>
-            <AppText tone="muted" variant="caption">
-              账号用于登录、会员、同步、权限和恢复。成员用于 1RM、训练记录、建议重量和计划执行。
-            </AppText>
-          </AppCard>
-
           <View style={styles.actions}>
             <AppButton
               onPress={() => {
@@ -110,7 +95,7 @@ export default function TrainingIdentityRoute() {
                 }
               }}
             >
-              编辑训练档案
+              编辑档案
             </AppButton>
             <AppButton
               onPress={() => {
@@ -118,31 +103,11 @@ export default function TrainingIdentityRoute() {
               }}
               variant="secondary"
             >
-              切换当前成员
-            </AppButton>
-            <AppButton
-              onPress={() => {
-                if (guardFeature('start_workout')) {
-                  setNotice({ title: '认领本机成员', message: '该功能正在开发中，后续版本开放。' });
-                }
-              }}
-              variant="secondary"
-            >
-              认领本机成员
+              切换成员
             </AppButton>
           </View>
         </>
       ) : null}
-
-      <AppModalSheet
-        onClose={() => setNotice(null)}
-        position="center"
-        subtitle={notice?.message}
-        title={notice?.title ?? '提示'}
-        visible={Boolean(notice)}
-      >
-        <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
-      </AppModalSheet>
 
       <AuthGateSheets {...sheets} />
     </Screen>
