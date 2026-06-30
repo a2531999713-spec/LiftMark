@@ -1,6 +1,6 @@
-﻿# 变更记录
+# 变更记录
 
-## 2026-07-01 - v2.2.0-body-metrics-training-enhancement
+## 2026-07-01 - v2.2.0-body-metrics-training-enhancement `910e64b`
 
 ### Body Metrics 体重数据模块
 - 新增 `app/profile/body-metrics.tsx` 体重数据页面：快速记录、折叠围度、目标设置、变化摘要、训练关联和趋势图
