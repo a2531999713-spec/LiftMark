@@ -87,6 +87,8 @@ async function sendWithAliyun(phone: string): Promise<SendCodeResult> {
     signName: env.aliyunDypnsSignName,
     templateCode: env.aliyunDypnsTemplateCode,
     templateParam: JSON.stringify({ code: '##code##', min: '5' }),
+    codeLength: 6,
+    validTime: 300,
   });
   const runtime = new Util.RuntimeOptions({});
   const resp = await client.sendSmsVerifyCodeWithOptions(request, runtime);

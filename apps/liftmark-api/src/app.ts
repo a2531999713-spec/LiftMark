@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import { ZodError } from 'zod';
 
 import { db } from './db/connection';
+import { registerActivationCodeRoutes } from './modules/activation-codes/activation-codes.routes';
 import { registerAchievementsRoutes } from './modules/achievements/achievements.routes';
 import { registerAdminRoutes } from './modules/admin/admin.routes';
 import { registerAnnouncementsRoutes } from './modules/announcements/announcements.routes';
@@ -61,6 +62,7 @@ export async function buildApp() {
     });
 
     await registerAuthRoutes(api);
+    await registerActivationCodeRoutes(api);
     await registerMembershipRoutes(api);
     await registerGroupRoutes(api);
     await registerSyncRoutes(api);
