@@ -8,13 +8,13 @@ import type {
   CodeLoginInput,
   LoginInput,
   RegisterInput,
-  SendCodeResult,
   SendCodeInput,
+  SendCodeResult,
 } from './authTypes';
 import { clearStoredSession, readStoredSession, saveStoredSession } from './tokenStorage';
 
 export const AUTH_NOT_CONFIGURED_MESSAGE = '登录接口待接入，请配置服务器地址和认证接口。';
-export const AUTH_SERVER_UNAVAILABLE_MESSAGE = '无法连接服务器，请检查网络后重试。';
+export const AUTH_SERVER_UNAVAILABLE_MESSAGE = '服务器连接失败，请检查网络或稍后再试。';
 
 type ApiUser = {
   avatar_url?: string | null;
@@ -58,7 +58,7 @@ function toSession(response: AuthResponse): AuthSession {
   };
 }
 
-function messageFromError(error: unknown, scope: 'auth' | 'sms' | 'code_login' = 'auth') {
+function messageFromError(error: unknown, scope: 'auth' | 'sms' | 'code_login' | 'password_login' = 'auth') {
   if (error instanceof ApiClientError) {
     if (error.code === 'NETWORK_ERROR') return AUTH_SERVER_UNAVAILABLE_MESSAGE;
     if (error.code === 'REQUEST_TIMEOUT') return '请求超时，请稍后重试。';
@@ -67,6 +67,9 @@ function messageFromError(error: unknown, scope: 'auth' | 'sms' | 'code_login' =
     if (scope === 'sms' && error.status >= 500) return '验证码发送失败，请稍后再试。';
     if (scope === 'code_login' && (error.status === 400 || error.status === 401 || error.status === 422)) {
       return '验证码错误或已过期。';
+    }
+    if (scope === 'password_login' && (error.status === 400 || error.status === 401 || error.status === 422)) {
+      return '手机号或密码错误。';
     }
     return error.message;
   }
@@ -121,7 +124,7 @@ class ApiAuthService implements AuthService {
       await saveStoredSession(session);
       return { ok: true, session };
     } catch (error) {
-      return { ok: false, message: messageFromError(error, 'code_login') };
+      return { ok: false, message: messageFromError(error, 'password_login') };
     }
   }
 
@@ -134,7 +137,7 @@ class ApiAuthService implements AuthService {
       await saveStoredSession(session);
       return { ok: true, session };
     } catch (error) {
-      return { ok: false, message: messageFromError(error) };
+      return { ok: false, message: messageFromError(error, 'code_login') };
     }
   }
 
@@ -174,6 +177,7 @@ class ApiAuthService implements AuthService {
     try {
       const response = await apiRequest<AuthResponse>('/auth/register', {
         body: {
+          code: input.code.trim(),
           phone: input.identifier.trim(),
           password: input.password,
           nickname: input.displayName.trim(),

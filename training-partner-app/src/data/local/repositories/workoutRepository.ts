@@ -6,6 +6,7 @@ import { getPlanExerciseInitialReps, getPlanExerciseSetCount } from '@/domain/wo
 import type {
   CreateSessionFromTodayPlanInput,
   CreateManualSessionInput,
+  ListOpenWorkoutSessionsForDateInput,
   ListSessionsInput,
   SaveWorkoutSetInput,
   UpdateWorkoutSessionInput,
@@ -40,16 +41,22 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   async createSessionFromTodayPlan(input: CreateSessionFromTodayPlanInput): Promise<WorkoutSession> {
     const db = await this.getDb();
     const now = nowIso();
+    const trainingMode = input.trainingMode ?? 'group_local';
     let session: WorkoutSession | null = null;
 
     await db.withExclusiveTransactionAsync(async (txn) => {
       const existing = await txn.getFirstAsync<WorkoutSessionRow>(
         `SELECT * FROM workout_sessions
-         WHERE group_id = ? AND date = ? AND status IN ('draft', 'in_progress')
+         WHERE group_id = ? AND date = ? AND plan_id = ? AND week = ? AND weekday = ?
+           AND training_mode = ? AND status IN ('draft', 'in_progress')
          ORDER BY created_at DESC
          LIMIT 1`,
         input.groupId,
         input.date,
+        input.planId,
+        input.week,
+        input.weekday,
+        trainingMode,
       );
 
       if (existing) {
@@ -92,7 +99,16 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         input.groupId,
       );
       const members = memberRows.map(mapGroupMember);
-      if (members.length === 0) {
+      const requestedParticipantIds = input.participantMemberIds?.length
+        ? new Set(input.participantMemberIds)
+        : null;
+      const participantMembers = requestedParticipantIds
+        ? members.filter((member) => requestedParticipantIds.has(member.id))
+        : trainingMode === 'solo_local'
+          ? members.slice(0, 1)
+          : members;
+
+      if (participantMembers.length === 0) {
         throw new Error('没有成员，无法创建训练。');
       }
 
@@ -122,6 +138,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         weekday: input.weekday,
         title: input.title,
         status: 'in_progress',
+        trainingMode,
         startedAt: now,
         createdAt: now,
         updatedAt: now,
@@ -130,8 +147,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       await txn.runAsync(
         `INSERT INTO workout_sessions (
           id, group_id, plan_id, phase_id, date, week, weekday, title,
-          status, started_at, finished_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          status, training_mode, started_at, finished_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         createdSession.id,
         createdSession.groupId,
         createdSession.planId,
@@ -141,6 +158,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         createdSession.weekday,
         createdSession.title,
         createdSession.status,
+        createdSession.trainingMode,
         createdSession.startedAt ?? null,
         null,
         createdSession.createdAt,
@@ -167,8 +185,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
           planExercise.reps ?? null,
           planExercise.repMin ?? null,
           planExercise.repMax ?? null,
-          planExercise.rpeTarget ?? null,
-          planExercise.rirTarget ?? null,
+          null,
+          null,
           planExercise.percent1RM ?? null,
           planExercise.restSeconds ?? null,
           planExercise.notes ?? null,
@@ -178,7 +196,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         const plannedReps = getPlanExerciseInitialReps(planExercise) ?? null;
         const setCount = getPlanExerciseSetCount(planExercise);
 
-        for (const member of members) {
+        for (const member of participantMembers) {
           const profile = profilesByMemberId.get(member.id);
           const suggestedWeight =
             profile && exercise
@@ -245,6 +263,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       weekday,
       title: input.title.trim() || '补录训练',
       status: input.completed === false ? 'in_progress' : 'completed',
+      trainingMode: 'solo_local',
       startedAt: now,
       finishedAt: input.completed === false ? undefined : now,
       createdAt: now,
@@ -257,8 +276,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       await txn.runAsync(
         `INSERT INTO workout_sessions (
           id, group_id, plan_id, phase_id, date, week, weekday, title,
-          status, started_at, finished_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          status, training_mode, started_at, finished_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         session.id,
         session.groupId,
         session.planId,
@@ -268,6 +287,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         session.weekday,
         session.title,
         session.status,
+        session.trainingMode,
         session.startedAt ?? null,
         session.finishedAt ?? null,
         session.createdAt,
@@ -292,8 +312,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         input.reps ?? null,
         null,
         null,
-        input.rpe ?? null,
-        input.rir ?? null,
+        null,
+        null,
         null,
         input.restSeconds ?? null,
         '历史补录',
@@ -315,8 +335,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
           input.weight ?? null,
           input.reps ?? null,
           input.reps ?? null,
-          input.rpe ?? null,
-          input.rir ?? null,
+          null,
+          null,
           input.completed === false ? 0 : 1,
           0,
           null,
@@ -359,6 +379,18 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       exercises: exerciseRows.map(mapWorkoutExerciseRecord),
       sets: setRows.map(mapWorkoutSet),
     };
+  }
+
+  async listOpenSessionsForDate(input: ListOpenWorkoutSessionsForDateInput): Promise<WorkoutSession[]> {
+    const db = await this.getDb();
+    const rows = await db.getAllAsync<WorkoutSessionRow>(
+      `SELECT * FROM workout_sessions
+       WHERE group_id = ? AND date = ? AND status IN ('draft', 'in_progress')
+       ORDER BY updated_at DESC, created_at DESC`,
+      input.groupId,
+      input.date,
+    );
+    return rows.map(mapWorkoutSession);
   }
 
   async updateSession(input: UpdateWorkoutSessionInput): Promise<WorkoutSession> {

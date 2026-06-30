@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SettingsRow } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, GroupMemberRole } from '@/domain/member/member.types';
@@ -63,7 +63,7 @@ export default function ProfileGroupsRoute() {
   const showDeveloping = (title: string) => setNotice({ title, message: '该功能正在开发中，后续版本开放。' });
 
   return (
-    <Screen subtitle="管理训练成员和角色。">
+    <Screen safeTop={false}>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="数据加载失败" description={error} actionLabel="重新加载" onActionPress={() => void load()} /> : null}
 

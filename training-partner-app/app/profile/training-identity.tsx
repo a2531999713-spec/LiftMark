@@ -3,11 +3,12 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
+import { Avatar } from '@/components/avatar';
 import { AppButton, AppCard, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
-import { colors, radius, spacing } from '@/theme';
+import { colors, spacing } from '@/theme';
 
 function formatKg(value?: number) {
   return value ? `${value} kg` : '未设置';
@@ -46,7 +47,7 @@ export default function TrainingIdentityRoute() {
   );
 
   return (
-    <Screen subtitle="管理你的力量训练数据。">
+    <Screen safeTop={false}>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="数据加载失败" description={error} actionLabel="重新加载" onActionPress={() => void load()} /> : null}
 
@@ -64,11 +65,13 @@ export default function TrainingIdentityRoute() {
       {!isLoading && !error && member ? (
         <>
           <AppCard style={styles.identityCard} tone="dark">
-            <View style={styles.avatar}>
-              <AppText tone="inverse" variant="title" weight="900">
-                {member.displayName.slice(0, 1)}
-              </AppText>
-            </View>
+            <Avatar
+              avatarLocalUri={profile?.avatarLocalUri}
+              avatarThumbUrl={profile?.avatarThumbUrl}
+              avatarUrl={profile?.avatarUrl ?? member.avatarUrl}
+              name={member.displayName}
+              size={58}
+            />
             <View style={styles.identityText}>
               <AppText tone="inverse" variant="title" weight="900">
                 {member.displayName}的训练档案
@@ -117,16 +120,6 @@ export default function TrainingIdentityRoute() {
 const styles = StyleSheet.create({
   actions: {
     gap: spacing.sm,
-  },
-  avatar: {
-    alignItems: 'center',
-    backgroundColor: colors.dark,
-    borderColor: 'rgba(255,255,255,0.7)',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 58,
-    justifyContent: 'center',
-    width: 58,
   },
   card: {
     gap: spacing.md,

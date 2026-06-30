@@ -62,6 +62,10 @@ export type MemberProfileRow = {
   id: string;
   member_id: string;
   group_id: string;
+  avatar_url?: string | null;
+  avatar_thumb_url?: string | null;
+  avatar_local_uri?: string | null;
+  avatar_updated_at?: string | null;
   bodyweight: number | null;
   bench_1rm: number | null;
   squat_1rm: number | null;
@@ -79,6 +83,10 @@ export function mapMemberProfile(row: MemberProfileRow): MemberProfile {
     id: row.id,
     memberId: row.member_id,
     groupId: row.group_id,
+    avatarUrl: row.avatar_url ?? undefined,
+    avatarThumbUrl: row.avatar_thumb_url ?? undefined,
+    avatarLocalUri: row.avatar_local_uri ?? undefined,
+    avatarUpdatedAt: row.avatar_updated_at ?? undefined,
     bodyweight: row.bodyweight ?? undefined,
     bench1RM: row.bench_1rm ?? undefined,
     squat1RM: row.squat_1rm ?? undefined,
@@ -274,6 +282,7 @@ export type WorkoutSessionRow = {
   weekday: WorkoutSession['weekday'];
   title: string;
   status: WorkoutSession['status'];
+  training_mode?: WorkoutSession['trainingMode'] | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
@@ -291,6 +300,7 @@ export function mapWorkoutSession(row: WorkoutSessionRow): WorkoutSession {
     weekday: row.weekday,
     title: row.title,
     status: row.status,
+    trainingMode: row.training_mode ?? 'group_local',
     startedAt: row.started_at ?? undefined,
     finishedAt: row.finished_at ?? undefined,
     createdAt: row.created_at,

@@ -22,7 +22,7 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   padded: {
-    padding: spacing.xl,
+    padding: spacing.lg,
   },
   default: {
     backgroundColor: colors.surface,

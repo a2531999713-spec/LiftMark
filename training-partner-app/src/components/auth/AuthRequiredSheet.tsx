@@ -36,14 +36,14 @@ export function AuthRequiredSheet({
               {title}
             </AppText>
             <AppText style={styles.subtitle} tone="muted" variant="bodySmall">
-              {message ?? '训练记录会保存到账号中，换手机或重装后也能恢复数据。'}
+              {message ?? '登录用于账号资料和会员权益；训练记录仍会优先保存到本机。'}
             </AppText>
           </View>
 
           <View style={styles.pillRow}>
             <LoginValuePill icon="bar-chart-outline" label="训练记录" />
-            <LoginValuePill icon="swap-horizontal-outline" label="计划同步" />
-            <LoginValuePill icon="cloud-outline" label="换机恢复" />
+            <LoginValuePill icon="people-outline" label="本地小组" />
+            <LoginValuePill icon="diamond-outline" label="会员权益" />
           </View>
 
           <AppButton icon="log-in-outline" onPress={onLogin} size="lg" style={styles.loginButton}>

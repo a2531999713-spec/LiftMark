@@ -2,6 +2,7 @@ import type { ID } from '../common/ids';
 import type { ExercisePriority, Weekday } from '../plan/plan.types';
 
 export type SessionStatus = 'draft' | 'in_progress' | 'completed' | 'cancelled';
+export type WorkoutTrainingMode = 'solo_local' | 'group_local';
 
 export type WorkoutSession = {
   id: ID;
@@ -13,6 +14,7 @@ export type WorkoutSession = {
   weekday: Weekday;
   title: string;
   status: SessionStatus;
+  trainingMode: WorkoutTrainingMode;
   startedAt?: string;
   finishedAt?: string;
   createdAt: string;
@@ -31,7 +33,9 @@ export type WorkoutExerciseRecord = {
   plannedReps?: number;
   plannedRepMin?: number;
   plannedRepMax?: number;
+  /** Legacy compatibility only. New training flows do not display or create this value. */
   plannedRpe?: number;
+  /** Legacy compatibility only. New training flows do not display or create this value. */
   plannedRir?: number;
   plannedPercent1RM?: number;
   plannedRestSeconds?: number;
@@ -48,7 +52,9 @@ export type WorkoutSet = {
   actualWeight?: number;
   plannedReps?: number;
   actualReps?: number;
+  /** Legacy compatibility only. New training flows keep this hidden. */
   rpe?: number;
+  /** Legacy compatibility only. New training flows keep this hidden. */
   rir?: number;
   completed: boolean;
   skipped?: boolean;
@@ -66,6 +72,8 @@ export type CreateSessionFromTodayPlanInput = {
   weekday: Weekday;
   title: string;
   planExerciseIds?: ID[];
+  participantMemberIds?: ID[];
+  trainingMode?: WorkoutTrainingMode;
 };
 
 export type CreateManualSessionInput = {
@@ -78,8 +86,6 @@ export type CreateManualSessionInput = {
   setCount: number;
   weight?: number;
   reps?: number;
-  rpe?: number;
-  rir?: number;
   restSeconds?: number | null;
   completed?: boolean;
 };
@@ -98,7 +104,7 @@ export type WorkoutSessionDetail = {
 };
 
 export type SaveWorkoutSetInput = Partial<
-  Pick<WorkoutSet, 'actualWeight' | 'actualReps' | 'rpe' | 'rir' | 'completed' | 'skipped' | 'notes'>
+  Pick<WorkoutSet, 'actualWeight' | 'actualReps' | 'completed' | 'skipped' | 'notes'>
 > & {
   id: ID;
 };
@@ -115,4 +121,9 @@ export type ListSessionsInput = {
   fromDate?: string;
   toDate?: string;
   limit?: number;
+};
+
+export type ListOpenWorkoutSessionsForDateInput = {
+  date: string;
+  groupId: ID;
 };

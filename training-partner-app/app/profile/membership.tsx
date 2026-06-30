@@ -43,7 +43,7 @@ export default function ProfileMembershipRoute() {
   const showDeveloping = (title: string) => setNotice({ title, message: '该功能正在开发中，后续版本开放。' });
 
   return (
-    <Screen title="会员与激活" subtitle="权益、激活码、购买记录。">
+    <Screen safeTop={false}>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="会员状态加载失败" description={error} actionLabel="重新加载" onActionPress={() => void load()} /> : null}
 
@@ -85,7 +85,7 @@ export default function ProfileMembershipRoute() {
               开通 Pro，解锁完整训练小组
             </AppText>
             <AppText tone="muted" variant="caption">
-              支持最多 4 人一起练、更多训练计划、完整计划编辑器、高级历史趋势、自动进阶建议、完整云同步和 2 个 Pro 小组。
+              支持最多 4 人一起练、更多训练计划、完整计划编辑器、高级历史趋势、自动进阶建议和 2 个 Pro 小组。
             </AppText>
           </AppCard>
 
@@ -105,8 +105,8 @@ export default function ProfileMembershipRoute() {
             <AppButton onPress={() => guardFeature('purchase_membership')} variant="secondary">
               购买入口
             </AppButton>
-            <AppButton onPress={() => showDeveloping('恢复权益 / 同步权益')} variant="secondary">
-              恢复权益 / 同步权益
+            <AppButton onPress={() => showDeveloping('刷新权益状态')} variant="secondary">
+              刷新权益状态
             </AppButton>
           </View>
         </>

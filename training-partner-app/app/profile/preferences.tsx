@@ -48,7 +48,7 @@ export default function ProfilePreferencesRoute() {
   );
 
   return (
-    <Screen subtitle="单位、记录方式、休息计时。">
+    <Screen safeTop={false}>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="数据加载失败" description={error} actionLabel="重新加载" onActionPress={() => void load()} /> : null}
 
@@ -58,7 +58,7 @@ export default function ProfilePreferencesRoute() {
             <SettingsRow label="默认单位" value="kg" />
             <SettingsRow label="杠铃加重单位" value={`${profile?.barbellIncrement ?? 2.5} kg`} />
             <SettingsRow label="哑铃加重单位" value={`${profile?.dumbbellIncrement ?? 2} kg`} />
-            <SettingsRow label="默认记录方式" value="重量 / 次数 / RPE / RIR" />
+            <SettingsRow label="默认记录方式" value="重量 / 次数" />
             <SettingsRow label="休息计时" right={<Tag label="开启" tone="success" />} />
             <SettingsRow label="周五策略" value={fridayStrategyLabel(group?.fridayStrategy)} />
           </AppCard>

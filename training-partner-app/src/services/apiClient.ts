@@ -41,10 +41,8 @@ function isNetworkError(error: unknown) {
   );
 }
 
-function getNetworkErrorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : '';
-  if (/network request failed/i.test(message)) return '网络连接失败，请稍后重试。';
-  return '无法连接服务器，请检查网络后重试。';
+function getNetworkErrorMessage() {
+  return '服务器连接失败，请检查网络或稍后再试。';
 }
 
 function isTimeoutError(error: unknown) {
@@ -55,7 +53,7 @@ function isTimeoutError(error: unknown) {
 export function toApiClientError(error: unknown): ApiClientError {
   if (error instanceof ApiClientError) return error;
   if (isTimeoutError(error)) return new ApiClientError(0, '请求超时，请稍后重试。', 'REQUEST_TIMEOUT');
-  if (isNetworkError(error)) return new ApiClientError(0, getNetworkErrorMessage(error), 'NETWORK_ERROR');
+  if (isNetworkError(error)) return new ApiClientError(0, getNetworkErrorMessage(), 'NETWORK_ERROR');
   return new ApiClientError(0, '服务器请求失败，请稍后重试。', 'UNKNOWN_ERROR');
 }
 

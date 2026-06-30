@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton, AppCard, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { GroupMember } from '@/domain/member/member.types';
@@ -29,6 +29,8 @@ export default function HistoryDetailRoute() {
   const [allExercises, setAllExercises] = useState<Exercise[]>([]);
   const [date, setDate] = useState('');
   const [title, setTitle] = useState('');
+  const [isEditMode, setEditMode] = useState(false);
+  const [isActionsVisible, setActionsVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +63,7 @@ export default function HistoryDetailRoute() {
       setDetail(nextDetail);
       setDate(nextDetail.session.date);
       setTitle(nextDetail.session.title);
+      setEditMode(false);
       setMembers(Object.fromEntries(nextMembers.map((member) => [member.id, member])));
       setExercises(Object.fromEntries(nextExercises.map((exercise) => [exercise.id, exercise])));
       setAllExercises(nextAllExercises);
@@ -94,6 +97,7 @@ export default function HistoryDetailRoute() {
         title,
       });
       setDetail({ ...detail, session });
+      setEditMode(false);
       Alert.alert('已保存', '训练日期和标题已更新。');
     } catch (saveError) {
       Alert.alert('保存失败', saveError instanceof Error ? saveError.message : '训练详情保存失败。');
@@ -112,8 +116,6 @@ export default function HistoryDetailRoute() {
         id: set.id,
         actualWeight: patch.actualWeight ?? set.actualWeight,
         actualReps: patch.actualReps ?? set.actualReps,
-        rpe: patch.rpe ?? set.rpe,
-        rir: patch.rir ?? set.rir,
         completed: patch.completed ?? set.completed,
         skipped: patch.skipped ?? set.skipped,
       });
@@ -242,7 +244,7 @@ export default function HistoryDetailRoute() {
   }, [detail, guardFeature, repositories]);
 
   return (
-    <Screen title="训练详情" subtitle="可编辑历史记录，不会修改原计划。">
+    <Screen safeTop={false}>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="训练详情暂时无法加载" description={error} /> : null}
 
@@ -257,20 +259,55 @@ export default function HistoryDetailRoute() {
 
       {!isLoading && detail ? (
         <>
+          <View style={styles.topBar}>
+            <View style={styles.topText}>
+              <AppText variant="bodySmall" weight="900">
+                训练记录详情
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                默认只读，编辑需从更多操作进入。
+              </AppText>
+            </View>
+            <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.moreButton}>
+              <Ionicons color={colors.textStrong} name="ellipsis-horizontal" size={20} />
+            </Pressable>
+          </View>
+
           <AppCard style={styles.card}>
             <SectionHeader title="基础信息" />
-            <View style={styles.fieldRow}>
-              <EditableField label="日期" onChangeText={setDate} value={date} />
-              <EditableField label="标题" onChangeText={setTitle} value={title} />
-            </View>
+            {isEditMode ? (
+              <View style={styles.fieldRow}>
+                <EditableField label="日期" onChangeText={setDate} value={date} />
+                <EditableField label="标题" onChangeText={setTitle} value={title} />
+              </View>
+            ) : (
+              <View style={styles.readonlyInfo}>
+                <ReadonlyInfo label="日期" value={detail.session.date} />
+                <ReadonlyInfo label="标题" value={detail.session.title} />
+              </View>
+            )}
             <View style={styles.summaryGrid}>
               <SummaryItem icon="calendar-outline" label="日期" value={detail.session.date} />
               <SummaryItem icon="barbell-outline" label="总训练量" value={formatVolume(detail.sets)} />
               <SummaryItem icon="time-outline" label="时长" value={detail.session.finishedAt ? '已完成' : '进行中'} />
             </View>
-            <AppButton disabled={isSaving} onPress={() => void saveSession()} variant="secondary">
-              {isSaving ? '保存中...' : '保存基础信息'}
-            </AppButton>
+            {isEditMode ? (
+              <View style={styles.inlineActions}>
+                <AppButton disabled={isSaving} onPress={() => void saveSession()} variant="secondary">
+                  {isSaving ? '保存中...' : '保存基础信息'}
+                </AppButton>
+                <AppButton
+                  onPress={() => {
+                    setDate(detail.session.date);
+                    setTitle(detail.session.title);
+                    setEditMode(false);
+                  }}
+                  variant="ghost"
+                >
+                  取消编辑
+                </AppButton>
+              </View>
+            ) : null}
           </AppCard>
 
           <SectionHeader title="动作与组" />
@@ -289,24 +326,32 @@ export default function HistoryDetailRoute() {
                       {recordSets.length} 组 · {record.priority} 动作
                     </AppText>
                   </View>
-                  <Pressable accessibilityRole="button" onPress={() => confirmDeleteExercise(record)}>
-                    <Ionicons color={colors.danger} name="trash-outline" size={20} />
-                  </Pressable>
+                  {isEditMode ? (
+                    <Pressable accessibilityRole="button" onPress={() => confirmDeleteExercise(record)}>
+                      <Ionicons color={colors.danger} name="trash-outline" size={20} />
+                    </Pressable>
+                  ) : null}
                 </View>
-                <View style={styles.inlineActions}>
-                  <AppButton onPress={() => void changeExercise(record)} size="sm" variant="secondary">
-                    更换动作
-                  </AppButton>
-                </View>
-                {recordSets.map((set) => (
-                  <SetEditor
-                    key={set.id}
-                    memberName={members[set.memberId]?.displayName ?? '成员'}
-                    onDelete={() => confirmDeleteSet(set)}
-                    onPatch={(patch) => void saveSetPatch(set, patch)}
-                    set={set}
-                  />
-                ))}
+                {isEditMode ? (
+                  <View style={styles.inlineActions}>
+                    <AppButton onPress={() => void changeExercise(record)} size="sm" variant="secondary">
+                      更换动作
+                    </AppButton>
+                  </View>
+                ) : null}
+                {recordSets.map((set) =>
+                  isEditMode ? (
+                    <SetEditor
+                      key={set.id}
+                      memberName={members[set.memberId]?.displayName ?? '成员'}
+                      onDelete={() => confirmDeleteSet(set)}
+                      onPatch={(patch) => void saveSetPatch(set, patch)}
+                      set={set}
+                    />
+                  ) : (
+                    <SetReadonly key={set.id} memberName={members[set.memberId]?.displayName ?? '成员'} set={set} />
+                  ),
+                )}
               </AppCard>
             );
           })}
@@ -321,9 +366,38 @@ export default function HistoryDetailRoute() {
             </AppText>
           </AppCard>
 
-          <AppButton icon="trash-outline" onPress={confirmDeleteSession} variant="danger">
-            删除整次训练
-          </AppButton>
+          <AppModalSheet
+            onClose={() => setActionsVisible(false)}
+            position="center"
+            subtitle="编辑和删除都属于低频操作，进入前需要明确选择。"
+            title="更多操作"
+            visible={isActionsVisible}
+          >
+            <View style={styles.modalActions}>
+              <AppButton
+                icon="create-outline"
+                onPress={() => {
+                  setActionsVisible(false);
+                  setEditMode(true);
+                }}
+              >
+                编辑记录
+              </AppButton>
+              <AppButton
+                icon="trash-outline"
+                onPress={() => {
+                  setActionsVisible(false);
+                  confirmDeleteSession();
+                }}
+                variant="danger"
+              >
+                删除整次训练
+              </AppButton>
+              <AppButton onPress={() => setActionsVisible(false)} variant="secondary">
+                取消
+              </AppButton>
+            </View>
+          </AppModalSheet>
         </>
       ) : null}
 
@@ -351,6 +425,19 @@ function EditableField({
   );
 }
 
+function ReadonlyInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.readonlyItem}>
+      <AppText tone="muted" variant="caption">
+        {label}
+      </AppText>
+      <AppText numberOfLines={1} variant="bodySmall" weight="900">
+        {value}
+      </AppText>
+    </View>
+  );
+}
+
 function SummaryItem({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
   return (
     <View style={styles.summaryItem}>
@@ -361,6 +448,23 @@ function SummaryItem({ icon, label, value }: { icon: keyof typeof Ionicons.glyph
       <AppText variant="bodySmall" weight="900">
         {value}
       </AppText>
+    </View>
+  );
+}
+
+function SetReadonly({ memberName, set }: { memberName: string; set: WorkoutSet }) {
+  return (
+    <View style={styles.setCard}>
+      <View style={styles.setHeader}>
+        <AppText variant="bodySmall" weight="900">
+          {memberName} · 第 {set.setNumber} 组
+        </AppText>
+        <Tag label={set.completed ? '完成' : '未完成'} tone={set.completed ? 'success' : 'warning'} />
+      </View>
+      <View style={styles.readonlySetGrid}>
+        <ReadonlyInfo label="重量" value={`${set.actualWeight ?? set.plannedWeight ?? 0} kg`} />
+        <ReadonlyInfo label="次数" value={`${set.actualReps ?? set.plannedReps ?? 0} 次`} />
+      </View>
     </View>
   );
 }
@@ -387,10 +491,6 @@ function SetEditor({
       <View style={styles.stepperRow}>
         <Stepper label="重量" suffix="kg" value={set.actualWeight ?? 0} onChange={(value) => onPatch({ actualWeight: value })} />
         <Stepper label="次数" value={set.actualReps ?? 0} onChange={(value) => onPatch({ actualReps: value })} />
-      </View>
-      <View style={styles.stepperRow}>
-        <Stepper label="RPE" value={set.rpe ?? 0} onChange={(value) => onPatch({ rpe: value })} />
-        <Stepper label="RIR" value={set.rir ?? 0} onChange={(value) => onPatch({ rir: value })} />
       </View>
       <View style={styles.inlineActions}>
         <AppButton onPress={() => onPatch({ completed: !set.completed })} size="sm" variant="secondary">
@@ -441,6 +541,25 @@ const styles = StyleSheet.create({
   card: {
     gap: spacing.md,
   },
+  topBar: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  topText: {
+    flex: 1,
+    gap: 2,
+  },
+  moreButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
   fieldRow: {
     gap: spacing.sm,
   },
@@ -457,6 +576,18 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.bodySmall,
     fontWeight: '800',
     minHeight: 28,
+  },
+  readonlyInfo: {
+    gap: spacing.sm,
+  },
+  readonlyItem: {
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flex: 1,
+    gap: spacing.xs,
+    padding: spacing.md,
   },
   summaryGrid: {
     flexDirection: 'row',
@@ -501,6 +632,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
   },
+  readonlySetGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   stepper: {
     flex: 1,
     gap: spacing.xs,
@@ -523,6 +658,9 @@ const styles = StyleSheet.create({
   inlineActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  modalActions: {
     gap: spacing.sm,
   },
 });

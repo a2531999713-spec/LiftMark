@@ -29,6 +29,9 @@ import {
   type PlanTemplateRow,
 } from './mappers';
 
+const LEGACY_FOUR_DAY_DEFAULT_USER_PLAN_ID = 'plan_user_four_day_strength_hypertrophy_default';
+const LEGACY_FOUR_DAY_SCHEME_ID = 'scheme_four_day_strength_hypertrophy';
+
 export class SQLitePlanRepository implements PlanRepository {
   constructor(private readonly getDb: DatabaseProvider) {}
 
@@ -46,7 +49,11 @@ export class SQLitePlanRepository implements PlanRepository {
     const rows = await db.getAllAsync<PlanTemplateRow>(
       `SELECT * FROM plan_templates
        WHERE source != 'system'
+         AND id != ?
+         AND COALESCE(origin_scheme_id, '') != ?
        ORDER BY updated_at DESC, created_at DESC`,
+      LEGACY_FOUR_DAY_DEFAULT_USER_PLAN_ID,
+      LEGACY_FOUR_DAY_SCHEME_ID,
     );
     return rows.map(mapPlanTemplate);
   }
@@ -162,10 +169,10 @@ export class SQLitePlanRepository implements PlanRepository {
             exercise.reps,
             null,
             null,
-            exercise.rpeTarget ? 'rpe' : exercise.rirTarget ? 'rir' : 'manual',
+            'manual',
             null,
-            exercise.rpeTarget ?? null,
-            exercise.rirTarget ?? null,
+            null,
+            null,
             null,
             'none',
             90,
@@ -273,10 +280,10 @@ export class SQLitePlanRepository implements PlanRepository {
           exercise.reps ?? null,
           exercise.repMin ?? null,
           exercise.repMax ?? null,
-          exercise.intensityType,
+          exercise.percent1RM ? 'percent_1rm' : exercise.fixedWeight ? 'fixed' : 'manual',
           exercise.percent1RM ?? null,
-          exercise.rpeTarget ?? null,
-          exercise.rirTarget ?? null,
+          null,
+          null,
           exercise.fixedWeight ?? null,
           exercise.referenceLift,
           exercise.restSeconds ?? null,
@@ -413,10 +420,10 @@ export class SQLitePlanRepository implements PlanRepository {
           exercise.reps ?? null,
           exercise.repMin ?? null,
           exercise.repMax ?? null,
-          exercise.intensityType,
+          exercise.percent1RM ? 'percent_1rm' : exercise.fixedWeight ? 'fixed' : 'manual',
           exercise.percent1RM ?? null,
-          exercise.rpeTarget ?? null,
-          exercise.rirTarget ?? null,
+          null,
+          null,
           exercise.fixedWeight ?? null,
           exercise.referenceLift,
           exercise.restSeconds ?? null,

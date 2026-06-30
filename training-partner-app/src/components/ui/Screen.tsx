@@ -10,12 +10,21 @@ type ScreenProps = {
   children: ReactNode;
   contentStyle?: ViewStyle | ViewStyle[];
   headerRight?: ReactNode;
+  safeTop?: boolean;
   scroll?: boolean;
   subtitle?: string;
   title?: string;
 };
 
-export function Screen({ children, contentStyle, headerRight, scroll = true, subtitle, title }: ScreenProps) {
+export function Screen({
+  children,
+  contentStyle,
+  headerRight,
+  safeTop = true,
+  scroll = true,
+  subtitle,
+  title,
+}: ScreenProps) {
   const content = (
     <View style={[styles.content, contentStyle]}>
       {title ? (
@@ -36,7 +45,7 @@ export function Screen({ children, contentStyle, headerRight, scroll = true, sub
   );
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={safeTop ? ['top'] : []} style={styles.safeArea}>
       {scroll ? (
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           {content}

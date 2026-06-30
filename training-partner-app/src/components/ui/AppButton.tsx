@@ -87,9 +87,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   lg: {
-    minHeight: 56,
+    minHeight: 52,
     paddingHorizontal: spacing.xxl,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
   },
   primary: {
     backgroundColor: colors.primary,

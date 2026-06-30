@@ -4,20 +4,23 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton, AppCard, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
+import { Avatar } from '@/components/avatar';
+import { AppButton, AppCard, AppText, EmptyState, MiniLineChart, MultiLineTrendChart, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import {
   analyzeExerciseHistory,
   estimateOneRM,
+  getGroupHistoryAnalysis,
   selectLargestExerciseSeries,
+  type GroupHistoryAnalysis,
   type HistoryAnalysis,
   type HistorySetEntry,
 } from '@/domain/history/history-analysis';
-import type { GroupMember } from '@/domain/member/member.types';
+import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { WorkoutSession, WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
-import { colors, radius, shadows, spacing } from '@/theme';
+import { colors, radius, spacing } from '@/theme';
 
 type DataScope = 'personal' | 'group';
 
@@ -41,6 +44,9 @@ type HistoryState = {
   analysis: HistoryAnalysis | null;
   currentMember: GroupMember | null;
   exercise: Exercise | null;
+  groupAnalysis: GroupHistoryAnalysis | null;
+  groupName: string;
+  memberProfilesById: Record<string, MemberProfile | null>;
   monthlyTrainingDates: Set<string>;
   recentSessions: SessionSummary[];
   selectedDateSessions: SessionSummary[];
@@ -55,6 +61,9 @@ function createEmptyHistory(currentMember: GroupMember | null = null): HistorySt
     analysis: null,
     currentMember,
     exercise: null,
+    groupAnalysis: null,
+    groupName: '默认训练小组',
+    memberProfilesById: {},
     monthlyTrainingDates: new Set<string>(),
     recentSessions: [],
     selectedDateSessions: [],
@@ -153,8 +162,6 @@ function getMemberEntries(detail: WorkoutSessionDetail, memberId: string): Histo
         exerciseId: record?.exerciseId ?? set.exerciseRecordId,
         memberId: set.memberId,
         reps: set.actualReps,
-        rir: set.rir,
-        rpe: set.rpe,
         sessionId: detail.session.id,
         weight: set.actualWeight,
       };
@@ -249,12 +256,19 @@ export default function HistoryRoute() {
         setHistory(createEmptyHistory());
         return;
       }
+      const memberProfiles = await Promise.all(
+        members.map(async (member) => [
+          member.id,
+          await repositories.memberRepository.getMemberProfile(member.id),
+        ] as const),
+      );
 
       const monthStart = getLocalDateString(new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1, 12));
       const monthEnd = getLocalDateString(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0, 12));
       const sevenDaysAgo = addDays(new Date(), -6);
       const weekStart = getLocalDateString(sevenDaysAgo);
-      const [recentSessions, selectedSessions, monthSessions, weekSessions] = await Promise.all([
+      const today = getLocalDateString();
+      const [recentSessions, selectedSessions, monthSessions, weekSessions, groupRecentSessions, groupWeekSessions] = await Promise.all([
         repositories.workoutRepository.listSessions({ groupId: group.id, memberId: currentMember.id, limit: 10 }),
         repositories.workoutRepository.listSessions({
           groupId: group.id,
@@ -274,7 +288,17 @@ export default function HistoryRoute() {
           groupId: group.id,
           memberId: currentMember.id,
           fromDate: weekStart,
-          toDate: getLocalDateString(),
+          toDate: today,
+          limit: 200,
+        }),
+        repositories.workoutRepository.listSessions({
+          groupId: group.id,
+          limit: 10,
+        }),
+        repositories.workoutRepository.listSessions({
+          groupId: group.id,
+          fromDate: weekStart,
+          toDate: today,
           limit: 200,
         }),
       ]);
@@ -283,6 +307,15 @@ export default function HistoryRoute() {
         Promise.all(selectedSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id))),
         Promise.all(weekSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id))),
       ]);
+      const groupSessionIds = Array.from(new Set([...groupRecentSessions, ...groupWeekSessions].map((session) => session.id)));
+      const groupDetails = await Promise.all(groupSessionIds.map((sessionId) => repositories.workoutRepository.getSessionDetail(sessionId)));
+      const groupDetailsById = new Map(groupDetails.map((detail) => [detail.session.id, detail]));
+      const groupWeekDetails = groupWeekSessions
+        .map((session) => groupDetailsById.get(session.id))
+        .filter((detail): detail is WorkoutSessionDetail => Boolean(detail));
+      const groupRecentDetails = groupRecentSessions
+        .map((session) => groupDetailsById.get(session.id))
+        .filter((detail): detail is WorkoutSessionDetail => Boolean(detail));
       const recentEntries = recentDetails.flatMap((detail) => getMemberEntries(detail, currentMember.id));
       const series = selectLargestExerciseSeries(recentEntries);
       const analysis = series ? analyzeExerciseHistory(series.entries) : null;
@@ -291,7 +324,7 @@ export default function HistoryRoute() {
         : null;
       const summaryExerciseIds = Array.from(
         new Set(
-          [...recentDetails, ...selectedDetails, ...weekDetails].flatMap((detail) =>
+          [...recentDetails, ...selectedDetails, ...weekDetails, ...groupDetails].flatMap((detail) =>
             detail.exercises.map((exerciseRecord) => exerciseRecord.exerciseId),
           ),
         ),
@@ -305,8 +338,19 @@ export default function HistoryRoute() {
         currentMember,
         exercise,
         monthlyTrainingDates: new Set(monthSessions.map((session) => session.date)),
+        memberProfilesById: Object.fromEntries(memberProfiles),
         recentSessions: recentDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById)),
         selectedDateSessions: selectedDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById)),
+        groupAnalysis: getGroupHistoryAnalysis({
+          details: groupWeekDetails,
+          groupId: group.id,
+          groupName: group.name,
+          members,
+          exerciseNamesById,
+          recentDetails: groupRecentDetails,
+          rangeDays: 7,
+        }),
+        groupName: group.name,
         weeklyCompletedSets: weeklySummaries.reduce((sum, summary) => sum + summary.setCount, 0),
         weeklySessionCount: weeklySummaries.filter((summary) => summary.setCount > 0).length,
         weeklyTrend: buildWeeklyTrend(sevenDaysAgo, weeklySummaries),
@@ -475,13 +519,7 @@ export default function HistoryRoute() {
               )}
             </>
           ) : (
-            <AppCard style={styles.groupPendingCard} tone="soft">
-              <Tag label="开发中" tone="warning" />
-              <AppText variant="subtitle">小组汇总功能开发中</AppText>
-              <AppText tone="muted" variant="bodySmall">
-                当前版本仅统计本机当前成员数据，不会把个人数据和小组数据混在一起。
-              </AppText>
-            </AppCard>
+            <GroupHistoryView analysis={history.groupAnalysis} memberProfilesById={history.memberProfilesById} />
           )}
             </>
           )}
@@ -700,21 +738,14 @@ function TrendChart({
         {analysis ? <Tag label="有趋势" tone="success" /> : <Tag label="积累中" tone="neutral" />}
       </View>
 
-      <View style={styles.barChart}>
-        {trend.map((point) => {
-          const barHeight = point.volume > 0 ? 20 + Math.round((point.volume / maxVolume) * 60) : 6;
-          return (
-            <View key={point.date} style={styles.barCol}>
-              <View style={styles.barWrap}>
-                <View style={[styles.bar, point.volume === 0 && styles.barEmpty, { height: barHeight }]} />
-              </View>
-              <AppText tone="muted" variant="caption">
-                {formatShortDate(point.date).slice(3)}
-              </AppText>
-            </View>
-          );
-        })}
-      </View>
+      <MiniLineChart
+        chartHeight={96}
+        data={trend.map((point) => point.volume)}
+        emptyMessage="近 7 天还没有训练量"
+        formatValue={(value) => `${Math.round(value / 1000)}k`}
+        labels={trend.map((point) => formatShortDate(point.date).slice(3))}
+        minChartHeight={maxVolume}
+      />
 
       <View style={styles.suggestionBox}>
         <AppText variant="bodySmall" weight="900">
@@ -750,6 +781,392 @@ function TrendChart({
           </View>
         </View>
       ) : null}
+    </AppCard>
+  );
+}
+
+function GroupHistoryView({
+  analysis,
+  memberProfilesById,
+}: {
+  analysis: GroupHistoryAnalysis | null;
+  memberProfilesById: Record<string, MemberProfile | null>;
+}) {
+  if (!analysis) {
+    return <EmptyState title="暂无小组训练数据" description="完成一次本地小组训练后，这里会显示小组汇总。" />;
+  }
+
+  return (
+    <>
+      <GroupOverviewCard analysis={analysis} />
+      <GroupContributionCard analysis={analysis} memberProfilesById={memberProfilesById} />
+      <GroupExercisePerformanceCard analysis={analysis} memberProfilesById={memberProfilesById} />
+      <GroupTrendCard analysis={analysis} />
+      <GroupRecentSessionsCard analysis={analysis} />
+      <GroupInsightsCard analysis={analysis} />
+    </>
+  );
+}
+
+function GroupOverviewCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
+  return (
+    <AppCard style={styles.groupOverviewCard} tone="dark">
+      <View style={styles.groupOverviewHeader}>
+        <View style={styles.trendTitleBlock}>
+          <AppText style={styles.overviewLabel} variant="caption">
+            {analysis.groupName}
+          </AppText>
+          <AppText tone="inverse" variant="headline">
+            {formatKg(analysis.totalVolume)}
+          </AppText>
+          <AppText style={styles.overviewLabel} variant="caption">
+            近 {analysis.rangeDays} 天本机小组训练量
+          </AppText>
+        </View>
+        <Tag label={`${analysis.activeMemberCount}/${analysis.memberCount} 成员`} tone="dark" />
+      </View>
+
+      <View style={styles.groupMetricRow}>
+        <DarkMetric label="训练次数" value={`${analysis.sessionCount} 次`} />
+        <View style={styles.overviewDivider} />
+        <DarkMetric label="完成组数" value={`${analysis.completedSets} 组`} />
+        <View style={styles.overviewDivider} />
+        <DarkMetric label="完成率" value={formatPercent(analysis.completionRate)} />
+      </View>
+    </AppCard>
+  );
+}
+
+function DarkMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.darkMetric}>
+      <AppText tone="inverse" variant="subtitle" weight="900">
+        {value}
+      </AppText>
+      <AppText style={styles.overviewLabel} variant="caption">
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
+function GroupContributionCard({
+  analysis,
+  memberProfilesById,
+}: {
+  analysis: GroupHistoryAnalysis;
+  memberProfilesById: Record<string, MemberProfile | null>;
+}) {
+  return (
+    <AppCard style={styles.groupCard}>
+      <View style={styles.trendHeader}>
+        <View style={styles.trendTitleBlock}>
+          <AppText variant="subtitle">成员贡献</AppText>
+          <AppText tone="muted" variant="caption">
+            按近 7 天训练量排序
+          </AppText>
+        </View>
+        <Tag label="本机数据" tone="neutral" />
+      </View>
+
+      <View style={styles.memberAvatarRow}>
+        {analysis.memberContributions.slice(0, 4).map((member) => (
+          <View key={member.memberId} style={styles.memberAvatarItem}>
+            <View style={[styles.memberAvatarCircle, member.rank === 1 && styles.memberAvatarCircleTop]}>
+              <Avatar
+                avatarLocalUri={memberProfilesById[member.memberId]?.avatarLocalUri}
+                avatarThumbUrl={memberProfilesById[member.memberId]?.avatarThumbUrl}
+                avatarUrl={memberProfilesById[member.memberId]?.avatarUrl}
+                name={member.memberName}
+                size={46}
+              />
+            </View>
+            <AppText numberOfLines={1} variant="caption" weight="900">
+              {member.memberName}
+            </AppText>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.contributionList}>
+        {analysis.memberContributions.map((member) => (
+          <View key={member.memberId} style={styles.contributionRow}>
+            <View style={[styles.rankBadge, member.rank === 1 && styles.rankBadgeTop]}>
+              <AppText tone={member.rank === 1 ? 'inverse' : 'muted'} variant="caption" weight="900">
+                {member.rank}
+              </AppText>
+            </View>
+            <View style={styles.contributionName}>
+              <AppText numberOfLines={1} variant="bodySmall" weight="900">
+                {member.memberName}
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                {member.sessionCount} 次 · {member.completedSets}/{member.totalSets} 组 · {member.mostTrainedExerciseName ?? '待积累'}
+              </AppText>
+              <AppText numberOfLines={1} tone="muted" variant="caption">
+                最佳动作 {member.bestExerciseName ?? '暂无'} · 最近 {member.lastTrainingDate ? formatShortDate(member.lastTrainingDate) : '暂无'}
+              </AppText>
+            </View>
+            <View style={styles.contributionValue}>
+              <AppText variant="bodySmall" weight="900">
+                {formatKg(member.volume)}
+              </AppText>
+              <Tag
+                label={member.statusLabel}
+                tone={member.statusLabel === '优秀' ? 'success' : member.statusLabel === '良好' ? 'accent' : member.statusLabel === '一般' ? 'warning' : 'neutral'}
+              />
+            </View>
+          </View>
+        ))}
+      </View>
+    </AppCard>
+  );
+}
+
+function GroupExercisePerformanceCard({
+  analysis,
+  memberProfilesById,
+}: {
+  analysis: GroupHistoryAnalysis;
+  memberProfilesById: Record<string, MemberProfile | null>;
+}) {
+  const primary = analysis.exerciseAnalyses.find((item) => item.key === 'bench') ?? analysis.exerciseAnalyses[0];
+
+  if (!primary) {
+    return (
+      <AppCard style={styles.groupCard}>
+        <View style={styles.trendHeader}>
+          <View style={styles.trendTitleBlock}>
+            <AppText variant="subtitle">主项表现</AppText>
+            <AppText tone="muted" variant="caption">
+              卧推、深蹲、硬拉和肩推的多人对比
+            </AppText>
+          </View>
+          <Tag label="待积累" tone="neutral" />
+        </View>
+        <View style={styles.inlineEmpty}>
+          <Ionicons color={colors.textMuted} name="barbell-outline" size={20} />
+          <AppText tone="muted" variant="bodySmall">
+            完成主项训练后，这里会显示成员最好重量、最近容量和趋势。
+          </AppText>
+        </View>
+      </AppCard>
+    );
+  }
+
+  return (
+    <AppCard style={styles.groupCard}>
+      <View style={styles.trendHeader}>
+        <View style={styles.trendTitleBlock}>
+          <AppText variant="subtitle">{primary.exerciseName}表现</AppText>
+          <AppText tone="muted" variant="caption">
+            成员最好重量、最近容量和 7 天趋势
+          </AppText>
+        </View>
+        <Tag label={`${primary.members.length} 名成员`} tone="brand" />
+      </View>
+
+      <View style={styles.exerciseSummaryGrid}>
+        {analysis.exerciseAnalyses.slice(0, 4).map((item) => {
+          const bestWeight = Math.max(0, ...item.members.map((member) => member.bestWeight ?? 0));
+          return (
+            <Pressable
+              accessibilityRole="button"
+              key={item.key}
+              onPress={() =>
+                router.push({
+                  pathname: '/history/group-exercise/[exerciseId]',
+                  params: { exerciseId: item.key },
+                } as never)
+              }
+              style={({ pressed }) => [
+                styles.exerciseSummaryChip,
+                item.key === primary.key && styles.exerciseSummaryChipActive,
+                pressed && styles.pressed,
+              ]}
+            >
+              <AppText numberOfLines={1} variant="caption" weight="900">
+                {item.exerciseName}
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                {item.members.length} 人 · {bestWeight > 0 ? `${bestWeight} kg` : '暂无重量'}
+              </AppText>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <MultiLineTrendChart
+        chartHeight={116}
+        emptyMessage="近 7 天暂无主项容量"
+        formatValue={(value) => `${Math.round(value / 1000)}k`}
+        labels={primary.labels}
+        series={primary.trendSeries.map((series) => ({
+          label: series.memberName,
+          values: series.values,
+        }))}
+      />
+
+      <View style={styles.performanceList}>
+        {primary.members.map((member) => (
+          <Pressable
+            accessibilityRole="button"
+            key={member.memberId}
+            onPress={() =>
+              router.push({
+                pathname: '/history/group-exercise/[exerciseId]',
+                params: { exerciseId: primary.key },
+              } as never)
+            }
+            style={({ pressed }) => [styles.performanceRow, pressed && styles.pressed]}
+          >
+            <Avatar
+              avatarLocalUri={memberProfilesById[member.memberId]?.avatarLocalUri}
+              avatarThumbUrl={memberProfilesById[member.memberId]?.avatarThumbUrl}
+              avatarUrl={memberProfilesById[member.memberId]?.avatarUrl}
+              name={member.memberName}
+              size={36}
+            />
+            <View style={styles.performanceMain}>
+              <AppText numberOfLines={1} variant="bodySmall" weight="900">
+                {member.memberName}
+              </AppText>
+              <AppText numberOfLines={1} tone="muted" variant="caption">
+                最近 {member.latestLabel ?? '暂无有效组'}
+              </AppText>
+            </View>
+            <View style={styles.performanceMetrics}>
+              <View style={styles.metricPill}>
+                <AppText variant="caption" weight="900">
+                  {member.bestWeight ? `${member.bestWeight} kg` : '暂无'}
+                </AppText>
+                <AppText tone="muted" variant="caption">
+                  最好
+                </AppText>
+              </View>
+              <View style={styles.metricPill}>
+                <AppText variant="caption" weight="900">
+                  {formatKg(member.latestVolume)}
+                </AppText>
+                <AppText tone="muted" variant="caption">
+                  最近容量
+                </AppText>
+              </View>
+              <Tag
+                label={formatTrend(member.trend)}
+                tone={member.trend === 'up' ? 'success' : member.trend === 'down' ? 'warning' : member.trend === 'stable' ? 'accent' : 'neutral'}
+              />
+            </View>
+            <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
+          </Pressable>
+        ))}
+      </View>
+    </AppCard>
+  );
+}
+
+function GroupTrendCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
+  const maxVolume = Math.max(1, ...analysis.trend.map((point) => point.volume));
+  return (
+    <AppCard style={styles.trendCard}>
+      <View style={styles.trendHeader}>
+        <View style={styles.trendTitleBlock}>
+          <AppText variant="subtitle">小组趋势</AppText>
+          <AppText tone="muted" variant="caption">
+            近 7 天训练量折线
+          </AppText>
+        </View>
+        <Tag label={analysis.sessionCount > 0 ? '训练量' : '暂无训练'} tone={analysis.sessionCount > 0 ? 'brand' : 'neutral'} />
+      </View>
+      <MiniLineChart
+        chartHeight={112}
+        data={analysis.trend.map((point) => point.volume)}
+        emptyMessage="近 7 天还没有小组训练量"
+        formatValue={(value) => `${Math.round(value / 1000)}k`}
+        labels={analysis.trend.map((point) => point.label)}
+        minChartHeight={maxVolume}
+        showValues
+      />
+    </AppCard>
+  );
+}
+
+function GroupRecentSessionsCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
+  return (
+    <AppCard style={styles.groupCard}>
+      <View style={styles.trendHeader}>
+        <View style={styles.trendTitleBlock}>
+          <AppText variant="subtitle">最近小组训练记录</AppText>
+          <AppText tone="muted" variant="caption">
+            按本机训练时间排序
+          </AppText>
+        </View>
+        <Tag label={`${analysis.recentSessions.length} 条`} tone="neutral" />
+      </View>
+
+      {analysis.recentSessions.length === 0 ? (
+        <View style={styles.inlineEmpty}>
+          <Ionicons color={colors.textMuted} name="calendar-clear-outline" size={20} />
+          <AppText tone="muted" variant="bodySmall">
+            暂无小组训练记录
+          </AppText>
+        </View>
+      ) : (
+        <View style={styles.sessionList}>
+          {analysis.recentSessions.map((session) => (
+            <Pressable
+              accessibilityRole="button"
+              key={session.sessionId}
+              onPress={() => router.push({ pathname: '/history/[sessionId]', params: { sessionId: session.sessionId } } as never)}
+              style={({ pressed }) => [styles.groupSessionRow, pressed && styles.pressed]}
+            >
+              <View style={styles.sessionIcon}>
+                <Ionicons color={colors.primary} name="barbell-outline" size={18} />
+              </View>
+              <View style={styles.groupSessionText}>
+                <AppText numberOfLines={1} variant="bodySmall" weight="900">
+                  {session.title}
+                </AppText>
+                <AppText tone="muted" variant="caption">
+                  {formatShortDate(session.date)} · {session.exerciseCount} 动作 · {session.completedMembers}/{session.totalMembers} 完成
+                </AppText>
+              </View>
+              <View style={styles.groupSessionRight}>
+                <AppText variant="bodySmall" weight="900">
+                  {formatKg(session.volume)}
+                </AppText>
+                <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </AppCard>
+  );
+}
+
+function GroupInsightsCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
+  return (
+    <AppCard style={styles.groupInsightsCard} tone="brand">
+      <View style={styles.trendHeader}>
+        <View style={styles.trendTitleBlock}>
+          <AppText variant="subtitle">小组洞察</AppText>
+          <AppText tone="muted" variant="caption">
+            基于本机小组训练记录
+          </AppText>
+        </View>
+        <Ionicons color={colors.primary} name="analytics-outline" size={22} />
+      </View>
+      <View style={styles.insightList}>
+        {analysis.insights.map((insight) => (
+          <View key={insight} style={styles.insightRow}>
+            <View style={styles.insightDot} />
+            <AppText variant="bodySmall" weight="900">
+              {insight}
+            </AppText>
+          </View>
+        ))}
+      </View>
     </AppCard>
   );
 }
@@ -909,6 +1326,28 @@ const styles = StyleSheet.create({
     height: 28,
     width: 1,
   },
+  groupOverviewCard: {
+    gap: spacing.lg,
+  },
+  groupOverviewHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+  },
+  groupMetricRow: {
+    alignItems: 'center',
+    borderTopColor: 'rgba(255,255,255,0.12)',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.lg,
+    justifyContent: 'space-between',
+    paddingTop: spacing.md,
+  },
+  darkMetric: {
+    flex: 1,
+    gap: 2,
+  },
 
   quickActions: {
     flexDirection: 'row',
@@ -965,30 +1404,6 @@ const styles = StyleSheet.create({
   trendTitleBlock: {
     flex: 1,
     gap: 2,
-  },
-  barChart: {
-    alignItems: 'flex-end',
-    flexDirection: 'row',
-    gap: spacing.xs,
-    height: 100,
-  },
-  barCol: {
-    alignItems: 'center',
-    flex: 1,
-    gap: spacing.xs,
-    justifyContent: 'flex-end',
-  },
-  barWrap: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  bar: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.xs,
-    width: '70%',
-  },
-  barEmpty: {
-    backgroundColor: colors.border,
   },
   suggestionBox: {
     backgroundColor: colors.surfaceMuted,
@@ -1098,9 +1513,171 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 2,
   },
-
-  groupPendingCard: {
+  groupCard: {
+    gap: spacing.md,
+  },
+  memberAvatarRow: {
+    flexDirection: 'row',
+    gap: spacing.lg,
+    justifyContent: 'space-around',
+  },
+  memberAvatarItem: {
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing.xs,
+    minWidth: 0,
+  },
+  memberAvatarCircle: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 50,
+    justifyContent: 'center',
+    width: 50,
+  },
+  memberAvatarCircleTop: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  contributionList: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+  },
+  contributionRow: {
+    alignItems: 'center',
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  rankBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.sm,
+    height: 26,
+    justifyContent: 'center',
+    width: 26,
+  },
+  rankBadgeTop: {
+    backgroundColor: colors.primary,
+  },
+  contributionName: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  contributionValue: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+  },
+  exerciseSummaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  exerciseSummaryChip: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexBasis: '48%',
+    flexGrow: 1,
+    gap: 2,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  exerciseSummaryChipActive: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
+  },
+  performanceList: {
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+  },
+  performanceRow: {
+    alignItems: 'center',
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  performanceMain: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  performanceMetrics: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    justifyContent: 'flex-end',
+    maxWidth: '62%',
+  },
+  metricPill: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.sm,
+    gap: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  inlineEmpty: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderRadius: radius.sm,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  sessionIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.pill,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  groupSessionRow: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderRadius: radius.sm,
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  groupSessionText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  groupSessionRight: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  groupInsightsCard: {
+    gap: spacing.md,
+  },
+  insightList: {
+    gap: spacing.sm,
+  },
+  insightRow: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
+  insightDot: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    height: 6,
+    width: 6,
   },
   modalBackdrop: {
     backgroundColor: colors.overlay,

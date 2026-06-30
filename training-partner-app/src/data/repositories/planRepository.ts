@@ -24,8 +24,6 @@ export type CreateUserPlanDayInput = {
     priority?: 'A' | 'B' | 'C';
     sets: number;
     reps: number;
-    rpeTarget?: number;
-    rirTarget?: number;
   }[];
 };
 

@@ -62,6 +62,15 @@ export function parsePlanFile(json: string): LiftMarkPlanFile {
   return validatePlanFile(payload);
 }
 
+function stripLegacyIntensityTargets(exercise: PlanExercise): PlanExercise {
+  return {
+    ...exercise,
+    intensityType: exercise.percent1RM ? 'percent_1rm' : exercise.fixedWeight ? 'fixed' : 'manual',
+    rpeTarget: undefined,
+    rirTarget: undefined,
+  };
+}
+
 export function validatePlanFile(payload: unknown): LiftMarkPlanFile {
   if (!payload || typeof payload !== 'object') {
     throw new PlanFileError('计划文件内容为空或格式错误。');
@@ -124,7 +133,7 @@ export async function createCurrentPlanFile(
       template,
       phases,
       days,
-      exercises: planExercises,
+      exercises: planExercises.map(stripLegacyIntensityTargets),
     },
     exercises,
     alternatives,
@@ -172,7 +181,7 @@ export function createImportedPlanDraft(payload: LiftMarkPlanFile): LiftMarkPlan
         phaseId: phaseIds.get(day.phaseId) ?? day.phaseId,
       })),
       exercises: file.plan.exercises.map((exercise) => ({
-        ...exercise,
+        ...stripLegacyIntensityTargets(exercise),
         id: planExerciseIds.get(exercise.id) ?? createId('plan_exercise_imported'),
         planDayId: dayIds.get(exercise.planDayId) ?? exercise.planDayId,
         exerciseId: exerciseIds.get(exercise.exerciseId) ?? exercise.exerciseId,

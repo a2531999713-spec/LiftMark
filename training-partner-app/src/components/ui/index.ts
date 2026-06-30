@@ -6,6 +6,8 @@ export { AppText } from './AppText';
 export { DangerZone } from './DangerZone';
 export { EmptyState } from './EmptyState';
 export { MetricCard } from './MetricCard';
+export { MiniLineChart } from './MiniLineChart';
+export { MultiLineTrendChart } from './MultiLineTrendChart';
 export { Screen } from './Screen';
 export { SectionHeader } from './SectionHeader';
 export { SettingsRow } from './SettingsRow';

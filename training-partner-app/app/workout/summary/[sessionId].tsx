@@ -3,22 +3,35 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 
-import { AppButton, AppCard, AppText, EmptyState, MetricCard, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
+import { Avatar } from '@/components/avatar';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MetricCard, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import { estimateOneRM } from '@/domain/history/history-analysis';
-import type { GroupMember } from '@/domain/member/member.types';
+import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
+import type { GroupWorkoutConsentSummary } from '@/domain/sync/workoutSync.types';
 import { summarizeWorkoutSets } from '@/domain/workout/workout.service';
 import type { WorkoutSessionDetail, WorkoutSummary } from '@/domain/workout/workout.types';
+import {
+  buildGroupWorkoutConsentSummary,
+  getConsentStatusLabel,
+  getConsentStatusTone,
+  requestMemberConsentPlaceholder,
+} from '@/services/groupWorkoutConsentService';
 import { colors, radius, spacing } from '@/theme';
 
 type SummaryView = {
   bestExerciseName: string;
   bestEstimatedOneRM: number | null;
   durationMinutes: number;
-  memberRows: { completedRate: number; memberName: string; volume: number }[];
+  memberRows: { completedRate: number; memberId: string; memberName: string; volume: number }[];
   totalVolume: number;
+};
+
+type NoticeState = {
+  message: string;
+  title: string;
 };
 
 function formatPercent(value: number): string {
@@ -72,6 +85,7 @@ function buildSummaryView(
 
       return {
         completedRate: memberSets.length > 0 ? completed.length / memberSets.length : 0,
+        memberId: member.id,
         memberName: member.displayName,
         volume,
       };
@@ -86,6 +100,9 @@ export default function WorkoutSummaryRoute() {
   const [detail, setDetail] = useState<WorkoutSessionDetail | null>(null);
   const [summary, setSummary] = useState<WorkoutSummary | null>(null);
   const [view, setView] = useState<SummaryView | null>(null);
+  const [profilesByMemberId, setProfilesByMemberId] = useState<Record<string, MemberProfile | null>>({});
+  const [consentSummary, setConsentSummary] = useState<GroupWorkoutConsentSummary | null>(null);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,7 +117,18 @@ export default function WorkoutSummaryRoute() {
     try {
       await initializeLocalDatabase();
       const nextDetail = await repositories.workoutRepository.getSessionDetail(sessionId);
-      const members = await repositories.memberRepository.listMembers(nextDetail.session.groupId);
+      const allMembers = await repositories.memberRepository.listMembers(nextDetail.session.groupId);
+      const participantIds = new Set(nextDetail.sets.map((set) => set.memberId));
+      const members =
+        participantIds.size > 0
+          ? allMembers.filter((member) => participantIds.has(member.id))
+          : allMembers;
+      const memberProfiles = await Promise.all(
+        members.map(async (member) => [
+          member.id,
+          await repositories.memberRepository.getMemberProfile(member.id),
+        ] as const),
+      );
       const exercises = await repositories.exerciseRepository.listExercisesByIds(
         nextDetail.exercises.map((exercise) => exercise.exerciseId),
       );
@@ -109,6 +137,8 @@ export default function WorkoutSummaryRoute() {
       setDetail(nextDetail);
       setSummary(summarizeWorkoutSets(sessionId, nextDetail.sets));
       setView(buildSummaryView(nextDetail, members, exerciseMap));
+      setProfilesByMemberId(Object.fromEntries(memberProfiles));
+      setConsentSummary(buildGroupWorkoutConsentSummary(nextDetail, members, members[0]?.id));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '训练总结加载失败。');
     } finally {
@@ -189,12 +219,14 @@ export default function WorkoutSummaryRoute() {
           <SectionHeader title="成员表现" />
           <View style={styles.memberList}>
             {view.memberRows.map((row) => (
-              <AppCard key={row.memberName} style={styles.memberCard}>
-                <View style={styles.avatar}>
-                  <AppText tone="inverse" variant="caption">
-                    {row.memberName.slice(0, 1)}
-                  </AppText>
-                </View>
+              <AppCard key={row.memberId} style={styles.memberCard}>
+                <Avatar
+                  avatarLocalUri={profilesByMemberId[row.memberId]?.avatarLocalUri}
+                  avatarThumbUrl={profilesByMemberId[row.memberId]?.avatarThumbUrl}
+                  avatarUrl={profilesByMemberId[row.memberId]?.avatarUrl}
+                  name={row.memberName}
+                  size={36}
+                />
                 <View style={styles.memberMain}>
                   <AppText variant="bodySmall" weight="900">
                     {row.memberName}
@@ -207,6 +239,25 @@ export default function WorkoutSummaryRoute() {
               </AppCard>
             ))}
           </View>
+
+          {consentSummary?.hasOtherMembers ? (
+            <GroupWorkoutConsentCard
+              onKeepLocal={() =>
+                setNotice({
+                  title: '仅保存在本机',
+                  message: '已按本机记录处理。后续成员确认和云同步接入前，不会自动写入其他成员账号。',
+                })
+              }
+              onRequestConsent={() =>
+                setNotice({
+                  title: '发送确认',
+                  message: requestMemberConsentPlaceholder(),
+                })
+              }
+              profilesByMemberId={profilesByMemberId}
+              summary={consentSummary}
+            />
+          ) : null}
 
           <AppCard style={styles.analysisCard}>
             <SectionHeader title="表现分析" />
@@ -246,7 +297,68 @@ export default function WorkoutSummaryRoute() {
           </View>
         </>
       ) : null}
+
+      <AppModalSheet
+        onClose={() => setNotice(null)}
+        position="center"
+        subtitle={notice?.message}
+        title={notice?.title ?? '提示'}
+        visible={Boolean(notice)}
+      >
+        <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
+      </AppModalSheet>
     </Screen>
+  );
+}
+
+function GroupWorkoutConsentCard({
+  onKeepLocal,
+  onRequestConsent,
+  profilesByMemberId,
+  summary,
+}: {
+  onKeepLocal: () => void;
+  onRequestConsent: () => void;
+  profilesByMemberId: Record<string, MemberProfile | null>;
+  summary: GroupWorkoutConsentSummary;
+}) {
+  return (
+    <AppCard style={styles.consentCard}>
+      <SectionHeader title="同步到成员数据" />
+      <AppText tone="muted" variant="bodySmall">
+        {summary.primaryMessage}
+      </AppText>
+      <View style={styles.consentList}>
+        {summary.members.map((member) => (
+          <View key={member.memberId} style={styles.consentRow}>
+            <Avatar
+              avatarLocalUri={profilesByMemberId[member.memberId]?.avatarLocalUri}
+              avatarThumbUrl={profilesByMemberId[member.memberId]?.avatarThumbUrl}
+              avatarUrl={profilesByMemberId[member.memberId]?.avatarUrl}
+              name={member.memberName}
+              size={36}
+            />
+            <View style={styles.memberMain}>
+              <AppText variant="bodySmall" weight="900">
+                {member.memberName}
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                {member.description}
+              </AppText>
+            </View>
+            <Tag label={getConsentStatusLabel(member.status)} tone={getConsentStatusTone(member.status)} />
+          </View>
+        ))}
+      </View>
+      <View style={styles.consentActions}>
+        <AppButton onPress={onKeepLocal} style={styles.button} variant="secondary">
+          仅保存在本机
+        </AppButton>
+        <AppButton onPress={onRequestConsent} style={styles.button}>
+          发送确认
+        </AppButton>
+      </View>
+    </AppCard>
   );
 }
 
@@ -317,5 +429,23 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
+  },
+  consentActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  consentCard: {
+    gap: spacing.md,
+  },
+  consentList: {
+    gap: spacing.sm,
+  },
+  consentRow: {
+    alignItems: 'center',
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingTop: spacing.sm,
   },
 });

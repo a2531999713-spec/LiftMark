@@ -4,7 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { ActionCard, AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MiniLineChart, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { AuthGateSheets } from '@/components/auth';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
@@ -140,6 +140,8 @@ export default function PlanRoute() {
   const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
   const [notice, setNotice] = useState<PlanNotice | null>(null);
   const [isManageVisible, setManageVisible] = useState(false);
+  const [isActionsVisible, setActionsVisible] = useState(false);
+  const [isSchemeLibraryVisible, setSchemeLibraryVisible] = useState(false);
   const [deletePromptPlan, setDeletePromptPlan] = useState<PlanTemplate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
@@ -386,6 +388,7 @@ export default function PlanRoute() {
       return;
     }
 
+    setSchemeLibraryVisible(false);
     setSelectedScheme(scheme);
   }, [guardFeature, userPlans.length]);
 
@@ -469,22 +472,25 @@ export default function PlanRoute() {
     ...(activeUserPlan ? [activeUserPlan] : []),
     ...userPlans.filter((plan) => plan.id !== activeUserPlan?.id),
   ].slice(0, 3);
-  const maxTrend = Math.max(1, ...stats.lastFourWeeks);
-
   return (
     <Screen
       headerRight={
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
-              router.push('/plan/create' as never);
-            }
-          }}
-          style={styles.iconButton}
-        >
-          <Ionicons color={colors.text} name="add-circle-outline" size={21} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
+                router.push('/plan/create' as never);
+              }
+            }}
+            style={styles.iconButton}
+          >
+            <Ionicons color={colors.text} name="add-outline" size={21} />
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.iconButton}>
+            <Ionicons color={colors.text} name="ellipsis-horizontal" size={21} />
+          </Pressable>
+        </View>
       }
 
     >
@@ -498,7 +504,7 @@ export default function PlanRoute() {
             eyebrow="当前计划"
             icon="clipboard-outline"
             imageSource={liftmarkImages.planHero}
-            minHeight={230}
+            minHeight={188}
             subtitle={`第 ${group.currentWeek}/${activePlanWeeks} 周 · ${describePlanSource(activePlan?.source ?? 'blank_created')}`}
             title={activePlan?.name ?? '还没有当前计划'}
           >
@@ -514,11 +520,6 @@ export default function PlanRoute() {
               <AppButton onPress={() => router.push('/(tabs)/today')} size="sm">
                 去训练页
               </AppButton>
-              {activePlan ? (
-                <AppButton onPress={() => void exportPlan(activePlan)} size="sm" variant="dark">
-                  导出当前
-                </AppButton>
-              ) : null}
             </View>
           </VisualHeroCard>
 
@@ -546,16 +547,14 @@ export default function PlanRoute() {
               <StatTile label="完成组数" value={`${stats.weeklyCompletedSets} 组`} />
               <StatTile label="训练量" value={formatKg(stats.weeklyVolume)} wide />
             </View>
-            <View style={styles.trendRow}>
-              {stats.lastFourWeeks.map((count, index) => (
-                <View key={index} style={styles.trendItem}>
-                  <View style={[styles.trendBar, { height: 18 + Math.round((count / maxTrend) * 46) }]} />
-                  <AppText tone="muted" variant="caption">
-                    W-{3 - index}
-                  </AppText>
-                </View>
-              ))}
-            </View>
+            <MiniLineChart
+              chartHeight={92}
+              data={stats.lastFourWeeks}
+              emptyMessage="最近 4 周还没有当前计划训练记录"
+              labels={['3周前', '2周前', '上周', '本周']}
+              minChartHeight={Math.max(1, ...stats.lastFourWeeks)}
+              showValues
+            />
           </AppCard>
 
           <SectionHeader subtitle="按当前周展示，训练页会读取完整计划。" title="本周安排" />
@@ -624,34 +623,96 @@ export default function PlanRoute() {
             </View>
           )}
 
-          <AppCard style={styles.toolCard}>
-            <View style={styles.toolHeader}>
-              <View>
-                <AppText variant="subtitle">计划工具</AppText>
-                <AppText tone="muted" variant="caption">
-                  创建空白计划或导入 .liftmark.json
-                </AppText>
-              </View>
-              <Tag label={`${userPlans.length} 个我的计划`} tone="neutral" />
+          <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.slimActionRow}>
+            <View style={styles.slimActionIcon}>
+              <Ionicons color={colors.primary} name="ellipsis-horizontal" size={20} />
             </View>
-            <View style={styles.actionGrid}>
-              <ActionCard
-                icon="add-outline"
-                label="创建计划"
-                onPress={() => {
-                  if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
-                    router.push('/plan/create' as never);
-                  }
-                }}
-              />
-              <ActionCard icon="download-outline" label="导入计划" onPress={() => void importPlan()} />
+            <View style={styles.planRowText}>
+              <AppText variant="bodySmall" weight="900">
+                计划操作
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                创建、导入、导出和管理
+              </AppText>
             </View>
-          </AppCard>
+            <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
+          </Pressable>
 
-          <SectionHeader subtitle="系统方案只是模板，点击使用后才会复制为我的计划。" title="系统方案" />
+          <PlanLibraryEntryCard
+            availableCount={availableSchemes.length}
+            onPress={() => setSchemeLibraryVisible(true)}
+            featuredScheme={availableSchemes[0]}
+          />
+
+          {isWorking ? (
+            <AppText tone="muted" variant="bodySmall">
+              正在处理计划...
+            </AppText>
+          ) : null}
+        </>
+      ) : null}
+
+      <AppModalSheet
+        onClose={() => setActionsVisible(false)}
+        subtitle="页面只展示关键计划状态，低频操作收在这里。"
+        title="计划操作"
+        visible={isActionsVisible}
+      >
+        <PlanActionRow
+          icon="add-outline"
+          label="创建空白计划"
+          onPress={() => {
+            setActionsVisible(false);
+            if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
+              router.push('/plan/create' as never);
+            }
+          }}
+        />
+        <PlanActionRow
+          icon="download-outline"
+          label="导入计划"
+          onPress={() => {
+            setActionsVisible(false);
+            void importPlan();
+          }}
+        />
+        <PlanActionRow
+          disabled={!activePlan}
+          icon="share-outline"
+          label="导出当前计划"
+          onPress={() => {
+            setActionsVisible(false);
+            if (activePlan) {
+              void exportPlan(activePlan);
+            }
+          }}
+        />
+        <PlanActionRow
+          icon="albums-outline"
+          label="管理全部计划"
+          onPress={() => {
+            setActionsVisible(false);
+            setManageVisible(true);
+          }}
+        />
+      </AppModalSheet>
+
+      <AppModalSheet
+        contentStyle={styles.libraryContent}
+        onClose={() => setSchemeLibraryVisible(false)}
+        subtitle="系统方案只是模板，点击使用后才会复制为我的计划。"
+        title="计划库"
+        visible={isSchemeLibraryVisible}
+      >
+        <ScrollView showsVerticalScrollIndicator={false}>
           <View style={styles.list}>
             {availableSchemes.map((scheme) => (
-              <SchemeCard key={scheme.id} onPreview={() => setPreviewScheme(scheme)} onUse={() => openUseScheme(scheme)} scheme={scheme} />
+              <SchemeCard
+                key={scheme.id}
+                onPreview={() => setPreviewScheme(scheme)}
+                onUse={() => openUseScheme(scheme)}
+                scheme={scheme}
+              />
             ))}
             {upcomingSchemes.length > 0 ? (
               <AppCard style={styles.upcomingCard} tone="soft">
@@ -674,14 +735,8 @@ export default function PlanRoute() {
               </AppCard>
             ) : null}
           </View>
-
-          {isWorking ? (
-            <AppText tone="muted" variant="bodySmall">
-              正在处理计划...
-            </AppText>
-          ) : null}
-        </>
-      ) : null}
+        </ScrollView>
+      </AppModalSheet>
 
       <AppModalSheet
         contentStyle={styles.manageContent}
@@ -895,6 +950,35 @@ function StatTile({ label, value, wide = false }: { label: string; value: string
   );
 }
 
+function PlanActionRow({
+  disabled,
+  icon,
+  label,
+  onPress,
+}: {
+  disabled?: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [styles.planActionRow, pressed && styles.pressed, disabled && styles.disabledActionRow]}
+    >
+      <View style={styles.planActionIcon}>
+        <Ionicons color={disabled ? colors.textSubtle : colors.primary} name={icon} size={20} />
+      </View>
+      <AppText tone={disabled ? 'muted' : 'default'} variant="bodySmall" weight="900">
+        {label}
+      </AppText>
+      <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
+    </Pressable>
+  );
+}
+
 function PlanSummaryCard({
   active,
   onOpen,
@@ -915,6 +999,36 @@ function PlanSummaryCard({
         </AppText>
       </View>
       <Tag label={active ? '使用中' : '我的计划'} tone={active ? 'success' : 'neutral'} />
+      <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
+    </Pressable>
+  );
+}
+
+function PlanLibraryEntryCard({
+  availableCount,
+  featuredScheme,
+  onPress,
+}: {
+  availableCount: number;
+  featuredScheme?: SystemTrainingScheme;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.libraryEntryCard, pressed && styles.pressed]}>
+      <View style={styles.schemeIcon}>
+        <Ionicons color={colors.primary} name="library-outline" size={20} />
+      </View>
+      <View style={styles.planRowText}>
+        <AppText variant="bodySmall" weight="900">
+          计划库
+        </AppText>
+        <AppText tone="muted" variant="caption">
+          {featuredScheme
+            ? `${availableCount} 个可用模板 · 推荐 ${featuredScheme.title}`
+            : `${availableCount} 个可用模板`}
+        </AppText>
+      </View>
+      <Tag label="更多计划" tone="brand" />
       <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
     </Pressable>
   );
@@ -965,10 +1079,6 @@ function SchemeCard({
 }
 
 const styles = StyleSheet.create({
-  actionGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
   compactPreview: {
     gap: spacing.md,
     padding: spacing.md,
@@ -1020,6 +1130,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 40,
   },
+  headerActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   inlineActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1027,6 +1141,20 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: spacing.sm,
+  },
+  libraryContent: {
+    maxHeight: 560,
+  },
+  libraryEntryCard: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 72,
+    padding: spacing.md,
   },
   manageContent: {
     maxHeight: 520,
@@ -1052,9 +1180,31 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  planActionIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.sm,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  planActionRow: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 58,
+    padding: spacing.md,
+  },
   pressed: {
     opacity: 0.82,
     transform: [{ scale: 0.99 }],
+  },
+  disabledActionRow: {
+    opacity: 0.45,
   },
   progressFill: {
     backgroundColor: colors.primary,
@@ -1100,6 +1250,25 @@ const styles = StyleSheet.create({
   statTileWide: {
     flex: 1.5,
   },
+  slimActionIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.sm,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  slimActionRow: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 62,
+    padding: spacing.md,
+  },
   summaryPlanCard: {
     alignItems: 'center',
     backgroundColor: colors.surface,
@@ -1115,32 +1284,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
-  },
-  toolCard: {
-    gap: spacing.md,
-  },
-  toolHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'space-between',
-  },
-  trendBar: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    width: '74%',
-  },
-  trendItem: {
-    alignItems: 'center',
-    flex: 1,
-    gap: spacing.xs,
-    justifyContent: 'flex-end',
-    minHeight: 82,
-  },
-  trendRow: {
-    alignItems: 'flex-end',
-    flexDirection: 'row',
-    gap: spacing.sm,
   },
   upcomingCard: {
     gap: spacing.md,

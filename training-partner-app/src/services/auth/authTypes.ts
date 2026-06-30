@@ -28,6 +28,7 @@ export type LoginInput = {
 };
 
 export type RegisterInput = LoginInput & {
+  code: string;
   displayName: string;
 };
 

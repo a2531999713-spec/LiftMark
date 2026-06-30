@@ -1,4 +1,4 @@
-// Generated from 四练增力增肌训练计划_完整版2.1.xlsx.
+// Legacy four-day compatibility seed.
 // Manual confirmation needed: every alternative should preserve the original movement intent for heavy main lifts.
 
 import type { ExerciseAlternative } from '@/domain/exercise/exercise.types';

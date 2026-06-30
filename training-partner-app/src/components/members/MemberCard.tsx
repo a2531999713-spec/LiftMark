@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { Avatar } from '@/components/avatar';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { describeOneRmStatus } from '@/domain/member/member.service';
 import { colors } from '@/theme/colors';
@@ -21,9 +22,13 @@ export function MemberCard({ member, profile, onPress }: MemberCardProps) {
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
       <View style={styles.row}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{member.displayName.trim().slice(0, 1).toUpperCase()}</Text>
-        </View>
+        <Avatar
+          avatarLocalUri={profile?.avatarLocalUri}
+          avatarThumbUrl={profile?.avatarThumbUrl}
+          avatarUrl={profile?.avatarUrl ?? member.avatarUrl}
+          name={member.displayName}
+          size={44}
+        />
         <View style={styles.main}>
           <Text style={styles.name}>{member.displayName}</Text>
           <Text style={styles.meta}>
@@ -52,19 +57,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.md,
-  },
-  avatar: {
-    alignItems: 'center',
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.sm,
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
-  avatarText: {
-    color: colors.primary,
-    fontSize: typography.sizes.subtitle,
-    fontWeight: '800',
   },
   main: {
     flex: 1,

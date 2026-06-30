@@ -19,8 +19,16 @@ import {
   defaultHypertrophyPlanExerciseSeeds,
 } from './defaultHypertrophyPlan';
 import {
+  DEFAULT_MAINSTREAM_ORIGIN_SCHEME_ID,
+  DEFAULT_MAINSTREAM_USER_PLAN_ID,
+  MAINSTREAM_PLAN_IDS,
+  createMainstreamPlanTemplateSeeds,
+  mainstreamPlanDaySeeds,
+  mainstreamPlanExerciseSeeds,
+  mainstreamPlanPhaseSeeds,
+} from './mainstreamPlans';
+import {
   DEFAULT_GROUP_ID,
-  DEFAULT_ORIGIN_SCHEME_ID,
   DEFAULT_PLAN_ID,
   DEFAULT_USER_PLAN_ID,
   createDefaultPlanTemplateSeed,
@@ -33,6 +41,7 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
   const now = new Date().toISOString();
   const plan = createDefaultPlanTemplateSeed(now);
   const classicPplPlan = createClassicPplPlanTemplateSeed(now);
+  const mainstreamPlans = createMainstreamPlanTemplateSeeds(now);
   const phases = [
     defaultStrengthPhaseSeed,
     ...defaultDeloadPhaseSeeds,
@@ -48,29 +57,45 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
     ...defaultDeloadPlanExerciseSeeds,
     ...defaultHypertrophyPlanExerciseSeeds,
   ];
-  const userPhaseIdBySystemId = new Map(phases.map((phase) => [phase.id, `user_${phase.id}`]));
-  const userDayIdBySystemId = new Map(planDays.map((day) => [day.id, `user_${day.id}`]));
+  const defaultMainstreamPlanId = MAINSTREAM_PLAN_IDS.beginnerFullBody;
+  const defaultMainstreamPlan = mainstreamPlans.find((item) => item.id === defaultMainstreamPlanId);
+  const defaultMainstreamPhases = mainstreamPlanPhaseSeeds.filter(
+    (phase) => phase.planId === defaultMainstreamPlanId,
+  );
+  const defaultMainstreamDays = mainstreamPlanDaySeeds.filter(
+    (day) => day.planId === defaultMainstreamPlanId,
+  );
+  const defaultMainstreamDayIds = new Set(defaultMainstreamDays.map((day) => day.id));
+  const defaultMainstreamExercises = mainstreamPlanExerciseSeeds.filter((exercise) =>
+    defaultMainstreamDayIds.has(exercise.planDayId),
+  );
+  const userPhaseIdBySystemId = new Map(
+    defaultMainstreamPhases.map((phase) => [phase.id, `user_${phase.id}`]),
+  );
+  const userDayIdBySystemId = new Map(
+    defaultMainstreamDays.map((day) => [day.id, `user_${day.id}`]),
+  );
   const userPlan = {
-    ...plan,
-    id: DEFAULT_USER_PLAN_ID,
-    name: '四练增力增肌计划',
+    ...(defaultMainstreamPlan ?? mainstreamPlans[0]),
+    id: DEFAULT_MAINSTREAM_USER_PLAN_ID,
+    name: '新手全身训练计划',
     visibility: 'private' as const,
     source: 'system_copy' as const,
-    originSchemeId: DEFAULT_ORIGIN_SCHEME_ID,
+    originSchemeId: DEFAULT_MAINSTREAM_ORIGIN_SCHEME_ID,
     updatedAt: now,
   };
-  const userPhases = phases.map((phase) => ({
+  const userPhases = defaultMainstreamPhases.map((phase) => ({
     ...phase,
     id: userPhaseIdBySystemId.get(phase.id) ?? `user_${phase.id}`,
-    planId: DEFAULT_USER_PLAN_ID,
+    planId: DEFAULT_MAINSTREAM_USER_PLAN_ID,
   }));
-  const userPlanDays = planDays.map((day) => ({
+  const userPlanDays = defaultMainstreamDays.map((day) => ({
     ...day,
     id: userDayIdBySystemId.get(day.id) ?? `user_${day.id}`,
-    planId: DEFAULT_USER_PLAN_ID,
+    planId: DEFAULT_MAINSTREAM_USER_PLAN_ID,
     phaseId: userPhaseIdBySystemId.get(day.phaseId) ?? day.phaseId,
   }));
-  const userPlanExercises = planExercises.map((exercise) => ({
+  const userPlanExercises = defaultMainstreamExercises.map((exercise) => ({
     ...exercise,
     id: `user_${exercise.id}`,
     planDayId: userDayIdBySystemId.get(exercise.planDayId) ?? exercise.planDayId,
@@ -95,6 +120,28 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
       plan.createdAt,
       plan.updatedAt,
     );
+
+    for (const mainstreamPlan of mainstreamPlans) {
+      await txn.runAsync(
+        `INSERT OR IGNORE INTO plan_templates (
+          id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
+          description, source, origin_scheme_id, version, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        mainstreamPlan.id,
+        mainstreamPlan.name,
+        mainstreamPlan.creatorId ?? null,
+        mainstreamPlan.visibility,
+        mainstreamPlan.goal,
+        mainstreamPlan.durationWeeks,
+        mainstreamPlan.frequencyPerWeek,
+        mainstreamPlan.description ?? null,
+        mainstreamPlan.source,
+        mainstreamPlan.originSchemeId ?? null,
+        mainstreamPlan.version,
+        mainstreamPlan.createdAt,
+        mainstreamPlan.updatedAt,
+      );
+    }
 
     await txn.runAsync(
       `INSERT OR IGNORE INTO plan_templates (
@@ -137,6 +184,21 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
     );
 
     for (const phase of phases) {
+      await txn.runAsync(
+        `INSERT OR IGNORE INTO plan_phases (
+          id, plan_id, name, type, start_week, end_week, order_index
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        phase.id,
+        phase.planId,
+        phase.name,
+        phase.type,
+        phase.startWeek,
+        phase.endWeek,
+        phase.orderIndex,
+      );
+    }
+
+    for (const phase of mainstreamPlanPhaseSeeds) {
       await txn.runAsync(
         `INSERT OR IGNORE INTO plan_phases (
           id, plan_id, name, type, start_week, end_week, order_index
@@ -239,6 +301,22 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
       );
     }
 
+    for (const day of mainstreamPlanDaySeeds) {
+      await txn.runAsync(
+        `INSERT OR IGNORE INTO plan_days (
+          id, plan_id, phase_id, week, weekday, title, focus, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        day.id,
+        day.planId,
+        day.phaseId,
+        day.week,
+        day.weekday,
+        day.title,
+        day.focus,
+        day.notes ?? null,
+      );
+    }
+
     for (const day of userPlanDays) {
       await txn.runAsync(
         `INSERT OR IGNORE INTO plan_days (
@@ -287,10 +365,10 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
         exercise.reps ?? null,
         exercise.repMin ?? null,
         exercise.repMax ?? null,
-        exercise.intensityType,
+        exercise.intensityType === 'percent_1rm' ? 'percent_1rm' : exercise.fixedWeight ? 'fixed' : 'manual',
         exercise.percent1RM ?? null,
-        exercise.rpeTarget ?? null,
-        exercise.rirTarget ?? null,
+        null,
+        null,
         exercise.fixedWeight ?? null,
         exercise.referenceLift,
         exercise.restSeconds ?? null,
@@ -315,10 +393,38 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
         exercise.reps ?? null,
         exercise.repMin ?? null,
         exercise.repMax ?? null,
-        exercise.intensityType,
+        exercise.intensityType === 'percent_1rm' ? 'percent_1rm' : exercise.fixedWeight ? 'fixed' : 'manual',
         exercise.percent1RM ?? null,
-        exercise.rpeTarget ?? null,
-        exercise.rirTarget ?? null,
+        null,
+        null,
+        exercise.fixedWeight ?? null,
+        exercise.referenceLift,
+        exercise.restSeconds ?? null,
+        exercise.progressionRuleId ?? null,
+        exercise.notes ?? null,
+      );
+    }
+
+    for (const exercise of mainstreamPlanExerciseSeeds) {
+      await txn.runAsync(
+        `INSERT OR IGNORE INTO plan_exercises (
+          id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
+          intensity_type, percent_1rm, rpe_target, rir_target, fixed_weight, reference_lift,
+          rest_seconds, progression_rule_id, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        exercise.id,
+        exercise.planDayId,
+        exercise.exerciseId,
+        exercise.priority,
+        exercise.orderIndex,
+        exercise.sets ?? null,
+        exercise.reps ?? null,
+        exercise.repMin ?? null,
+        exercise.repMax ?? null,
+        exercise.intensityType === 'percent_1rm' ? 'percent_1rm' : exercise.fixedWeight ? 'fixed' : 'manual',
+        exercise.percent1RM ?? null,
+        null,
+        null,
         exercise.fixedWeight ?? null,
         exercise.referenceLift,
         exercise.restSeconds ?? null,
@@ -343,10 +449,10 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
         exercise.reps ?? null,
         exercise.repMin ?? null,
         exercise.repMax ?? null,
-        exercise.intensityType,
+        exercise.intensityType === 'percent_1rm' ? 'percent_1rm' : exercise.fixedWeight ? 'fixed' : 'manual',
         exercise.percent1RM ?? null,
-        exercise.rpeTarget ?? null,
-        exercise.rirTarget ?? null,
+        null,
+        null,
         exercise.fixedWeight ?? null,
         exercise.referenceLift,
         exercise.restSeconds ?? null,
@@ -363,10 +469,10 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
       DEFAULT_GROUP_ID,
       '默认训练小组',
       null,
-      DEFAULT_USER_PLAN_ID,
+      DEFAULT_MAINSTREAM_USER_PLAN_ID,
       'strength',
       1,
-      0,
+      1,
       'default_rest',
       now,
       now,
@@ -374,11 +480,13 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
 
     await txn.runAsync(
       `UPDATE groups
-       SET active_plan_id = ?, updated_at = ?
-       WHERE active_plan_id = ?`,
-      DEFAULT_USER_PLAN_ID,
+       SET active_plan_id = ?, current_phase_type = ?, current_week = 1, updated_at = ?
+       WHERE active_plan_id IN (?, ?)`,
+      DEFAULT_MAINSTREAM_USER_PLAN_ID,
+      'strength',
       now,
       DEFAULT_PLAN_ID,
+      DEFAULT_USER_PLAN_ID,
     );
   });
 }

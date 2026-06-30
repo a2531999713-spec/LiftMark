@@ -1,4 +1,4 @@
-// Generated from 四练增力增肌训练计划_完整版2.1.xlsx.
+// Legacy four-day compatibility seed.
 // Manual confirmation needed: deload transformations for accessory movements and Friday weakness work.
 
 import type { PlanDay, PlanExercise, PlanPhase } from '@/domain/plan/plan.types';
@@ -83,7 +83,7 @@ export const defaultDeloadPlanDaySeeds: PlanDay[] = [
     "weekday": 1,
     "title": "胸",
     "focus": "胸",
-    "notes": "增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "day_deload2_w16_d2",
@@ -93,7 +93,7 @@ export const defaultDeloadPlanDaySeeds: PlanDay[] = [
     "weekday": 2,
     "title": "背",
     "focus": "背",
-    "notes": "增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "day_deload2_w16_d3",
@@ -103,7 +103,7 @@ export const defaultDeloadPlanDaySeeds: PlanDay[] = [
     "weekday": 3,
     "title": "肩",
     "focus": "肩",
-    "notes": "增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "day_deload2_w16_d4",
@@ -113,7 +113,7 @@ export const defaultDeloadPlanDaySeeds: PlanDay[] = [
     "weekday": 4,
     "title": "腿",
     "focus": "腿",
-    "notes": "增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "day_deload2_w16_d5",
@@ -123,7 +123,7 @@ export const defaultDeloadPlanDaySeeds: PlanDay[] = [
     "weekday": 5,
     "title": "补弱",
     "focus": "补弱",
-    "notes": "增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   }
 ];
 
@@ -139,9 +139,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "3×5 或 组数减半; RPE 6; 主项，必须做; 减量周; 卧推主项; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×5 或 组数减半; 保留余力; 主项，必须做; 减量周; 卧推主项; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d1_02",
@@ -154,9 +153,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 6; 1秒停顿，练底部稳定; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×3–5; 保留余力; 1秒停顿，练底部稳定; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d1_03",
@@ -169,9 +167,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "4×4–6; RPE 6; 可用自重或负重; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "4×4–6; 保留余力; 可用自重或负重; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d1_04",
@@ -183,10 +180,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 6,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 8.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×6–10; RPE 8; 背部支撑卧推; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "4×6–10; 保留余力; 背部支撑卧推; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d1_05",
@@ -198,10 +194,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 不练爆，避免影响周三; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×8–10; 保留余力; 不练爆，避免影响周三; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d1_06",
@@ -213,10 +208,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 15,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×15–20; RIR 1–2; 肩胛稳定; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×15–20; 保留余力; 肩胛稳定; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d1_07",
@@ -228,10 +222,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 有余力再做; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×10–15; 保留余力; 有余力再做; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d2_01",
@@ -244,9 +237,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "3×5 或 组数减半; RPE 6; 主项，必须做; 减量周; 深蹲主项; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×5 或 组数减半; 保留余力; 主项，必须做; 减量周; 深蹲主项; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d2_02",
@@ -259,9 +251,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 6; 控制底部; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×3–5; 保留余力; 控制底部; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d2_03",
@@ -273,10 +264,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 股四头容量; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×8–10; 保留余力; 股四头容量; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d2_04",
@@ -290,9 +280,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.6,
-    "rpeTarget": 7.0,
     "restSeconds": 90,
-    "notes": "3×6–8; RPE 7; 不要太重，周四还硬拉; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×6–8; 保留余力; 不要太重，周四还硬拉; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d2_05",
@@ -304,10 +293,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 腘绳肌补充; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×10–15; 保留余力; 腘绳肌补充; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d2_06",
@@ -319,10 +307,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–20; RIR 1–2; 可选; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "4×10–20; 保留余力; 可选; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d2_07",
@@ -349,9 +336,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "2×6; RPE 6; 技术和容量，不冲重量; 减量周; 容量日：不冲极限; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "2×6; 保留余力; 技术和容量，不冲重量; 减量周; 容量日：不冲极限; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d3_02",
@@ -364,9 +350,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "overhead_press",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "2×5; RPE 6; 垂直推力量; 减量周; 肩推可稳定推进; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "2×5; 保留余力; 垂直推力量; 减量周; 肩推可稳定推进; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d3_03",
@@ -379,9 +364,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "4×6–10; RPE 6; 背阔肌容量; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "4×6–10; 保留余力; 背阔肌容量; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d3_04",
@@ -393,10 +377,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×8–12; RIR 1–2; 减少下背压力; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "4×8–12; 保留余力; 减少下背压力; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d3_05",
@@ -408,10 +391,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2–3×8–12; RIR 2; 胸部辅助容量; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "2–3×8–12; 保留余力; 胸部辅助容量; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d3_06",
@@ -423,10 +405,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×12–20; RIR 0–2; 肩侧束; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "4×12–20; 保留余力; 肩侧束; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d3_07",
@@ -438,10 +419,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 手臂补充; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×10–15; 保留余力; 手臂补充; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d4_01",
@@ -454,9 +434,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "2×5; RPE 6; 硬拉总组数比卧推/深蹲少1组; 减量周; 硬拉主项总组数比卧推/深蹲少1组; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "2×5; 保留余力; 硬拉总组数比卧推/深蹲少1组; 减量周; 硬拉主项总组数比卧推/深蹲少1组; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d4_02",
@@ -469,9 +448,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "2–3×3; RPE 6; 技术辅助; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "2–3×3; 保留余力; 技术辅助; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d4_03",
@@ -483,10 +461,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 1–2; 髋伸补充; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×8–10; 保留余力; 髋伸补充; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d4_04",
@@ -498,10 +475,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–15; RIR 1–2; 腘绳肌容量; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "4×10–15; 保留余力; 腘绳肌容量; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d4_05",
@@ -513,10 +489,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×12–15; RIR 1–2; 轻量，不要顶腰; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "3×12–15; 保留余力; 轻量，不要顶腰; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d4_06",
@@ -528,10 +503,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2×8–12/侧; RIR 2; 有余力再做; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "2×8–12/侧; 保留余力; 有余力再做; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload1_w07_d4_07",
@@ -552,10 +526,9 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "priority": "B",
     "orderIndex": 1,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 7.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "45–60分钟; RPE 6–8; 不做高强度深蹲/硬拉/卧推; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
+    "notes": "45–60分钟; 保留余力; 不做高强度深蹲/硬拉/卧推; 增力后减量周：主项 60-70%，辅助减半，不力竭。"
   },
   {
     "id": "pe_day_deload2_w16_d1_01",
@@ -568,9 +541,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "4; RPE 6; 70; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "4; 保留余力; 70; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d1_02",
@@ -581,7 +553,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 180,
-    "notes": "4; 8–12; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "4; 8–12; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d1_03",
@@ -592,7 +564,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 8–12; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 8–12; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d1_04",
@@ -603,7 +575,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 12–20; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 12–20; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d1_05",
@@ -614,7 +586,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2; 8–15; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "2; 8–15; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d1_06",
@@ -625,7 +597,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 10–15; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 10–15; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d2_01",
@@ -638,9 +610,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "4; RPE 6; 70; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "4; 保留余力; 70; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d2_02",
@@ -651,7 +622,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 180,
-    "notes": "4; 8–12; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "4; 8–12; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d2_03",
@@ -662,7 +633,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 10–12; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 10–12; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d2_04",
@@ -673,7 +644,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 10–15; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 10–15; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d2_05",
@@ -684,7 +655,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 12–20; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 12–20; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d2_06",
@@ -695,7 +666,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 15–20; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 15–20; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d2_07",
@@ -706,7 +677,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 8–12; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 8–12; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d2_08",
@@ -717,7 +688,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2; 10–15; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "2; 10–15; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d3_01",
@@ -730,9 +701,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "overhead_press",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "4; RPE 6; 65; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "4; 保留余力; 65; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d3_02",
@@ -743,7 +713,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 180,
-    "notes": "5; 12–20; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "5; 12–20; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d3_03",
@@ -754,7 +724,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 15–25; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 15–25; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d3_04",
@@ -765,7 +735,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4; 12–20; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "4; 12–20; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d3_05",
@@ -776,7 +746,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 15–20; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 15–20; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d3_06",
@@ -787,7 +757,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 10–15; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 10–15; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d3_07",
@@ -798,7 +768,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 10–15; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 10–15; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d4_01",
@@ -811,9 +781,8 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 6.0,
     "restSeconds": 180,
-    "notes": "4; RPE 6; 70; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "4; 保留余力; 70; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d4_02",
@@ -824,7 +793,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 180,
-    "notes": "4; 10–15; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "4; 10–15; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d4_03",
@@ -835,7 +804,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 8–12; 60; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 8–12; 60; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d4_04",
@@ -846,7 +815,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 12–20; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 12–20; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d4_05",
@@ -857,7 +826,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4; 10–15; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "4; 10–15; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d4_06",
@@ -868,7 +837,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2; 8–12/侧; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "2; 8–12/侧; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d4_07",
@@ -879,7 +848,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "5; 10–20; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "5; 10–20; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d4_08",
@@ -890,7 +859,7 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3; 10–15; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "3; 10–15; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   },
   {
     "id": "pe_day_deload2_w16_d5_01",
@@ -901,6 +870,6 @@ export const defaultDeloadPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "none",
     "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4–8个动作; 12–25; 手动; 增肌后减量周：组数减半，RIR 3-4，可只做 A 动作或休息。"
+    "notes": "4–8个动作; 12–25; 手动; 增肌后减量周：组数减半，保留余力，可只做 A 动作或休息。"
   }
 ];

@@ -21,7 +21,7 @@ export function ProRequiredSheet({
       position="center"
       subtitle={
         message ??
-        'Pro 支持最多 4 人一起练、更多训练计划、完整计划编辑器、高级历史趋势、自动进阶建议、完整云同步和 2 个 Pro 小组。'
+        'Pro 支持最多 4 人一起练、更多训练计划、完整计划编辑器、高级历史趋势、自动进阶建议和 2 个 Pro 小组。'
       }
       title={title}
       visible={visible}

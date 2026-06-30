@@ -1,9 +1,9 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { EmptyState, Screen } from '@/components/ui';
-import { LogoutButton, ProfileHeroCard, ProfileMenuItem } from '@/components/profile';
+import { ProfileHeroCard, ProfileMenuItem } from '@/components/profile';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
@@ -19,7 +19,7 @@ import { colors, spacing } from '@/theme';
 
 export default function SettingsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
-  const { isLoading: isAuthLoading, loadCurrentUser, logout, user } = useAuthStore();
+  const { isLoading: isAuthLoading, loadCurrentUser, user } = useAuthStore();
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profilesByMemberId, setProfilesByMemberId] = useState<Record<string, MemberProfile | null>>({});
@@ -80,19 +80,6 @@ export default function SettingsRoute() {
       void loadProfile();
     }, [loadProfile]),
   );
-
-  const confirmLogout = useCallback(() => {
-    Alert.alert('确定退出当前账号？', '退出后需要重新登录才能使用账号相关功能。', [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '退出登录',
-        style: 'destructive',
-        onPress: () => {
-          void logout();
-        },
-      },
-    ]);
-  }, [logout]);
 
   const pickAvatar = useCallback(async () => {
     if (!user) return;
@@ -156,7 +143,7 @@ export default function SettingsRoute() {
               onPress={() => router.push('/profile/preferences' as never)}
             />
             <ProfileMenuItem
-              description="安全、同步、会员"
+              description="安全、会员"
               icon="shield-checkmark-outline"
               label="账号设置"
               onPress={() => router.push('/account/settings' as never)}
@@ -172,7 +159,6 @@ export default function SettingsRoute() {
             />
           </View>
 
-          <LogoutButton disabled={isAuthLoading} onPress={confirmLogout} />
         </>
       ) : null}
 

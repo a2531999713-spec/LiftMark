@@ -3,7 +3,6 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   ImageBackground,
   Pressable,
   StyleSheet,
@@ -12,6 +11,7 @@ import {
 
 import { liftmarkImages } from '@/assets/images';
 import { AuthGateSheets } from '@/components/auth';
+import { Avatar } from '@/components/avatar';
 import { AppButton, AppCard, AppModalSheet, AppText, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
@@ -20,6 +20,7 @@ import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type {
   ExercisePriority,
   PhaseType,
+  PlanDay,
   PlanExercise,
   PlanPhase,
   PlanTemplate,
@@ -28,7 +29,11 @@ import type {
 } from '@/domain/plan/plan.types';
 import type { RecoveryMode } from '@/domain/plan/plan.service';
 import { calculateSuggestedWeight } from '@/domain/weight/weight-calculator';
-import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
+import type {
+  CreateSessionFromTodayPlanInput,
+  WorkoutSession,
+  WorkoutSessionDetail,
+} from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { useAuthStore } from '@/store/authStore';
 import { colors, radius, shadows, spacing } from '@/theme';
@@ -55,7 +60,7 @@ type FocusExercise = {
   planExercise: PlanExercise;
 };
 
-type HeroAction = 'start' | 'plan';
+type WorkoutRecordScope = 'solo_local' | 'group_local';
 
 type AdviceConfig = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -81,30 +86,30 @@ const priorityRank: Record<ExercisePriority, number> = {
 const recoveryOptions: AdviceConfig[] = [
   {
     icon: 'shield-checkmark-outline',
-    message: '按计划执行，今天可以正常训练。',
+    message: '本次训练会创建 A/B/C 全部计划动作。',
     mode: 'good',
-    status: '状态良好',
+    status: '完整动作',
     tone: 'success',
   },
   {
     icon: 'flash-outline',
-    message: '优先完成 A/B 动作，C 动作可选。',
+    message: '本次训练只创建 A/B 动作，隐藏 C 类补充动作。',
     mode: 'normal',
-    status: '状态一般',
+    status: '精简辅助',
     tone: 'warning',
   },
   {
     icon: 'speedometer-outline',
-    message: '建议降低强度，或只完成 A 动作。',
+    message: '本次训练只创建 A 类主项动作。',
     mode: 'bad',
-    status: '状态较差',
+    status: '只做主项',
     tone: 'warning',
   },
   {
     icon: 'moon-outline',
-    message: '今天可以休息，不需要强行补练。',
+    message: '不创建训练 session，保留为休息日。',
     mode: 'very_bad',
-    status: '建议休息',
+    status: '改为休息',
     tone: 'danger',
   },
 ];
@@ -293,8 +298,83 @@ function formatSuggestedWeight(
   return { value: '参考上次重量', hint: '孤立或器械动作按历史调整' };
 }
 
-function getAdviceConfig(mode: RecoveryMode): AdviceConfig {
-  return recoveryOptions.find((option) => option.mode === mode) ?? recoveryOptions[0];
+function getPlanWeekOptions(days: PlanDay[], fallbackWeek: number): number[] {
+  const weeks = [...new Set(days.map((day) => day.week))].sort((left, right) => left - right);
+  return weeks.length > 0 ? weeks : [fallbackWeek];
+}
+
+function getDaysForWeek(days: PlanDay[], week: number): PlanDay[] {
+  return days
+    .filter((day) => day.week === week)
+    .slice()
+    .sort((left, right) => left.weekday - right.weekday);
+}
+
+function formatDayChoiceTitle(day: PlanDay): string {
+  if (day.weekday === 5 || /补|弱/.test(`${day.title}${day.focus}`)) {
+    return '补弱';
+  }
+  if (day.weekday >= 1 && day.weekday <= 4) {
+    return `Day ${day.weekday}`;
+  }
+  const labels: Record<Weekday, string> = {
+    1: '周一',
+    2: '周二',
+    3: '周三',
+    4: '周四',
+    5: '周五',
+    6: '周六',
+    7: '周日',
+  };
+  return labels[day.weekday];
+}
+
+function formatDayChoiceSubtitle(day: PlanDay): string {
+  return [day.title, day.focus].filter(Boolean).join(' · ');
+}
+
+function isSameWorkoutSelection(
+  session: WorkoutSession,
+  input: CreateSessionFromTodayPlanInput,
+): boolean {
+  return (
+    session.planId === input.planId &&
+    session.week === input.week &&
+    session.weekday === input.weekday &&
+    session.trainingMode === (input.trainingMode ?? 'group_local')
+  );
+}
+
+function formatSessionSelection(session: WorkoutSession): string {
+  const weekdayLabels: Record<Weekday, string> = {
+    1: '周一',
+    2: '周二',
+    3: '周三',
+    4: '周四',
+    5: '周五',
+    6: '周六',
+    7: '周日',
+  };
+  const scopeLabel = session.trainingMode === 'solo_local' ? '仅我记录' : '小组成员';
+  return `第 ${session.week} 周 · ${weekdayLabels[session.weekday]} · ${scopeLabel}`;
+}
+
+function formatWorkoutStartSelection(
+  input: CreateSessionFromTodayPlanInput,
+  day: PlanDay | null,
+): string {
+  const weekdayLabels: Record<Weekday, string> = {
+    1: '周一',
+    2: '周二',
+    3: '周三',
+    4: '周四',
+    5: '周五',
+    6: '周六',
+    7: '周日',
+  };
+  const dayLabel = day && day.week === input.week ? formatDayChoiceTitle(day) : weekdayLabels[input.weekday];
+  const scopeLabel = input.trainingMode === 'solo_local' ? '仅我记录' : '小组成员';
+  return `第 ${input.week} 周 · ${dayLabel} · ${scopeLabel}`;
 }
 
 function getFocusExercises(
@@ -324,12 +404,22 @@ export default function TodayRoute() {
   const [todayPlan, setTodayPlan] = useState<TodayPlanResult | null>(null);
   const [activePlan, setActivePlan] = useState<PlanTemplate | null>(null);
   const [planPhases, setPlanPhases] = useState<PlanPhase[]>([]);
+  const [planDays, setPlanDays] = useState<PlanDay[]>([]);
   const [exerciseMap, setExerciseMap] = useState<Record<string, Exercise>>({});
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
   const [group, setGroup] = useState<Group | null>(null);
   const [weeklyOverview, setWeeklyOverview] = useState<WeeklyOverview>(emptyWeeklyOverview);
   const [isAdviceSheetVisible, setAdviceSheetVisible] = useState(false);
+  const [isDaySheetVisible, setDaySheetVisible] = useState(false);
+  const [isScopeSheetVisible, setScopeSheetVisible] = useState(false);
+  const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
+  const [selectedWeekday, setSelectedWeekday] = useState<Weekday | null>(null);
+  const [recordScope, setRecordScope] = useState<WorkoutRecordScope>('group_local');
+  const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
+  const [conflictingSession, setConflictingSession] = useState<WorkoutSession | null>(null);
+  const [pendingWorkoutStart, setPendingWorkoutStart] =
+    useState<CreateSessionFromTodayPlanInput | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -349,6 +439,9 @@ export default function TodayRoute() {
         setMembers([]);
         setProfiles({});
         setPlanPhases([]);
+        setPlanDays([]);
+        setSelectedWeek(null);
+        setSelectedWeekday(null);
         setExerciseMap({});
         setWeeklyOverview(emptyWeeklyOverview);
         return;
@@ -366,7 +459,7 @@ export default function TodayRoute() {
       );
       const nextProfilesByMemberId = Object.fromEntries(nextProfiles);
       const currentMember = nextMembers[0] ?? null;
-      const [weekSessions, nextPhases] = await Promise.all([
+      const [weekSessions, nextPhases, nextPlanDays] = await Promise.all([
         repositories.workoutRepository.listSessions({
           fromDate: getLocalDateString(getWeekStart()),
           groupId: nextGroup.id,
@@ -377,6 +470,9 @@ export default function TodayRoute() {
         nextActivePlan
           ? repositories.planRepository.listPlanPhases(nextActivePlan.id)
           : Promise.resolve([]),
+        nextActivePlan
+          ? repositories.planRepository.listPlanDays(nextActivePlan.id)
+          : Promise.resolve([]),
       ]);
       const weekDetails = await Promise.all(
         weekSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)),
@@ -384,16 +480,40 @@ export default function TodayRoute() {
 
       let result: TodayPlanResult | null = null;
       let nextExerciseMap: Record<string, Exercise> = {};
+      let nextSelectedWeek: number | null = null;
+      let nextSelectedWeekday: Weekday | null = null;
 
       if (nextActivePlan) {
+        const weekOptions = getPlanWeekOptions(nextPlanDays, nextGroup.currentWeek);
+        nextSelectedWeek =
+          selectedWeek && weekOptions.includes(selectedWeek)
+            ? selectedWeek
+            : weekOptions.includes(nextGroup.currentWeek)
+              ? nextGroup.currentWeek
+              : weekOptions[0];
+        const daysForSelectedWeek = getDaysForWeek(nextPlanDays, nextSelectedWeek);
+        nextSelectedWeekday =
+          selectedWeekday && daysForSelectedWeek.some((day) => day.weekday === selectedWeekday)
+            ? selectedWeekday
+            : daysForSelectedWeek.some((day) => day.weekday === todayWeekday)
+              ? todayWeekday
+              : (daysForSelectedWeek[0]?.weekday ?? todayWeekday);
+        const phaseForSelectedWeek =
+          nextPhases.find(
+            (phase) =>
+              nextSelectedWeek !== null &&
+              nextSelectedWeek >= phase.startWeek &&
+              nextSelectedWeek <= phase.endWeek,
+          ) ?? nextPhases.find((phase) => phase.type === nextGroup.currentPhaseType);
+
         result = await repositories.planRepository.getTodayPlan({
-          currentWeek: nextGroup.currentWeek,
-          fridayEnabled: nextGroup.fridayEnabled,
+          currentWeek: nextSelectedWeek,
+          fridayEnabled: true,
           groupId: nextGroup.id,
-          phaseType: nextGroup.currentPhaseType,
+          phaseType: phaseForSelectedWeek?.type ?? nextGroup.currentPhaseType,
           planId: nextGroup.activePlanId,
           recoveryMode,
-          weekday: todayWeekday,
+          weekday: nextSelectedWeekday,
         });
 
         const planExerciseIds = result.exercises.map((exercise) => exercise.exerciseId);
@@ -407,6 +527,9 @@ export default function TodayRoute() {
       setGroup(nextGroup);
       setActivePlan(nextActivePlan);
       setTodayPlan(result);
+      setPlanDays(nextPlanDays);
+      setSelectedWeek(nextSelectedWeek);
+      setSelectedWeekday(nextSelectedWeekday);
       setMembers(nextMembers);
       setProfiles(nextProfilesByMemberId);
       setPlanPhases(nextPhases);
@@ -417,7 +540,7 @@ export default function TodayRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories, recoveryMode, todayWeekday]);
+  }, [repositories, recoveryMode, selectedWeek, selectedWeekday, todayWeekday]);
 
   useFocusEffect(
     useCallback(() => {
@@ -425,7 +548,61 @@ export default function TodayRoute() {
     }, [loadHome]),
   );
 
-  const startWorkout = useCallback(async () => {
+  const resolveSelectedWorkoutPlan = useCallback(async (): Promise<TodayPlanResult | null> => {
+    if (!group || !activePlan) {
+      return null;
+    }
+
+    const currentWeek = selectedWeek ?? group.currentWeek;
+    const daysForSelectedWeek = getDaysForWeek(planDays, currentWeek);
+    const selectedDayStillExists =
+      selectedWeekday && daysForSelectedWeek.some((day) => day.weekday === selectedWeekday);
+    const weekday =
+      selectedDayStillExists
+        ? selectedWeekday
+        : daysForSelectedWeek.some((day) => day.weekday === todayWeekday)
+          ? todayWeekday
+          : (daysForSelectedWeek[0]?.weekday ?? todayWeekday);
+    const phaseForSelectedWeek =
+      planPhases.find(
+        (phase) => currentWeek >= phase.startWeek && currentWeek <= phase.endWeek,
+      ) ?? planPhases.find((phase) => phase.type === group.currentPhaseType);
+
+    const resolvedPlan = await repositories.planRepository.getTodayPlan({
+      currentWeek,
+      fridayEnabled: true,
+      groupId: group.id,
+      phaseType: phaseForSelectedWeek?.type ?? group.currentPhaseType,
+      planId: activePlan.id,
+      recoveryMode,
+      weekday,
+    });
+
+    const planExerciseIds = resolvedPlan.exercises.map((exercise) => exercise.exerciseId);
+    const nextExercises =
+      planExerciseIds.length > 0
+        ? await repositories.exerciseRepository.listExercisesByIds(planExerciseIds)
+        : [];
+
+    setSelectedWeek(currentWeek);
+    setSelectedWeekday(weekday);
+    setTodayPlan(resolvedPlan);
+    setExerciseMap(Object.fromEntries(nextExercises.map((exercise) => [exercise.id, exercise])));
+
+    return resolvedPlan;
+  }, [
+    activePlan,
+    group,
+    planDays,
+    planPhases,
+    recoveryMode,
+    repositories,
+    selectedWeek,
+    selectedWeekday,
+    todayWeekday,
+  ]);
+
+  const openWorkoutScope = useCallback(async () => {
     if (!guardFeature('start_workout')) {
       return;
     }
@@ -440,7 +617,15 @@ export default function TodayRoute() {
       return;
     }
 
-    if (!todayPlan?.day || todayPlan.isRestDay || todayPlan.exercises.length === 0) {
+    let resolvedPlan: TodayPlanResult | null = null;
+    try {
+      resolvedPlan = await resolveSelectedWorkoutPlan();
+    } catch (resolveError) {
+      setError(resolveError instanceof Error ? resolveError.message : '训练计划刷新失败。');
+      return;
+    }
+
+    if (!resolvedPlan?.day || resolvedPlan.isRestDay || resolvedPlan.exercises.length === 0) {
       setNotice({
         title: '今日计划休息',
         message: '恢复也是计划的一部分。可以去计划页查看本周安排。',
@@ -448,28 +633,163 @@ export default function TodayRoute() {
       return;
     }
 
+    const nextScope: WorkoutRecordScope = members.length > 1 ? 'group_local' : 'solo_local';
+    const currentMemberId = members[0]?.id;
+    setRecordScope(nextScope);
+    setSelectedParticipantIds(
+      nextScope === 'solo_local' && currentMemberId
+        ? [currentMemberId]
+        : members.map((member) => member.id),
+    );
+    setScopeSheetVisible(true);
+  }, [group, guardFeature, members, resolveSelectedWorkoutPlan]);
+
+  const toggleParticipant = useCallback((memberId: string) => {
+    setSelectedParticipantIds((current) =>
+      current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : [...current, memberId],
+    );
+  }, []);
+
+  const createWorkoutSession = useCallback(
+    async (input: CreateSessionFromTodayPlanInput) => {
+      const session = await repositories.workoutRepository.createSessionFromTodayPlan(input);
+      setScopeSheetVisible(false);
+      setConflictingSession(null);
+      setPendingWorkoutStart(null);
+      router.push({ pathname: '/workout/[sessionId]', params: { sessionId: session.id } });
+    },
+    [repositories],
+  );
+
+  const startWorkout = useCallback(async () => {
+    if (!guardFeature('start_workout')) {
+      return;
+    }
+
+    const currentMemberId = members[0]?.id;
+    const availableMemberIds = new Set(members.map((member) => member.id));
+    const participantMemberIds =
+      recordScope === 'solo_local'
+        ? currentMemberId
+          ? [currentMemberId]
+          : []
+        : selectedParticipantIds.filter((memberId) => availableMemberIds.has(memberId));
+
+    if (participantMemberIds.length === 0) {
+      setNotice({ title: '请选择参与成员', message: '本次训练至少需要选择 1 位记录对象。' });
+      return;
+    }
+
     setIsStarting(true);
     setError(null);
 
     try {
-      const session = await repositories.workoutRepository.createSessionFromTodayPlan({
+      const resolvedPlan = await resolveSelectedWorkoutPlan();
+
+      if (!group || !resolvedPlan?.day || resolvedPlan.isRestDay || resolvedPlan.exercises.length === 0) {
+        setScopeSheetVisible(false);
+        setNotice({ title: '暂无可开始训练', message: '请选择一个包含动作的训练日后再开始。' });
+        return;
+      }
+
+      const startInput: CreateSessionFromTodayPlanInput = {
         date: getLocalDateString(),
         groupId: group.id,
-        phaseId: todayPlan.phase.id,
-        planExerciseIds: todayPlan.exercises.map((exercise) => exercise.id),
-        planId: todayPlan.plan.id,
-        title: todayPlan.day.title,
-        week: todayPlan.day.week,
-        weekday: todayPlan.day.weekday,
-      });
+        phaseId: resolvedPlan.phase.id,
+        planExerciseIds: resolvedPlan.exercises.map((exercise) => exercise.id),
+        planId: resolvedPlan.plan.id,
+        participantMemberIds,
+        title: resolvedPlan.day.title,
+        trainingMode: recordScope,
+        week: resolvedPlan.day.week,
+        weekday: resolvedPlan.day.weekday,
+      };
 
-      router.push({ pathname: '/workout/[sessionId]', params: { sessionId: session.id } });
+      const openSessions = await repositories.workoutRepository.listOpenSessionsForDate({
+        date: startInput.date,
+        groupId: startInput.groupId,
+      });
+      const hasMatchingOpenSession = openSessions.some((session) =>
+        isSameWorkoutSelection(session, startInput),
+      );
+      const conflict = hasMatchingOpenSession
+        ? null
+        : openSessions.find((session) => !isSameWorkoutSelection(session, startInput));
+
+      if (conflict) {
+        setPendingWorkoutStart(startInput);
+        setConflictingSession(conflict);
+        setScopeSheetVisible(false);
+        return;
+      }
+
+      await createWorkoutSession(startInput);
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : '开始训练失败。');
     } finally {
       setIsStarting(false);
     }
-  }, [group, guardFeature, members.length, repositories, todayPlan]);
+  }, [
+    createWorkoutSession,
+    group,
+    guardFeature,
+    members,
+    recordScope,
+    repositories,
+    resolveSelectedWorkoutPlan,
+    selectedParticipantIds,
+  ]);
+
+  const continueConflictingSession = useCallback(() => {
+    if (!conflictingSession) {
+      return;
+    }
+
+    const sessionId = conflictingSession.id;
+    setConflictingSession(null);
+    setPendingWorkoutStart(null);
+    router.push({ pathname: '/workout/[sessionId]', params: { sessionId } });
+  }, [conflictingSession]);
+
+  const discardConflictAndStart = useCallback(async () => {
+    if (!conflictingSession || !pendingWorkoutStart) {
+      return;
+    }
+
+    setIsStarting(true);
+    setError(null);
+
+    try {
+      await repositories.workoutRepository.updateSession({
+        id: conflictingSession.id,
+        status: 'cancelled',
+      });
+      await createWorkoutSession(pendingWorkoutStart);
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : '开始训练失败。');
+    } finally {
+      setIsStarting(false);
+    }
+  }, [conflictingSession, createWorkoutSession, pendingWorkoutStart, repositories]);
+
+  const changeRecordScope = useCallback(
+    (scope: WorkoutRecordScope) => {
+      setRecordScope(scope);
+      if (scope === 'solo_local') {
+        const currentMemberId = members[0]?.id;
+        setSelectedParticipantIds(currentMemberId ? [currentMemberId] : []);
+        return;
+      }
+
+      setSelectedParticipantIds((current) => {
+        const validCurrent = current.filter((memberId) => members.some((member) => member.id === memberId));
+        return validCurrent.length > 0 ? validCurrent : members.map((member) => member.id);
+      });
+    },
+    [members],
+  );
 
   const currentMember = members[0] ?? null;
   const currentProfile = currentMember ? (profiles[currentMember.id] ?? null) : null;
@@ -492,8 +812,14 @@ export default function TodayRoute() {
     weeklyTarget > 0
       ? `${Math.min(weeklyOverview.sessionCount, weeklyTarget)} / ${weeklyTarget}`
       : `${weeklyOverview.sessionCount} / -`;
-  const nextDeloadDays = group ? getDaysUntilNextDeload(group.currentWeek, planPhases) : null;
+  const selectedWeekValue = selectedWeek ?? group?.currentWeek ?? 1;
+  const nextDeloadDays = group ? getDaysUntilNextDeload(selectedWeekValue, planPhases) : null;
   const phaseLabel = formatPhaseLabel(todayPlan?.phase ?? null, group?.currentPhaseType);
+  const selectedPlanDay = todayPlan?.day ?? null;
+  const dayLabel = selectedPlanDay
+    ? `第 ${selectedPlanDay.week} 周 · ${formatDayChoiceTitle(selectedPlanDay)}`
+    : `第 ${selectedWeekValue} 周`;
+  const planWeekOptions = getPlanWeekOptions(planDays, selectedWeekValue);
   const isRestState = Boolean(
     todayPlan?.isRestDay ||
     recoveryMode === 'very_bad' ||
@@ -507,11 +833,6 @@ export default function TodayRoute() {
     !todayPlan.isRestDay &&
     planExercises.length > 0,
   );
-  const heroAction: HeroAction = canStartWorkout ? 'start' : 'plan';
-  const heroTitle = isRestState ? '今日计划休息' : (todayPlan?.day?.title ?? '今日训练');
-  const heroSubtitle = activePlan?.name ?? '创建或导入一个计划，开始你的训练之旅';
-  const advice = getAdviceConfig(recoveryMode);
-
   return (
     <Screen contentStyle={styles.screenContent}>
       {isLoading ? (
@@ -531,9 +852,9 @@ export default function TodayRoute() {
 
           {authStatus === 'offline_authenticated' ? (
             <View style={styles.offlineBanner}>
-              <Ionicons color={colors.textStrong} name="cloud-offline-outline" size={18} />
+              <Ionicons color={colors.textStrong} name="phone-portrait-outline" size={18} />
               <AppText variant="bodySmall" weight="800">
-                当前离线，已进入本机模式
+                当前使用本机训练数据
               </AppText>
             </View>
           ) : null}
@@ -586,88 +907,182 @@ export default function TodayRoute() {
 
           {!error && activePlan && members.length > 0 ? (
             <>
-              <TodayTrainingHero
-                actionLabel={heroAction === 'start' ? '开始今日训练' : '查看本周安排'}
-                dayLabel={
-                  todayPlan?.day
-                    ? `第 ${group?.currentWeek ?? todayPlan.day.week} 周 · Day ${todayPlan.day.weekday}`
-                    : `第 ${group?.currentWeek ?? 1} 周`
-                }
-                disabled={isStarting}
-                isStarting={isStarting}
-                onActionPress={
-                  heroAction === 'start'
-                    ? () => void startWorkout()
-                    : () => router.push('/(tabs)/plan')
-                }
+              <PlanQuickSwitchCard
+                dayLabel={dayLabel}
+                onPress={() => setDaySheetVisible(true)}
                 phaseLabel={phaseLabel}
-                planName={heroSubtitle}
+                planName={activePlan.name}
                 progressLabel={weeklyProgressLabel}
                 progressPercent={weeklyProgressPercent}
-                title={heroTitle}
+              />
+
+              <RecoveryModeSelector
+                currentMode={recoveryMode}
+                onChange={setRecoveryMode}
+                onMorePress={() => setAdviceSheetVisible(true)}
+                options={recoveryOptions}
               />
 
               {isRestState ? (
                 <HomeEmptyState
-                  actionLabel="查看本周安排"
+                  actionLabel={todayPlan?.isRestDay ? '查看本周安排' : '调整动作筛选'}
                   compact
                   description={todayPlan?.reason ?? '恢复也是计划的一部分'}
                   icon="moon-outline"
-                  onActionPress={() => router.push('/(tabs)/plan')}
+                  onActionPress={() => {
+                    if (todayPlan?.isRestDay) {
+                      router.push('/(tabs)/plan');
+                    } else {
+                      setAdviceSheetVisible(true);
+                    }
+                  }}
                   title="今日计划休息"
                 />
               ) : null}
 
-              <View style={styles.metricRow}>
-                <SmallMetricCard
-                  label={nextDeloadDays ? '距离下次减载' : '当前周数'}
-                  value={
-                    nextDeloadDays
-                      ? `${nextDeloadDays} 天`
-                      : `第 ${group?.currentWeek ?? 1} / ${activePlanWeeks || '-'} 周`
-                  }
+              {!isRestState ? (
+                <TodaySummaryCard
+                  activePlanWeeks={activePlanWeeks}
+                  dayTitle={selectedPlanDay?.title ?? '今日训练'}
+                  mainFocus={mainFocus ?? '暂无动作'}
+                  nextDeloadDays={nextDeloadDays}
+                  phaseLabel={phaseLabel}
+                  selectedWeek={selectedWeekValue}
+                  suggestedWeight={suggestedWeight}
                 />
-                <SmallMetricCard
-                  helper={suggestedWeight.hint}
-                  label="今日主项"
-                  value={mainFocus ?? '暂无动作'}
-                />
-              </View>
+              ) : null}
 
-              <TodayFocusList
-                items={focusExercises}
-                onOpenAll={() => router.push('/(tabs)/plan')}
-              />
+              {!isRestState ? (
+                <StartWorkoutCard
+                  disabled={!canStartWorkout || isStarting}
+                  isStarting={isStarting}
+                  onPress={() => void openWorkoutScope()}
+                />
+              ) : null}
+
+              {!isRestState ? (
+                <TodayFocusList
+                  items={focusExercises}
+                  onOpenAll={() => router.push('/(tabs)/plan')}
+                />
+              ) : null}
 
               <PartnerStrip
                 currentMemberId={currentMember?.id}
                 members={members}
-                onInvite={() => {
-                  if (guardFeature('online_training')) {
-                    setNotice({
-                      title: '邀请后续开放',
-                      message: '当前版本为本机小组，云同步邀请后续开放。',
-                    });
-                  }
-                }}
                 onMemberPress={(member) =>
                   router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } })
                 }
                 onOpenAll={() => router.push('/settings/members' as never)}
+                profiles={profiles}
               />
 
               <WeeklyOverviewGrid overview={weeklyOverview} />
 
-              <TrainingAdviceCard advice={advice} onPress={() => setAdviceSheetVisible(true)} />
             </>
           ) : null}
         </>
       ) : null}
 
+      <PlanDayPickerSheet
+        days={planDays}
+        onClose={() => setDaySheetVisible(false)}
+        onFreeTraining={() => {
+          setDaySheetVisible(false);
+          router.push('/history/manual' as never);
+        }}
+        onSelectDay={(day) => {
+          setSelectedWeek(day.week);
+          setSelectedWeekday(day.weekday);
+          setDaySheetVisible(false);
+        }}
+        onSelectWeek={(week) => setSelectedWeek(week)}
+        selectedWeek={selectedWeekValue}
+        selectedWeekday={selectedWeekday}
+        visible={isDaySheetVisible}
+        weekOptions={planWeekOptions}
+      />
+
+      <WorkoutScopeSheet
+        currentMemberId={currentMember?.id}
+        isStarting={isStarting}
+        members={members}
+        onClose={() => setScopeSheetVisible(false)}
+        onScopeChange={changeRecordScope}
+        onStart={() => void startWorkout()}
+        onToggleMember={toggleParticipant}
+        scope={recordScope}
+        selectedMemberIds={selectedParticipantIds}
+        profiles={profiles}
+        visible={isScopeSheetVisible}
+      />
+
+      <AppModalSheet
+        onClose={() => {
+          setConflictingSession(null);
+          setPendingWorkoutStart(null);
+        }}
+        position="center"
+        subtitle="今天还有一场未完成训练，与当前选择的计划或训练日不同。"
+        title="继续上次训练？"
+        visible={Boolean(conflictingSession)}
+      >
+        {conflictingSession ? (
+          <View style={styles.conflictSummary}>
+            <View style={styles.conflictRow}>
+              <AppText tone="muted" variant="caption" weight="800">
+                上次训练
+              </AppText>
+              <AppText variant="bodySmall" weight="900">
+                {conflictingSession.title}
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                {formatSessionSelection(conflictingSession)}
+              </AppText>
+            </View>
+            {pendingWorkoutStart ? (
+              <View style={styles.conflictRow}>
+                <AppText tone="muted" variant="caption" weight="800">
+                  当前选择
+                </AppText>
+                <AppText variant="bodySmall" weight="900">
+                  {pendingWorkoutStart.title}
+                </AppText>
+                <AppText tone="muted" variant="caption">
+                  {formatWorkoutStartSelection(pendingWorkoutStart, todayPlan?.day ?? null)}
+                </AppText>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+        <View style={styles.conflictActions}>
+          <AppButton onPress={continueConflictingSession} size="lg">
+            继续上次训练
+          </AppButton>
+          <AppButton
+            loading={isStarting}
+            onPress={() => void discardConflictAndStart()}
+            size="lg"
+            variant="danger"
+          >
+            放弃旧训练并开始新计划
+          </AppButton>
+          <AppButton
+            onPress={() => {
+              setConflictingSession(null);
+              setPendingWorkoutStart(null);
+            }}
+            variant="ghost"
+          >
+            返回
+          </AppButton>
+        </View>
+      </AppModalSheet>
+
       <AppModalSheet
         onClose={() => setAdviceSheetVisible(false)}
-        subtitle="这里只影响今日重点动作展示，训练中仍可根据现场状态调整。"
-        title="选择今日状态"
+        subtitle="这里会影响本次创建的动作快照。完整动作包含 A/B/C，精简辅助只保留 A/B，只做主项只保留 A。"
+        title="选择动作筛选"
         visible={isAdviceSheetVisible}
       >
         <View style={styles.recoveryList}>
@@ -744,89 +1159,178 @@ function HomeHeader({
   );
 }
 
-function TodayTrainingHero({
-  actionLabel,
+function PlanQuickSwitchCard({
   dayLabel,
-  disabled,
-  isStarting,
-  onActionPress,
+  onPress,
   phaseLabel,
   planName,
   progressLabel,
   progressPercent,
-  title,
 }: {
-  actionLabel: string;
   dayLabel: string;
-  disabled: boolean;
-  isStarting: boolean;
-  onActionPress: () => void;
+  onPress: () => void;
   phaseLabel: string;
   planName: string;
   progressLabel: string;
   progressPercent: number;
-  title: string;
 }) {
   return (
-    <View style={styles.heroCard}>
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.planSwitchCard, pressed && styles.pressed]}>
+      <View style={styles.planSwitchMain}>
+        <View style={styles.planSwitchIcon}>
+          <Ionicons color={colors.primary} name="calendar-outline" size={20} />
+        </View>
+        <View style={styles.planSwitchText}>
+          <AppText numberOfLines={1} variant="bodySmall" weight="900">
+            {planName}
+          </AppText>
+          <AppText numberOfLines={1} tone="muted" variant="caption">
+            {dayLabel} · {phaseLabel}
+          </AppText>
+        </View>
+        <Ionicons color={colors.textMuted} name="chevron-down" size={18} />
+      </View>
+      <View style={styles.planProgressRow}>
+        <AppText tone="muted" variant="caption">
+          本周进度 {progressLabel}
+        </AppText>
+        <View style={styles.planProgressTrack}>
+          <View style={[styles.planProgressFill, { width: `${progressPercent}%` }]} />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function RecoveryModeSelector({
+  currentMode,
+  onChange,
+  onMorePress,
+  options,
+}: {
+  currentMode: RecoveryMode;
+  onChange: (mode: RecoveryMode) => void;
+  onMorePress: () => void;
+  options: AdviceConfig[];
+}) {
+  return (
+    <AppCard style={styles.recoverySelectorCard}>
+      <View style={styles.selectorHeader}>
+        <AppText variant="bodySmall" weight="900">
+          动作筛选
+        </AppText>
+        <Pressable accessibilityRole="button" onPress={onMorePress} style={styles.selectorMore}>
+          <AppText tone="muted" variant="caption" weight="800">
+            说明
+          </AppText>
+          <Ionicons color={colors.textMuted} name="information-circle-outline" size={15} />
+        </Pressable>
+      </View>
+      <View style={styles.recoveryPills}>
+        {options.map((option) => {
+          const active = currentMode === option.mode;
+          return (
+            <Pressable
+              accessibilityRole="button"
+              key={option.mode}
+              onPress={() => onChange(option.mode)}
+              style={({ pressed }) => [
+                styles.recoveryPill,
+                active && styles.recoveryPillActive,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons color={active ? colors.surface : colors.textMuted} name={option.icon} size={15} />
+              <AppText
+                numberOfLines={1}
+                style={active ? styles.recoveryPillTextActive : styles.recoveryPillText}
+                variant="caption"
+                weight="900"
+              >
+                {option.status}
+              </AppText>
+            </Pressable>
+          );
+        })}
+      </View>
+    </AppCard>
+  );
+}
+
+function TodaySummaryCard({
+  activePlanWeeks,
+  dayTitle,
+  mainFocus,
+  nextDeloadDays,
+  phaseLabel,
+  selectedWeek,
+  suggestedWeight,
+}: {
+  activePlanWeeks: number;
+  dayTitle: string;
+  mainFocus: string;
+  nextDeloadDays: number | null;
+  phaseLabel: string;
+  selectedWeek: number;
+  suggestedWeight: SuggestedWeightDisplay;
+}) {
+  return (
+    <View style={styles.todaySummary}>
       <ImageBackground
-        imageStyle={styles.heroImage}
+        imageStyle={styles.summaryImage}
         resizeMode="cover"
         source={liftmarkImages.trainingHero}
-        style={styles.heroImageBackground}
+        style={styles.summaryImageBackground}
       >
-        <View style={styles.heroScrim} />
-        <View style={styles.heroTextScrim} />
-        <View style={styles.heroContent}>
+        <View style={styles.summaryScrim} />
+        <View style={styles.summaryContent}>
           <View style={styles.phaseBadge}>
             <Ionicons color={colors.surface} name="flash" size={13} />
             <AppText tone="inverse" variant="caption" weight="900">
               {phaseLabel}
             </AppText>
           </View>
-
-          <AppText style={styles.heroDay} variant="bodySmall" weight="700">
-            {dayLabel}
+          <AppText numberOfLines={1} style={styles.summaryTitle} variant="title" weight="900">
+            {dayTitle}
           </AppText>
-          <AppText style={styles.heroTitle} variant="display" weight="900">
-            {title}
+          <AppText numberOfLines={1} style={styles.summarySubtitle} variant="bodySmall" weight="700">
+            {mainFocus}
           </AppText>
-          <AppText numberOfLines={2} style={styles.heroPlan} variant="body" weight="700">
-            {planName}
-          </AppText>
-
-          <View style={styles.heroProgressHeader}>
-            <AppText style={styles.heroProgressText} variant="bodySmall" weight="800">
-              本周进度
-            </AppText>
-            <AppText style={styles.heroProgressText} variant="bodySmall" weight="900">
-              {progressLabel}
-            </AppText>
-          </View>
-          <View style={styles.heroProgressTrack}>
-            <View style={[styles.heroProgressFill, { width: `${progressPercent}%` }]} />
-          </View>
         </View>
       </ImageBackground>
-      <Pressable
-        accessibilityRole="button"
-        disabled={disabled}
-        onPress={onActionPress}
-        style={({ pressed }) => [
-          styles.heroButton,
-          disabled && styles.heroButtonDisabled,
-          pressed && !disabled && styles.pressed,
-        ]}
-      >
-        <AppText style={styles.heroButtonText} variant="subtitle" weight="900">
-          {isStarting ? '正在开始...' : actionLabel}
-        </AppText>
-        <Ionicons
-          color={colors.surface}
-          name={actionLabel.includes('开始') ? 'play' : 'calendar-outline'}
-          size={22}
+      <View style={styles.metricRow}>
+        <SmallMetricCard helper={suggestedWeight.hint} label="建议重量" value={suggestedWeight.value} />
+        <SmallMetricCard
+          label={nextDeloadDays ? '距离下次减载' : '当前周数'}
+          value={nextDeloadDays ? `${nextDeloadDays} 天` : `第 ${selectedWeek} / ${activePlanWeeks || '-'} 周`}
         />
-      </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function StartWorkoutCard({
+  disabled,
+  isStarting,
+  onPress,
+}: {
+  disabled: boolean;
+  isStarting: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <View style={styles.startSection}>
+      <View style={styles.startCopy}>
+        <AppText variant="subtitle" weight="900">
+          准备开始
+        </AppText>
+        <AppText tone="muted" variant="caption">
+          开始前选择本次记录给谁，避免把未参与成员写入训练记录。
+        </AppText>
+      </View>
+      <AppButton disabled={disabled} icon="play" loading={isStarting} onPress={onPress} size="lg">
+        选择成员并开始
+      </AppButton>
     </View>
   );
 }
@@ -939,15 +1443,15 @@ function LegendItem({ priority, text }: { priority: ExercisePriority; text: stri
 function PartnerStrip({
   currentMemberId,
   members,
-  onInvite,
   onMemberPress,
   onOpenAll,
+  profiles,
 }: {
   currentMemberId?: string;
   members: GroupMember[];
-  onInvite: () => void;
   onMemberPress: (member: GroupMember) => void;
   onOpenAll: () => void;
+  profiles: Record<string, MemberProfile | null>;
 }) {
   const visibleMembers = members.slice(0, 4);
   const overflowCount = Math.max(0, members.length - visibleMembers.length);
@@ -969,14 +1473,14 @@ function PartnerStrip({
               onPress={() => onMemberPress(member)}
               style={({ pressed }) => [styles.partnerItem, pressed && styles.pressed]}
             >
-              <View style={[styles.avatar, active && styles.avatarActive]}>
-                {member.avatarUrl ? (
-                  <Image source={{ uri: member.avatarUrl }} style={styles.avatarImage} />
-                ) : (
-                  <AppText tone="inverse" variant="bodySmall" weight="900">
-                    {member.displayName.slice(0, 1)}
-                  </AppText>
-                )}
+              <View style={active && styles.avatarActiveWrap}>
+                <Avatar
+                  avatarLocalUri={profiles[member.id]?.avatarLocalUri}
+                  avatarThumbUrl={profiles[member.id]?.avatarThumbUrl}
+                  avatarUrl={profiles[member.id]?.avatarUrl ?? member.avatarUrl}
+                  name={member.displayName}
+                  size={52}
+                />
               </View>
               <AppText
                 numberOfLines={1}
@@ -1003,14 +1507,6 @@ function PartnerStrip({
           </Pressable>
         ) : null}
 
-        <Pressable accessibilityRole="button" onPress={onInvite} style={styles.partnerItem}>
-          <View style={styles.inviteAvatar}>
-            <Ionicons color={colors.textStrong} name="add" size={26} />
-          </View>
-          <AppText tone="muted" variant="caption" weight="900">
-            邀请
-          </AppText>
-        </Pressable>
       </View>
     </View>
   );
@@ -1045,42 +1541,6 @@ function WeeklyTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TrainingAdviceCard({ advice, onPress }: { advice: AdviceConfig; onPress: () => void }) {
-  return (
-    <View style={styles.adviceSection}>
-      <AppText variant="subtitle" weight="900">
-        训练建议
-      </AppText>
-      <Pressable
-        accessibilityRole="button"
-        onPress={onPress}
-        style={({ pressed }) => [styles.adviceCard, pressed && styles.pressed]}
-      >
-        <AdviceIcon icon={advice.icon} tone={advice.tone} />
-        <View style={styles.adviceText}>
-          <AppText
-            style={
-              advice.tone === 'danger'
-                ? styles.adviceDanger
-                : advice.tone === 'warning'
-                  ? styles.adviceWarning
-                  : styles.adviceSuccess
-            }
-            variant="subtitle"
-            weight="900"
-          >
-            {advice.status}
-          </AppText>
-          <AppText tone="muted" variant="bodySmall">
-            {advice.message}
-          </AppText>
-        </View>
-        <Ionicons color={colors.textMuted} name="chevron-forward" size={20} />
-      </Pressable>
-    </View>
-  );
-}
-
 function AdviceIcon({
   icon,
   tone,
@@ -1107,8 +1567,247 @@ function AdviceIcon({
 
   return (
     <View style={[styles.adviceIcon, { backgroundColor: background }]}>
-      <Ionicons color={color} name={icon} size={30} />
+      <Ionicons color={color} name={icon} size={24} />
     </View>
+  );
+}
+
+function PlanDayPickerSheet({
+  days,
+  onClose,
+  onFreeTraining,
+  onSelectDay,
+  onSelectWeek,
+  selectedWeek,
+  selectedWeekday,
+  visible,
+  weekOptions,
+}: {
+  days: PlanDay[];
+  onClose: () => void;
+  onFreeTraining: () => void;
+  onSelectDay: (day: PlanDay) => void;
+  onSelectWeek: (week: number) => void;
+  selectedWeek: number;
+  selectedWeekday: Weekday | null;
+  visible: boolean;
+  weekOptions: number[];
+}) {
+  const weekDays = getDaysForWeek(days, selectedWeek);
+
+  return (
+    <AppModalSheet
+      onClose={onClose}
+      subtitle="这里只切换本次首页和即将开始的训练，不会修改小组当前周。"
+      title="选择今天练哪天"
+      visible={visible}
+    >
+      <View style={styles.weekChips}>
+        {weekOptions.map((week) => (
+          <Pressable
+            accessibilityRole="button"
+            key={week}
+            onPress={() => onSelectWeek(week)}
+            style={({ pressed }) => [
+              styles.weekChip,
+              week === selectedWeek && styles.weekChipActive,
+              pressed && styles.pressed,
+            ]}
+          >
+            <AppText
+              style={week === selectedWeek ? styles.weekChipTextActive : styles.weekChipText}
+              variant="caption"
+              weight="900"
+            >
+              第 {week} 周
+            </AppText>
+          </Pressable>
+        ))}
+      </View>
+
+      <View style={styles.dayChoiceList}>
+        {weekDays.length === 0 ? (
+          <AppText tone="muted" variant="bodySmall">
+            这一周还没有计划训练日。
+          </AppText>
+        ) : (
+          weekDays.map((day) => {
+            const active = day.weekday === selectedWeekday;
+            return (
+              <Pressable
+                accessibilityRole="button"
+                key={day.id}
+                onPress={() => onSelectDay(day)}
+                style={({ pressed }) => [
+                  styles.dayChoice,
+                  active && styles.dayChoiceActive,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <View style={styles.dayChoiceIcon}>
+                  <AppText tone="inverse" variant="caption" weight="900">
+                    {formatDayChoiceTitle(day).replace('Day ', 'D')}
+                  </AppText>
+                </View>
+                <View style={styles.dayChoiceText}>
+                  <AppText variant="bodySmall" weight="900">
+                    {formatDayChoiceTitle(day)}
+                  </AppText>
+                  <AppText numberOfLines={1} tone="muted" variant="caption">
+                    {formatDayChoiceSubtitle(day)}
+                  </AppText>
+                </View>
+                {active ? <Tag label="当前" tone="brand" /> : null}
+              </Pressable>
+            );
+          })
+        )}
+
+        <Pressable accessibilityRole="button" onPress={onFreeTraining} style={({ pressed }) => [styles.freeTrainingChoice, pressed && styles.pressed]}>
+          <View style={styles.freeTrainingIcon}>
+            <Ionicons color={colors.primary} name="create-outline" size={18} />
+          </View>
+          <View style={styles.dayChoiceText}>
+            <AppText variant="bodySmall" weight="900">
+              自由训练
+            </AppText>
+            <AppText tone="muted" variant="caption">
+              不关联计划，进入补录训练保存本次记录。
+            </AppText>
+          </View>
+          <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
+        </Pressable>
+      </View>
+    </AppModalSheet>
+  );
+}
+
+function WorkoutScopeSheet({
+  currentMemberId,
+  isStarting,
+  members,
+  onClose,
+  onScopeChange,
+  onStart,
+  onToggleMember,
+  scope,
+  selectedMemberIds,
+  profiles,
+  visible,
+}: {
+  currentMemberId?: string;
+  isStarting: boolean;
+  members: GroupMember[];
+  onClose: () => void;
+  onScopeChange: (scope: WorkoutRecordScope) => void;
+  onStart: () => void;
+  onToggleMember: (memberId: string) => void;
+  scope: WorkoutRecordScope;
+  selectedMemberIds: string[];
+  profiles: Record<string, MemberProfile | null>;
+  visible: boolean;
+}) {
+  const selectedCount = scope === 'solo_local' ? (currentMemberId ? 1 : 0) : selectedMemberIds.length;
+  const canStart = selectedCount > 0 && !isStarting;
+
+  return (
+    <AppModalSheet
+      onClose={onClose}
+      subtitle="未选择的成员不会生成本次计划组；小组记录后续同步需要成员确认。"
+      title="本次训练记录给谁"
+      visible={visible}
+    >
+      <View style={styles.scopeTabs}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onScopeChange('solo_local')}
+          style={[styles.scopeTab, scope === 'solo_local' && styles.scopeTabActive]}
+        >
+          <Ionicons color={scope === 'solo_local' ? colors.surface : colors.textMuted} name="person-outline" size={16} />
+          <AppText
+            style={scope === 'solo_local' ? styles.scopeTabTextActive : styles.scopeTabText}
+            variant="caption"
+            weight="900"
+          >
+            仅我记录
+          </AppText>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onScopeChange('group_local')}
+          style={[styles.scopeTab, scope === 'group_local' && styles.scopeTabActive]}
+        >
+          <Ionicons color={scope === 'group_local' ? colors.surface : colors.textMuted} name="people-outline" size={16} />
+          <AppText
+            style={scope === 'group_local' ? styles.scopeTabTextActive : styles.scopeTabText}
+            variant="caption"
+            weight="900"
+          >
+            小组成员
+          </AppText>
+        </Pressable>
+      </View>
+
+      {scope === 'solo_local' ? (
+        <View style={styles.scopeHint}>
+          <Ionicons color={colors.primary} name="checkmark-circle" size={20} />
+          <View style={styles.scopeHintText}>
+            <AppText variant="bodySmall" weight="900">
+              只为当前成员生成训练组
+            </AppText>
+            <AppText tone="muted" variant="caption">
+              其他小组成员不会出现在本次训练执行页。
+            </AppText>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.memberSelectList}>
+          {members.map((member) => {
+            const selected = selectedMemberIds.includes(member.id);
+            return (
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: selected }}
+                key={member.id}
+                onPress={() => onToggleMember(member.id)}
+                style={({ pressed }) => [
+                  styles.memberSelectRow,
+                  selected && styles.memberSelectRowActive,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <View style={selected && styles.memberSelectAvatarActiveWrap}>
+                  <Avatar
+                    avatarLocalUri={profiles[member.id]?.avatarLocalUri}
+                    avatarThumbUrl={profiles[member.id]?.avatarThumbUrl}
+                    avatarUrl={profiles[member.id]?.avatarUrl ?? member.avatarUrl}
+                    name={member.displayName}
+                    size={38}
+                  />
+                </View>
+                <View style={styles.memberSelectText}>
+                  <AppText variant="bodySmall" weight="900">
+                    {member.displayName}
+                  </AppText>
+                  <AppText tone="muted" variant="caption">
+                    {member.id === currentMemberId ? '当前成员' : '参与本次训练后等待确认同步'}
+                  </AppText>
+                </View>
+                <Ionicons
+                  color={selected ? colors.primary : colors.textMuted}
+                  name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={21}
+                />
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
+      <AppButton disabled={!canStart} loading={isStarting} onPress={onStart} size="lg">
+        开始训练
+      </AppButton>
+    </AppModalSheet>
   );
 }
 
@@ -1208,9 +1907,9 @@ const styles = StyleSheet.create({
   adviceIcon: {
     alignItems: 'center',
     borderRadius: radius.md,
-    height: 52,
+    height: 44,
     justifyContent: 'center',
-    width: 52,
+    width: 44,
   },
   adviceSection: {
     gap: spacing.md,
@@ -1231,14 +1930,19 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.pill,
     borderWidth: 1,
-    height: 58,
+    height: 52,
     justifyContent: 'center',
     overflow: 'hidden',
-    width: 58,
+    width: 52,
   },
   avatarActive: {
     borderColor: colors.primary,
     borderWidth: 3,
+  },
+  avatarActiveWrap: {
+    borderColor: colors.primary,
+    borderRadius: radius.pill,
+    borderWidth: 2,
   },
   avatarImage: {
     height: '100%',
@@ -1250,12 +1954,41 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.pill,
     borderWidth: 1,
-    height: 58,
+    height: 52,
     justifyContent: 'center',
-    width: 58,
+    width: 52,
   },
   currentMemberName: {
     color: colors.primary,
+  },
+  dayChoice: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 68,
+    padding: spacing.md,
+  },
+  dayChoiceActive: {
+    borderColor: colors.primary,
+  },
+  dayChoiceIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.dark,
+    borderRadius: radius.md,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  dayChoiceList: {
+    gap: spacing.sm,
+  },
+  dayChoiceText: {
+    flex: 1,
+    gap: 2,
   },
   emptyActionButton: {
     flex: 1,
@@ -1270,7 +2003,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   emptyCardCompact: {
-    padding: spacing.lg,
+    padding: spacing.md,
   },
   emptyIcon: {
     alignItems: 'center',
@@ -1308,6 +2041,25 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  freeTrainingChoice: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 68,
+    padding: spacing.md,
+  },
+  freeTrainingIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
   header: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1318,6 +2070,18 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  conflictActions: {
+    gap: spacing.sm,
+  },
+  conflictRow: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    gap: 3,
+    padding: spacing.md,
+  },
+  conflictSummary: {
+    gap: spacing.sm,
+  },
   headerTitle: {
     color: colors.textStrong,
   },
@@ -1327,7 +2091,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     justifyContent: 'center',
-    minHeight: 58,
+    minHeight: 50,
     paddingHorizontal: spacing.xl,
   },
   heroButtonDisabled: {
@@ -1344,9 +2108,9 @@ const styles = StyleSheet.create({
   },
   heroContent: {
     gap: spacing.sm,
-    minHeight: 270,
-    padding: spacing.xl,
-    paddingTop: spacing.xl,
+    minHeight: 188,
+    padding: spacing.lg,
+    paddingTop: spacing.lg,
   },
   heroDay: {
     color: 'rgba(255,255,255,0.86)',
@@ -1356,7 +2120,7 @@ const styles = StyleSheet.create({
     opacity: 0.94,
   },
   heroImageBackground: {
-    minHeight: 270,
+    minHeight: 188,
   },
   heroPlan: {
     color: 'rgba(255,255,255,0.9)',
@@ -1403,17 +2167,6 @@ const styles = StyleSheet.create({
   heroTitle: {
     color: colors.surface,
   },
-  inviteAvatar: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.pill,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    height: 58,
-    justifyContent: 'center',
-    width: 58,
-  },
   legendItem: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1438,12 +2191,49 @@ const styles = StyleSheet.create({
   metricCard: {
     flex: 1,
     gap: spacing.xs,
-    minHeight: 98,
-    padding: spacing.lg,
+    minHeight: 82,
+    padding: spacing.md,
   },
   metricRow: {
     flexDirection: 'row',
     gap: spacing.md,
+  },
+  memberSelectAvatar: {
+    alignItems: 'center',
+    backgroundColor: colors.dark,
+    borderRadius: radius.pill,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  memberSelectAvatarActive: {
+    backgroundColor: colors.primary,
+  },
+  memberSelectAvatarActiveWrap: {
+    borderColor: colors.primary,
+    borderRadius: radius.pill,
+    borderWidth: 2,
+  },
+  memberSelectList: {
+    gap: spacing.sm,
+  },
+  memberSelectRow: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 68,
+    padding: spacing.md,
+  },
+  memberSelectRowActive: {
+    borderColor: colors.primary,
+  },
+  memberSelectText: {
+    flex: 1,
+    gap: 2,
   },
   notificationButton: {
     alignItems: 'center',
@@ -1489,6 +2279,47 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
+  },
+  planProgressFill: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    height: '100%',
+  },
+  planProgressRow: {
+    gap: spacing.xs,
+  },
+  planProgressTrack: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    height: 7,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  planSwitchCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+    ...shadows.card,
+  },
+  planSwitchIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  planSwitchMain: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  planSwitchText: {
+    flex: 1,
+    gap: 2,
   },
   pressed: {
     opacity: 0.86,
@@ -1539,6 +2370,36 @@ const styles = StyleSheet.create({
   recoveryItemActive: {
     borderColor: colors.primary,
   },
+  recoveryPill: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    flexGrow: 1,
+    gap: 4,
+    justifyContent: 'center',
+    minHeight: 34,
+    minWidth: '23%',
+    paddingHorizontal: spacing.sm,
+  },
+  recoveryPillActive: {
+    backgroundColor: colors.primary,
+  },
+  recoveryPillText: {
+    color: colors.textMuted,
+  },
+  recoveryPillTextActive: {
+    color: colors.surface,
+  },
+  recoveryPills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  recoverySelectorCard: {
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
   recoveryList: {
     gap: spacing.sm,
   },
@@ -1550,7 +2411,56 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     paddingBottom: spacing.xxxxl,
   },
+  scopeHint: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 68,
+    padding: spacing.md,
+  },
+  scopeHintText: {
+    flex: 1,
+    gap: 2,
+  },
+  scopeTab: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: 40,
+  },
+  scopeTabActive: {
+    backgroundColor: colors.primary,
+  },
+  scopeTabText: {
+    color: colors.textMuted,
+  },
+  scopeTabTextActive: {
+    color: colors.surface,
+  },
+  scopeTabs: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.lg,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    padding: spacing.xs,
+  },
   sectionAction: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 2,
+  },
+  selectorHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  selectorMore: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 2,
@@ -1560,6 +2470,73 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     justifyContent: 'space-between',
+  },
+  startCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  startSection: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.md,
+    ...shadows.card,
+  },
+  summaryContent: {
+    gap: spacing.xs,
+    justifyContent: 'flex-end',
+    minHeight: 122,
+    padding: spacing.md,
+  },
+  summaryImage: {
+    opacity: 0.94,
+  },
+  summaryImageBackground: {
+    borderRadius: radius.lg,
+    minHeight: 122,
+    overflow: 'hidden',
+  },
+  summaryScrim: {
+    backgroundColor: 'rgba(1,12,22,0.58)',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  summarySubtitle: {
+    color: 'rgba(255,255,255,0.86)',
+  },
+  summaryTitle: {
+    color: colors.surface,
+  },
+  todaySummary: {
+    gap: spacing.md,
+  },
+  weekChip: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    justifyContent: 'center',
+    minHeight: 34,
+    paddingHorizontal: spacing.md,
+  },
+  weekChipActive: {
+    backgroundColor: colors.primary,
+  },
+  weekChipText: {
+    color: colors.textMuted,
+  },
+  weekChipTextActive: {
+    color: colors.surface,
+  },
+  weekChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
   },
   weekGrid: {
     flexDirection: 'row',
@@ -1575,7 +2552,7 @@ const styles = StyleSheet.create({
     flexBasis: '47%',
     flexGrow: 1,
     gap: spacing.xs,
-    minHeight: 90,
+    minHeight: 78,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.md,
     ...shadows.card,

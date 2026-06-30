@@ -6,9 +6,6 @@ import { AppCard, AppText } from '@/components/ui';
 import type { SaveWorkoutSetInput, WorkoutSet } from '@/domain/workout/workout.types';
 import { colors, radius, spacing } from '@/theme';
 
-const rpeOptions = [6, 7, 8, 9, 10];
-const rirOptions = [0, 1, 2, 3, 4, 5];
-
 function formatNumber(value: number | undefined, fallback = '0'): string {
   if (value === undefined) {
     return fallback;
@@ -28,16 +25,12 @@ function CompletedSetItem({ memberName, onDelete, onSavePatch, set }: CompletedS
   const [notesDraft, setNotesDraft] = useState(set.notes ?? '');
   const [editWeight, setEditWeight] = useState(formatNumber(set.actualWeight ?? set.plannedWeight));
   const [editReps, setEditReps] = useState(formatNumber(set.actualReps ?? set.plannedReps));
-  const [editRpe, setEditRpe] = useState(set.rpe);
-  const [editRir, setEditRir] = useState(set.rir);
 
   function toggleEdit() {
     if (isEditing) {
       onSavePatch({
         actualWeight: parseFloat(editWeight) || (set.actualWeight ?? set.plannedWeight),
         actualReps: parseInt(editReps, 10) || (set.actualReps ?? set.plannedReps),
-        rpe: editRpe,
-        rir: editRir,
         notes: notesDraft.trim() || undefined,
       });
     }
@@ -71,16 +64,6 @@ function CompletedSetItem({ memberName, onDelete, onSavePatch, set }: CompletedS
                 {set.actualReps ?? set.plannedReps ?? 0} 次
               </AppText>
             </View>
-            {set.rpe !== undefined ? (
-              <View style={[styles.valueChip, styles.rpeChip]}>
-                <AppText variant="caption" weight="800" style={styles.rpeChipText}>RPE {formatNumber(set.rpe)}</AppText>
-              </View>
-            ) : null}
-            {set.rir !== undefined ? (
-              <View style={[styles.valueChip, styles.rirChip]}>
-                <AppText variant="caption" weight="800" style={styles.rirChipText}>RIR {formatNumber(set.rir)}</AppText>
-              </View>
-            ) : null}
           </View>
         </View>
         <View style={styles.itemActions}>
@@ -116,40 +99,14 @@ function CompletedSetItem({ memberName, onDelete, onSavePatch, set }: CompletedS
               value={editReps}
             />
           </View>
-          <View style={styles.editOptionRow}>
-            {rpeOptions.map((option) => {
-              const isActive = editRpe === option;
-              return (
-                <Pressable
-                  accessibilityRole="button"
-                  key={`rpe-${option}`}
-                  onPress={() => setEditRpe(isActive ? undefined : option)}
-                  style={[styles.editPill, isActive && styles.editPillActive]}
-                >
-                  <AppText tone={isActive ? 'inverse' : 'muted'} variant="caption" weight="800">
-                    {option}
-                  </AppText>
-                </Pressable>
-              );
-            })}
-          </View>
-          <View style={styles.editOptionRow}>
-            {rirOptions.map((option) => {
-              const isActive = editRir === option;
-              return (
-                <Pressable
-                  accessibilityRole="button"
-                  key={`rir-${option}`}
-                  onPress={() => setEditRir(isActive ? undefined : option)}
-                  style={[styles.editPill, isActive && styles.editPillActive]}
-                >
-                  <AppText tone={isActive ? 'inverse' : 'muted'} variant="caption" weight="800">
-                    {option}
-                  </AppText>
-                </Pressable>
-              );
-            })}
-          </View>
+          <TextInput
+            multiline
+            onChangeText={setNotesDraft}
+            placeholder="备注"
+            placeholderTextColor={colors.textMuted}
+            style={styles.editNotesInput}
+            value={notesDraft}
+          />
         </View>
       ) : null}
     </View>
@@ -268,18 +225,6 @@ const styles = StyleSheet.create({
   valueChipText: {
     color: colors.textStrong,
   },
-  rpeChip: {
-    backgroundColor: colors.primarySoft,
-  },
-  rpeChipText: {
-    color: colors.primary,
-  },
-  rirChip: {
-    backgroundColor: colors.accentSoft,
-  },
-  rirChipText: {
-    color: colors.accent,
-  },
   itemActions: {
     flexDirection: 'row',
     gap: spacing.xs,
@@ -317,21 +262,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     textAlign: 'center',
   },
-  editOptionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  editPill: {
-    alignItems: 'center',
+  editNotesInput: {
     backgroundColor: colors.surface,
     borderRadius: radius.sm,
-    height: 28,
-    justifyContent: 'center',
-    minWidth: 36,
-    paddingHorizontal: spacing.xs,
-  },
-  editPillActive: {
-    backgroundColor: colors.brand,
+    color: colors.textStrong,
+    fontSize: 14,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    textAlignVertical: 'top',
   },
 });

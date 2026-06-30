@@ -16,11 +16,11 @@ export default function AccountRoute() {
   );
 
   return (
-    <Screen title="账号资料" subtitle="账号用于登录、会员、同步、权限和恢复。">
+    <Screen safeTop={false}>
       {!isLoggedIn || !user ? (
         <EmptyState
           actionLabel="登录 / 注册"
-          description="登录后可以同步账号资料、会员状态和后续云服务。未登录仍可本地训练。"
+          description="登录后可以管理账号资料和会员状态。未登录仍可查看公开协议页面。"
           onActionPress={() => router.push('/account/login' as never)}
           title="当前未登录"
         />

@@ -16,6 +16,10 @@ export type MemberProfile = {
   id: ID;
   memberId: ID;
   groupId: ID;
+  avatarUrl?: string;
+  avatarThumbUrl?: string;
+  avatarLocalUri?: string;
+  avatarUpdatedAt?: string;
   bodyweight?: number;
   bench1RM?: number;
   squat1RM?: number;

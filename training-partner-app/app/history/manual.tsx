@@ -72,8 +72,6 @@ export default function ManualHistoryRoute() {
   const [setCount, setSetCount] = useState('3');
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('8');
-  const [rpe, setRpe] = useState('');
-  const [rir, setRir] = useState('');
   const [restSeconds, setRestSeconds] = useState('');
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -157,15 +155,11 @@ export default function ManualHistoryRoute() {
       const parsedSetCount = parseOptionalInteger(setCount);
       const parsedReps = parseOptionalInteger(reps);
       const parsedWeight = parseOptionalNumber(weight);
-      const parsedRpe = parseOptionalNumber(rpe);
-      const parsedRir = parseOptionalNumber(rir);
       const parsedRestSeconds = parseOptionalInteger(restSeconds);
 
       assertOptionalRange('组数', parsedSetCount, 1);
       assertOptionalRange('次数', parsedReps, 0);
       assertOptionalRange('重量', parsedWeight, 0);
-      assertOptionalRange('RPE', parsedRpe, 6, 10);
-      assertOptionalRange('RIR', parsedRir, 0, 5);
       assertOptionalRange('休息时间', parsedRestSeconds, 0);
 
       const session = await repositories.workoutRepository.createManualSession({
@@ -177,8 +171,6 @@ export default function ManualHistoryRoute() {
         planId: group.activePlanId,
         reps: parsedReps,
         restSeconds: parsedRestSeconds ?? null,
-        rir: parsedRir,
-        rpe: parsedRpe,
         setCount: parsedSetCount ?? 1,
         title,
         weight: parsedWeight,
@@ -197,7 +189,7 @@ export default function ManualHistoryRoute() {
   };
 
   return (
-    <Screen title="补录训练" subtitle="把过去完成的训练保存到本地记录。">
+    <Screen subtitle="把过去完成的训练保存到本地记录。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="补录训练暂时不可用" description={error} /> : null}
 
@@ -281,8 +273,6 @@ export default function ManualHistoryRoute() {
               <Field label="组数" onChangeText={setSetCount} value={setCount} />
               <Field label="重量 kg" onChangeText={setWeight} placeholder="可留空" value={weight} />
               <Field label="次数" onChangeText={setReps} value={reps} />
-              <Field label="RPE" onChangeText={setRpe} placeholder="可留空" value={rpe} />
-              <Field label="RIR" onChangeText={setRir} placeholder="可留空" value={rir} />
               <Field label="休息秒" onChangeText={setRestSeconds} placeholder="可留空" value={restSeconds} />
             </View>
             <AppText tone="muted" variant="caption">

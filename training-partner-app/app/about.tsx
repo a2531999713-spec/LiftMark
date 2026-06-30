@@ -15,7 +15,7 @@ export default function AboutRoute() {
   }, []);
 
   return (
-    <Screen contentStyle={styles.screen}>
+    <Screen contentStyle={styles.screen} safeTop={false}>
       <View style={styles.hero}>
         <View style={styles.logoMark}>
           <AppText variant="headline" weight="900" style={styles.logoText}>练刻</AppText>
@@ -81,7 +81,8 @@ const styles = StyleSheet.create({
   hero: {
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: spacing.xxl,
+    paddingBottom: spacing.lg,
+    paddingTop: spacing.sm,
   },
   heroName: {
     color: colors.textStrong,

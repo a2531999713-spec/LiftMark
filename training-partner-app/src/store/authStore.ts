@@ -9,8 +9,8 @@ import type {
   CodeLoginInput,
   LoginInput,
   RegisterInput,
-  SendCodeResult,
   SendCodeInput,
+  SendCodeResult,
 } from '@/services/auth/authTypes';
 import { getMembership, type Membership } from '@/services/membershipService';
 
@@ -124,11 +124,12 @@ export const useAuthStore = create<AuthStore>((set) => ({
       const membershipTier = getMembershipTier(membership);
       set((state) => ({
         authMode: deriveAuthMode(state.isLoggedIn, membershipTier),
-        authStatus: state.authStatus === 'offline_authenticated'
-          ? 'offline_authenticated'
-          : state.isLoggedIn
-            ? 'authenticated'
-            : 'unauthenticated',
+        authStatus:
+          state.authStatus === 'offline_authenticated'
+            ? 'offline_authenticated'
+            : state.isLoggedIn
+              ? 'authenticated'
+              : 'unauthenticated',
         membership,
         membershipTier,
       }));
@@ -249,7 +250,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       }
       return {
         ok: true,
-        message: result.debugCode ? `验证码已发送。开发模式验证码：${result.debugCode}` : result.message,
+        message: result.message ?? '验证码已发送，请查看短信。',
       };
     } finally {
       set({ isLoading: false });

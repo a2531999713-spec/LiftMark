@@ -6,7 +6,7 @@ export type PhaseType = 'strength' | 'hypertrophy' | 'deload' | 'conditioning' |
 
 export type ExercisePriority = 'A' | 'B' | 'C';
 
-export type IntensityType = 'percent_1rm' | 'rpe' | 'rir' | 'fixed' | 'manual';
+export type IntensityType = 'percent_1rm' | 'fixed' | 'manual' | 'rpe' | 'rir';
 
 export type ReferenceLift =
   | 'bench'
@@ -65,7 +65,9 @@ export type PlanExercise = {
   repMax?: number;
   intensityType: IntensityType;
   percent1RM?: number;
+  /** Legacy compatibility only. New plans export/import and display without this value. */
   rpeTarget?: number;
+  /** Legacy compatibility only. New plans export/import and display without this value. */
   rirTarget?: number;
   fixedWeight?: number;
   referenceLift: ReferenceLift;

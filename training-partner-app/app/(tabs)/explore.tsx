@@ -18,7 +18,7 @@ import {
   type SystemTrainingScheme,
 } from '@/domain/plan/systemSchemes';
 import { useAuthGate } from '@/hooks/useAuthGate';
-import { colors, radius, shadows, spacing } from '@/theme';
+import { colors, radius, spacing } from '@/theme';
 
 type NoticeState = {
   message: string;

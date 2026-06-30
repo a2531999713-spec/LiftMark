@@ -8,9 +8,6 @@ import type { MemberProfile } from '@/domain/member/member.types';
 import type { WorkoutExerciseRecord } from '@/domain/workout/workout.types';
 import { colors, radius, spacing } from '@/theme';
 
-const rpeOptions = [6, 7, 8, 9, 10];
-const rirOptions = [0, 1, 2, 3, 4, 5];
-
 function formatNumber(value: number | undefined, fallback = '0'): string {
   if (value === undefined) {
     return fallback;
@@ -28,13 +25,6 @@ function parseNumericInput(raw: string, integer: boolean): number | null {
     return Number.NaN;
   }
   return integer ? Math.round(value) : Math.round(value * 10) / 10;
-}
-
-function getWeightIncrement(profile: MemberProfile | null, exercise: Exercise | null): number {
-  if (exercise?.equipment === 'dumbbell') {
-    return profile?.dumbbellIncrement ?? 2;
-  }
-  return profile?.barbellIncrement ?? 2.5;
 }
 
 type NumberStepperProps = {
@@ -137,54 +127,12 @@ function NumberStepper({
   );
 }
 
-type OptionButtonsProps = {
-  label: string;
-  onChange: (value: number | undefined) => void;
-  options: number[];
-  value: number | undefined;
-};
-
-function OptionButtons({ label, onChange, options, value }: OptionButtonsProps) {
-  return (
-    <View style={styles.optionGroup}>
-      <AppText tone="muted" variant="caption">
-        {label}
-      </AppText>
-      <View style={styles.optionRow}>
-        {options.map((option) => {
-          const isActive = value === option;
-          return (
-            <Pressable
-              accessibilityRole="button"
-              key={option}
-              onPress={() => onChange(isActive ? undefined : option)}
-              style={[styles.optionPill, isActive && styles.optionPillActive]}
-            >
-              <AppText
-                tone={isActive ? 'inverse' : 'muted'}
-                variant="caption"
-                weight="800"
-              >
-                {option}
-              </AppText>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
 type CurrentSetRecorderProps = {
   exercise: Exercise | null;
   isResting: boolean;
   isWorkoutReadyToFinish: boolean;
   memberName: string;
-  onClearRpe: () => void;
-  onClearRir: () => void;
   onCompleteSet: () => void;
-  onRpeChange: (value: number) => void;
-  onRirChange: (value: number) => void;
   onSkipRest: () => void;
   onWeightChange: (value: number) => void;
   onRepsChange: (value: number) => void;
@@ -194,8 +142,6 @@ type CurrentSetRecorderProps = {
   setNumber: number;
   weight: number | undefined;
   reps: number | undefined;
-  rpe: number | undefined;
-  rir: number | undefined;
   weightIncrement: number;
 };
 
@@ -207,21 +153,12 @@ export function CurrentSetRecorder({
   onSkipRest,
   onWeightChange,
   onRepsChange,
-  onRpeChange,
-  onRirChange,
-  onClearRpe,
-  onClearRir,
   setNumber,
   restSeconds,
   weight,
   reps,
-  rpe,
-  rir,
   weightIncrement,
 }: CurrentSetRecorderProps) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const hasAdvancedValues = rpe !== undefined || rir !== undefined;
-
   function formatTimer(seconds: number): string {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -263,43 +200,6 @@ export function CurrentSetRecorder({
           value={reps}
         />
       </View>
-
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => setShowAdvanced(!showAdvanced)}
-        style={styles.advancedToggle}
-      >
-        <Ionicons
-          color={colors.textMuted}
-          name={showAdvanced ? 'chevron-up' : 'chevron-down'}
-          size={16}
-        />
-        <AppText tone="muted" variant="caption" weight="600">
-          {showAdvanced ? '收起 RPE/RIR' : hasAdvancedValues ? '编辑 RPE/RIR' : '添加 RPE/RIR'}
-        </AppText>
-        {hasAdvancedValues && !showAdvanced ? (
-          <View style={styles.advancedBadge}>
-            <AppText variant="caption" weight="700" style={styles.advancedBadgeText}>已设置</AppText>
-          </View>
-        ) : null}
-      </Pressable>
-
-      {showAdvanced ? (
-        <View style={styles.advancedSection}>
-          <OptionButtons
-            label="RPE (主观疲劳度)"
-            onChange={(v) => v !== undefined ? onRpeChange(v) : onClearRpe()}
-            options={rpeOptions}
-            value={rpe}
-          />
-          <OptionButtons
-            label="RIR (剩余次数)"
-            onChange={(v) => v !== undefined ? onRirChange(v) : onClearRir()}
-            options={rirOptions}
-            value={rir}
-          />
-        </View>
-      ) : null}
 
       <View style={styles.actionRow}>
         {isResting ? (
@@ -401,48 +301,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     height: 48,
     textAlign: 'center',
-  },
-  advancedToggle: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-  },
-  advancedBadge: {
-    backgroundColor: colors.brand,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-  },
-  advancedBadgeText: {
-    color: colors.surface,
-    fontSize: 10,
-  },
-  advancedSection: {
-    gap: spacing.sm,
-  },
-  optionGroup: {
-    gap: spacing.xs,
-  },
-  optionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  optionPill: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    height: 32,
-    justifyContent: 'center',
-    minWidth: 36,
-    paddingHorizontal: spacing.sm,
-  },
-  optionPillActive: {
-    backgroundColor: colors.brand,
   },
   actionRow: {
     flexDirection: 'row',

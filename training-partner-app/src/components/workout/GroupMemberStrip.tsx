@@ -1,16 +1,18 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Avatar } from '@/components/avatar';
 import { AppText } from '@/components/ui';
-import type { GroupMember } from '@/domain/member/member.types';
+import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { colors, radius, spacing } from '@/theme';
 
 type GroupMemberStripProps = {
   currentMemberId: string;
   members: GroupMember[];
   onSelectMember: (memberId: string) => void;
+  profiles?: Record<string, MemberProfile | null>;
 };
 
-export function GroupMemberStrip({ currentMemberId, members, onSelectMember }: GroupMemberStripProps) {
+export function GroupMemberStrip({ currentMemberId, members, onSelectMember, profiles = {} }: GroupMemberStripProps) {
   return (
     <View style={styles.container}>
       {members.map((member) => {
@@ -23,19 +25,14 @@ export function GroupMemberStrip({ currentMemberId, members, onSelectMember }: G
             onPress={() => onSelectMember(member.id)}
             style={styles.memberSlot}
           >
-            <View
-              style={[
-                styles.avatar,
-                isCurrent && styles.avatarActive,
-              ]}
-            >
-              <AppText
-                tone="default"
-                variant="caption"
-                weight="800"
-              >
-                {member.displayName.slice(0, 1)}
-              </AppText>
+            <View style={isCurrent && styles.avatarActive}>
+              <Avatar
+                avatarLocalUri={profiles[member.id]?.avatarLocalUri}
+                avatarThumbUrl={profiles[member.id]?.avatarThumbUrl}
+                avatarUrl={profiles[member.id]?.avatarUrl ?? member.avatarUrl}
+                name={member.displayName}
+                size={44}
+              />
             </View>
             <AppText
               tone="default"
@@ -80,17 +77,9 @@ const styles = StyleSheet.create({
     minHeight: 66,
     minWidth: 0,
   },
-  avatar: {
-    alignItems: 'center',
-    backgroundColor: '#D8E0E7',
-    borderColor: colors.transparent,
+  avatarActive: {
     borderRadius: radius.pill,
     borderWidth: 2,
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
-  avatarActive: {
     borderColor: colors.brand,
   },
   currentBadge: {

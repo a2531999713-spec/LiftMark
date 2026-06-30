@@ -44,14 +44,14 @@ export function ProfileMenuItem({
       ]}
     >
       <View style={[styles.iconBox, { backgroundColor: iconBackground }]}>
-        <Ionicons color={iconColor} name={icon} size={22} />
+        <Ionicons color={iconColor} name={icon} size={25} />
       </View>
       <View style={styles.textBlock}>
-        <AppText tone={danger ? 'danger' : 'default'} variant="bodySmall" weight="900">
+        <AppText tone={danger ? 'danger' : 'default'} variant="subtitle" weight="900">
           {label}
         </AppText>
         {description ? (
-          <AppText numberOfLines={2} tone="muted" variant="caption">
+          <AppText numberOfLines={2} tone="muted" variant="bodySmall">
             {description}
           </AppText>
         ) : null}
@@ -63,7 +63,7 @@ export function ProfileMenuItem({
             {trailing}
           </AppText>
         ) : null}
-        {pressable ? <Ionicons color={colors.textSubtle} name="chevron-forward" size={18} /> : null}
+        {pressable ? <Ionicons color={colors.textSubtle} name="chevron-forward" size={22} /> : null}
       </View>
     </Pressable>
   );
@@ -75,21 +75,23 @@ const styles = StyleSheet.create({
   },
   iconBox: {
     alignItems: 'center',
-    borderRadius: radius.md,
-    height: 44,
+    borderRadius: radius.pill,
+    height: 50,
     justifyContent: 'center',
-    width: 44,
+    width: 50,
   },
   pressed: {
     backgroundColor: colors.backgroundElevated,
   },
   row: {
     alignItems: 'center',
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: spacing.md,
-    minHeight: 74,
+    minHeight: 82,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingVertical: 14,
   },
   textBlock: {
     flex: 1,

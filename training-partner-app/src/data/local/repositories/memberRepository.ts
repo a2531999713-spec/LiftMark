@@ -62,13 +62,18 @@ export class SQLiteMemberRepository implements MemberRepository {
 
       await txn.runAsync(
         `INSERT INTO member_profiles (
-          id, member_id, group_id, bodyweight, bench_1rm, squat_1rm, deadlift_1rm,
+          id, member_id, group_id, avatar_url, avatar_thumb_url, avatar_local_uri, avatar_updated_at,
+          bodyweight, bench_1rm, squat_1rm, deadlift_1rm,
           overhead_press_1rm, pullup_reference_weight, barbell_increment,
           dumbbell_increment, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         createId('profile'),
         member.id,
         member.groupId,
+        input.profile?.avatarUrl ?? null,
+        input.profile?.avatarThumbUrl ?? null,
+        input.profile?.avatarLocalUri ?? null,
+        input.profile?.avatarUpdatedAt ?? null,
         input.profile?.bodyweight ?? null,
         input.profile?.bench1RM ?? null,
         input.profile?.squat1RM ?? null,
@@ -135,10 +140,15 @@ export class SQLiteMemberRepository implements MemberRepository {
 
     await db.runAsync(
       `UPDATE member_profiles
-       SET bodyweight = ?, bench_1rm = ?, squat_1rm = ?, deadlift_1rm = ?,
+       SET avatar_url = ?, avatar_thumb_url = ?, avatar_local_uri = ?, avatar_updated_at = ?,
+           bodyweight = ?, bench_1rm = ?, squat_1rm = ?, deadlift_1rm = ?,
            overhead_press_1rm = ?, pullup_reference_weight = ?,
            barbell_increment = ?, dumbbell_increment = ?, updated_at = ?
        WHERE member_id = ?`,
+      updated.avatarUrl ?? null,
+      updated.avatarThumbUrl ?? null,
+      updated.avatarLocalUri ?? null,
+      updated.avatarUpdatedAt ?? null,
       updated.bodyweight ?? null,
       updated.bench1RM ?? null,
       updated.squat1RM ?? null,

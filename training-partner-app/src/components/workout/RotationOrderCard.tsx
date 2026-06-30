@@ -1,7 +1,8 @@
 import { StyleSheet, View } from 'react-native';
 
+import { Avatar } from '@/components/avatar';
 import { AppCard, AppText } from '@/components/ui';
-import type { GroupMember } from '@/domain/member/member.types';
+import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { colors, radius, spacing } from '@/theme';
 
 type RotationOrderCardProps = {
@@ -9,6 +10,7 @@ type RotationOrderCardProps = {
   members: GroupMember[];
   mode?: 'card' | 'dock';
   nextMemberName: string | undefined;
+  profiles?: Record<string, MemberProfile | null>;
 };
 
 export function RotationOrderCard({
@@ -16,6 +18,7 @@ export function RotationOrderCard({
   members,
   mode = 'card',
   nextMemberName,
+  profiles = {},
 }: RotationOrderCardProps) {
   if (members.length <= 1) {
     return null;
@@ -41,14 +44,13 @@ export function RotationOrderCard({
 
             return (
               <View key={member.id} style={[styles.dockChip, isCurrent && styles.dockChipActive]}>
-                <AppText
-                  tone={isCurrent ? 'inverse' : 'muted'}
-                  variant="caption"
-                  weight="900"
-                  numberOfLines={1}
-                >
-                  {member.displayName.slice(0, 1)}
-                </AppText>
+                <Avatar
+                  avatarLocalUri={profiles[member.id]?.avatarLocalUri}
+                  avatarThumbUrl={profiles[member.id]?.avatarThumbUrl}
+                  avatarUrl={profiles[member.id]?.avatarUrl ?? member.avatarUrl}
+                  name={member.displayName}
+                  size={22}
+                />
               </View>
             );
           })}
@@ -74,11 +76,14 @@ export function RotationOrderCard({
                 </AppText>
               ) : null}
               <View style={[styles.namePill, isCurrent && styles.namePillActive]}>
-                <AppText
-                  tone={isCurrent ? 'inverse' : 'muted'}
-                  variant="caption"
-                  weight={isCurrent ? '900' : '700'}
-                >
+                <Avatar
+                  avatarLocalUri={profiles[member.id]?.avatarLocalUri}
+                  avatarThumbUrl={profiles[member.id]?.avatarThumbUrl}
+                  avatarUrl={profiles[member.id]?.avatarUrl ?? member.avatarUrl}
+                  name={member.displayName}
+                  size={24}
+                />
+                <AppText tone={isCurrent ? 'inverse' : 'muted'} variant="caption" weight={isCurrent ? '900' : '700'}>
                   {member.displayName}
                 </AppText>
               </View>
@@ -146,8 +151,11 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   namePill: {
+    alignItems: 'center',
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.pill,
+    flexDirection: 'row',
+    gap: spacing.xs,
     minHeight: 38,
     minWidth: 48,
     paddingHorizontal: spacing.sm,

@@ -1,4 +1,5 @@
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
+import type { GroupMember } from '@/domain/member/member.types';
 
 export type HistorySetEntry = {
   sessionId: string;
@@ -7,8 +8,6 @@ export type HistorySetEntry = {
   date: string;
   weight?: number;
   reps?: number;
-  rpe?: number;
-  rir?: number;
   completed: boolean;
 };
 
@@ -104,12 +103,85 @@ export type PersonalHistoryAnalysis = {
   insights: string[];
 };
 
+export type GroupHistoryTrendPoint = {
+  date: string;
+  label: string;
+  volume: number;
+  sessionCount: number;
+  completedSets: number;
+  totalSets: number;
+  completionRate: number;
+};
+
+export type GroupExerciseKey = CoreLiftTrend['key'] | 'row' | 'pullup' | 'other';
+
+export type GroupMemberContribution = {
+  memberId: string;
+  memberName: string;
+  rank: number;
+  volume: number;
+  sessionCount: number;
+  completedSets: number;
+  totalSets: number;
+  completionRate: number;
+  lastTrainingDate?: string;
+  mostTrainedExerciseName?: string;
+  bestExerciseName?: string;
+  statusLabel: '优秀' | '良好' | '一般' | '待开始';
+};
+
+export type GroupExerciseMemberPerformance = {
+  memberId: string;
+  memberName: string;
+  bestWeight?: number;
+  bestEstimatedOneRM?: number;
+  latestVolume: number;
+  latestLabel?: string;
+  trend: HistoryTrendDirection;
+};
+
+export type GroupMemberTrendSeries = {
+  memberId: string;
+  memberName: string;
+  values: number[];
+};
+
+export type GroupExerciseAnalysis = {
+  key: GroupExerciseKey;
+  exerciseName: string;
+  metric: 'weight' | 'volume' | 'estimated_1rm';
+  labels: string[];
+  members: GroupExerciseMemberPerformance[];
+  trendSeries: GroupMemberTrendSeries[];
+};
+
+export type GroupRecentSession = {
+  sessionId: string;
+  date: string;
+  title: string;
+  volume: number;
+  exerciseCount: number;
+  completedMembers: number;
+  totalMembers: number;
+  completionRate: number;
+};
+
 export type GroupHistoryAnalysis = {
   groupId: string;
-  rangeWeeks: HistoryRangeWeeks;
-  status: 'reserved';
-  title: string;
-  futureMetrics: string[];
+  groupName: string;
+  rangeDays: number;
+  memberCount: number;
+  totalVolume: number;
+  sessionCount: number;
+  completedSets: number;
+  totalSets: number;
+  completionRate: number;
+  activeMemberCount: number;
+  memberContributions: GroupMemberContribution[];
+  exerciseAnalyses: GroupExerciseAnalysis[];
+  trend: GroupHistoryTrendPoint[];
+  recentSessions: GroupRecentSession[];
+  insights: string[];
 };
 
 export function estimateOneRM(weight: number, reps: number): number {
@@ -175,7 +247,7 @@ function normalizeExerciseName(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '');
 }
 
-function getCoreLiftKey(name: string): CoreLiftTrend['key'] | null {
+export function getCoreLiftKey(name: string): CoreLiftTrend['key'] | null {
   const normalized = normalizeExerciseName(name);
 
   if (normalized.includes('卧推') || normalized.includes('benchpress')) {
@@ -197,7 +269,7 @@ function getCoreLiftKey(name: string): CoreLiftTrend['key'] | null {
   return null;
 }
 
-function getCoreLiftName(key: CoreLiftTrend['key']): string {
+export function getCoreLiftName(key: CoreLiftTrend['key']): string {
   const names: Record<CoreLiftTrend['key'], string> = {
     bench: '卧推',
     squat: '深蹲',
@@ -425,13 +497,358 @@ export function getPersonalHistoryAnalysis(
   };
 }
 
-export function getGroupHistoryAnalysis(groupId: string, rangeWeeks: HistoryRangeWeeks = 4): GroupHistoryAnalysis {
+export function getGroupExerciseKey(name: string): GroupExerciseKey | null {
+  const coreKey = getCoreLiftKey(name);
+  if (coreKey) {
+    return coreKey;
+  }
+
+  const normalized = normalizeExerciseName(name);
+  if (normalized.includes('划船') || normalized.includes('row')) {
+    return 'row';
+  }
+
+  if (
+    normalized.includes('引体') ||
+    normalized.includes('下拉') ||
+    normalized.includes('pullup') ||
+    normalized.includes('pull-up') ||
+    normalized.includes('chinup') ||
+    normalized.includes('pulldown')
+  ) {
+    return 'pullup';
+  }
+
+  return null;
+}
+
+export function getGroupExerciseName(key: GroupExerciseKey): string {
+  if (key === 'row') {
+    return '划船';
+  }
+
+  if (key === 'pullup') {
+    return '引体 / 下拉';
+  }
+
+  if (key === 'other') {
+    return '其他动作';
+  }
+
+  return getCoreLiftName(key);
+}
+
+type GroupHistoryAnalysisInput = {
+  groupId: string;
+  groupName: string;
+  members: GroupMember[];
+  details: WorkoutSessionDetail[];
+  exerciseNamesById?: Record<string, string>;
+  recentDetails?: WorkoutSessionDetail[];
+  rangeDays?: number;
+  today?: Date;
+};
+
+function getSetVolume(weight?: number, reps?: number): number {
+  const safeWeight = Number.isFinite(weight) ? weight ?? 0 : 0;
+  const safeReps = Number.isFinite(reps) ? reps ?? 0 : 0;
+  return safeWeight > 0 && safeReps > 0 ? safeWeight * safeReps : 0;
+}
+
+function getWorkoutSetVolume(set: WorkoutSessionDetail['sets'][number]): number {
+  return getSetVolume(set.actualWeight ?? set.plannedWeight, set.actualReps ?? set.plannedReps);
+}
+
+function getCompletionRate(completedSets: number, totalSets: number): number {
+  return totalSets > 0 ? completedSets / totalSets : 0;
+}
+
+function getContributionStatus(completionRate: number, completedSets: number): GroupMemberContribution['statusLabel'] {
+  if (completedSets === 0) {
+    return '待开始';
+  }
+
+  if (completionRate >= 0.85) {
+    return '优秀';
+  }
+
+  if (completionRate >= 0.65) {
+    return '良好';
+  }
+
+  return '一般';
+}
+
+function compareSessionDetailDesc(left: WorkoutSessionDetail, right: WorkoutSessionDetail): number {
+  return `${right.session.date} ${right.session.updatedAt}`.localeCompare(`${left.session.date} ${left.session.updatedAt}`);
+}
+
+export function getGroupHistoryAnalysis(input: GroupHistoryAnalysisInput): GroupHistoryAnalysis {
+  const rangeDays = input.rangeDays ?? 7;
+  const today = input.today ?? new Date();
+  const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
+  const rangeStart = addDays(endDate, -(rangeDays - 1));
+  const weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
+  const memberMap = new Map(input.members.map((member) => [member.id, member]));
+  const memberStats = new Map<
+    string,
+    {
+      completedSets: number;
+      exerciseStats: Map<string, { bestWeight: number; completedSets: number; volume: number }>;
+      lastTrainingDate?: string;
+      sessionIds: Set<string>;
+      totalSets: number;
+      volume: number;
+    }
+  >();
+  input.members.forEach((member) => {
+    memberStats.set(member.id, {
+      completedSets: 0,
+      exerciseStats: new Map(),
+      sessionIds: new Set<string>(),
+      totalSets: 0,
+      volume: 0,
+    });
+  });
+  const groupExerciseKeys: GroupExerciseKey[] = ['bench', 'squat', 'deadlift', 'press', 'row', 'pullup', 'other'];
+  const coreStats = new Map<
+    GroupExerciseKey,
+    Map<
+      string,
+      {
+        bestEstimatedOneRM: number;
+        bestWeight: number;
+        latestDate?: string;
+        latestLabel?: string;
+        volumeByDate: Map<string, number>;
+      }
+    >
+  >(groupExerciseKeys.map((key) => [key, new Map()]));
+
+  const trend = Array.from({ length: rangeDays }, (_, index) => {
+    const date = addDays(rangeStart, index);
+    return {
+      date: toLocalDateString(date),
+      label: weekdayLabels[date.getDay()],
+      volume: 0,
+      sessionCount: 0,
+      completedSets: 0,
+      totalSets: 0,
+      completionRate: 0,
+      sessionIds: new Set<string>(),
+    };
+  });
+  const trendByDate = new Map(trend.map((point) => [point.date, point]));
+
+  for (const detail of input.details) {
+    const trendPoint = trendByDate.get(detail.session.date);
+    const sessionHasCompletedSet = detail.sets.some((set) => set.completed);
+    if (trendPoint && sessionHasCompletedSet) {
+      trendPoint.sessionIds.add(detail.session.id);
+    }
+
+    for (const set of detail.sets) {
+      const stats = memberStats.get(set.memberId);
+      if (!stats) {
+        continue;
+      }
+
+      stats.totalSets += 1;
+      if (trendPoint) {
+        trendPoint.totalSets += 1;
+      }
+
+      if (!set.completed) {
+        continue;
+      }
+
+      const volume = getWorkoutSetVolume(set);
+      const record = detail.exercises.find((exercise) => exercise.id === set.exerciseRecordId);
+      const exerciseName = input.exerciseNamesById?.[record?.exerciseId ?? ''] ?? '未知动作';
+      const weight = set.actualWeight ?? set.plannedWeight ?? 0;
+      const reps = set.actualReps ?? set.plannedReps ?? 0;
+      stats.completedSets += 1;
+      stats.volume += volume;
+      stats.lastTrainingDate =
+        !stats.lastTrainingDate || detail.session.date > stats.lastTrainingDate
+          ? detail.session.date
+          : stats.lastTrainingDate;
+      stats.sessionIds.add(detail.session.id);
+      const memberExerciseStats = stats.exerciseStats.get(exerciseName) ?? {
+        bestWeight: 0,
+        completedSets: 0,
+        volume: 0,
+      };
+      memberExerciseStats.completedSets += 1;
+      memberExerciseStats.volume += volume;
+      memberExerciseStats.bestWeight = Math.max(memberExerciseStats.bestWeight, weight);
+      stats.exerciseStats.set(exerciseName, memberExerciseStats);
+
+      const coreKey = getGroupExerciseKey(exerciseName) ?? 'other';
+      if (coreKey) {
+        const memberCoreStats = coreStats.get(coreKey)!;
+        const current = memberCoreStats.get(set.memberId) ?? {
+          bestEstimatedOneRM: 0,
+          bestWeight: 0,
+          volumeByDate: new Map<string, number>(),
+        };
+        current.bestWeight = Math.max(current.bestWeight, weight);
+        current.bestEstimatedOneRM = Math.max(current.bestEstimatedOneRM, estimateOneRM(weight, reps));
+        current.volumeByDate.set(detail.session.date, (current.volumeByDate.get(detail.session.date) ?? 0) + volume);
+        if (!current.latestDate || detail.session.date >= current.latestDate) {
+          current.latestDate = detail.session.date;
+          current.latestLabel = weight > 0 && reps > 0 ? `${weight}kg x ${reps}` : undefined;
+        }
+        memberCoreStats.set(set.memberId, current);
+      }
+
+      if (trendPoint) {
+        trendPoint.completedSets += 1;
+        trendPoint.volume += volume;
+      }
+    }
+  }
+
+  const normalizedTrend: GroupHistoryTrendPoint[] = trend.map(({ sessionIds, ...point }) => ({
+    ...point,
+    sessionCount: sessionIds.size,
+    completionRate: getCompletionRate(point.completedSets, point.totalSets),
+  }));
+
+  const memberContributions = input.members
+    .map((member) => {
+      const stats = memberStats.get(member.id)!;
+      const completionRate = getCompletionRate(stats.completedSets, stats.totalSets);
+      const exerciseStats = [...stats.exerciseStats.entries()];
+      const mostTrainedExercise = exerciseStats
+        .slice()
+        .sort(([, left], [, right]) => right.completedSets - left.completedSets || right.volume - left.volume)[0];
+      const bestExercise = exerciseStats
+        .slice()
+        .sort(([, left], [, right]) => right.bestWeight - left.bestWeight || right.volume - left.volume)[0];
+      return {
+        memberId: member.id,
+        memberName: member.displayName,
+        rank: 0,
+        volume: stats.volume,
+        sessionCount: stats.sessionIds.size,
+        completedSets: stats.completedSets,
+        totalSets: stats.totalSets,
+        completionRate,
+        lastTrainingDate: stats.lastTrainingDate,
+        mostTrainedExerciseName: mostTrainedExercise?.[0],
+        bestExerciseName: bestExercise?.[0],
+        statusLabel: getContributionStatus(completionRate, stats.completedSets),
+      };
+    })
+    .sort((left, right) => right.volume - left.volume || right.completedSets - left.completedSets || left.memberName.localeCompare(right.memberName))
+    .map((contribution, index) => ({
+      ...contribution,
+      rank: index + 1,
+    }));
+
+  const trendDates = normalizedTrend.map((point) => point.date);
+  const trendLabels = normalizedTrend.map((point) => point.label);
+  const exerciseAnalyses: GroupExerciseAnalysis[] = groupExerciseKeys
+    .map((key) => {
+      const byMember = coreStats.get(key)!;
+      const members = input.members
+        .map((member) => {
+          const stats = byMember.get(member.id);
+          const values = trendDates.map((date) => stats?.volumeByDate.get(date) ?? 0);
+          const latestVolume = stats?.latestDate ? (stats.volumeByDate.get(stats.latestDate) ?? 0) : 0;
+          return {
+            memberId: member.id,
+            memberName: member.displayName,
+            bestWeight: stats && stats.bestWeight > 0 ? stats.bestWeight : undefined,
+            bestEstimatedOneRM:
+              stats && stats.bestEstimatedOneRM > 0 ? Math.round(stats.bestEstimatedOneRM * 10) / 10 : undefined,
+            latestVolume,
+            latestLabel: stats?.latestLabel,
+            trend: getDirectionFromValues(values),
+          };
+        })
+        .filter((member) => member.bestWeight !== undefined || member.latestVolume > 0)
+        .sort((left, right) => (right.bestWeight ?? 0) - (left.bestWeight ?? 0) || right.latestVolume - left.latestVolume);
+      const trendSeries = members.slice(0, 4).map((member) => {
+        const stats = byMember.get(member.memberId);
+        return {
+          memberId: member.memberId,
+          memberName: member.memberName,
+          values: trendDates.map((date) => stats?.volumeByDate.get(date) ?? 0),
+        };
+      });
+
+      return {
+        key,
+        exerciseName: getGroupExerciseName(key),
+        metric: 'volume' as const,
+        labels: trendLabels,
+        members,
+        trendSeries,
+      };
+    })
+    .filter((analysis) => analysis.members.length > 0);
+
+  const recentDetails = (input.recentDetails ?? input.details).slice().sort(compareSessionDetailDesc).slice(0, 5);
+  const recentSessions = recentDetails.map((detail) => {
+    const memberIds = new Set(detail.sets.map((set) => set.memberId).filter((memberId) => memberMap.has(memberId)));
+    const completedMemberIds = new Set(
+      detail.sets.filter((set) => set.completed && memberMap.has(set.memberId)).map((set) => set.memberId),
+    );
+    const completedSets = detail.sets.filter((set) => set.completed);
+    return {
+      sessionId: detail.session.id,
+      date: detail.session.date,
+      title: detail.session.title,
+      volume: completedSets.reduce((sum, set) => sum + getWorkoutSetVolume(set), 0),
+      exerciseCount: detail.exercises.length,
+      completedMembers: completedMemberIds.size,
+      totalMembers: memberIds.size || input.members.length,
+      completionRate: getCompletionRate(completedSets.length, detail.sets.length),
+    };
+  });
+
+  const totalVolume = normalizedTrend.reduce((sum, point) => sum + point.volume, 0);
+  const completedSets = normalizedTrend.reduce((sum, point) => sum + point.completedSets, 0);
+  const totalSets = normalizedTrend.reduce((sum, point) => sum + point.totalSets, 0);
+  const sessionCount = normalizedTrend.reduce((sum, point) => sum + point.sessionCount, 0);
+  const activeMemberCount = memberContributions.filter((member) => member.completedSets > 0).length;
+  const completionRate = getCompletionRate(completedSets, totalSets);
+  const topMember = memberContributions.find((member) => member.completedSets > 0);
+
+  const insights =
+    sessionCount === 0
+      ? ['本周还没有小组训练记录，完成一次训练后会生成小组洞察。']
+      : [
+          `本周小组完成 ${sessionCount} 次训练，总训练量 ${Math.round(totalVolume).toLocaleString('zh-CN')} kg。`,
+          topMember
+            ? `${topMember.memberName} 当前贡献最高，完成 ${topMember.completedSets} 组。`
+            : '成员贡献还在积累，先保证每位成员都有有效记录。',
+          activeMemberCount === input.members.length
+            ? '本周所有成员都有训练记录，节奏稳定。'
+            : `${activeMemberCount}/${input.members.length} 名成员完成本周训练记录。`,
+          completionRate >= 0.8
+            ? '整体完成率较好，可以继续按当前计划推进。'
+            : '整体完成率偏低，下一次训练可减少动作或降低目标重量。',
+        ];
+
   return {
-    groupId,
-    rangeWeeks,
-    status: 'reserved',
-    title: '本地小组汇总正在开发中',
-    futureMetrics: ['小组本周训练次数', '小组总训练量', '成员完成率排行', '成员 PR 动态', '小组训练日历'],
+    groupId: input.groupId,
+    groupName: input.groupName,
+    rangeDays,
+    memberCount: input.members.length,
+    totalVolume,
+    sessionCount,
+    completedSets,
+    totalSets,
+    completionRate,
+    activeMemberCount,
+    memberContributions,
+    exerciseAnalyses,
+    trend: normalizedTrend,
+    recentSessions,
+    insights,
   };
 }
 
@@ -534,10 +951,6 @@ function getFatigueFlags(entries: HistorySetEntry[]): string[] {
   const lastTwo = recent.slice(-2);
   const flags: string[] = [];
 
-  if (lastTwo.length === 2 && lastTwo.every((entry) => (entry.rpe ?? 0) >= 9)) {
-    flags.push('连续高 RPE');
-  }
-
   if (lastTwo.length === 2 && lastTwo.every((entry) => !entry.completed)) {
     flags.push('连续未完成');
   }
@@ -545,10 +958,6 @@ function getFatigueFlags(entries: HistorySetEntry[]): string[] {
   const volumes = recent.map((entry) => (entry.weight ?? 0) * (entry.reps ?? 0));
   if (volumes.length >= 2 && volumes[0] > 0 && volumes.at(-1)! < volumes[0] * 0.85) {
     flags.push('训练容量明显下降');
-  }
-
-  if (recent.filter((entry) => (entry.rir ?? 99) <= 1).length >= 3) {
-    flags.push('RIR 长期偏低');
   }
 
   return flags;

@@ -144,6 +144,8 @@ function renderConnectingLines(
     const dy = rightY - leftY;
     const length = Math.sqrt(dx * dx + dy * dy);
     const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+    const midX = (leftX + rightX) / 2;
+    const midY = (leftY + rightY) / 2;
 
     if (length > 0 && (left.yPercent > 0 || right.yPercent > 0)) {
       lines.push(
@@ -153,8 +155,8 @@ function renderConnectingLines(
             styles.connectingLine,
             {
               height: 2,
-              left: leftX as DimensionValue,
-              top: leftY - 1,
+              left: (midX - length / 2) as DimensionValue,
+              top: midY - 1,
               transform: [{ rotate: `${angle}deg` }],
               width: length,
             },
@@ -239,7 +241,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   connectingLine: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.primary,
     position: 'absolute',
   },
   pointWrapper: {

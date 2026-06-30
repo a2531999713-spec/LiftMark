@@ -11,15 +11,15 @@ export function SyncPromptSheet({ onEnable, onSkip, visible }: SyncPromptSheetPr
     <AppModalSheet
       onClose={onSkip}
       position="center"
-      subtitle="开启后，练刻会将你的成员档案、训练计划、训练记录和训练进度同步到云端。你卸载重装、换手机或重新登录后，可以恢复数据。你可以随时在设置中关闭云同步。"
-      title="开启云同步？"
+      subtitle="当前版本训练数据以本机保存为准。多设备数据能力正在开发中，后续版本开放。"
+      title="本地数据说明"
       visible={visible}
     >
-      <AppButton icon="cloud-upload-outline" onPress={onEnable}>
-        开启云同步
+      <AppButton icon="information-circle-outline" onPress={onEnable}>
+        知道了
       </AppButton>
       <AppButton onPress={onSkip} variant="secondary">
-        暂不开启
+        关闭
       </AppButton>
     </AppModalSheet>
   );

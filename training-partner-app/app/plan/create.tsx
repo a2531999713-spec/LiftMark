@@ -38,7 +38,6 @@ export default function CreatePlanRoute() {
   const [dayFocus, setDayFocus] = useState('全身力量');
   const [sets, setSets] = useState('3');
   const [reps, setReps] = useState('8');
-  const [rpe, setRpe] = useState('7');
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [createdPlan, setCreatedPlan] = useState<PlanTemplate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -128,7 +127,6 @@ export default function CreatePlanRoute() {
               exerciseId,
               priority: index === 0 ? 'A' : index <= 2 ? 'B' : 'C',
               reps: parseInteger(reps, 8),
-              rpeTarget: Number(rpe) || 7,
               sets: parseInteger(sets, 3),
             })),
             focus: dayFocus,
@@ -158,7 +156,7 @@ export default function CreatePlanRoute() {
   };
 
   return (
-    <Screen title="创建计划" subtitle="从一个可执行训练日开始，后续再逐步完善。">
+    <Screen subtitle="从一个可执行训练日开始，后续再逐步完善。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="创建计划暂时不可用" description={error} /> : null}
 
@@ -196,7 +194,6 @@ export default function CreatePlanRoute() {
             <View style={styles.fieldRow}>
               <Field label="组数" onChangeText={setSets} value={sets} />
               <Field label="次数" onChangeText={setReps} value={reps} />
-              <Field label="RPE" onChangeText={setRpe} value={rpe} />
             </View>
           </AppCard>
 
@@ -299,8 +296,7 @@ function Field({
   onChangeText: (value: string) => void;
   value: string;
 }) {
-  const isNumber =
-    label.includes('天数') || label.includes('周数') || label === '组数' || label === '次数' || label === 'RPE';
+  const isNumber = label.includes('天数') || label.includes('周数') || label === '组数' || label === '次数';
 
   return (
     <View style={styles.field}>

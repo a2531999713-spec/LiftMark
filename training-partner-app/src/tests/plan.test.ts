@@ -10,7 +10,6 @@ import {
   createClassicPplPlanTemplateSeed,
 } from '@/data/seed/classicPplPlan';
 import {
-  DEFAULT_ORIGIN_SCHEME_ID,
   DEFAULT_PLAN_ID,
   createDefaultPlanTemplateSeed,
   defaultStrengthPhaseSeed,
@@ -18,12 +17,22 @@ import {
   defaultStrengthPlanExerciseSeeds,
 } from '@/data/seed/defaultStrengthPlan';
 import {
+  MAINSTREAM_PLAN_IDS,
+  createMainstreamPlanTemplateSeeds,
+  mainstreamPlanDaySeeds,
+  mainstreamPlanExerciseSeeds,
+  mainstreamPlanPhaseSeeds,
+} from '@/data/seed/mainstreamPlans';
+import {
   clampDefaultCycleWeek,
   getDefaultCyclePhaseType,
 } from '@/domain/plan/defaultCycle';
 import { createUserPlanCopyDraft } from '@/domain/plan/planCopy';
 import { filterExercisesByRecovery } from '@/domain/plan/plan.service';
-import { listSystemTrainingSchemes } from '@/domain/plan/systemSchemes';
+import {
+  SYSTEM_SCHEME_CLASSIC_BODY_PART_SPLIT_ID,
+  listSystemTrainingSchemes,
+} from '@/domain/plan/systemSchemes';
 
 let mockIdCounter = 0;
 jest.mock('@/domain/common/ids', () => ({
@@ -79,33 +88,35 @@ describe('default plan seed and recovery filtering', () => {
     expect(filterExercisesByRecovery(exercises, 'very_bad')).toHaveLength(0);
   });
 
-  it('keeps system schemes separate and copies one into a user plan draft', () => {
-    const scheme = listSystemTrainingSchemes().find(
-      (item) => item.id === DEFAULT_ORIGIN_SCHEME_ID,
-    );
+  it('does not expose the legacy four-day template in the current system scheme catalog', () => {
+    expect(
+      listSystemTrainingSchemes().some(
+        (item) => item.id === 'scheme_four_day_strength_hypertrophy' || item.title.includes('四练'),
+      ),
+    ).toBe(false);
+  });
+
+  it('copies a system template into a user plan draft without mutating source ids', () => {
     const sourceTemplate = createDefaultPlanTemplateSeed('2026-06-01T00:00:00.000Z');
     const monday = defaultStrengthPlanDaySeeds.find((day) => day.week === 1 && day.weekday === 1);
     const mondayExercises = defaultStrengthPlanExerciseSeeds.filter(
       (exercise) => exercise.planDayId === monday?.id,
     );
 
-    expect(scheme?.isAvailable).toBe(true);
-    expect(scheme?.templatePlanId).toBe(DEFAULT_PLAN_ID);
-
     const draft = createUserPlanCopyDraft({
       sourceTemplate,
       phases: [defaultStrengthPhaseSeed],
       days: monday ? [monday] : [],
       exercises: mondayExercises,
-      name: '我的四练计划',
-      originSchemeId: DEFAULT_ORIGIN_SCHEME_ID,
+      name: '我的力量计划',
+      originSchemeId: 'legacy_strength_template',
       now: '2026-06-12T00:00:00.000Z',
     });
 
     expect(draft.template.id).not.toBe(DEFAULT_PLAN_ID);
-    expect(draft.template.name).toBe('我的四练计划');
+    expect(draft.template.name).toBe('我的力量计划');
     expect(draft.template.source).toBe('system_copy');
-    expect(draft.template.originSchemeId).toBe(DEFAULT_ORIGIN_SCHEME_ID);
+    expect(draft.template.originSchemeId).toBe('legacy_strength_template');
     expect(draft.phases.every((phase) => phase.planId === draft.template.id)).toBe(true);
     expect(draft.days.every((day) => day.planId === draft.template.id)).toBe(true);
     expect(draft.exercises.every((exercise) => exercise.planDayId === draft.days[0]?.id)).toBe(true);
@@ -119,7 +130,7 @@ describe('default plan seed and recovery filtering', () => {
       firstWeekDays.some((day) => day.id === exercise.planDayId),
     );
 
-    expect(scheme?.title).toBe('经典三分化 PPL');
+    expect(scheme?.title).toBe('Push Pull Legs 三分化计划');
     expect(scheme?.isAvailable).toBe(true);
     expect(scheme?.templatePlanId).toBe(CLASSIC_PPL_PLAN_ID);
 
@@ -138,6 +149,50 @@ describe('default plan seed and recovery filtering', () => {
     expect(draft.template.id).not.toBe(CLASSIC_PPL_PLAN_ID);
     expect(draft.days).toHaveLength(3);
     expect(draft.exercises).toHaveLength(15);
+    expect(draft.exercises.every((exercise) => draft.days.some((day) => day.id === exercise.planDayId))).toBe(true);
+  });
+
+  it('exposes the classic four-day body-part split as a copyable system scheme', () => {
+    const scheme = listSystemTrainingSchemes().find(
+      (item) => item.id === SYSTEM_SCHEME_CLASSIC_BODY_PART_SPLIT_ID,
+    );
+    const sourceTemplate = createMainstreamPlanTemplateSeeds('2026-06-30T00:00:00.000Z').find(
+      (item) => item.id === MAINSTREAM_PLAN_IDS.classicBodyPartSplit,
+    );
+    const phases = mainstreamPlanPhaseSeeds.filter(
+      (phase) => phase.planId === MAINSTREAM_PLAN_IDS.classicBodyPartSplit,
+    );
+    const firstWeekDays = mainstreamPlanDaySeeds.filter(
+      (day) => day.planId === MAINSTREAM_PLAN_IDS.classicBodyPartSplit && day.week === 1,
+    );
+    const firstWeekDayIds = new Set(firstWeekDays.map((day) => day.id));
+    const firstWeekExercises = mainstreamPlanExerciseSeeds.filter((exercise) =>
+      firstWeekDayIds.has(exercise.planDayId),
+    );
+
+    expect(scheme?.title).toBe('经典四分化增肌计划');
+    expect(scheme?.dayStructure).toContain('胸 + 三头');
+    expect(scheme?.dayStructure).toContain('背 + 二头');
+    expect(scheme?.dayStructure).toContain('肩');
+    expect(scheme?.dayStructure).toContain('腿');
+    expect(scheme?.isAvailable).toBe(true);
+    expect(scheme?.templatePlanId).toBe(MAINSTREAM_PLAN_IDS.classicBodyPartSplit);
+    expect(firstWeekDays.map((day) => day.title)).toEqual(['胸 + 三头', '背 + 二头', '肩', '腿']);
+    expect(firstWeekExercises).toHaveLength(24);
+
+    const draft = createUserPlanCopyDraft({
+      sourceTemplate: sourceTemplate!,
+      phases,
+      days: firstWeekDays,
+      exercises: firstWeekExercises,
+      name: '我的经典四分化增肌计划',
+      originSchemeId: SYSTEM_SCHEME_CLASSIC_BODY_PART_SPLIT_ID,
+      now: '2026-06-30T00:00:00.000Z',
+    });
+
+    expect(draft.template.source).toBe('system_copy');
+    expect(draft.template.originSchemeId).toBe(SYSTEM_SCHEME_CLASSIC_BODY_PART_SPLIT_ID);
+    expect(draft.days).toHaveLength(4);
     expect(draft.exercises.every((exercise) => draft.days.some((day) => day.id === exercise.planDayId))).toBe(true);
   });
 });

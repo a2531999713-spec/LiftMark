@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppCard, AppText, EmptyState, Screen, Tag } from '@/components/ui';
+import { AppCard, AppText, EmptyState, MiniLineChart, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import { decideFeatureAccess } from '@/domain/auth';
 import {
@@ -243,26 +243,20 @@ function VolumeTrendCard({ buckets }: { buckets: WeeklyHistoryBucket[] }) {
         <View>
           <AppText variant="subtitle">每周训练量</AppText>
           <AppText tone="muted" variant="caption">
-            柱状图仅展示训练量，不混用其他图形语义
+            最近周期训练量折线
           </AppText>
         </View>
-        <Ionicons color={colors.primary} name="bar-chart-outline" size={22} />
+        <Ionicons color={colors.primary} name="pulse-outline" size={22} />
       </View>
-      <View style={styles.volumeBars}>
-        {buckets.map((bucket) => (
-          <View key={bucket.label} style={styles.volumeColumn}>
-            <View style={styles.volumeTrack}>
-              <View style={[styles.volumeBar, { height: 16 + Math.round((bucket.volume / maxVolume) * 104) }]} />
-            </View>
-            <AppText tone="muted" variant="caption">
-              {bucket.label}
-            </AppText>
-            <AppText variant="caption" weight="900">
-              {formatKg(bucket.volume)}
-            </AppText>
-          </View>
-        ))}
-      </View>
+      <MiniLineChart
+        chartHeight={120}
+        data={buckets.map((bucket) => bucket.volume)}
+        emptyMessage="当前周期还没有训练量"
+        formatValue={(value) => `${Math.round(value / 1000)}k`}
+        labels={buckets.map((bucket) => bucket.label)}
+        minChartHeight={maxVolume}
+        showValues
+      />
     </AppCard>
   );
 }
@@ -324,8 +318,8 @@ function CoreLiftTrendGrid({ lifts }: { lifts: CoreLiftTrend[] }) {
 }
 
 function CoreLiftCard({ lift }: { lift: CoreLiftTrend }) {
-  const activePoints = lift.points.filter((point) => point.estimatedOneRM);
-  const max = Math.max(1, ...activePoints.map((point) => point.estimatedOneRM ?? 0));
+  const values = lift.points.map((point) => point.estimatedOneRM ?? 0);
+  const max = Math.max(1, ...values);
 
   return (
     <View style={styles.liftCard}>
@@ -338,25 +332,13 @@ function CoreLiftCard({ lift }: { lift: CoreLiftTrend }) {
       <AppText variant="subtitle">
         {lift.currentEstimatedOneRM ? `${lift.currentEstimatedOneRM} kg` : '暂无'}
       </AppText>
-      <View style={styles.pointRow}>
-        {lift.points.map((point) => {
-          const size = point.estimatedOneRM ? 7 + Math.round(((point.estimatedOneRM ?? 0) / max) * 9) : 6;
-          return (
-            <View key={point.label} style={styles.pointColumn}>
-              <View
-                style={[
-                  styles.trendPoint,
-                  { height: size, width: size },
-                  point.estimatedOneRM ? styles.trendPointActive : styles.trendPointEmpty,
-                ]}
-              />
-              <AppText tone="muted" variant="caption">
-                {point.label.replace('周前', '')}
-              </AppText>
-            </View>
-          );
-        })}
-      </View>
+      <MiniLineChart
+        chartHeight={58}
+        data={values}
+        emptyMessage="暂无趋势"
+        labels={lift.points.map((point) => point.label.replace('周前', ''))}
+        minChartHeight={max}
+      />
     </View>
   );
 }
@@ -523,31 +505,6 @@ const styles = StyleSheet.create({
     minHeight: 72,
     padding: spacing.md,
   },
-  volumeBars: {
-    alignItems: 'flex-end',
-    flexDirection: 'row',
-    gap: spacing.sm,
-    minHeight: 164,
-  },
-  volumeColumn: {
-    alignItems: 'center',
-    flex: 1,
-    gap: spacing.xs,
-  },
-  volumeTrack: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    height: 126,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-    width: 22,
-  },
-  volumeBar: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    width: 22,
-  },
   weekList: {
     gap: spacing.sm,
   },
@@ -591,25 +548,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     gap: spacing.sm,
     padding: spacing.md,
-  },
-  pointRow: {
-    alignItems: 'flex-end',
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  pointColumn: {
-    alignItems: 'center',
-    flex: 1,
-    gap: 4,
-  },
-  trendPoint: {
-    borderRadius: radius.pill,
-  },
-  trendPointActive: {
-    backgroundColor: colors.primary,
-  },
-  trendPointEmpty: {
-    backgroundColor: colors.borderStrong,
   },
   inlineEmpty: {
     alignItems: 'center',

@@ -38,7 +38,7 @@ export const migrations: Migration[] = [
         )
         SELECT
           'plan_user_four_day_strength_hypertrophy_default',
-          '四练增力增肌计划',
+          'Legacy 四天兼容计划',
           creator_id,
           'private',
           goal,
@@ -183,6 +183,57 @@ export const migrations: Migration[] = [
       await db.execAsync(
         'CREATE INDEX IF NOT EXISTS idx_exercises_source_name ON exercises(source, name);',
       );
+    },
+  },
+  {
+    version: 6,
+    name: 'account_and_member_avatar_cache',
+    async up(db) {
+      const profileColumns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(member_profiles)',
+      );
+      const columnNames = new Set(profileColumns.map((column) => column.name));
+
+      if (!columnNames.has('avatar_url')) {
+        await db.execAsync('ALTER TABLE member_profiles ADD COLUMN avatar_url TEXT;');
+      }
+      if (!columnNames.has('avatar_thumb_url')) {
+        await db.execAsync('ALTER TABLE member_profiles ADD COLUMN avatar_thumb_url TEXT;');
+      }
+      if (!columnNames.has('avatar_local_uri')) {
+        await db.execAsync('ALTER TABLE member_profiles ADD COLUMN avatar_local_uri TEXT;');
+      }
+      if (!columnNames.has('avatar_updated_at')) {
+        await db.execAsync('ALTER TABLE member_profiles ADD COLUMN avatar_updated_at TEXT;');
+      }
+
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS account_profile_cache (
+          user_id TEXT PRIMARY KEY NOT NULL,
+          display_name TEXT,
+          phone_masked TEXT,
+          liftmark_id TEXT,
+          avatar_url TEXT,
+          avatar_thumb_url TEXT,
+          avatar_local_uri TEXT,
+          avatar_updated_at TEXT,
+          updated_at TEXT NOT NULL
+        );
+      `);
+    },
+  },
+  {
+    version: 7,
+    name: 'workout_session_training_mode',
+    async up(db) {
+      const columns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(workout_sessions)',
+      );
+      const hasTrainingMode = columns.some((column) => column.name === 'training_mode');
+
+      if (!hasTrainingMode) {
+        await db.execAsync("ALTER TABLE workout_sessions ADD COLUMN training_mode TEXT NOT NULL DEFAULT 'group_local';");
+      }
     },
   },
 ];

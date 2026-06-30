@@ -10,7 +10,7 @@ describe('api client error mapping', () => {
 
     expect(error).toBeInstanceOf(ApiClientError);
     expect(error.code).toBe('NETWORK_ERROR');
-    expect(error.message).toBe('无法连接服务器，请检查网络后重试。');
+    expect(error.message).toBe('服务器连接失败，请检查网络或稍后再试。');
   });
 
   it('maps generic React Native network failures to a Chinese retry message', () => {
@@ -18,7 +18,7 @@ describe('api client error mapping', () => {
 
     expect(error).toBeInstanceOf(ApiClientError);
     expect(error.code).toBe('NETWORK_ERROR');
-    expect(error.message).toBe('网络连接失败，请稍后重试。');
+    expect(error.message).toBe('服务器连接失败，请检查网络或稍后再试。');
   });
 
   it('maps aborted requests to timeout copy', () => {

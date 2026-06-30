@@ -45,14 +45,6 @@ function formatPrescription(exercise: PlanExercise): string {
 }
 
 function formatIntensity(exercise: PlanExercise): string {
-  if (exercise.rpeTarget) {
-    return `RPE ${exercise.rpeTarget}`;
-  }
-
-  if (exercise.rirTarget) {
-    return `RIR ${exercise.rirTarget}`;
-  }
-
   if (exercise.percent1RM) {
     return `${Math.round(exercise.percent1RM * 1000) / 10}% 1RM`;
   }

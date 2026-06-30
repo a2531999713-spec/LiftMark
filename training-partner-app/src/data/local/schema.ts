@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS member_profiles (
   id TEXT PRIMARY KEY,
   member_id TEXT NOT NULL,
   group_id TEXT NOT NULL,
+  avatar_url TEXT,
+  avatar_thumb_url TEXT,
+  avatar_local_uri TEXT,
+  avatar_updated_at TEXT,
   bodyweight REAL,
   bench_1rm REAL,
   squat_1rm REAL,
@@ -129,6 +133,7 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
   weekday INTEGER NOT NULL,
   title TEXT NOT NULL,
   status TEXT NOT NULL,
+  training_mode TEXT NOT NULL DEFAULT 'group_local',
   started_at TEXT,
   finished_at TEXT,
   created_at TEXT NOT NULL,
@@ -209,6 +214,18 @@ CREATE TABLE IF NOT EXISTS activation_state (
   device_id TEXT NOT NULL,
   app_version TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS account_profile_cache (
+  user_id TEXT PRIMARY KEY NOT NULL,
+  display_name TEXT,
+  phone_masked TEXT,
+  liftmark_id TEXT,
+  avatar_url TEXT,
+  avatar_thumb_url TEXT,
+  avatar_local_uri TEXT,
+  avatar_updated_at TEXT,
   updated_at TEXT NOT NULL
 );
 

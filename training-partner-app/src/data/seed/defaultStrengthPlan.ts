@@ -1,4 +1,4 @@
-// Generated from 四练增力增肌训练计划_完整版2.1.xlsx.
+// Legacy four-day compatibility seed.
 
 import type { PlanDay, PlanExercise, PlanPhase, PlanTemplate } from '@/domain/plan/plan.types';
 
@@ -10,7 +10,7 @@ export const DEFAULT_GROUP_ID = 'group_default_local';
 export function createDefaultPlanTemplateSeed(now: string): PlanTemplate {
   return {
     id: DEFAULT_PLAN_ID,
-    name: '四练增力增肌计划',
+    name: 'Legacy 四天兼容计划',
     visibility: 'system',
     goal: 'strength',
     durationWeeks: 16,
@@ -318,9 +318,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.75,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "5×5; RPE 7; 主项，必须做; 无回退或轻辅助; 卧推主项"
+    "notes": "5×5; 保留余力; 主项，必须做; 无回退或轻辅助; 卧推主项"
   },
   {
     "id": "pe_day_strength_w01_d1_02",
@@ -334,9 +333,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 1秒停顿，练底部稳定"
+    "notes": "3×3–5; 保留余力; 1秒停顿，练底部稳定"
   },
   {
     "id": "pe_day_strength_w01_d1_03",
@@ -350,9 +348,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.75,
-    "rpeTarget": 8.0,
     "restSeconds": 180,
-    "notes": "4×4–6; RPE 8; 可用自重或负重"
+    "notes": "4×4–6; 保留余力; 可用自重或负重"
   },
   {
     "id": "pe_day_strength_w01_d1_04",
@@ -364,10 +361,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 6,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 8.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×6–10; RPE 8; 背部支撑卧推"
+    "notes": "4×6–10; 保留余力; 背部支撑卧推"
   },
   {
     "id": "pe_day_strength_w01_d1_05",
@@ -379,10 +375,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 不练爆，避免影响周三"
+    "notes": "3×8–10; 保留余力; 不练爆，避免影响周三"
   },
   {
     "id": "pe_day_strength_w01_d1_06",
@@ -394,10 +389,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 15,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×15–20; RIR 1–2; 肩胛稳定"
+    "notes": "3×15–20; 保留余力; 肩胛稳定"
   },
   {
     "id": "pe_day_strength_w01_d1_07",
@@ -409,10 +403,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 有余力再做"
+    "notes": "3×10–15; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w01_d2_01",
@@ -425,9 +418,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.75,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "5×5; RPE 7; 主项，必须做; 无回退或轻辅助; 深蹲主项"
+    "notes": "5×5; 保留余力; 主项，必须做; 无回退或轻辅助; 深蹲主项"
   },
   {
     "id": "pe_day_strength_w01_d2_02",
@@ -441,9 +433,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 控制底部"
+    "notes": "3×3–5; 保留余力; 控制底部"
   },
   {
     "id": "pe_day_strength_w01_d2_03",
@@ -455,10 +446,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 股四头容量"
+    "notes": "3×8–10; 保留余力; 股四头容量"
   },
   {
     "id": "pe_day_strength_w01_d2_04",
@@ -472,9 +462,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.6,
-    "rpeTarget": 7.0,
     "restSeconds": 90,
-    "notes": "3×6–8; RPE 7; 不要太重，周四还硬拉"
+    "notes": "3×6–8; 保留余力; 不要太重，周四还硬拉"
   },
   {
     "id": "pe_day_strength_w01_d2_05",
@@ -486,10 +475,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 腘绳肌补充"
+    "notes": "3×10–15; 保留余力; 腘绳肌补充"
   },
   {
     "id": "pe_day_strength_w01_d2_06",
@@ -501,10 +489,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–20; RIR 1–2; 可选"
+    "notes": "4×10–20; 保留余力; 可选"
   },
   {
     "id": "pe_day_strength_w01_d2_07",
@@ -531,9 +518,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.67,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "4×6; RPE 7; 技术和容量，不冲重量; 无回退或轻辅助; 容量日：不冲极限"
+    "notes": "4×6; 保留余力; 技术和容量，不冲重量; 无回退或轻辅助; 容量日：不冲极限"
   },
   {
     "id": "pe_day_strength_w01_d3_02",
@@ -547,9 +533,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "overhead_press",
     "intensityType": "percent_1rm",
     "percent1RM": 0.6,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "4×5–8; RPE 7–8; 垂直推力量; 无回退或轻辅助; 肩推可稳定推进"
+    "notes": "4×5–8; 保留余力; 垂直推力量; 无回退或轻辅助; 肩推可稳定推进"
   },
   {
     "id": "pe_day_strength_w01_d3_03",
@@ -563,9 +548,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rirTarget": 1.5,
     "restSeconds": 180,
-    "notes": "4×6–10; RIR 1–2; 背阔肌容量"
+    "notes": "4×6–10; 保留余力; 背阔肌容量"
   },
   {
     "id": "pe_day_strength_w01_d3_04",
@@ -577,10 +561,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×8–12; RIR 1–2; 减少下背压力"
+    "notes": "4×8–12; 保留余力; 减少下背压力"
   },
   {
     "id": "pe_day_strength_w01_d3_05",
@@ -592,10 +575,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2–3×8–12; RIR 2; 胸部辅助容量"
+    "notes": "2–3×8–12; 保留余力; 胸部辅助容量"
   },
   {
     "id": "pe_day_strength_w01_d3_06",
@@ -607,10 +589,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×12–20; RIR 0–2; 肩侧束"
+    "notes": "4×12–20; 保留余力; 肩侧束"
   },
   {
     "id": "pe_day_strength_w01_d3_07",
@@ -622,10 +603,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 手臂补充"
+    "notes": "3×10–15; 保留余力; 手臂补充"
   },
   {
     "id": "pe_day_strength_w01_d4_01",
@@ -638,9 +618,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.75,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "4×5; RPE 7–8; 硬拉总组数比卧推/深蹲少1组; 无回退或轻辅助; 硬拉主项总组数比卧推/深蹲少1组"
+    "notes": "4×5; 保留余力; 硬拉总组数比卧推/深蹲少1组; 无回退或轻辅助; 硬拉主项总组数比卧推/深蹲少1组"
   },
   {
     "id": "pe_day_strength_w01_d4_02",
@@ -653,9 +632,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "2–3×3; RPE 7; 技术辅助"
+    "notes": "2–3×3; 保留余力; 技术辅助"
   },
   {
     "id": "pe_day_strength_w01_d4_03",
@@ -667,10 +645,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 1–2; 髋伸补充"
+    "notes": "3×8–10; 保留余力; 髋伸补充"
   },
   {
     "id": "pe_day_strength_w01_d4_04",
@@ -682,10 +659,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–15; RIR 1–2; 腘绳肌容量"
+    "notes": "4×10–15; 保留余力; 腘绳肌容量"
   },
   {
     "id": "pe_day_strength_w01_d4_05",
@@ -697,10 +673,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×12–15; RIR 1–2; 轻量，不要顶腰"
+    "notes": "3×12–15; 保留余力; 轻量，不要顶腰"
   },
   {
     "id": "pe_day_strength_w01_d4_06",
@@ -712,10 +687,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2×8–12/侧; RIR 2; 有余力再做"
+    "notes": "2×8–12/侧; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w01_d4_07",
@@ -736,10 +710,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "priority": "B",
     "orderIndex": 1,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 7.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "45–60分钟; RPE 6–8; 不做高强度深蹲/硬拉/卧推"
+    "notes": "45–60分钟; 保留余力; 不做高强度深蹲/硬拉/卧推"
   },
   {
     "id": "pe_day_strength_w02_d1_01",
@@ -752,9 +725,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.775,
-    "rpeTarget": 7.75,
     "restSeconds": 180,
-    "notes": "5×5; RPE 7.5–8; 主项，必须做; 无回退或轻辅助; 卧推主项"
+    "notes": "5×5; 保留余力; 主项，必须做; 无回退或轻辅助; 卧推主项"
   },
   {
     "id": "pe_day_strength_w02_d1_02",
@@ -768,9 +740,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 1秒停顿，练底部稳定"
+    "notes": "3×3–5; 保留余力; 1秒停顿，练底部稳定"
   },
   {
     "id": "pe_day_strength_w02_d1_03",
@@ -784,9 +755,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.75,
-    "rpeTarget": 8.0,
     "restSeconds": 180,
-    "notes": "4×4–6; RPE 8; 可用自重或负重"
+    "notes": "4×4–6; 保留余力; 可用自重或负重"
   },
   {
     "id": "pe_day_strength_w02_d1_04",
@@ -798,10 +768,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 6,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 8.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×6–10; RPE 8; 背部支撑卧推"
+    "notes": "4×6–10; 保留余力; 背部支撑卧推"
   },
   {
     "id": "pe_day_strength_w02_d1_05",
@@ -813,10 +782,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 不练爆，避免影响周三"
+    "notes": "3×8–10; 保留余力; 不练爆，避免影响周三"
   },
   {
     "id": "pe_day_strength_w02_d1_06",
@@ -828,10 +796,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 15,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×15–20; RIR 1–2; 肩胛稳定"
+    "notes": "3×15–20; 保留余力; 肩胛稳定"
   },
   {
     "id": "pe_day_strength_w02_d1_07",
@@ -843,10 +810,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 有余力再做"
+    "notes": "3×10–15; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w02_d2_01",
@@ -859,9 +825,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.775,
-    "rpeTarget": 7.75,
     "restSeconds": 180,
-    "notes": "5×5; RPE 7.5–8; 主项，必须做; 无回退或轻辅助; 深蹲主项"
+    "notes": "5×5; 保留余力; 主项，必须做; 无回退或轻辅助; 深蹲主项"
   },
   {
     "id": "pe_day_strength_w02_d2_02",
@@ -875,9 +840,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 控制底部"
+    "notes": "3×3–5; 保留余力; 控制底部"
   },
   {
     "id": "pe_day_strength_w02_d2_03",
@@ -889,10 +853,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 股四头容量"
+    "notes": "3×8–10; 保留余力; 股四头容量"
   },
   {
     "id": "pe_day_strength_w02_d2_04",
@@ -906,9 +869,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.6,
-    "rpeTarget": 7.0,
     "restSeconds": 90,
-    "notes": "3×6–8; RPE 7; 不要太重，周四还硬拉"
+    "notes": "3×6–8; 保留余力; 不要太重，周四还硬拉"
   },
   {
     "id": "pe_day_strength_w02_d2_05",
@@ -920,10 +882,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 腘绳肌补充"
+    "notes": "3×10–15; 保留余力; 腘绳肌补充"
   },
   {
     "id": "pe_day_strength_w02_d2_06",
@@ -935,10 +896,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–20; RIR 1–2; 可选"
+    "notes": "4×10–20; 保留余力; 可选"
   },
   {
     "id": "pe_day_strength_w02_d2_07",
@@ -965,9 +925,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.7,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "4×6; RPE 7; 技术和容量，不冲重量; 无回退或轻辅助; 容量日：不冲极限"
+    "notes": "4×6; 保留余力; 技术和容量，不冲重量; 无回退或轻辅助; 容量日：不冲极限"
   },
   {
     "id": "pe_day_strength_w02_d3_02",
@@ -981,9 +940,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "overhead_press",
     "intensityType": "percent_1rm",
     "percent1RM": 0.625,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "4×5–8; RPE 7–8; 垂直推力量; 无回退或轻辅助; 肩推可稳定推进"
+    "notes": "4×5–8; 保留余力; 垂直推力量; 无回退或轻辅助; 肩推可稳定推进"
   },
   {
     "id": "pe_day_strength_w02_d3_03",
@@ -997,9 +955,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rirTarget": 1.5,
     "restSeconds": 180,
-    "notes": "4×6–10; RIR 1–2; 背阔肌容量"
+    "notes": "4×6–10; 保留余力; 背阔肌容量"
   },
   {
     "id": "pe_day_strength_w02_d3_04",
@@ -1011,10 +968,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×8–12; RIR 1–2; 减少下背压力"
+    "notes": "4×8–12; 保留余力; 减少下背压力"
   },
   {
     "id": "pe_day_strength_w02_d3_05",
@@ -1026,10 +982,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2–3×8–12; RIR 2; 胸部辅助容量"
+    "notes": "2–3×8–12; 保留余力; 胸部辅助容量"
   },
   {
     "id": "pe_day_strength_w02_d3_06",
@@ -1041,10 +996,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×12–20; RIR 0–2; 肩侧束"
+    "notes": "4×12–20; 保留余力; 肩侧束"
   },
   {
     "id": "pe_day_strength_w02_d3_07",
@@ -1056,10 +1010,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 手臂补充"
+    "notes": "3×10–15; 保留余力; 手臂补充"
   },
   {
     "id": "pe_day_strength_w02_d4_01",
@@ -1072,9 +1025,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.775,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "4×5; RPE 7–8; 硬拉总组数比卧推/深蹲少1组; 无回退或轻辅助; 硬拉主项总组数比卧推/深蹲少1组"
+    "notes": "4×5; 保留余力; 硬拉总组数比卧推/深蹲少1组; 无回退或轻辅助; 硬拉主项总组数比卧推/深蹲少1组"
   },
   {
     "id": "pe_day_strength_w02_d4_02",
@@ -1087,9 +1039,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "2–3×3; RPE 7; 技术辅助"
+    "notes": "2–3×3; 保留余力; 技术辅助"
   },
   {
     "id": "pe_day_strength_w02_d4_03",
@@ -1101,10 +1052,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 1–2; 髋伸补充"
+    "notes": "3×8–10; 保留余力; 髋伸补充"
   },
   {
     "id": "pe_day_strength_w02_d4_04",
@@ -1116,10 +1066,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–15; RIR 1–2; 腘绳肌容量"
+    "notes": "4×10–15; 保留余力; 腘绳肌容量"
   },
   {
     "id": "pe_day_strength_w02_d4_05",
@@ -1131,10 +1080,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×12–15; RIR 1–2; 轻量，不要顶腰"
+    "notes": "3×12–15; 保留余力; 轻量，不要顶腰"
   },
   {
     "id": "pe_day_strength_w02_d4_06",
@@ -1146,10 +1094,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2×8–12/侧; RIR 2; 有余力再做"
+    "notes": "2×8–12/侧; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w02_d4_07",
@@ -1170,10 +1117,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "priority": "B",
     "orderIndex": 1,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 7.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "45–60分钟; RPE 6–8; 不做高强度深蹲/硬拉/卧推"
+    "notes": "45–60分钟; 保留余力; 不做高强度深蹲/硬拉/卧推"
   },
   {
     "id": "pe_day_strength_w03_d1_01",
@@ -1186,9 +1132,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.8,
-    "rpeTarget": 8.0,
     "restSeconds": 180,
-    "notes": "4×4; RPE 8; 主项，必须做; 可做2组技术回退; 卧推主项"
+    "notes": "4×4; 保留余力; 主项，必须做; 可做2组技术回退; 卧推主项"
   },
   {
     "id": "pe_day_strength_w03_d1_02",
@@ -1202,9 +1147,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 1秒停顿，练底部稳定"
+    "notes": "3×3–5; 保留余力; 1秒停顿，练底部稳定"
   },
   {
     "id": "pe_day_strength_w03_d1_03",
@@ -1218,9 +1162,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.75,
-    "rpeTarget": 8.0,
     "restSeconds": 180,
-    "notes": "4×4–6; RPE 8; 可用自重或负重"
+    "notes": "4×4–6; 保留余力; 可用自重或负重"
   },
   {
     "id": "pe_day_strength_w03_d1_04",
@@ -1232,10 +1175,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 6,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 8.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×6–10; RPE 8; 背部支撑卧推"
+    "notes": "4×6–10; 保留余力; 背部支撑卧推"
   },
   {
     "id": "pe_day_strength_w03_d1_05",
@@ -1247,10 +1189,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 不练爆，避免影响周三"
+    "notes": "3×8–10; 保留余力; 不练爆，避免影响周三"
   },
   {
     "id": "pe_day_strength_w03_d1_06",
@@ -1262,10 +1203,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 15,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×15–20; RIR 1–2; 肩胛稳定"
+    "notes": "3×15–20; 保留余力; 肩胛稳定"
   },
   {
     "id": "pe_day_strength_w03_d1_07",
@@ -1277,10 +1217,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 有余力再做"
+    "notes": "3×10–15; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w03_d2_01",
@@ -1293,9 +1232,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.8,
-    "rpeTarget": 8.0,
     "restSeconds": 180,
-    "notes": "4×4; RPE 8; 主项，必须做; 可做2组技术回退; 深蹲主项"
+    "notes": "4×4; 保留余力; 主项，必须做; 可做2组技术回退; 深蹲主项"
   },
   {
     "id": "pe_day_strength_w03_d2_02",
@@ -1309,9 +1247,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 控制底部"
+    "notes": "3×3–5; 保留余力; 控制底部"
   },
   {
     "id": "pe_day_strength_w03_d2_03",
@@ -1323,10 +1260,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 股四头容量"
+    "notes": "3×8–10; 保留余力; 股四头容量"
   },
   {
     "id": "pe_day_strength_w03_d2_04",
@@ -1340,9 +1276,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.6,
-    "rpeTarget": 7.0,
     "restSeconds": 90,
-    "notes": "3×6–8; RPE 7; 不要太重，周四还硬拉"
+    "notes": "3×6–8; 保留余力; 不要太重，周四还硬拉"
   },
   {
     "id": "pe_day_strength_w03_d2_05",
@@ -1354,10 +1289,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 腘绳肌补充"
+    "notes": "3×10–15; 保留余力; 腘绳肌补充"
   },
   {
     "id": "pe_day_strength_w03_d2_06",
@@ -1369,10 +1303,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–20; RIR 1–2; 可选"
+    "notes": "4×10–20; 保留余力; 可选"
   },
   {
     "id": "pe_day_strength_w03_d2_07",
@@ -1399,9 +1332,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.7,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "4×6; RPE 7; 技术和容量，不冲重量; 可做2组技术回退; 容量日：不冲极限"
+    "notes": "4×6; 保留余力; 技术和容量，不冲重量; 可做2组技术回退; 容量日：不冲极限"
   },
   {
     "id": "pe_day_strength_w03_d3_02",
@@ -1415,9 +1347,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "overhead_press",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "4×5–8; RPE 7–8; 垂直推力量; 可做2组技术回退; 肩推可稳定推进"
+    "notes": "4×5–8; 保留余力; 垂直推力量; 可做2组技术回退; 肩推可稳定推进"
   },
   {
     "id": "pe_day_strength_w03_d3_03",
@@ -1431,9 +1362,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rirTarget": 1.5,
     "restSeconds": 180,
-    "notes": "4×6–10; RIR 1–2; 背阔肌容量"
+    "notes": "4×6–10; 保留余力; 背阔肌容量"
   },
   {
     "id": "pe_day_strength_w03_d3_04",
@@ -1445,10 +1375,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×8–12; RIR 1–2; 减少下背压力"
+    "notes": "4×8–12; 保留余力; 减少下背压力"
   },
   {
     "id": "pe_day_strength_w03_d3_05",
@@ -1460,10 +1389,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2–3×8–12; RIR 2; 胸部辅助容量"
+    "notes": "2–3×8–12; 保留余力; 胸部辅助容量"
   },
   {
     "id": "pe_day_strength_w03_d3_06",
@@ -1475,10 +1403,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×12–20; RIR 0–2; 肩侧束"
+    "notes": "4×12–20; 保留余力; 肩侧束"
   },
   {
     "id": "pe_day_strength_w03_d3_07",
@@ -1490,10 +1417,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 手臂补充"
+    "notes": "3×10–15; 保留余力; 手臂补充"
   },
   {
     "id": "pe_day_strength_w03_d4_01",
@@ -1506,9 +1432,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.8,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "3–4×4; RPE 7–8; 硬拉总组数比卧推/深蹲少1组; 可做2组技术回退; 硬拉主项总组数比卧推/深蹲少1组"
+    "notes": "3–4×4; 保留余力; 硬拉总组数比卧推/深蹲少1组; 可做2组技术回退; 硬拉主项总组数比卧推/深蹲少1组"
   },
   {
     "id": "pe_day_strength_w03_d4_02",
@@ -1521,9 +1446,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "2–3×3; RPE 7; 技术辅助"
+    "notes": "2–3×3; 保留余力; 技术辅助"
   },
   {
     "id": "pe_day_strength_w03_d4_03",
@@ -1535,10 +1459,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 1–2; 髋伸补充"
+    "notes": "3×8–10; 保留余力; 髋伸补充"
   },
   {
     "id": "pe_day_strength_w03_d4_04",
@@ -1550,10 +1473,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–15; RIR 1–2; 腘绳肌容量"
+    "notes": "4×10–15; 保留余力; 腘绳肌容量"
   },
   {
     "id": "pe_day_strength_w03_d4_05",
@@ -1565,10 +1487,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×12–15; RIR 1–2; 轻量，不要顶腰"
+    "notes": "3×12–15; 保留余力; 轻量，不要顶腰"
   },
   {
     "id": "pe_day_strength_w03_d4_06",
@@ -1580,10 +1501,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2×8–12/侧; RIR 2; 有余力再做"
+    "notes": "2×8–12/侧; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w03_d4_07",
@@ -1604,10 +1524,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "priority": "B",
     "orderIndex": 1,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 7.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "45–60分钟; RPE 6–8; 不做高强度深蹲/硬拉/卧推"
+    "notes": "45–60分钟; 保留余力; 不做高强度深蹲/硬拉/卧推"
   },
   {
     "id": "pe_day_strength_w04_d1_01",
@@ -1620,9 +1539,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.825,
-    "rpeTarget": 8.0,
     "restSeconds": 180,
-    "notes": "5×3; RPE 8; 主项，必须做; 可做2组70%回退; 卧推主项"
+    "notes": "5×3; 保留余力; 主项，必须做; 可做2组70%回退; 卧推主项"
   },
   {
     "id": "pe_day_strength_w04_d1_02",
@@ -1636,9 +1554,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 1秒停顿，练底部稳定"
+    "notes": "3×3–5; 保留余力; 1秒停顿，练底部稳定"
   },
   {
     "id": "pe_day_strength_w04_d1_03",
@@ -1652,9 +1569,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.75,
-    "rpeTarget": 8.0,
     "restSeconds": 180,
-    "notes": "4×4–6; RPE 8; 可用自重或负重"
+    "notes": "4×4–6; 保留余力; 可用自重或负重"
   },
   {
     "id": "pe_day_strength_w04_d1_04",
@@ -1666,10 +1582,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 6,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 8.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×6–10; RPE 8; 背部支撑卧推"
+    "notes": "4×6–10; 保留余力; 背部支撑卧推"
   },
   {
     "id": "pe_day_strength_w04_d1_05",
@@ -1681,10 +1596,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 不练爆，避免影响周三"
+    "notes": "3×8–10; 保留余力; 不练爆，避免影响周三"
   },
   {
     "id": "pe_day_strength_w04_d1_06",
@@ -1696,10 +1610,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 15,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×15–20; RIR 1–2; 肩胛稳定"
+    "notes": "3×15–20; 保留余力; 肩胛稳定"
   },
   {
     "id": "pe_day_strength_w04_d1_07",
@@ -1711,10 +1624,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 有余力再做"
+    "notes": "3×10–15; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w04_d2_01",
@@ -1727,9 +1639,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.825,
-    "rpeTarget": 8.0,
     "restSeconds": 180,
-    "notes": "5×3; RPE 8; 主项，必须做; 可做2组70%回退; 深蹲主项"
+    "notes": "5×3; 保留余力; 主项，必须做; 可做2组70%回退; 深蹲主项"
   },
   {
     "id": "pe_day_strength_w04_d2_02",
@@ -1743,9 +1654,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 控制底部"
+    "notes": "3×3–5; 保留余力; 控制底部"
   },
   {
     "id": "pe_day_strength_w04_d2_03",
@@ -1757,10 +1667,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 股四头容量"
+    "notes": "3×8–10; 保留余力; 股四头容量"
   },
   {
     "id": "pe_day_strength_w04_d2_04",
@@ -1774,9 +1683,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.6,
-    "rpeTarget": 7.0,
     "restSeconds": 90,
-    "notes": "3×6–8; RPE 7; 不要太重，周四还硬拉"
+    "notes": "3×6–8; 保留余力; 不要太重，周四还硬拉"
   },
   {
     "id": "pe_day_strength_w04_d2_05",
@@ -1788,10 +1696,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 腘绳肌补充"
+    "notes": "3×10–15; 保留余力; 腘绳肌补充"
   },
   {
     "id": "pe_day_strength_w04_d2_06",
@@ -1803,10 +1710,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–20; RIR 1–2; 可选"
+    "notes": "4×10–20; 保留余力; 可选"
   },
   {
     "id": "pe_day_strength_w04_d2_07",
@@ -1833,9 +1739,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.725,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "4×6; RPE 7; 技术和容量，不冲重量; 可做2组70%回退; 容量日：不冲极限"
+    "notes": "4×6; 保留余力; 技术和容量，不冲重量; 可做2组70%回退; 容量日：不冲极限"
   },
   {
     "id": "pe_day_strength_w04_d3_02",
@@ -1849,9 +1754,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "overhead_press",
     "intensityType": "percent_1rm",
     "percent1RM": 0.675,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "4×5–8; RPE 7–8; 垂直推力量; 可做2组70%回退; 肩推可稳定推进"
+    "notes": "4×5–8; 保留余力; 垂直推力量; 可做2组70%回退; 肩推可稳定推进"
   },
   {
     "id": "pe_day_strength_w04_d3_03",
@@ -1865,9 +1769,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rirTarget": 1.5,
     "restSeconds": 180,
-    "notes": "4×6–10; RIR 1–2; 背阔肌容量"
+    "notes": "4×6–10; 保留余力; 背阔肌容量"
   },
   {
     "id": "pe_day_strength_w04_d3_04",
@@ -1879,10 +1782,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×8–12; RIR 1–2; 减少下背压力"
+    "notes": "4×8–12; 保留余力; 减少下背压力"
   },
   {
     "id": "pe_day_strength_w04_d3_05",
@@ -1894,10 +1796,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2–3×8–12; RIR 2; 胸部辅助容量"
+    "notes": "2–3×8–12; 保留余力; 胸部辅助容量"
   },
   {
     "id": "pe_day_strength_w04_d3_06",
@@ -1909,10 +1810,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×12–20; RIR 0–2; 肩侧束"
+    "notes": "4×12–20; 保留余力; 肩侧束"
   },
   {
     "id": "pe_day_strength_w04_d3_07",
@@ -1924,10 +1824,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 手臂补充"
+    "notes": "3×10–15; 保留余力; 手臂补充"
   },
   {
     "id": "pe_day_strength_w04_d4_01",
@@ -1940,9 +1839,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.825,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "4×3; RPE 7–8; 硬拉总组数比卧推/深蹲少1组; 可做2组70%回退; 硬拉主项总组数比卧推/深蹲少1组"
+    "notes": "4×3; 保留余力; 硬拉总组数比卧推/深蹲少1组; 可做2组70%回退; 硬拉主项总组数比卧推/深蹲少1组"
   },
   {
     "id": "pe_day_strength_w04_d4_02",
@@ -1955,9 +1853,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "2–3×3; RPE 7; 技术辅助"
+    "notes": "2–3×3; 保留余力; 技术辅助"
   },
   {
     "id": "pe_day_strength_w04_d4_03",
@@ -1969,10 +1866,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 1–2; 髋伸补充"
+    "notes": "3×8–10; 保留余力; 髋伸补充"
   },
   {
     "id": "pe_day_strength_w04_d4_04",
@@ -1984,10 +1880,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–15; RIR 1–2; 腘绳肌容量"
+    "notes": "4×10–15; 保留余力; 腘绳肌容量"
   },
   {
     "id": "pe_day_strength_w04_d4_05",
@@ -1999,10 +1894,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×12–15; RIR 1–2; 轻量，不要顶腰"
+    "notes": "3×12–15; 保留余力; 轻量，不要顶腰"
   },
   {
     "id": "pe_day_strength_w04_d4_06",
@@ -2014,10 +1908,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2×8–12/侧; RIR 2; 有余力再做"
+    "notes": "2×8–12/侧; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w04_d4_07",
@@ -2038,10 +1931,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "priority": "B",
     "orderIndex": 1,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 7.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "45–60分钟; RPE 6–8; 不做高强度深蹲/硬拉/卧推"
+    "notes": "45–60分钟; 保留余力; 不做高强度深蹲/硬拉/卧推"
   },
   {
     "id": "pe_day_strength_w05_d1_01",
@@ -2054,9 +1946,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.85,
-    "rpeTarget": 8.25,
     "restSeconds": 180,
-    "notes": "4×2; RPE 8–8.5; 主项，必须做; 回退组少量即可; 卧推主项"
+    "notes": "4×2; 保留余力; 主项，必须做; 回退组少量即可; 卧推主项"
   },
   {
     "id": "pe_day_strength_w05_d1_02",
@@ -2070,9 +1961,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 1秒停顿，练底部稳定"
+    "notes": "3×3–5; 保留余力; 1秒停顿，练底部稳定"
   },
   {
     "id": "pe_day_strength_w05_d1_03",
@@ -2086,9 +1976,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.75,
-    "rpeTarget": 8.0,
     "restSeconds": 180,
-    "notes": "4×4–6; RPE 8; 可用自重或负重"
+    "notes": "4×4–6; 保留余力; 可用自重或负重"
   },
   {
     "id": "pe_day_strength_w05_d1_04",
@@ -2100,10 +1989,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 6,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 8.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×6–10; RPE 8; 背部支撑卧推"
+    "notes": "4×6–10; 保留余力; 背部支撑卧推"
   },
   {
     "id": "pe_day_strength_w05_d1_05",
@@ -2115,10 +2003,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 不练爆，避免影响周三"
+    "notes": "3×8–10; 保留余力; 不练爆，避免影响周三"
   },
   {
     "id": "pe_day_strength_w05_d1_06",
@@ -2130,10 +2017,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 15,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×15–20; RIR 1–2; 肩胛稳定"
+    "notes": "3×15–20; 保留余力; 肩胛稳定"
   },
   {
     "id": "pe_day_strength_w05_d1_07",
@@ -2145,10 +2031,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 有余力再做"
+    "notes": "3×10–15; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w05_d2_01",
@@ -2161,9 +2046,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.85,
-    "rpeTarget": 8.25,
     "restSeconds": 180,
-    "notes": "4×2; RPE 8–8.5; 主项，必须做; 回退组少量即可; 深蹲主项"
+    "notes": "4×2; 保留余力; 主项，必须做; 回退组少量即可; 深蹲主项"
   },
   {
     "id": "pe_day_strength_w05_d2_02",
@@ -2177,9 +2061,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 控制底部"
+    "notes": "3×3–5; 保留余力; 控制底部"
   },
   {
     "id": "pe_day_strength_w05_d2_03",
@@ -2191,10 +2074,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 股四头容量"
+    "notes": "3×8–10; 保留余力; 股四头容量"
   },
   {
     "id": "pe_day_strength_w05_d2_04",
@@ -2208,9 +2090,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.6,
-    "rpeTarget": 7.0,
     "restSeconds": 90,
-    "notes": "3×6–8; RPE 7; 不要太重，周四还硬拉"
+    "notes": "3×6–8; 保留余力; 不要太重，周四还硬拉"
   },
   {
     "id": "pe_day_strength_w05_d2_05",
@@ -2222,10 +2103,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 腘绳肌补充"
+    "notes": "3×10–15; 保留余力; 腘绳肌补充"
   },
   {
     "id": "pe_day_strength_w05_d2_06",
@@ -2237,10 +2117,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–20; RIR 1–2; 可选"
+    "notes": "4×10–20; 保留余力; 可选"
   },
   {
     "id": "pe_day_strength_w05_d2_07",
@@ -2267,9 +2146,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.725,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "4×6; RPE 7; 技术和容量，不冲重量; 回退组少量即可; 容量日：不冲极限"
+    "notes": "4×6; 保留余力; 技术和容量，不冲重量; 回退组少量即可; 容量日：不冲极限"
   },
   {
     "id": "pe_day_strength_w05_d3_02",
@@ -2283,9 +2161,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "overhead_press",
     "intensityType": "percent_1rm",
     "percent1RM": 0.7,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "4×5–8; RPE 7–8; 垂直推力量; 回退组少量即可; 肩推可稳定推进"
+    "notes": "4×5–8; 保留余力; 垂直推力量; 回退组少量即可; 肩推可稳定推进"
   },
   {
     "id": "pe_day_strength_w05_d3_03",
@@ -2299,9 +2176,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rirTarget": 1.5,
     "restSeconds": 180,
-    "notes": "4×6–10; RIR 1–2; 背阔肌容量"
+    "notes": "4×6–10; 保留余力; 背阔肌容量"
   },
   {
     "id": "pe_day_strength_w05_d3_04",
@@ -2313,10 +2189,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×8–12; RIR 1–2; 减少下背压力"
+    "notes": "4×8–12; 保留余力; 减少下背压力"
   },
   {
     "id": "pe_day_strength_w05_d3_05",
@@ -2328,10 +2203,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2–3×8–12; RIR 2; 胸部辅助容量"
+    "notes": "2–3×8–12; 保留余力; 胸部辅助容量"
   },
   {
     "id": "pe_day_strength_w05_d3_06",
@@ -2343,10 +2217,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×12–20; RIR 0–2; 肩侧束"
+    "notes": "4×12–20; 保留余力; 肩侧束"
   },
   {
     "id": "pe_day_strength_w05_d3_07",
@@ -2358,10 +2231,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 手臂补充"
+    "notes": "3×10–15; 保留余力; 手臂补充"
   },
   {
     "id": "pe_day_strength_w05_d4_01",
@@ -2374,9 +2246,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.85,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "3–4×2; RPE 7–8; 硬拉总组数比卧推/深蹲少1组; 回退组少量即可; 硬拉主项总组数比卧推/深蹲少1组"
+    "notes": "3–4×2; 保留余力; 硬拉总组数比卧推/深蹲少1组; 回退组少量即可; 硬拉主项总组数比卧推/深蹲少1组"
   },
   {
     "id": "pe_day_strength_w05_d4_02",
@@ -2389,9 +2260,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "2–3×3; RPE 7; 技术辅助"
+    "notes": "2–3×3; 保留余力; 技术辅助"
   },
   {
     "id": "pe_day_strength_w05_d4_03",
@@ -2403,10 +2273,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 1–2; 髋伸补充"
+    "notes": "3×8–10; 保留余力; 髋伸补充"
   },
   {
     "id": "pe_day_strength_w05_d4_04",
@@ -2418,10 +2287,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–15; RIR 1–2; 腘绳肌容量"
+    "notes": "4×10–15; 保留余力; 腘绳肌容量"
   },
   {
     "id": "pe_day_strength_w05_d4_05",
@@ -2433,10 +2301,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×12–15; RIR 1–2; 轻量，不要顶腰"
+    "notes": "3×12–15; 保留余力; 轻量，不要顶腰"
   },
   {
     "id": "pe_day_strength_w05_d4_06",
@@ -2448,10 +2315,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2×8–12/侧; RIR 2; 有余力再做"
+    "notes": "2×8–12/侧; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w05_d4_07",
@@ -2472,10 +2338,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "priority": "B",
     "orderIndex": 1,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 7.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "45–60分钟; RPE 6–8; 不做高强度深蹲/硬拉/卧推"
+    "notes": "45–60分钟; 保留余力; 不做高强度深蹲/硬拉/卧推"
   },
   {
     "id": "pe_day_strength_w06_d1_01",
@@ -2488,9 +2353,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.875,
-    "rpeTarget": 8.75,
     "restSeconds": 180,
-    "notes": "1×2/3 + 3×3回退; RPE 8.5–9; 主项，必须做; 回退组约80%; 卧推主项"
+    "notes": "1×2/3 + 3×3回退; 保留余力; 主项，必须做; 回退组约80%; 卧推主项"
   },
   {
     "id": "pe_day_strength_w06_d1_02",
@@ -2504,9 +2368,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 1秒停顿，练底部稳定"
+    "notes": "3×3–5; 保留余力; 1秒停顿，练底部稳定"
   },
   {
     "id": "pe_day_strength_w06_d1_03",
@@ -2520,9 +2383,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.75,
-    "rpeTarget": 8.0,
     "restSeconds": 180,
-    "notes": "4×4–6; RPE 8; 可用自重或负重"
+    "notes": "4×4–6; 保留余力; 可用自重或负重"
   },
   {
     "id": "pe_day_strength_w06_d1_04",
@@ -2534,10 +2396,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 6,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 8.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×6–10; RPE 8; 背部支撑卧推"
+    "notes": "4×6–10; 保留余力; 背部支撑卧推"
   },
   {
     "id": "pe_day_strength_w06_d1_05",
@@ -2549,10 +2410,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 不练爆，避免影响周三"
+    "notes": "3×8–10; 保留余力; 不练爆，避免影响周三"
   },
   {
     "id": "pe_day_strength_w06_d1_06",
@@ -2564,10 +2424,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 15,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×15–20; RIR 1–2; 肩胛稳定"
+    "notes": "3×15–20; 保留余力; 肩胛稳定"
   },
   {
     "id": "pe_day_strength_w06_d1_07",
@@ -2579,10 +2438,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 有余力再做"
+    "notes": "3×10–15; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w06_d2_01",
@@ -2595,9 +2453,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.875,
-    "rpeTarget": 8.75,
     "restSeconds": 180,
-    "notes": "1×2/3 + 3×3回退; RPE 8.5–9; 主项，必须做; 回退组约80%; 深蹲主项"
+    "notes": "1×2/3 + 3×3回退; 保留余力; 主项，必须做; 回退组约80%; 深蹲主项"
   },
   {
     "id": "pe_day_strength_w06_d2_02",
@@ -2611,9 +2468,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "squat",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "3×3–5; RPE 7; 控制底部"
+    "notes": "3×3–5; 保留余力; 控制底部"
   },
   {
     "id": "pe_day_strength_w06_d2_03",
@@ -2625,10 +2481,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 2; 股四头容量"
+    "notes": "3×8–10; 保留余力; 股四头容量"
   },
   {
     "id": "pe_day_strength_w06_d2_04",
@@ -2642,9 +2497,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.6,
-    "rpeTarget": 7.0,
     "restSeconds": 90,
-    "notes": "3×6–8; RPE 7; 不要太重，周四还硬拉"
+    "notes": "3×6–8; 保留余力; 不要太重，周四还硬拉"
   },
   {
     "id": "pe_day_strength_w06_d2_05",
@@ -2656,10 +2510,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 腘绳肌补充"
+    "notes": "3×10–15; 保留余力; 腘绳肌补充"
   },
   {
     "id": "pe_day_strength_w06_d2_06",
@@ -2671,10 +2524,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–20; RIR 1–2; 可选"
+    "notes": "4×10–20; 保留余力; 可选"
   },
   {
     "id": "pe_day_strength_w06_d2_07",
@@ -2701,9 +2553,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "bench",
     "intensityType": "percent_1rm",
     "percent1RM": 0.7,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "4×6; RPE 7; 技术和容量，不冲重量; 回退组约80%; 容量日：不冲极限"
+    "notes": "4×6; 保留余力; 技术和容量，不冲重量; 回退组约80%; 容量日：不冲极限"
   },
   {
     "id": "pe_day_strength_w06_d3_02",
@@ -2717,9 +2568,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "overhead_press",
     "intensityType": "percent_1rm",
     "percent1RM": 0.7,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "4×5–8; RPE 7–8; 垂直推力量; 回退组约80%; 肩推可稳定推进"
+    "notes": "4×5–8; 保留余力; 垂直推力量; 回退组约80%; 肩推可稳定推进"
   },
   {
     "id": "pe_day_strength_w06_d3_03",
@@ -2733,9 +2583,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "pullup_total",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rirTarget": 1.5,
     "restSeconds": 180,
-    "notes": "4×6–10; RIR 1–2; 背阔肌容量"
+    "notes": "4×6–10; 保留余力; 背阔肌容量"
   },
   {
     "id": "pe_day_strength_w06_d3_04",
@@ -2747,10 +2596,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×8–12; RIR 1–2; 减少下背压力"
+    "notes": "4×8–12; 保留余力; 减少下背压力"
   },
   {
     "id": "pe_day_strength_w06_d3_05",
@@ -2762,10 +2610,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2–3×8–12; RIR 2; 胸部辅助容量"
+    "notes": "2–3×8–12; 保留余力; 胸部辅助容量"
   },
   {
     "id": "pe_day_strength_w06_d3_06",
@@ -2777,10 +2624,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 20,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×12–20; RIR 0–2; 肩侧束"
+    "notes": "4×12–20; 保留余力; 肩侧束"
   },
   {
     "id": "pe_day_strength_w06_d3_07",
@@ -2792,10 +2638,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×10–15; RIR 1–2; 手臂补充"
+    "notes": "3×10–15; 保留余力; 手臂补充"
   },
   {
     "id": "pe_day_strength_w06_d4_01",
@@ -2808,9 +2653,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.875,
-    "rpeTarget": 7.5,
     "restSeconds": 180,
-    "notes": "1×2/3 + 2×3回退; RPE 7–8; 硬拉总组数比卧推/深蹲少1组; 回退组约80%; 硬拉主项总组数比卧推/深蹲少1组"
+    "notes": "1×2/3 + 2×3回退; 保留余力; 硬拉总组数比卧推/深蹲少1组; 回退组约80%; 硬拉主项总组数比卧推/深蹲少1组"
   },
   {
     "id": "pe_day_strength_w06_d4_02",
@@ -2823,9 +2667,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "referenceLift": "deadlift",
     "intensityType": "percent_1rm",
     "percent1RM": 0.65,
-    "rpeTarget": 7.0,
     "restSeconds": 180,
-    "notes": "2–3×3; RPE 7; 技术辅助"
+    "notes": "2–3×3; 保留余力; 技术辅助"
   },
   {
     "id": "pe_day_strength_w06_d4_03",
@@ -2837,10 +2680,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 10,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×8–10; RIR 1–2; 髋伸补充"
+    "notes": "3×8–10; 保留余力; 髋伸补充"
   },
   {
     "id": "pe_day_strength_w06_d4_04",
@@ -2852,10 +2694,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 10,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "4×10–15; RIR 1–2; 腘绳肌容量"
+    "notes": "4×10–15; 保留余力; 腘绳肌容量"
   },
   {
     "id": "pe_day_strength_w06_d4_05",
@@ -2867,10 +2708,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 12,
     "repMax": 15,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 1.5,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "3×12–15; RIR 1–2; 轻量，不要顶腰"
+    "notes": "3×12–15; 保留余力; 轻量，不要顶腰"
   },
   {
     "id": "pe_day_strength_w06_d4_06",
@@ -2882,10 +2722,9 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "repMin": 8,
     "repMax": 12,
     "referenceLift": "none",
-    "intensityType": "rir",
-    "rirTarget": 2.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "2×8–12/侧; RIR 2; 有余力再做"
+    "notes": "2×8–12/侧; 保留余力; 有余力再做"
   },
   {
     "id": "pe_day_strength_w06_d4_07",
@@ -2906,9 +2745,8 @@ export const defaultStrengthPlanExerciseSeeds: PlanExercise[] = [
     "priority": "B",
     "orderIndex": 1,
     "referenceLift": "none",
-    "intensityType": "rpe",
-    "rpeTarget": 7.0,
+    "intensityType": "manual",
     "restSeconds": 90,
-    "notes": "45–60分钟; RPE 6–8; 不做高强度深蹲/硬拉/卧推"
+    "notes": "45–60分钟; 保留余力; 不做高强度深蹲/硬拉/卧推"
   }
 ];

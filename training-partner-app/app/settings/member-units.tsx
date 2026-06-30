@@ -59,16 +59,16 @@ export default function SettingsMemberUnitsRoute() {
   );
 
   return (
-    <Screen title="加重单位" subtitle="杠铃和哑铃加重单位按成员分别设置。">
+    <Screen safeTop={false}>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="加重单位暂时无法加载" description={error} /> : null}
 
       {!isLoading && !error ? (
         <>
           <AppCard style={styles.summaryCard} tone="brand">
-            <AppText variant="subtitle">选择成员后编辑</AppText>
+            <AppText variant="subtitle">先选择成员</AppText>
             <AppText tone="muted" variant="bodySmall">
-              点击“加重单位”不会默认跳转第一个成员；先在这里选择要编辑的人。
+              每位成员的杠铃、哑铃加重单位分别维护。
             </AppText>
           </AppCard>
 

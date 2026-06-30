@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
+import { Avatar } from '@/components/avatar';
 import { AppButton, AppCard, AppText, EmptyState, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
@@ -73,7 +74,7 @@ export default function SettingsMembersRoute() {
   const canAddMember = items.length < MAX_GROUP_MEMBERS;
 
   return (
-    <Screen title="成员资料" subtitle="设置页只展示摘要，点击成员后进入完整资料。">
+    <Screen safeTop={false}>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="成员资料暂时无法加载" description={error} /> : null}
 
@@ -110,11 +111,13 @@ export default function SettingsMembersRoute() {
                   }}
                   style={({ pressed }) => [styles.memberCard, pressed && styles.pressed]}
                 >
-                  <View style={styles.avatar}>
-                    <AppText tone="inverse" variant="bodySmall" weight="900">
-                      {member.displayName.slice(0, 1)}
-                    </AppText>
-                  </View>
+                  <Avatar
+                    avatarLocalUri={profile?.avatarLocalUri}
+                    avatarThumbUrl={profile?.avatarThumbUrl}
+                    avatarUrl={profile?.avatarUrl ?? member.avatarUrl}
+                    name={member.displayName}
+                    size={38}
+                  />
                   <View style={styles.memberText}>
                     <AppText variant="bodySmall" weight="900">
                       {member.displayName}
@@ -148,7 +151,7 @@ export default function SettingsMembersRoute() {
                 本地小组最多支持 {MAX_GROUP_MEMBERS} 位训练成员
               </AppText>
               <AppText tone="muted" variant="caption">
-                适合一台设备多人轮换记录。后续云同步版本会支持更多小组能力。
+                适合一台设备多人轮换记录。多设备小组能力后续版本开放。
               </AppText>
             </AppCard>
           )}
@@ -161,14 +164,6 @@ export default function SettingsMembersRoute() {
 }
 
 const styles = StyleSheet.create({
-  avatar: {
-    alignItems: 'center',
-    backgroundColor: colors.dark,
-    borderRadius: radius.pill,
-    height: 38,
-    justifyContent: 'center',
-    width: 38,
-  },
   list: {
     gap: spacing.sm,
   },

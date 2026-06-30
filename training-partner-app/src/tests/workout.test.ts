@@ -83,10 +83,6 @@ describe('workout domain rules', () => {
     expect(() => validateWorkoutSetInput({ id: 'set_1', actualWeight: -1 })).toThrow();
     expect(() => validateWorkoutSetInput({ id: 'set_1', actualReps: -1 })).toThrow();
     expect(() => validateWorkoutSetInput({ id: 'set_1', actualReps: 4.5 })).toThrow();
-    expect(() => validateWorkoutSetInput({ id: 'set_1', rpe: 5 })).toThrow();
-    expect(() => validateWorkoutSetInput({ id: 'set_1', rpe: 11 })).toThrow();
-    expect(() => validateWorkoutSetInput({ id: 'set_1', rir: 6 })).toThrow();
     expect(() => validateWorkoutSetInput({ id: 'set_1', actualWeight: 97.5, actualReps: 5 })).not.toThrow();
-    expect(() => validateWorkoutSetInput({ id: 'set_1', rpe: undefined, rir: undefined })).not.toThrow();
   });
 });

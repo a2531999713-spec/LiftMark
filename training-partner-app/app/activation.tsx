@@ -32,14 +32,14 @@ export default function ActivationRoute() {
         setNotice({ title: '兑换失败', message: result.message });
         return;
       }
-      setNotice({ title: '兑换成功', message: '会员权益已同步到账户。' });
+      setNotice({ title: '兑换成功', message: '会员权益已更新到账户。' });
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <Screen title="激活码兑换" subtitle="兑换会员权益、激活码和购买记录。">
+    <Screen safeTop={false}>
       <AppCard style={styles.card} tone="dark">
         <Tag label={isLoggedIn ? '已登录' : '需登录'} tone="dark" />
         <AppText tone="inverse" variant="title" weight="900">

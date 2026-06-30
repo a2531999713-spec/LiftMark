@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton, AppText, Tag } from '@/components/ui';
+import { AppButton, AppText } from '@/components/ui';
 import { CompletedSetList } from '@/components/workout/CompletedSetList';
 import { CurrentSetRecorder } from '@/components/workout/CurrentSetRecorder';
 import { ExerciseHeroCard } from '@/components/workout/ExerciseHeroCard';
@@ -26,32 +26,11 @@ import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { getWorkoutRecordInitialReps } from '@/domain/workout/workout.service';
 import type {
   SaveWorkoutSetInput,
-  WorkoutExerciseRecord,
   WorkoutSessionDetail,
   WorkoutSet,
 } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing } from '@/theme';
-
-function formatNumber(value: number | undefined, fallback = '0'): string {
-  if (value === undefined) {
-    return fallback;
-  }
-  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
-}
-
-function formatPrescription(record: WorkoutExerciseRecord): string {
-  if (record.plannedSets && record.plannedReps) {
-    return `${record.plannedSets} x ${record.plannedReps}`;
-  }
-  if (record.plannedSets && record.plannedRepMin && record.plannedRepMax) {
-    return `${record.plannedSets} x ${record.plannedRepMin}-${record.plannedRepMax}`;
-  }
-  if (record.plannedSets) {
-    return `${record.plannedSets} 组`;
-  }
-  return '手动安排';
-}
 
 function formatTimer(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -110,7 +89,6 @@ export default function WorkoutRoute() {
   const [isFinishing, setIsFinishing] = useState(false);
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const restEndTimeRef = useRef<number>(0);
 
   useEffect(() => {
     const startedAt = detail?.session.startedAt ? new Date(detail.session.startedAt).getTime() : Date.now();
@@ -160,7 +138,12 @@ export default function WorkoutRoute() {
 
       await initializeLocalDatabase();
       const nextDetail = await repositories.workoutRepository.getSessionDetail(sessionId);
-      const nextMembers = await repositories.memberRepository.listMembers(nextDetail.session.groupId);
+      const allMembers = await repositories.memberRepository.listMembers(nextDetail.session.groupId);
+      const participantIds = new Set(nextDetail.sets.map((set) => set.memberId));
+      const nextMembers =
+        participantIds.size > 0
+          ? allMembers.filter((member) => participantIds.has(member.id))
+          : allMembers;
       const nextProfiles = await Promise.all(
         nextMembers.map(async (member) => [
           member.id,
@@ -224,6 +207,9 @@ export default function WorkoutRoute() {
     if (!sessionId) {
       return;
     }
+    if (isFinishing) {
+      return;
+    }
     if (!guardFeature('save_workout')) {
       return;
     }
@@ -237,7 +223,7 @@ export default function WorkoutRoute() {
     } finally {
       setIsFinishing(false);
     }
-  }, [guardFeature, repositories, sessionId]);
+  }, [guardFeature, isFinishing, repositories, sessionId]);
 
   const activeRecord = detail?.exercises[activeExerciseIndex] ?? null;
   const activeExercise = activeRecord ? exerciseMap[activeRecord.exerciseId] ?? null : null;
@@ -245,9 +231,6 @@ export default function WorkoutRoute() {
     ? detail?.sets.filter((set) => set.exerciseRecordId === activeRecord.id) ?? []
     : [];
   const completedSets = activeSets.filter((set) => set.completed).length;
-  const completedTotalSets = detail?.sets.filter((set) => set.completed).length ?? 0;
-  const totalSets = detail?.sets.length ?? 0;
-  const progress = totalSets > 0 ? completedTotalSets / totalSets : 0;
   const roundSets = members
     .map((member) => activeSets.filter((set) => set.memberId === member.id).sort((a, b) => a.setNumber - b.setNumber))
     .map(selectDisplaySet)
@@ -259,6 +242,9 @@ export default function WorkoutRoute() {
     return map;
   }, [members]);
   const hasNextExercise = detail ? activeExerciseIndex < detail.exercises.length - 1 : false;
+  const sessionSubtitle = detail
+    ? `${detail.session.title} · 第 ${detail.session.week} 周 · 周 ${detail.session.weekday}`
+    : '读取训练快照';
 
   const totalVolumeKg = useMemo(() => {
     if (!detail) return 0;
@@ -385,13 +371,6 @@ export default function WorkoutRoute() {
     );
   }
 
-  function handleEndWorkout() {
-    Alert.alert('退出训练？', '训练数据已自动保存，可以稍后回来继续。', [
-      { text: '继续训练', style: 'cancel' },
-      { text: '结束并返回', style: 'destructive', onPress: () => void finishWorkout() },
-    ]);
-  }
-
   function handleBack() {
     Alert.alert('退出训练？', '训练数据已自动保存，可以稍后回来继续。', [
       { text: '继续训练', style: 'cancel' },
@@ -423,7 +402,7 @@ export default function WorkoutRoute() {
               训练中
             </AppText>
             <AppText tone="muted" variant="caption">
-              增力阶段 · 第 3 周 · Day 2
+              {sessionSubtitle}
             </AppText>
           </View>
           <Pressable accessibilityRole="button" onPress={handleMoreOptions}>
@@ -486,6 +465,7 @@ export default function WorkoutRoute() {
                   currentMemberId={currentMemberId}
                   members={members}
                   onSelectMember={(id) => setActiveMemberId(id)}
+                  profiles={profiles}
                 />
               ) : null}
 
@@ -495,19 +475,13 @@ export default function WorkoutRoute() {
                   isResting={isCurrentMemberResting}
                   isWorkoutReadyToFinish={isWorkoutReadyToFinish}
                   memberName={membersById.get(currentDisplaySet.memberId)?.displayName ?? '成员'}
-                  onClearRpe={() => void saveSetPatch(currentDisplaySet, { rpe: undefined })}
-                  onClearRir={() => void saveSetPatch(currentDisplaySet, { rir: undefined })}
                   onCompleteSet={() => void completeCurrentRound()}
                   onRepsChange={(v) => void saveSetPatch(currentDisplaySet, { actualReps: v })}
-                  onRpeChange={(v) => void saveSetPatch(currentDisplaySet, { rpe: v })}
-                  onRirChange={(v) => void saveSetPatch(currentDisplaySet, { rir: v })}
                   onSkipRest={() => skipMemberRest(currentMemberId)}
                   onWeightChange={(v) => void saveSetPatch(currentDisplaySet, { actualWeight: v })}
                   profile={currentProfile}
                   record={activeRecord}
                   restSeconds={currentMemberRestSeconds}
-                  rir={currentDisplaySet.rir}
-                  rpe={currentDisplaySet.rpe}
                   reps={currentDisplaySet.actualReps ?? currentDisplaySet.plannedReps}
                   setNumber={currentDisplaySet.setNumber}
                   weight={currentDisplaySet.actualWeight ?? currentDisplaySet.plannedWeight}
@@ -558,6 +532,7 @@ export default function WorkoutRoute() {
                   members={members}
                   mode="dock"
                   nextMemberName={nextMemberName}
+                  profiles={profiles}
                 />
               ) : null}
               <View style={styles.savedBadge}>

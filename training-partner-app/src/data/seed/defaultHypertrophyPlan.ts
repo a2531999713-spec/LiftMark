@@ -1,4 +1,4 @@
-// Generated from 四练增力增肌训练计划_完整版2.1.xlsx.
+// Legacy four-day compatibility seed.
 
 import type { PlanDay, PlanExercise, PlanPhase } from '@/domain/plan/plan.types';
 
@@ -21,7 +21,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 1,
     "title": "胸",
     "focus": "胸",
-    "notes": "适应容量；每个动作可少做1组; RIR 2–3; 先确定动作轨迹和合适起始重量，不急着加重; 按当天部位执行"
+    "notes": "适应容量；每个动作可少做1组; 保留余力; 先确定动作轨迹和合适起始重量，不急着加重; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w08_d2",
@@ -31,7 +31,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 2,
     "title": "背",
     "focus": "背",
-    "notes": "适应容量；每个动作可少做1组; RIR 2–3; 先确定动作轨迹和合适起始重量，不急着加重; 按当天部位执行"
+    "notes": "适应容量；每个动作可少做1组; 保留余力; 先确定动作轨迹和合适起始重量，不急着加重; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w08_d3",
@@ -41,7 +41,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 3,
     "title": "肩",
     "focus": "肩",
-    "notes": "适应容量；每个动作可少做1组; RIR 2–3; 先确定动作轨迹和合适起始重量，不急着加重; 按当天部位执行"
+    "notes": "适应容量；每个动作可少做1组; 保留余力; 先确定动作轨迹和合适起始重量，不急着加重; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w08_d4",
@@ -51,7 +51,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 4,
     "title": "腿",
     "focus": "腿",
-    "notes": "适应容量；每个动作可少做1组; RIR 2–3; 先确定动作轨迹和合适起始重量，不急着加重; 按当天部位执行"
+    "notes": "适应容量；每个动作可少做1组; 保留余力; 先确定动作轨迹和合适起始重量，不急着加重; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w08_d5",
@@ -61,7 +61,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 5,
     "title": "补弱",
     "focus": "补弱",
-    "notes": "适应容量；每个动作可少做1组; RIR 2–3; 先确定动作轨迹和合适起始重量，不急着加重; 建议只做轻量补弱或休息"
+    "notes": "适应容量；每个动作可少做1组; 保留余力; 先确定动作轨迹和合适起始重量，不急着加重; 建议只做轻量补弱或休息"
   },
   {
     "id": "day_hypertrophy_w09_d1",
@@ -71,7 +71,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 1,
     "title": "胸",
     "focus": "胸",
-    "notes": "进入完整训练量; RIR 1–2; 按次数区间稳定完成，记录每组次数; 按当天部位执行"
+    "notes": "进入完整训练量; 保留余力; 按次数区间稳定完成，记录每组次数; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w09_d2",
@@ -81,7 +81,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 2,
     "title": "背",
     "focus": "背",
-    "notes": "进入完整训练量; RIR 1–2; 按次数区间稳定完成，记录每组次数; 按当天部位执行"
+    "notes": "进入完整训练量; 保留余力; 按次数区间稳定完成，记录每组次数; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w09_d3",
@@ -91,7 +91,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 3,
     "title": "肩",
     "focus": "肩",
-    "notes": "进入完整训练量; RIR 1–2; 按次数区间稳定完成，记录每组次数; 按当天部位执行"
+    "notes": "进入完整训练量; 保留余力; 按次数区间稳定完成，记录每组次数; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w09_d4",
@@ -101,7 +101,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 4,
     "title": "腿",
     "focus": "腿",
-    "notes": "进入完整训练量; RIR 1–2; 按次数区间稳定完成，记录每组次数; 按当天部位执行"
+    "notes": "进入完整训练量; 保留余力; 按次数区间稳定完成，记录每组次数; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w09_d5",
@@ -111,7 +111,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 5,
     "title": "补弱",
     "focus": "补弱",
-    "notes": "进入完整训练量; RIR 1–2; 按次数区间稳定完成，记录每组次数; 可做4–6个补弱动作"
+    "notes": "进入完整训练量; 保留余力; 按次数区间稳定完成，记录每组次数; 可做4–6个补弱动作"
   },
   {
     "id": "day_hypertrophy_w10_d1",
@@ -121,7 +121,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 1,
     "title": "胸",
     "focus": "胸",
-    "notes": "提高有效组质量; RIR 1–2; 优先每组多做1次，不变形; 按当天部位执行"
+    "notes": "提高有效组质量; 保留余力; 优先每组多做1次，不变形; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w10_d2",
@@ -131,7 +131,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 2,
     "title": "背",
     "focus": "背",
-    "notes": "提高有效组质量; RIR 1–2; 优先每组多做1次，不变形; 按当天部位执行"
+    "notes": "提高有效组质量; 保留余力; 优先每组多做1次，不变形; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w10_d3",
@@ -141,7 +141,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 3,
     "title": "肩",
     "focus": "肩",
-    "notes": "提高有效组质量; RIR 1–2; 优先每组多做1次，不变形; 按当天部位执行"
+    "notes": "提高有效组质量; 保留余力; 优先每组多做1次，不变形; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w10_d4",
@@ -151,7 +151,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 4,
     "title": "腿",
     "focus": "腿",
-    "notes": "提高有效组质量; RIR 1–2; 优先每组多做1次，不变形; 按当天部位执行"
+    "notes": "提高有效组质量; 保留余力; 优先每组多做1次，不变形; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w10_d5",
@@ -161,7 +161,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 5,
     "title": "补弱",
     "focus": "补弱",
-    "notes": "提高有效组质量; RIR 1–2; 优先每组多做1次，不变形; 补肩侧束/后束/手臂更优先"
+    "notes": "提高有效组质量; 保留余力; 优先每组多做1次，不变形; 补肩侧束/后束/手臂更优先"
   },
   {
     "id": "day_hypertrophy_w11_d1",
@@ -171,7 +171,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 1,
     "title": "胸",
     "focus": "胸",
-    "notes": "第一次尝试加重; RIR 1–2; 某动作所有组达到上限且RIR≥1，下次加重; 按当天部位执行"
+    "notes": "第一次尝试加重; 保留余力; 某动作所有组达到上限且动作质量稳定，下次加重; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w11_d2",
@@ -181,7 +181,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 2,
     "title": "背",
     "focus": "背",
-    "notes": "第一次尝试加重; RIR 1–2; 某动作所有组达到上限且RIR≥1，下次加重; 按当天部位执行"
+    "notes": "第一次尝试加重; 保留余力; 某动作所有组达到上限且动作质量稳定，下次加重; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w11_d3",
@@ -191,7 +191,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 3,
     "title": "肩",
     "focus": "肩",
-    "notes": "第一次尝试加重; RIR 1–2; 某动作所有组达到上限且RIR≥1，下次加重; 按当天部位执行"
+    "notes": "第一次尝试加重; 保留余力; 某动作所有组达到上限且动作质量稳定，下次加重; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w11_d4",
@@ -201,7 +201,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 4,
     "title": "腿",
     "focus": "腿",
-    "notes": "第一次尝试加重; RIR 1–2; 某动作所有组达到上限且RIR≥1，下次加重; 按当天部位执行"
+    "notes": "第一次尝试加重; 保留余力; 某动作所有组达到上限且动作质量稳定，下次加重; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w11_d5",
@@ -211,7 +211,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 5,
     "title": "补弱",
     "focus": "补弱",
-    "notes": "第一次尝试加重; RIR 1–2; 某动作所有组达到上限且RIR≥1，下次加重; 不要影响下周一胸日"
+    "notes": "第一次尝试加重; 保留余力; 某动作所有组达到上限且动作质量稳定，下次加重; 不要影响下周一胸日"
   },
   {
     "id": "day_hypertrophy_w12_d1",
@@ -221,7 +221,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 1,
     "title": "胸",
     "focus": "胸",
-    "notes": "继续推进容量; RIR 0–2; 孤立动作可更接近力竭；复合动作保留余力; 按当天部位执行"
+    "notes": "继续推进容量; 保留余力; 孤立动作可更接近力竭；复合动作保留余力; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w12_d2",
@@ -231,7 +231,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 2,
     "title": "背",
     "focus": "背",
-    "notes": "继续推进容量; RIR 0–2; 孤立动作可更接近力竭；复合动作保留余力; 按当天部位执行"
+    "notes": "继续推进容量; 保留余力; 孤立动作可更接近力竭；复合动作保留余力; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w12_d3",
@@ -241,7 +241,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 3,
     "title": "肩",
     "focus": "肩",
-    "notes": "继续推进容量; RIR 0–2; 孤立动作可更接近力竭；复合动作保留余力; 按当天部位执行"
+    "notes": "继续推进容量; 保留余力; 孤立动作可更接近力竭；复合动作保留余力; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w12_d4",
@@ -251,7 +251,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 4,
     "title": "腿",
     "focus": "腿",
-    "notes": "继续推进容量; RIR 0–2; 孤立动作可更接近力竭；复合动作保留余力; 按当天部位执行"
+    "notes": "继续推进容量; 保留余力; 孤立动作可更接近力竭；复合动作保留余力; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w12_d5",
@@ -261,7 +261,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 5,
     "title": "补弱",
     "focus": "补弱",
-    "notes": "继续推进容量; RIR 0–2; 孤立动作可更接近力竭；复合动作保留余力; 可做6–8个小肌群动作"
+    "notes": "继续推进容量; 保留余力; 孤立动作可更接近力竭；复合动作保留余力; 可做6–8个小肌群动作"
   },
   {
     "id": "day_hypertrophy_w13_d1",
@@ -271,7 +271,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 1,
     "title": "胸",
     "focus": "胸",
-    "notes": "高质量容量周; RIR 0–2; 小幅加重或继续加次数，避免动作质量下降; 按当天部位执行"
+    "notes": "高质量容量周; 保留余力; 小幅加重或继续加次数，避免动作质量下降; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w13_d2",
@@ -281,7 +281,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 2,
     "title": "背",
     "focus": "背",
-    "notes": "高质量容量周; RIR 0–2; 小幅加重或继续加次数，避免动作质量下降; 按当天部位执行"
+    "notes": "高质量容量周; 保留余力; 小幅加重或继续加次数，避免动作质量下降; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w13_d3",
@@ -291,7 +291,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 3,
     "title": "肩",
     "focus": "肩",
-    "notes": "高质量容量周; RIR 0–2; 小幅加重或继续加次数，避免动作质量下降; 按当天部位执行"
+    "notes": "高质量容量周; 保留余力; 小幅加重或继续加次数，避免动作质量下降; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w13_d4",
@@ -301,7 +301,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 4,
     "title": "腿",
     "focus": "腿",
-    "notes": "高质量容量周; RIR 0–2; 小幅加重或继续加次数，避免动作质量下降; 按当天部位执行"
+    "notes": "高质量容量周; 保留余力; 小幅加重或继续加次数，避免动作质量下降; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w13_d5",
@@ -311,7 +311,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 5,
     "title": "补弱",
     "focus": "补弱",
-    "notes": "高质量容量周; RIR 0–2; 小幅加重或继续加次数，避免动作质量下降; 如果疲劳大，删后链动作"
+    "notes": "高质量容量周; 保留余力; 小幅加重或继续加次数，避免动作质量下降; 如果疲劳大，删后链动作"
   },
   {
     "id": "day_hypertrophy_w14_d1",
@@ -321,7 +321,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 1,
     "title": "胸",
     "focus": "胸",
-    "notes": "巩固峰值容量; RIR 0–1; 只在状态好时加量；不要所有动作都力竭; 按当天部位执行"
+    "notes": "巩固峰值容量; 保留余力; 只在状态好时加量；不要所有动作都力竭; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w14_d2",
@@ -331,7 +331,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 2,
     "title": "背",
     "focus": "背",
-    "notes": "巩固峰值容量; RIR 0–1; 只在状态好时加量；不要所有动作都力竭; 按当天部位执行"
+    "notes": "巩固峰值容量; 保留余力; 只在状态好时加量；不要所有动作都力竭; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w14_d3",
@@ -341,7 +341,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 3,
     "title": "肩",
     "focus": "肩",
-    "notes": "巩固峰值容量; RIR 0–1; 只在状态好时加量；不要所有动作都力竭; 按当天部位执行"
+    "notes": "巩固峰值容量; 保留余力; 只在状态好时加量；不要所有动作都力竭; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w14_d4",
@@ -351,7 +351,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 4,
     "title": "腿",
     "focus": "腿",
-    "notes": "巩固峰值容量; RIR 0–1; 只在状态好时加量；不要所有动作都力竭; 按当天部位执行"
+    "notes": "巩固峰值容量; 保留余力; 只在状态好时加量；不要所有动作都力竭; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w14_d5",
@@ -361,7 +361,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 5,
     "title": "补弱",
     "focus": "补弱",
-    "notes": "巩固峰值容量; RIR 0–1; 只在状态好时加量；不要所有动作都力竭; 周五偏肩/手臂，不做腿后链重负荷"
+    "notes": "巩固峰值容量; 保留余力; 只在状态好时加量；不要所有动作都力竭; 周五偏肩/手臂，不做腿后链重负荷"
   },
   {
     "id": "day_hypertrophy_w15_d1",
@@ -371,7 +371,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 1,
     "title": "胸",
     "focus": "胸",
-    "notes": "最后推进周; RIR 0–2; 完成本周期最佳表现；记录可用于下周期起始重量; 按当天部位执行"
+    "notes": "最后推进周; 保留余力; 完成本周期最佳表现；记录可用于下周期起始重量; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w15_d2",
@@ -381,7 +381,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 2,
     "title": "背",
     "focus": "背",
-    "notes": "最后推进周; RIR 0–2; 完成本周期最佳表现；记录可用于下周期起始重量; 按当天部位执行"
+    "notes": "最后推进周; 保留余力; 完成本周期最佳表现；记录可用于下周期起始重量; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w15_d3",
@@ -391,7 +391,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 3,
     "title": "肩",
     "focus": "肩",
-    "notes": "最后推进周; RIR 0–2; 完成本周期最佳表现；记录可用于下周期起始重量; 按当天部位执行"
+    "notes": "最后推进周; 保留余力; 完成本周期最佳表现；记录可用于下周期起始重量; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w15_d4",
@@ -401,7 +401,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 4,
     "title": "腿",
     "focus": "腿",
-    "notes": "最后推进周; RIR 0–2; 完成本周期最佳表现；记录可用于下周期起始重量; 按当天部位执行"
+    "notes": "最后推进周; 保留余力; 完成本周期最佳表现；记录可用于下周期起始重量; 按当天部位执行"
   },
   {
     "id": "day_hypertrophy_w15_d5",
@@ -411,7 +411,7 @@ export const defaultHypertrophyPlanDaySeeds: PlanDay[] = [
     "weekday": 5,
     "title": "补弱",
     "focus": "补弱",
-    "notes": "最后推进周; RIR 0–2; 完成本周期最佳表现；记录可用于下周期起始重量; 可选练，别练到影响减量"
+    "notes": "最后推进周; 保留余力; 完成本周期最佳表现；记录可用于下周期起始重量; 可选练，别练到影响减量"
   }
 ];
 

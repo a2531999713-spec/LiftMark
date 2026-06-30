@@ -2,17 +2,16 @@ import type { AccessContext, AccessDecision, AuthMode, FeatureKey, MembershipTie
 
 const LOGIN_REQUIRED_TITLE = '登录后开始记录训练';
 const LOGIN_REQUIRED_MESSAGE =
-  '训练记录会保存到账号中，换手机或重装后也能恢复数据。';
+  '登录用于账号资料和会员权益；训练记录仍会优先保存到本机。';
 
 const PRO_REQUIRED_TITLE = '开通 Pro，解锁完整训练小组';
 const PRO_REQUIRED_MESSAGE =
-  'Pro 支持最多 4 人一起练、更多训练计划、完整计划编辑器、高级历史趋势、自动进阶建议、完整云同步和 2 个 Pro 小组。';
+  'Pro 支持最多 4 人一起练、更多训练计划、完整计划编辑器、高级历史趋势、自动进阶建议和 2 个 Pro 小组。';
 
 const guestAllowedFeatures = new Set<FeatureKey>();
 
 const proOnlyFeatures = new Set<FeatureKey>([
   'advanced_history',
-  'group_analytics',
   'online_training',
   'pro_group',
 ]);

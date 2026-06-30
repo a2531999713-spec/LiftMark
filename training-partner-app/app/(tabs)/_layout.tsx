@@ -3,12 +3,12 @@ import { Tabs } from 'expo-router';
 import type { ComponentProps } from 'react';
 import type { ColorValue } from 'react-native';
 
-import { colors } from '@/theme';
+import { colors, layout } from '@/theme';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
 function TabIcon({ color, name, size }: { color: ColorValue; name: IoniconName; size: number }) {
-  return <Ionicons color={String(color)} name={name} size={size} />;
+  return <Ionicons color={String(color)} name={name} size={Math.min(size, layout.tabIconSize)} />;
 }
 
 export default function TabsLayout() {
@@ -19,7 +19,7 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textSubtle,
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: '600',
           marginTop: 2,
         },
@@ -27,9 +27,9 @@ export default function TabsLayout() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 0.5,
-          height: 68,
-          paddingBottom: 8,
-          paddingTop: 6,
+          height: layout.tabBarHeight,
+          paddingBottom: 6,
+          paddingTop: 5,
         },
       }}
     >

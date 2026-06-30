@@ -102,7 +102,7 @@ export default function NewMemberRoute() {
   const canCreateMember = canAddGroupMember(memberCount);
 
   return (
-    <Screen title="新增成员" subtitle="创建训练搭子，并保存当前训练参数。">
+    <Screen subtitle="创建训练搭子，并保存当前训练参数。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
 
       {error ? <EmptyState title="成员表单出错" description={error} /> : null}
@@ -110,7 +110,7 @@ export default function NewMemberRoute() {
       {!isLoading && !canCreateMember ? (
         <EmptyState
           title={`本地小组最多支持 ${MAX_GROUP_MEMBERS} 位训练成员`}
-          description="适合一台设备多人轮换记录。后续云同步版本会支持更多小组能力。"
+          description="适合一台设备多人轮换记录。多设备小组能力后续版本开放。"
         />
       ) : null}
 

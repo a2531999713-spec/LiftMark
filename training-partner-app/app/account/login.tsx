@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -17,29 +17,22 @@ import { useAuthStore } from '@/store/authStore';
 import { colors, radius, spacing, typography } from '@/theme';
 
 type NoticeState = { message: string; title: string };
-type AuthView = 'login' | 'register';
 
 const PHONE_RE = /^1[3-9]\d{9}$/;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CODE_RE = /^\d{4,6}$/;
 
 export default function LoginRoute() {
-  const { authStatus, isLoading, login, register, sendCode } = useAuthStore();
-  const [view, setView] = useState<AuthView>('login');
-  const [account, setAccount] = useState('');
+  const { authStatus, isLoading, loginWithCode, sendCode } = useAuthStore();
+  const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPwd, setShowPwd] = useState(false);
-  const [nickname, setNickname] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [sending, setSending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (authStatus === 'authenticated' || authStatus === 'offline_authenticated') {
-      router.replace('/(tabs)/today' as never);
+      router.replace('/onboarding/training-profile' as never);
     }
   }, [authStatus]);
 
@@ -50,37 +43,31 @@ export default function LoginRoute() {
   }, [cooldown]);
 
   const alert = (title: string, message: string) => setNotice({ title, message });
+
   const checkAgreed = () => {
     if (!agreed) {
-      alert('请先同意协议', '请先同意用户协议和隐私政策。');
+      alert('请先同意协议', '登录或注册前，请先阅读并同意用户协议和隐私政策。');
       return false;
     }
     return true;
   };
-  const checkAccount = () => {
-    const trimmed = account.trim();
-    if (!trimmed) {
-      alert('请输入账号', '请输入手机号、邮箱或练刻账号。');
-      return null;
-    }
-    return trimmed;
-  };
-  const getPhoneForCode = () => {
-    const trimmed = account.trim();
+
+  const getValidPhone = () => {
+    const trimmed = phone.trim();
     if (!PHONE_RE.test(trimmed)) {
-      alert('手机号格式错误', '注册需要使用手机号接收验证码。');
+      alert('手机号格式错误', '请输入 11 位中国大陆手机号。');
       return null;
     }
     return trimmed;
   };
 
-  const requestRegisterCode = async () => {
+  const requestLoginCode = async () => {
     if (!checkAgreed()) return;
-    const phone = getPhoneForCode();
-    if (!phone || cooldown > 0 || sending) return;
+    const validPhone = getValidPhone();
+    if (!validPhone || cooldown > 0 || sending) return;
 
     setSending(true);
-    const result = await sendCode({ phone, purpose: 'register' });
+    const result = await sendCode({ phone: validPhone, purpose: 'login' });
     setSending(false);
     if (!result.ok) {
       alert('发送失败', result.message);
@@ -88,200 +75,103 @@ export default function LoginRoute() {
     }
 
     setCooldown(60);
-    if (result.message) {
-      alert('验证码已发送', result.message);
-    }
+    alert('验证码已发送', result.message ?? '验证码已发送，请查看短信。');
   };
 
   const doLogin = async () => {
     if (!checkAgreed()) return;
-    const id = checkAccount();
-    if (!id) return;
-    if (password.trim().length < 1) {
-      alert('请输入密码', '请输入账号密码。');
+    const validPhone = getValidPhone();
+    if (!validPhone) return;
+    if (!CODE_RE.test(code.trim())) {
+      alert('验证码错误', '请输入 4-6 位短信验证码。');
       return;
     }
 
-    const message = await login({ identifier: id, password: password.trim() });
+    const message = await loginWithCode({ phone: validPhone, code: code.trim() });
     if (message) {
       alert('登录失败', message);
       return;
     }
-    router.replace('/(tabs)/today' as never);
-  };
-
-  const doRegister = async () => {
-    if (!checkAgreed()) return;
-    const phone = getPhoneForCode();
-    if (!phone) return;
-    if (!CODE_RE.test(code.trim())) {
-      alert('验证码错误', '请输入 4-6 位验证码。');
-      return;
-    }
-    if (password.trim().length < 6) {
-      alert('密码不符合要求', '密码至少 6 位。');
-      return;
-    }
-
-    const message = await register({
-      code: code.trim(),
-      displayName: nickname.trim() || `练刻用户${phone.slice(-4)}`,
-      identifier: phone,
-      password: password.trim(),
-    });
-    if (message) {
-      alert('注册失败', message);
-      return;
-    }
-    router.replace('/(tabs)/today' as never);
-  };
-
-  const switchView = (next: AuthView) => {
-    setView(next);
-    setCode('');
-    setPassword('');
-    setNickname('');
-    setShowPwd(false);
-    setNotice(null);
+    router.replace('/onboarding/training-profile' as never);
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardDismissMode="interactive"
-          keyboardShouldPersistTaps="handled"
-          ref={scrollRef}
-        >
+        <ScrollView contentContainerStyle={styles.scroll} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled">
           <View style={styles.hero}>
             <View style={styles.logoShell}>
-              <AppText variant="headline" weight="900" style={styles.logoText}>练刻</AppText>
+              <AppText variant="headline" weight="900" style={styles.logoText}>
+                练刻
+              </AppText>
             </View>
             <View style={styles.heroCopy}>
               <AppText style={styles.heroTitle} variant="headline" weight="900">
                 LiftMark
               </AppText>
               <AppText style={styles.heroSub} tone="muted" variant="bodySmall">
-                记录每次训练，刻下持续进步
+                用手机号快速登录，新手机号会自动创建账号。
               </AppText>
             </View>
           </View>
 
           <View style={styles.card}>
-            <View style={styles.switcher}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => switchView('login')}
-                style={[styles.switchPill, view === 'login' && styles.switchPillActive]}
-              >
-                <AppText tone={view === 'login' ? 'inverse' : 'muted'} variant="bodySmall" weight="900">
-                  登录
-                </AppText>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => switchView('register')}
-                style={[styles.switchPill, view === 'register' && styles.switchPillActive]}
-              >
-                <AppText tone={view === 'register' ? 'inverse' : 'muted'} variant="bodySmall" weight="900">
-                  注册
-                </AppText>
-              </Pressable>
-            </View>
-
             <View style={styles.formHeader}>
               <AppText variant="title" weight="900">
-                {view === 'login' ? '欢迎回来' : '创建账号'}
+                手机验证码登录
               </AppText>
               <AppText tone="muted" variant="bodySmall">
-                {view === 'login' ? '使用手机号、邮箱或练刻账号登录。' : '使用手机号注册，验证码将发送到手机。'}
+                验证码用于登录和账号绑定，不再单独提供密码注册入口。
               </AppText>
             </View>
 
             <Input
-              icon="person-outline"
-              keyboard="default"
-              label={view === 'register' ? '手机号' : '账号'}
-              onChangeText={setAccount}
-              placeholder={view === 'register' ? '请输入手机号' : '手机号 / 邮箱 / 练刻账号'}
-              value={account}
+              icon="phone-portrait-outline"
+              keyboard="phone-pad"
+              label="手机号"
+              onChangeText={setPhone}
+              placeholder="请输入手机号"
+              value={phone}
             />
 
-            {view === 'register' ? (
-              <View style={styles.codeRow}>
-                <View style={styles.codeField}>
-                  <Input
-                    icon="keypad-outline"
-                    keyboard="number-pad"
-                    label="验证码"
-                    onChangeText={setCode}
-                    placeholder="4-6 位验证码"
-                    value={code}
-                  />
-                </View>
-                <Pressable
-                  disabled={cooldown > 0 || sending}
-                  onPress={() => void requestRegisterCode()}
-                  style={[styles.codeBtn, (cooldown > 0 || sending) && styles.codeBtnOff]}
-                >
-                  <AppText
-                    style={cooldown > 0 || sending ? styles.codeBtnOffText : styles.codeBtnText}
-                    variant="caption"
-                    weight="900"
-                  >
-                    {cooldown > 0 ? `${cooldown}s` : sending ? '发送中' : '获取验证码'}
-                  </AppText>
-                </Pressable>
+            <View style={styles.codeRow}>
+              <View style={styles.codeField}>
+                <Input
+                  icon="keypad-outline"
+                  keyboard="number-pad"
+                  label="验证码"
+                  onChangeText={setCode}
+                  placeholder="4-6 位短信验证码"
+                  value={code}
+                />
               </View>
-            ) : null}
-
-            <Input
-              icon="lock-closed-outline"
-              label="密码"
-              onChangeText={setPassword}
-              onToggle={() => setShowPwd((current) => !current)}
-              placeholder={view === 'register' ? '设置密码，至少 6 位' : '请输入密码'}
-              scrollRef={scrollRef}
-              secure
-              showPwd={showPwd}
-              showToggle
-              value={password}
-            />
-
-            {view === 'register' ? (
-              <Input
-                icon="text-outline"
-                label="昵称"
-                onChangeText={setNickname}
-                placeholder="训练昵称，可稍后修改"
-                value={nickname}
-              />
-            ) : null}
+              <Pressable
+                accessibilityRole="button"
+                disabled={cooldown > 0 || sending}
+                onPress={() => void requestLoginCode()}
+                style={[styles.codeBtn, (cooldown > 0 || sending) && styles.codeBtnOff]}
+              >
+                <AppText
+                  style={cooldown > 0 || sending ? styles.codeBtnOffText : styles.codeBtnText}
+                  variant="caption"
+                  weight="900"
+                >
+                  {cooldown > 0 ? `${cooldown}s` : sending ? '发送中' : '获取验证码'}
+                </AppText>
+              </Pressable>
+            </View>
 
             <Agree checked={agreed} onToggle={() => setAgreed((current) => !current)} />
 
             <AppButton
               disabled={isLoading}
               loading={isLoading}
-              onPress={() => (view === 'login' ? void doLogin() : void doRegister())}
+              onPress={() => void doLogin()}
               size="lg"
               style={styles.submitButton}
             >
-              {view === 'login' ? '登录' : '完成注册'}
+              登录 / 注册
             </AppButton>
-
-            {view === 'login' ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => alert('找回密码', '找回密码功能正在开发中，后续版本开放。')}
-                style={styles.textButton}
-              >
-                <AppText style={styles.switchLink} variant="caption" weight="800">
-                  忘记密码？
-                </AppText>
-              </Pressable>
-            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -305,23 +195,13 @@ function Input({
   label,
   onChangeText,
   placeholder,
-  secure,
-  showToggle,
-  showPwd,
-  onToggle,
-  scrollRef,
   value,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   keyboard?: 'phone-pad' | 'number-pad' | 'default';
   label: string;
   onChangeText: (value: string) => void;
-  onToggle?: () => void;
   placeholder: string;
-  scrollRef?: React.RefObject<ScrollView | null>;
-  secure?: boolean;
-  showPwd?: boolean;
-  showToggle?: boolean;
   value: string;
 }) {
   return (
@@ -334,22 +214,11 @@ function Input({
         <TextInput
           keyboardType={keyboard}
           onChangeText={onChangeText}
-          onFocus={() => {
-            if (secure && scrollRef?.current) {
-              setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 260);
-            }
-          }}
           placeholder={placeholder}
           placeholderTextColor={colors.textSubtle}
-          secureTextEntry={secure && !showPwd}
           style={styles.fieldInput}
           value={value}
         />
-        {showToggle ? (
-          <Pressable hitSlop={8} onPress={onToggle}>
-            <Ionicons color={colors.textMuted} name={showPwd ? 'eye-outline' : 'eye-off-outline'} size={18} />
-          </Pressable>
-        ) : null}
       </View>
     </View>
   );
@@ -439,8 +308,8 @@ const styles = StyleSheet.create({
     height: 44,
     justifyContent: 'center',
     marginTop: 22,
-    paddingHorizontal: spacing.md,
     minWidth: 96,
+    paddingHorizontal: spacing.md,
   },
   codeBtnOff: {
     backgroundColor: colors.surfaceMuted,
@@ -532,29 +401,5 @@ const styles = StyleSheet.create({
   submitButton: {
     borderRadius: radius.lg,
     marginTop: spacing.xs,
-  },
-  switcher: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.lg,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    padding: spacing.xs,
-  },
-  switchLink: {
-    color: colors.primary,
-  },
-  switchPill: {
-    alignItems: 'center',
-    borderRadius: radius.md,
-    flex: 1,
-    minHeight: 38,
-    justifyContent: 'center',
-  },
-  switchPillActive: {
-    backgroundColor: colors.dark,
-  },
-  textButton: {
-    alignItems: 'center',
-    paddingVertical: spacing.xs,
   },
 });

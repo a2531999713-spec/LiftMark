@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
+import { Avatar } from '@/components/avatar';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MetricCard, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
@@ -118,7 +119,7 @@ export default function MembersRoute() {
               ? guardFeature('add_member', { memberCount: members.length }) && router.push('/member/new')
               : setNotice({
                   title: `本地小组最多支持 ${MAX_GROUP_MEMBERS} 位训练成员`,
-                  message: '适合一台设备多人轮换记录。后续云同步版本会支持更多小组能力。',
+                  message: '适合一台设备多人轮换记录。多设备小组能力后续版本开放。',
                 })
           }
           style={styles.iconButton}
@@ -240,7 +241,7 @@ export default function MembersRoute() {
                 本地小组最多支持 {MAX_GROUP_MEMBERS} 位训练成员
               </AppText>
               <AppText tone="muted" variant="caption">
-                适合一台设备多人轮换记录。后续云同步版本会支持更多小组能力。
+                适合一台设备多人轮换记录。多设备小组能力后续版本开放。
               </AppText>
             </AppCard>
           ) : (
@@ -254,16 +255,6 @@ export default function MembersRoute() {
             </AppButton>
           )}
 
-          <AppCard style={styles.cloudPendingCard} tone="soft">
-            <Tag label="未来云同步" tone="neutral" />
-            <AppText variant="bodySmall" weight="900">
-              邀请成员和二维码加入会在云同步版本开放
-            </AppText>
-            <AppText tone="muted" variant="caption">
-              当前版本适合一台设备多人轮换记录，不会自动同步到其他手机。
-            </AppText>
-          </AppCard>
-
           <Modal animationType="slide" transparent visible={isLocalRuleVisible} onRequestClose={() => setLocalRuleVisible(false)}>
             <View style={styles.modalBackdrop}>
               <AppCard style={styles.localRulePanel}>
@@ -274,9 +265,9 @@ export default function MembersRoute() {
                   </Pressable>
                 </View>
                 <RuleItem text="当前版本的小组适合同一台设备多人轮换记录。" />
-                <RuleItem text="训练数据保存在本机，不会自动同步到其他手机。" />
+                <RuleItem text="训练数据保存在本机 SQLite。" />
                 <RuleItem text="当前版本组长可以查看本机保存的所有本地成员训练数据。" />
-                <RuleItem text="未来云同步版本再支持账号登录、邀请成员加入、多设备同步，以及组长查看成员授权共享的数据。" />
+                <RuleItem text="成员加入通过本机添加成员完成，多设备小组能力后续版本开放。" />
                 <AppButton onPress={() => setLocalRuleVisible(false)} variant="secondary">
                   我知道了
                 </AppButton>
@@ -310,11 +301,13 @@ type PartnerMemberCardProps = {
 function PartnerMemberCard({ member, onPress, profile }: PartnerMemberCardProps) {
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.memberCard, pressed && styles.pressed]}>
-      <View style={styles.avatar}>
-        <AppText tone="inverse" variant="subtitle">
-          {member.displayName.slice(0, 1)}
-        </AppText>
-      </View>
+      <Avatar
+        avatarLocalUri={profile?.avatarLocalUri}
+        avatarThumbUrl={profile?.avatarThumbUrl}
+        avatarUrl={profile?.avatarUrl ?? member.avatarUrl}
+        name={member.displayName}
+        size={46}
+      />
       <View style={styles.memberMain}>
         <View style={styles.memberTop}>
           <AppText variant="subtitle">{member.displayName}</AppText>
@@ -461,10 +454,6 @@ const styles = StyleSheet.create({
   },
   limitCard: {
     gap: spacing.xs,
-    padding: spacing.md,
-  },
-  cloudPendingCard: {
-    gap: spacing.sm,
     padding: spacing.md,
   },
   pressed: {
