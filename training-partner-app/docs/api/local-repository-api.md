@@ -1,6 +1,14 @@
 # 本地 Repository API 文档
 
-更新时间：2026-06-15
+更新时间：2026-06-30
+
+## 2026-06-30 契约补充
+
+- `PlanRepository.listUserPlans()` 继续只返回用户计划，并过滤 legacy 旧默认计划。
+- `PlanRepository.copySystemSchemeToUserPlan()` 是 onboarding 推荐计划落地当前计划前的唯一复制入口。
+- `WorkoutRepository.createSessionFromTodayPlan()` 必须使用输入中的 `week`、`weekday`、`phaseId` 和 `planExerciseIds` 创建训练快照，不得从 group 当前周覆盖。
+- 今日训练页的“动作筛选”通过 `planExerciseIds` 传入筛选后的计划动作列表；Repository 不得自行回退到固定计划日或硬编码动作。
+- `WorkoutRepository.listOpenSessionsForDate()` 用于今日训练页检查同日未完成 session 冲突；不同计划、周次、训练日或记录模式不允许静默复用。
 
 ## 1. API 定位
 
@@ -48,6 +56,7 @@ export interface MemberRepository {
 - 成员列表、成员表单。
 - 今日训练建议重量计算。
 - 训练记录按成员归属。
+- `MemberProfile` 可保存成员头像 URL、缩略图 URL、本地缓存路径和更新时间；头像文件本体不进入 SQLite。
 
 ## 4. ExerciseRepository
 
@@ -125,14 +134,14 @@ export interface WorkoutRepository {
 
 用途：
 
-- 开始训练时创建或复用 session，并在同一事务中生成动作记录和每位成员的 set。
+- 开始训练时创建或复用 session，并在同一事务中生成动作记录和参与成员的 set。
 - 训练现场每次输入即时保存。
 - 历史补录创建手动 session。
 - 历史详情页可编辑日期、标题、动作、组数据，并可二次确认删除 set、动作或整次训练。
 - 完成训练并生成总结。
 - 历史页按日期、月份和成员条件读取训练。
 
-`CreateSessionFromTodayPlanInput` 当前包含 `planExerciseIds?: ID[]`，用于从今日训练页传入恢复过滤后的动作列表。未完成的当天 session 会优先复用，避免中途退出后重复创建 set。
+`CreateSessionFromTodayPlanInput` 当前包含 `planExerciseIds?: ID[]`、`participantMemberIds?: ID[]` 和 `trainingMode?: 'solo_local' | 'group_local'`。今日训练页传入动作筛选后的动作列表和本次参与成员，Repository 只为参与成员生成 `workout_sets`。未完成的同计划、同周次、同训练日、同记录模式 session 会优先复用，避免中途退出后重复创建 set。
 
 ## 7. ProgressionRepository
 

@@ -1,7 +1,7 @@
 # Group 模块实现文档
 
-更新时间：2026-06-10  
-对应代码目录：`training-partner-app/`；Sprint 1 已创建基础类型、Repository/服务骨架，UI 细节按后续 Sprint 开发。
+更新时间：2026-06-30  
+对应代码目录：`training-partner-app/`；已实现默认小组、本地成员、小组训练记录视图和小组动作详情分析。
 
 ## 1. 模块职责
 
@@ -15,6 +15,8 @@
 | `src/data/local/repositories/groupRepository.ts` | 默认小组 Repository。 |
 | `src/store/selectedGroupStore.ts` | 最近选中小组状态。 |
 | `app/(tabs)/settings.tsx` | 小组设置入口。 |
+| `app/(tabs)/history.tsx` | 记录页小组视角入口，展示小组汇总、成员贡献、主项表现和趋势。 |
+| `app/history/group-exercise/[exerciseId].tsx` | 小组动作详情页，按指标、时间范围和成员筛选展示多成员趋势。 |
 
 ## 3. 核心类/函数
 
@@ -99,3 +101,4 @@
 - 2026-06-10：同步 Android development build 调整：GroupRepository 仍通过 native SQLite 读取默认小组；`initializeLocalDatabase()` 改为可复用初始化 Promise，避免页面和根布局重复触发 seed。
 - 2026-06-10：同步 Gradle/JDK toolchain 修复：Group 模块代码未改动；Android 构建固定使用 `JAVA_HOME` JDK 17，不使用 vendor 限制。
 - 2026-06-10：同步本地 Android 预览 APK 流程：GroupRepository 和默认小组 seed 未改动；`npm run android:apk` 生成的 release APK 已能在模拟器首屏读取 Today 数据，当前验收不依赖 Metro。
+- 2026-06-30：记录页小组主项表现卡接入动作详情页；小组动作详情使用本机 SQLite 训练记录生成指标、时间范围、成员筛选和多成员趋势线。

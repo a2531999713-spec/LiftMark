@@ -1,7 +1,7 @@
 # Member 模块实现文档
 
-更新时间：2026-06-15  
-对应代码目录：`training-partner-app/`；Sprint 2 已实现成员列表、新增成员、编辑成员、MemberProfile 表单、1RM 输入和加重单位设置。
+更新时间：2026-06-30  
+对应代码目录：`training-partner-app/`；已实现成员列表、新增成员、编辑成员、MemberProfile 表单、1RM 输入、加重单位设置和成员头像展示。
 
 ## 1. 模块职责
 
@@ -18,6 +18,7 @@
 | `src/data/local/repositories/memberRepository.ts` | 成员和档案的 SQLite Repository。 |
 | `src/components/members/MemberForm.tsx` | 成员编辑表单。 |
 | `src/components/members/MemberCard.tsx` | 成员列表卡片。 |
+| `src/components/workout/RotationOrderCard.tsx` | 训练执行轮换顺序卡，读取 profile 头像并展示成员真实头像。 |
 | `app/(tabs)/members.tsx` | 成员列表页。 |
 | `app/member/new.tsx` | 新增成员页。 |
 | `app/member/[memberId].tsx` | 编辑成员页。 |
@@ -65,6 +66,7 @@
 调用方：workout, history, progression, export  
 依赖：group, weight  
 测试：见 `test-plan.md`  
+头像字段：可保存 `avatarUrl`、`avatarThumbUrl`、`avatarLocalUri`、`avatarUpdatedAt`，但图片文件处理由头像服务负责，不在 Repository 内处理二进制。
 
 修改注意：
 
@@ -105,6 +107,8 @@
 - member_profiles
 - group_members
 
+`MemberProfile` 中的头像字段只代表训练成员头像。账号头像由 `src/services/avatar/*` 和 `account_profile_cache` 维护。
+
 ## 5. 调用关系
 
 - 依赖：group, weight
@@ -137,3 +141,5 @@
 - 2026-06-12：同步可用性 + UI 落地 Sprint：`MemberForm` 改为顶部训练氛围 Hero、基础信息卡、两列训练参数卡、加重单位卡和说明卡；保存链路仍使用原有 Zod 校验和 SQLite Repository。
 - 2026-06-12：同步本地图片资产落地：`MemberForm` 的 Hero 通过 `liftmarkImages.partnerHero` 使用本地训练搭子图片；成员数据结构、校验和 SQLite 保存链路未变。
 - 2026-06-15：本地小组成员上限从 4 调整为 5，并集中到 `src/config/appLimits.ts`。
+- 2026-06-28：成员档案增加头像 URL、缩略图、本地缓存路径和更新时间字段；账号头像与成员头像分离，SQLite 不保存图片二进制或 Base64。
+- 2026-06-30：训练执行轮换顺序卡接入成员 profile 头像；训练现场不再只依赖 `GroupMember.avatarUrl` 或姓名首字。

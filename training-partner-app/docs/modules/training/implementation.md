@@ -5,11 +5,11 @@
 ## 本次实现
 
 - `app/workout/[sessionId].tsx` 支持完成本组后的自动推进。
-- `app/workout/[sessionId].tsx` 已将 RPE/RIR 从“数值输入 + preset”改为纯 preset 点选；RPE 为 `6-10/清空`，RIR 为 `0-5/清空`，不再弹出键盘。
+- 训练执行页只保留重量、次数、完成/跳过和备注，不再展示旧强度快捷输入。
 - 计划动作的 `rest_seconds` 在创建训练时写入 `workout_exercise_records.planned_rest_seconds`，作为训练记录快照。
 - 新增 SQLite migration v4：`workout_record_rest_time_snapshot`，可重复执行检查字段是否存在。
 - `WorkoutExerciseRecord` 新增 `plannedRestSeconds`，补录输入新增 `restSeconds?: number | null`。
-- `validateWorkoutSetInput` 收紧校验：重量非负，次数为非负整数，RPE 为空或 6-10，RIR 为空或 0-5。
+- `validateWorkoutSetInput` 收紧校验：重量非负，次数为非负整数。
 
 ## 自动推进流程
 
@@ -26,7 +26,7 @@
 
 - 已完成组列表直接使用已有 `workout_sets` 行。
 - 编辑已完成组调用 `workoutRepository.saveSet` 更新原行，避免重复记录。
-- 编辑已完成组时重量/次数仍可直接输入并用加减号微调，RPE/RIR 只允许通过 preset 点选或清空。
+- 训练执行页只保留重量、次数、完成/跳过和备注，不再展示旧强度快捷输入。
 - 删除已完成组调用 `workoutRepository.deleteSet`，先二次确认。
 - 撤销上一组调用 `saveSet({ completed: false, skipped: false })`，保留原 set 行，避免破坏训练总结。
 

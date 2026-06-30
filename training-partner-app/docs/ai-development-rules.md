@@ -86,13 +86,11 @@ Excel 训练计划只作为 seed 数据设计来源。
 
 ## 7. Android 本地 APK 预览规则
 
-1. 第一阶段主要验收方式是本地 Android 预览 APK：`npm run android:preview`。
+1. 本地 Android 预览 APK：`npm run android:preview`。
 2. 推荐安装命令是 `adb install -r android/app/build/outputs/apk/release/app-release.apk`。
-3. 不把 Web 预览作为第一阶段验收标准。
-4. 不依赖 Expo Go 自动下载。
-5. 本地预览 APK 不依赖 Metro；development build 仍可选保留，但需要 `npm run start:dev-client`。
-6. 保留 `expo-sqlite` 作为 Android / iOS native SQLite 方案。
-7. 严禁为了规避 Web 的 `expo-sqlite/web` 报错而把训练数据改存 AsyncStorage。
+3. 不依赖 Expo Go 自动下载。
+4. 本地预览 APK 不依赖 Metro；development build 仍可选保留，但需要 `npm run start:dev-client`。
+5. 保留 `expo-sqlite` 作为 Android / iOS / Web 的本地数据库方案。
 8. Windows 本机构建应使用 Node.js 22.13.0+、64-bit JDK 17；当前验证环境为 Node.js v24.16.0 / npm 11.13.0 / Microsoft OpenJDK 17.0.19。
 9. 项目统一使用 JDK 17，不升级到 Java 24。
 10. Gradle toolchain 只从 `JAVA_HOME` 发现本机 JDK，关闭自动下载，不设置 vendor 限制，不使用 `JvmVendorSpec.IBM_SEMERU`。

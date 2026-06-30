@@ -1,7 +1,15 @@
 # Workout 模块实现文档
 
-更新时间：2026-06-10  
+更新时间：2026-06-29  
 对应代码目录：`training-partner-app/`；Sprint 4 已实现从今日训练创建 session、生成 records/sets、训练执行页和即时保存。
+
+## 2026-06-29 记录模式与参与成员
+
+- `WorkoutSession.trainingMode` 新增 `solo_local` / `group_local`。
+- `WorkoutRepository.createSessionFromTodayPlan()` 新增 `participantMemberIds` 和 `trainingMode` 输入；SQLite 实现只为参与成员生成 `workout_sets`。
+- `workout_sessions.training_mode` 由 migration v7 添加，旧数据默认 `group_local`。
+- `app/workout/[sessionId].tsx` 和 `app/workout/summary/[sessionId].tsx` 按 session sets 反推参与成员，避免展示未参与成员。
+- `src/services/groupWorkoutConsentService.ts` 提供小组训练成员确认状态；当前仅本机展示授权边界，不执行远程同步。
 
 ## 1. 模块职责
 
@@ -13,7 +21,7 @@
 |---|---|
 | `src/domain/workout/workout.types.ts` | 训练 session、动作记录、set 类型。 |
 | `src/domain/workout/workout.service.ts` | set 数量、初始 reps、完成度统计。 |
-| `src/domain/workout/workout.validation.ts` | 重量、次数、RPE/RIR 输入校验。 |
+| `src/domain/workout/workout.validation.ts` | 重量、次数、完成情况 输入校验。 |
 | `src/data/repositories/workoutRepository.ts` | 训练记录 Repository 接口。 |
 | `src/data/local/repositories/workoutRepository.ts` | 训练记录 SQLite Repository。 |
 | `app/(tabs)/today.tsx` | 开始训练入口，传入过滤后的 `planExerciseIds`。 |
@@ -46,7 +54,7 @@
 文件：见主要文件列表  
 符号：`WorkoutRepository.saveSet`  
 搜索锚点：`WorkoutRepository`  
-职责：保存单组实际重量、次数、RPE/RIR、完成/跳过状态。  
+职责：保存单组实际重量、次数、完成情况、完成/跳过状态。  
 调用方：workout-execution-flow, history, progression, export  
 依赖：group, member, plan, exercise, weight  
 测试：见 `test-plan.md`  
@@ -100,7 +108,7 @@
 ### WorkoutRepository.updateSession / saveSet / delete*
 
 文件：见主要文件列表  
-职责：支持历史详情页修改日期、标题、组重量、次数、RPE/RIR，并支持删除 set、动作记录或整次训练。危险删除必须二次确认。
+职责：支持历史详情页修改日期、标题、组重量、次数、完成情况，并支持删除 set、动作记录或整次训练。危险删除必须二次确认。
 
 ## 4. 数据结构
 
@@ -120,7 +128,7 @@
 
 - 可以完成一场 2-5 人训练。
 - 中途退出再进入，记录仍然存在。
-- 每位成员的重量、次数、RPE/RIR 独立保存。
+- 每位成员的重量、次数、完成情况 独立保存。
 - `saveSet` 每次修改后立即写 SQLite。
 - 训练执行页使用大按钮 stepper，避免频繁键盘输入。
 - 历史补录和历史编辑必须写入 SQLite，且不能修改原计划。

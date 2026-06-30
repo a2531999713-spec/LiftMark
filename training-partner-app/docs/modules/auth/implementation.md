@@ -1,6 +1,6 @@
 # Auth 模块实现
 
-更新时间：2026-06-24
+更新时间：2026-06-29
 
 ## 1. API 接入
 
@@ -14,18 +14,17 @@
 
 API base URL 来自 `src/config/api.ts` / `EXPO_PUBLIC_API_BASE_URL`，当前公网开发地址为 `http://47.100.239.29/api`。
 
-当前移动端 UI 只调用手机号验证码路径：
+当前移动端 UI 调用短信验证码登录 / 注册一体路径：
 
 - `POST /auth/send-code`
 - `POST /auth/login-with-code`
 
-账号密码 `login/register` service 边界暂留用于后端 smoke 和后续扩展，但当前 App UI 不暴露账号密码注册 / 登录。
+`POST /auth/login` 和 `POST /auth/register` 保留在 service/store 层兼容后端，但当前移动端 UI 不暴露为主流程。`POST /auth/login-with-code` 对新手机号执行自动创建账号。
 
 网络请求由 `src/services/httpClient.ts` 统一进入，底层复用 `src/services/apiClient.ts`：
 
 - 默认超时 `API_REQUEST_TIMEOUT_MS = 10000`。
-- `fetch failed`、`ConnectException`、`Failed to connect` 会转换为“无法连接服务器，请检查网络后重试。”。
-- `Network request failed` 会转换为“网络连接失败，请稍后重试。”。
+- `fetch failed`、`ConnectException`、`Failed to connect`、`Network request failed` 会转换为“服务器连接失败，请检查网络或稍后再试。”。
 - 验证码接口 404 显示“验证码服务正在配置中，请稍后再试。”。
 - 验证码接口 5xx 显示“验证码发送失败，请稍后再试。”。
 - 用户界面不得展示服务器 IP、Java 异常、stack trace 或原始 fetch 错误。

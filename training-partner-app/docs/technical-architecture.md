@@ -1,3 +1,17 @@
+## 2026-06-30 本地计划推荐与训练选择补充
+
+- 本次未新增 SQLite schema 或 migration；主流系统计划通过 seed 数据写入现有 `plan_templates`、`plan_phases`、`plan_days` 和 `plan_exercises`。
+- 主流系统方案新增“经典四分化增肌计划”；旧 Excel 四练兼容模板继续隐藏在 legacy seed / migration 中，不作为新推荐入口。
+- 旧四练 seed 和 migration 继续存在用于历史兼容；当前系统方案目录和用户计划列表在 domain/repository 层隐藏 legacy 入口。
+- Onboarding 推荐逻辑位于 `src/domain/plan/planRecommendation.ts`，页面只收集资料和调用 repository 复制方案。
+- 计划页主界面不直接展开系统方案列表，系统方案通过计划库弹层预览和复制。
+- 今日训练页的临时周次 / 训练日选择不写入 `groups.current_week`，创建 session 时通过 `WorkoutRepository.createSessionFromTodayPlan()` 的输入快照写入 `workout_sessions`。
+- 今日训练页“动作筛选”会把筛选后的 `planExerciseIds` 传入创建 session，训练记录保存本次动作快照。
+- 训练执行页标题读取当前 session 的 title/week/weekday，不允许硬编码固定周次和训练日。
+- 历史详情默认只读；编辑和删除通过更多菜单进入，不改变原计划模板。
+- 小组动作详情页从本机 SQLite session 明细聚合，不依赖远程服务，并支持指标、时间范围和成员筛选。
+- 普通二级页可通过 `Screen safeTop={false}` 关闭页面内顶部安全区，避免 Stack 返回和内容标题重复留白。
+
 ## 2026-06-24 云服务第一版架构补充
 
 - 新增后端工程：`apps/liftmark-api`。
@@ -19,7 +33,6 @@
 - Android Kotlin 源码包路径：`android/app/src/main/java/com/liftmark/app/`。
 - `package.json` 一键预览脚本打开 `com.liftmark.app`。
 - 品牌图标、adaptive icon、splash、favicon 位于 `training-partner-app/assets/brand/`；Android 原生 res 已同步，`npm run android:apk` 不依赖重新 prebuild。
-- 第一阶段仍以 Android 本地 APK 预览为验收方式，不以 Web 预览为验收标准。
 
 
 更新时间：2026-06-11
@@ -53,7 +66,7 @@ UI / App Routes
 
 ## 2.1 第一阶段运行和调试目标
 
-第一阶段主要验收目标切换为本地 Android 预览 APK：不依赖 Web 预览、不依赖 Expo Go，也不要求启动后连接 Metro。推荐运行方式：
+推荐运行方式：
 
 ```powershell
 cd C:\Users\zhw\Documents\LiftMark\training-partner-app
@@ -70,7 +83,7 @@ npm run android:build
 npm run start:dev-client
 ```
 
-development build 需要 Metro；本地预览 APK 不需要 Metro。当前阶段不依赖 Expo Go 自动下载，也不为了 Web 预览替换 SQLite。`expo-sqlite` 保留为 Android / iOS 的 native 本地数据库方案；Web 端 `expo-sqlite/web` 的 `wa-sqlite.wasm` 解析问题不影响 Android 主目标。
+development build 需要 Metro；本地预览 APK 不需要 Metro。当前阶段不依赖 Expo Go 自动下载。`expo-sqlite` 保留为 Android / iOS / Web 的本地数据库方案。
 
 本地 Android build 推荐环境：
 
@@ -114,7 +127,7 @@ Sprint 1 实现位置：
 - `training-partner-app/src/data/local/migrations.ts`
 - `training-partner-app/src/data/local/repositories/`
 
-`initializeLocalDatabase()` 在 native runtime 中执行 migrations 和 `seedDefaultData()`，并使用可复用初始化 Promise，避免首屏 layout 和页面数据读取同时触发重复初始化。Web 平台会跳过根布局的 native SQLite 初始化；Web 完整兼容后续单独评估。
+`initializeLocalDatabase()` 在运行时执行 migrations 和 `seedDefaultData()`，并使用可复用初始化 Promise，避免首屏 layout 和页面数据读取同时触发重复初始化。
 
 Android Gradle 配置要点：
 
@@ -151,7 +164,7 @@ Sprint 1 已创建上述 sync 目录骨架，但不执行远程同步。
 
 当前已接入 LiftMark 后端账号服务。App 启动先读取 SecureStore session：
 
-- 无 session：进入 `/account/login`，必须通过手机号验证码登录 / 注册。
+- 无 session：进入 `/account/login`，必须通过手机号密码登录或手机号验证码注册。
 - 有 session 且在线：轻量校验 `/auth/me`，再进入主 Tab。
 - 有 session 但服务器不可达：进入 `offline_authenticated` 本机模式，不拉取云端完整数据。
 
@@ -159,7 +172,7 @@ Sprint 1 已创建上述 sync 目录骨架，但不执行远程同步。
 
 ## 8. 文件存储
 
-第一阶段无用户上传图片/视频文件存储。当前 UI 使用随 APK 打包的本地图片资产，位于 `src/assets/images/`，用于探索、搭子、训练、计划、记录、设置、激活和训练总结等 Hero 场景；这些资产不进入 SQLite，也不参与计划 seed。后续动作视频、头像、导出备份可接 Supabase Storage。
+当前 UI 使用随 APK 打包的本地图片资产，位于 `src/assets/images/`，用于探索、搭子、训练、计划、记录、设置、激活和训练总结等 Hero 场景；这些资产不进入 SQLite，也不参与计划 seed。账号头像支持本地选择、裁剪、压缩和缓存：SQLite 只保存 URL、缩略图 URL、本地缓存路径和更新时间，不保存图片二进制或 Base64。后续动作视频、头像云存储和导出备份可接对象存储。
 
 计划文件第一版推荐 `.liftmark.json`，内容为开放 JSON schema，并预留 `.json`、`.liftmark`、`.liftmark.zip`。`src/services/planFileService.ts` 负责生成、校验和导入 ID 重映射；计划文件只导出用户计划相关的 PlanTemplate、PlanPhase、PlanDay、PlanExercise、Exercise、ExerciseAlternative 和 ProgressionRule，不导出系统方案、训练记录或成员 1RM。
 
@@ -202,7 +215,7 @@ Sprint 1 已创建 `src/theme/colors.ts`、`spacing.ts`、`typography.ts`、`sha
 ## 13. 安全策略
 
 - 本地训练数据包含体重、训练表现等隐私信息，导出前需提示用户。
-- 清空数据必须二次确认。
+- 计划导出必须二次确认。
 - 后续云同步需处理账号、权限、删除和冲突。
 
 ## 14. 性能设计
@@ -230,15 +243,15 @@ Excel 训练计划的 seed 设计映射：
 | Excel Sheet | 目标 seed/模块 | 说明 |
 |---|---|---|
 | 参数输入 | `member_profiles`、group 当前状态 | 1RM、加重单位、当前周期、周数、周五设置 |
-| 增力周期总览 | `defaultStrengthPlan.ts` | 周推进、RPE、百分比和减量 |
+| 增力周期总览 | `defaultStrengthPlan.ts` | 周推进、完成情况、百分比和减量 |
 | 增力_每日计划 | `plan_days`、`plan_exercises` | 增力日动作框架和 A/B/C |
 | 增力_按周展开 | `plan_days`、`plan_exercises` | 不同周主项组次和百分比 |
-| 增肌周期总览 | `defaultHypertrophyPlan.ts` | 增肌目标、RIR、双进阶 |
+| 增肌周期总览 | `defaultHypertrophyPlan.ts` | 增肌目标、动作质量、双进阶 |
 | 增肌_每日计划 | `plan_days`、`plan_exercises` | 胸/背/肩/腿动作 |
-| 增肌_按周展开 | `plan_phases` 和周策略字段 | 每周容量、RIR、A/B/C 取舍 |
+| 增肌_按周展开 | `plan_phases` 和周策略字段 | 每周容量、动作质量、A/B/C 取舍 |
 | 周五补弱菜单 | seed 补弱训练日/动作组 | 根据补弱重点选择 |
 | 动作替换库 | `defaultAlternatives.ts` | 替代动作关系 |
-| RPE_RIR说明 | glossary / 帮助文案 | 强度解释 |
+| 旧强度字段说明 | glossary / 帮助文案 | 强度解释 |
 | 训练记录 | `workout_*` 表 | 不能直接复刻 Excel 表格 UI |
 | 自动加重建议 | `progression-engine.ts` | 规则转领域函数 |
 | 恢复评分 | `recovery-engine.ts` | 评分转建议 |

@@ -4,7 +4,7 @@
 
 ## 1. 模块职责
 
-训练完成后基于完成情况、RPE/RIR、失败次数和双进阶规则生成下次建议。
+训练完成后基于完成情况、失败次数和双进阶规则生成下次建议。
 
 - ProgressionSuggestion 数据模型。
 - 增力期 increase / maintain / decrease / deload 规则。

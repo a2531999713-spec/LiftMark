@@ -1,11 +1,13 @@
 # Plan 测试计划
 
-更新时间：2026-06-12
+更新时间：2026-06-30
 
 ## 1. 单元测试范围
 
-- 系统方案目录包含第一版 8 个方案。
-- 四练增力增肌方案标记为完整可用，并引用系统模板 planId。
+- 系统方案目录包含当前主流方案库。
+- 系统方案目录不包含 legacy 四练方案。
+- 新手全身、Push Pull Legs、经典四分化、上肢 / 下肢、5x5、减脂保肌、恢复训练和居家哑铃方案可被推荐或复制。
+- `recommendPlans()` 能根据目标、频率、经验和器械条件返回主推荐与备选。
 - `createUserPlanCopyDraft` 生成新的用户计划 ID。
 - 复制结果 `source = system_copy`。
 - 复制结果记录 `originSchemeId`。
@@ -17,8 +19,9 @@
 
 - migration v2 给 `plan_templates` 增加 `origin_scheme_id`。
 - seed 后系统模板仍为 `source=system`。
-- seed 后默认小组当前计划指向用户计划副本，而不是系统模板。
+- seed 后默认小组当前计划指向“新手全身训练计划”用户计划副本，而不是系统模板。
 - `PlanRepository.listUserPlans()` 不返回 `source=system` 的系统方案。
+- `PlanRepository.listUserPlans()` 不返回 legacy 四练默认用户计划。
 - `PlanRepository.copySystemSchemeToUserPlan()` 能写入新的用户计划。
 - `GroupRepository.updateGroup()` 能把复制出的用户计划设为当前计划。
 

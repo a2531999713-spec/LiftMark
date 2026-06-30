@@ -1,4 +1,15 @@
-﻿# Settings 模块实现文档
+# Settings 模块实现文档
+
+## 2026-06-30 账号设置实现补充
+
+| 文件 | 说明 |
+|---|---|
+| `app/(tabs)/settings.tsx` | “我的”页展示账号主卡、训练档案、小组成员、偏好设置、账号设置和关于练刻，不直接展示退出登录。 |
+| `app/account/settings.tsx` | 账号设置页以“安全与权益”分组承接账号安全、会员与激活和退出登录；退出前二次确认，不删除本机训练记录。 |
+| `src/components/profile/LogoutButton.tsx` | 退出登录按钮组件，仅由账号设置页使用。 |
+| `src/components/ui/Screen.tsx` | 支持 `safeTop={false}`，普通二级页保留系统返回但不重复叠加顶部安全区。 |
+
+普通二级页通过 `app/_layout.tsx` 清空 Stack 默认标题，保留返回按钮，并在页面内使用 `safeTop={false}` 上移内容；全屏流程页使用页面内返回入口。
 
 更新时间�?026-06-24  
 对应代码目录：`training-partner-app/`
@@ -20,7 +31,7 @@
 
 | 文件 | 说明 |
 |---|---|
-| `app/(tabs)/settings.tsx` | 重做为我的页，组织账号主卡（HeroCard 小组/计划可点击跳转）、训练档案、小组成员、偏好设置、账号设置、关于练刻和退出登录�?|
+| `app/(tabs)/settings.tsx` | 重做为我的页，组织账号主卡（HeroCard 小组/计划可点击跳转）、训练档案、小组成员、偏好设置、账号设置和关于练刻；退出登录在账号设置页。 |
 | `app/profile/avatar.tsx` | 账号头像设置页，点击头像直接打开相册选择并上传服务器�?|
 | `src/components/profile/*` | 我的页专�?Hero、Section、MenuItem �?Logout 组件�?|
 | `src/components/avatar/*` | 通用头像与可编辑头像组件�?|
@@ -30,13 +41,13 @@
 | `src/services/avatar/*` | 账号头像选择、压缩、格式校验、本地缓存和服务器上传边界�?|
 | `src/sync/syncService.ts`、`src/store/syncStore.ts` | 云同步占位边界，继续遵守数据安全优先�?|
 
-旧设置页中的试用模式、清空测试数据、重置默认计划和 SQLite/seed 常驻诊断不再出现在普通我的页；开发者诊断隐藏到“关于练刻、意见反馈、用户协议、隐私政策和版本号。�?
+旧设置页中的试用模式、重建测试数据、重置默认计划和 SQLite/seed 常驻诊断不再出现在普通我的页；开发者诊断隐藏到“关于练刻、意见反馈、用户协议、隐私政策和版本号。�?
 头像实现边界：账号头像通过 `expo-image-picker` 选择或拍照，通过 `expo-image-manipulator` 裁剪�?1:1 并压缩为 JPEG。原图上�?10MB，最长边处理�?1024，目标小�?1MB，服务端硬限�?2MB；支�?jpg/jpeg/png/webp，HEIC/HEIF 尝试�?JPEG。SQLite 只保�?URL、缩略图 URL、本地缓存路径和更新时间，不保存二进制或 Base64�?
 ## 1. 主要文件
 
 | 文件 | 说明 |
 |---|---|
-| `app/(tabs)/settings.tsx` | 设置页，展示顶部状态卡、分组设置列表、数据管理、计划管理、激活和开发调试信息�?|
+| `app/(tabs)/settings.tsx` | 设置页，展示顶部状态卡、分组设置列表、计划导出、计划管理、激活和开发调试信息�?|
 | `app/settings/members.tsx` | 从设置页进入的全成员摘要列表，点击成员后再进�?`app/member/[memberId].tsx`�?|
 | `app/settings/member-units.tsx` | 从设置页进入的全成员加重单位摘要列表，点击成员后再进入对应成员编辑页�?|
 | `src/services/exportService.ts` | `exportLocalDataJson()`、`exportWorkoutDataJson()`、`resetDefaultPlanData()`�?|
@@ -89,11 +100,11 @@
 
 ## 3. 当前限制
 
-- 设置页已改为移动设置中心：顶�?LiftMark 品牌�?状态卡、分组列表项、开发中标签、危险操作二次确认�?
+- 设置页已改为移动设置中心：顶�?LiftMark 品牌�?状态卡、分组列表项、开发中标签、调试保护二次确认�?
 - 本地小组规则通过列表入口弹窗展示，主页面只保留简洁状态�?
 - 设置页不再展示成员编辑表单，不再显示“保存成员”或“稍后补充”�?
 - 设置页不再暴露“周五策略”；`groups.friday_strategy` 字段保留给训练页兼容�?
 - 设置页不再常驻展示导�?JSON 预览，文件保�?分享能力后续接入�?
 - 导入计划入口已接入系统文件选择器、schema 校验、ID 重映射和 SQLite 落库；备份数据库、恢复数据库等入口仍显示“开发中”�?
-- 清空测试数据、清空训练记录、重置整�?App 只保留二次确认和提示，避免误删真实训练记录�?
+- 重建测试数据、训练记录维护、重置整�?App 只保留二次确认和提示，避免误删真实训练记录�?
 

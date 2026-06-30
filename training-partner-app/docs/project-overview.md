@@ -28,14 +28,14 @@
 |---|---|---|
 | 多成员管理 | 计划内 | 支持 2-5 人，成员独立 1RM 和加重单位 |
 | 默认小组 | 计划内 | 第一版一个默认训练小组 |
-| 默认四练计划 | 计划内 | 6 周增力 + 1 周减量 + 8 周增肌 + 1 周减量 |
-| 今日训练 | 计划内 | 根据当前周期、周数、星期和恢复状态生成 |
+| 主流计划库 | 基础已完成 | 新手全身、PPL、经典四分化、上肢/下肢、5x5、减脂保肌、恢复、居家哑铃 |
+| 今日训练 | 计划内 | 根据当前周期、周数、星期和动作筛选生成 |
 | 多人训练执行 | 计划内 | 按动作轮换记录每个成员 |
 | 自动重量计算 | 计划内 | 根据 1RM、百分比和加重单位计算 |
 | 动作替换 | 计划内 | 训练中替换器械占用或不适动作 |
 | 动作库 | 基础已完成 | 100+ 系统动作、自定义动作和统一动作选择器 |
 | 训练历史 | 基础已完成 | 最近训练、最近 5 次趋势、预估 1RM、PR 接近度和疲劳建议 |
-| 设置页 | 基础已完成 | 品牌/版本、小组状态、数据管理、开发调试信息 |
+| 设置页 | 基础已完成 | 品牌/版本、小组状态、计划导出、开发调试信息 |
 | 数据导出 | 基础已完成 | JSON 导出本地数据、训练记录和 `.liftmark` 当前计划 |
 | 云同步 | 延后 | 第二或第三阶段接 Supabase |
 
@@ -43,7 +43,7 @@
 
 - 普通健身者：按计划训练、记录数据、获得加重建议。
 - 健身搭子：2-5 人一起练，同动作不同重量。
-- 进阶训练者：关注 1RM、RPE/RIR、周期化训练和减量。
+- 进阶训练者：关注 1RM、完成情况、周期化训练和减量。
 - 私教/小团队：后续用于分配计划和查看完成情况。
 - 新手用户：套用模板，直接知道今天练什么。
 
@@ -113,15 +113,15 @@ training-partner-app/
 |---|---|---|---|
 | member | 成员 | 管理训练成员、成员档案、1RM 和加重单位，是多人建议重量与训练记录归属的基础。 | `docs/modules/member/overview.md` |
 | group | 小组 | 管理默认训练小组、当前计划、当前周期、当前周数和周五补弱开关。 | `docs/modules/group/overview.md` |
-| plan | 计划 | 把训练计划模板、阶段、周、训练日和动作作为数据管理，并承接 Excel 训练计划到 seed 数据的映射。 | `docs/modules/plan/overview.md` |
+| plan | 计划 | 把训练计划模板、阶段、周、训练日和动作作为计划导出，并承接 Excel 训练计划到 seed 数据的映射。 | `docs/modules/plan/overview.md` |
 | exercise | 动作 | 管理动作库、动作模式、器械、目标肌群和替代动作，支撑计划动作与训练中替换。 | `docs/modules/exercise/overview.md` |
 | workout | 训练执行 | 创建训练 session、生成动作记录和每位成员的 set 记录，支撑训练现场多人轮换记录。 | `docs/modules/workout/overview.md` |
 | weight | 重量计算 | 根据计划百分比、成员 1RM 和器械加重单位计算建议重量，并提供预估 1RM。 | `docs/modules/weight/overview.md` |
-| progression | 进阶建议 | 训练完成后基于完成情况、RPE/RIR、失败次数和双进阶规则生成下次建议。 | `docs/modules/progression/overview.md` |
-| recovery | 恢复评分 | 根据睡眠、食欲、训练欲望、酸痛、关节不适和疲劳生成恢复建议，并影响 A/B/C 动作显示。 | `docs/modules/recovery/overview.md` |
+| progression | 进阶建议 | 训练完成后基于完成情况、失败次数和双进阶规则生成下次建议。 | `docs/modules/progression/overview.md` |
+| recovery | 恢复评分 | 根据睡眠、食欲、训练欲望、酸痛、关节不适和疲劳生成建议；训练页当前使用动作筛选控制 A/B/C 动作快照。 | `docs/modules/recovery/overview.md` |
 | history | 训练历史 | 查看最近训练、成员筛选、动作筛选、历史最好表现、预估 1RM 和最近进阶建议。 | `docs/modules/history/overview.md` |
-| export | 导出 | 提供本地训练数据 JSON 导出、重置默认计划和清空测试数据等设置页能力。 | `docs/modules/export/overview.md` |
-| settings | 设置 | 展示品牌、版本、本地小组、SQLite/seed 状态，并提供数据管理和计划导入导出入口。 | `docs/modules/settings/overview.md` |
+| export | 导出 | 提供本地训练数据 JSON 导出、重置默认计划和重建测试数据等设置页能力。 | `docs/modules/export/overview.md` |
+| settings | 设置 | 展示品牌、版本、本地小组、SQLite/seed 状态，并提供计划导出和计划导入导出入口。 | `docs/modules/settings/overview.md` |
 
 ## 8. 模块依赖关系
 
@@ -132,7 +132,7 @@ training-partner-app/
 - `weight` 使用 plan + member + exercise 计算建议重量。
 - `workout` 创建 session 和 set 记录。
 - `progression` 使用 workout 结果生成下次建议。
-- `recovery` 影响今日动作优先级过滤。
+- 训练页动作筛选影响今日动作优先级过滤。
 - `history` 聚合 workout、progression 和 weight 的历史视图。
 - `export` 汇总本地 SQLite 数据导出。
 - `settings` 编排 export、plan 文件 service 和本地调试信息。
@@ -199,6 +199,6 @@ npm run android:preview
 ## 14. 需要人工确认的问题
 
 - `roundToIncrement` 对半档边界的策略是否固定为四舍五入。
-- 第一版成员删除、训练记录删除、清空测试数据是否需要软删除。
+- 第一版成员删除、训练记录删除、重建测试数据是否需要软删除。
 - 第一版是否需要实现恢复评分页，还是只保留今日训练页的快速恢复选择。
 - 当前本机 Node.js v24.16.0 和 Microsoft JDK 17.0.19 已满足 Android 本地 APK 构建要求；`npm run android:apk` 已通过模拟器首屏烟测，真机预览可使用 `npm run android:apk:device`。

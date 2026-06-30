@@ -1,7 +1,7 @@
 # History 模块实现文档
 
-更新时间：2026-06-14  
-对应代码目录：`training-partner-app/`；历史页已展示最近训练和基础趋势推算，复杂筛选和图表后续增强。
+更新时间：2026-06-30  
+对应代码目录：`training-partner-app/`；历史页已展示个人记录、小组汇总、最近训练、主项成员对比和折线趋势推算，复杂筛选后续增强。
 
 ## 1. 模块职责
 
@@ -11,10 +11,12 @@
 
 | 文件 | 说明 |
 |---|---|
-| `app/(tabs)/history.tsx` | 训练历史页，读取最近 session 并展示趋势卡片。 |
+| `app/(tabs)/history.tsx` | 训练历史页，读取最近 session，展示个人记录、小组汇总和折线趋势卡片。 |
 | `app/history/manual.tsx` | 补录过去训练。 |
-| `app/history/[sessionId].tsx` | 查看并编辑某次训练详情。 |
-| `src/domain/history/history-analysis.ts` | Epley 预估 1RM、最近 5 次趋势、PR 接近度、疲劳提示和中文建议。 |
+| `app/history/[sessionId].tsx` | 查看某次训练详情，默认只读；顶部更多菜单进入编辑记录或删除整次训练。 |
+| `app/history/group-exercise/[exerciseId].tsx` | 小组动作详情，支持卧推、深蹲、硬拉、肩推、划船、引体 / 下拉和其他动作，按本机训练记录汇总成员最好重量、容量、预估 1RM、最近有效组，并提供指标 / 时间范围 / 成员筛选和多成员趋势线。 |
+| `src/domain/history/history-analysis.ts` | Epley 预估 1RM、个人趋势、小组汇总、成员贡献、PR 接近度、疲劳提示和中文建议。 |
+| `src/components/ui/MiniLineChart.tsx` | 记录页、训练分析页和计划页共用的轻量折线趋势图。 |
 | `src/components/history/SessionHistoryCard.tsx` | 最近训练卡片。 |
 | `src/components/history/ExerciseHistoryCard.tsx` | 动作历史卡片。 |
 | `src/components/history/ProgressionSuggestionCard.tsx` | 进阶建议卡片。 |
@@ -44,10 +46,10 @@
 职责：支持周日期点击、月视图、训练日期红点、查看某天训练记录和进入详情；最近训练列表使用摘要卡展示标题、日期/时长、动作数、完成组数、总训练量、成员口径、PR/估算 1RM/趋势标签。  
 
 文件：`app/history/manual.tsx`  
-职责：选择日期、成员、动作、组数、重量、次数、RPE/RIR，并保存到 SQLite。  
+职责：选择日期、成员、动作、组数、重量、次数、完成情况，并保存到 SQLite。  
 
 文件：`app/history/[sessionId].tsx`  
-职责：展示日期、成员、动作、组数、重量、次数、RPE/RIR、训练量和建议；支持编辑历史记录和二次确认删除。
+职责：展示日期、成员、动作、组数、重量、次数、完成情况、训练量和建议；默认只读，进入编辑态后支持修改历史记录，并通过更多菜单二次确认删除。
 
 ### ProgressionRepository.getLatestSuggestion
 
@@ -118,6 +120,8 @@
 - 2026-06-12：同步可用性 + UI 落地 Sprint：记录页日历可点击，新增月视图、补录训练、历史详情和编辑能力；训练记录继续保存 SQLite。
 - 2026-06-12：同步本地图片资产落地：记录页空状态 Hero、历史补录页和训练总结页使用 `liftmarkImages.historyHero`；历史分析和训练记录读写逻辑未变。
 - 2026-06-14：最近训练列表改为紧凑摘要卡；空状态补充“去训练”入口；点击卡片进入 `app/history/[sessionId].tsx`，历史记录继续读取训练时快照。
+- 2026-06-29：记录页新增个人 / 小组视角；小组汇总接入 `getGroupHistoryAnalysis()` 和本机 SQLite 训练详情；记录页、训练分析页、计划执行趋势统一改为折线趋势。
+- 2026-06-30：历史详情页改为默认只读，编辑和删除收进顶部更多菜单；小组动作表现卡新增详情入口；`app/history/group-exercise/[exerciseId].tsx` 从 SQLite session 明细即时汇总成员对比和最近有效组，支持卧推、深蹲、硬拉、肩推、划船、引体 / 下拉和其他动作，并新增指标、时间范围、成员筛选和多成员趋势线。
 
 ### analyzeExerciseHistory()
 
@@ -134,3 +138,18 @@
 1. 结论必须是建议，不能写成绝对判断。
 2. 不做医疗或伤病判断。
 3. 修改后同步 `test-plan.md`。
+
+### getGroupHistoryAnalysis()
+
+文件：`src/domain/history/history-analysis.ts`  
+符号：`getGroupHistoryAnalysis()`  
+职责：基于本机训练详情和本地成员列表生成小组总训练量、训练次数、完成率、成员贡献排行、近 7 天折线趋势、最近小组训练记录和小组洞察。  
+调用方：`app/(tabs)/history.tsx`  
+依赖：workout, member  
+测试：`src/tests/history.test.ts`
+
+修改注意：
+
+1. 不要在页面组件中硬编码小组统计。
+2. 只能基于 Repository 读取到的真实 SQLite 训练记录生成结果。
+3. 未训练成员应显示为待开始，而不是填充假训练量。

@@ -1,5 +1,17 @@
 ﻿# UI 模块实现
 
+## 2026-06-30 UI 实现补充
+
+- `app/(tabs)/today.tsx`：开始训练行动卡上移到今日摘要附近，使用最新周次 / 训练日选择驱动开始训练。
+- `app/(tabs)/today.tsx`：用户可见入口改为“动作筛选”，筛选后的计划动作 ID 会传入创建 session。
+- `app/(tabs)/plan.tsx`：系统方案改为计划库弹层，主界面只保留计划库入口。
+- `app/history/[sessionId].tsx`：历史详情默认只读，编辑和删除收进更多操作。
+- `app/onboarding/training-profile.tsx`：四步训练资料和推荐计划流程。
+- `app/history/group-exercise/[exerciseId].tsx`：小组主项详情页，支持指标、时间范围、成员筛选和多成员趋势线，页面内轻量返回，不展示默认 Stack 标题。
+- `app/_layout.tsx`：普通二级页清空 Stack 默认标题，保留返回；登录、onboarding、训练执行等全屏流程隐藏 header。
+- `src/components/ui/Screen.tsx`：新增 `safeTop` 控制，普通二级页可关闭页面内顶部安全区。
+- `src/components/avatar/Avatar.tsx`：统一头像展示，训练首页、成员页、执行页、总结页和历史小组分析复用。
+
 更新时间�?026-06-14
 
 ## 代码位置
@@ -14,7 +26,7 @@
 | `training-partner-app/android/app/src/main/res/` | Android 原生图标、adaptive icon layer、splash logo 和颜色�?|
 | `training-partner-app/app/about.tsx` | 关于练刻页面，展示关于练刻、意见反馈、用户协议、隐私政策和版本号�?|
 | `training-partner-app/app/account/login.tsx` | 账号密码登录 + 验证码注册页，支持手机号/邮箱/练刻账号登录，包含协议勾选、验证码发送、倒计时和中文错误提示�?|
-| `training-partner-app/app/(tabs)/settings.tsx` | “我的”页，展示深色账号主卡、四个主入口、关于练刻和退出登录�?|
+| `training-partner-app/app/(tabs)/settings.tsx` | “我的”页，展示深色账号主卡、四个主入口和关于练刻；退出登录在账号设置页。 |
 | `training-partner-app/src/components/avatar/` | 账号头像展示和可编辑头像组件�?|
 | `training-partner-app/src/components/auth/AuthRequiredSheet.tsx` | 登录要求弹窗，只保留登录 / 注册主按钮，不提供关闭后浏览�?|
 

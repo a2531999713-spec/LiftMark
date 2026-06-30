@@ -53,7 +53,7 @@
 
 文件：见主要文件列表  
 符号：`estimatePercentFromTargetReps()`  
-职责：把 3/5/8/10/12/15 次附近的计划目标映射为保守 1RM 百分比，用于 PPL 等 RPE/RIR 计划的基础建议重量。  
+职责：把 3/5/8/10/12/15 次附近的计划目标映射为保守 1RM 百分比，用于 PPL 等 次数区间计划的基础建议重量。  
 调用方：`calculateSuggestedWeight()`  
 测试：`src/tests/weight.test.ts`
 

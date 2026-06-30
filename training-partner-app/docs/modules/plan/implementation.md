@@ -1,6 +1,6 @@
 # Plan 模块实现文档
 
-更新时间：2026-06-15  
+更新时间：2026-06-30  
 对应代码目录：`training-partner-app/`
 
 ## 1. 当前实现概览
@@ -8,12 +8,13 @@
 本次计划模块调整后，系统方案和用户计划分离：
 
 - 系统方案目录位于 `src/domain/plan/systemSchemes.ts`。
-- 完整可用的“四练增力增肌方案”引用 SQLite 中的系统模板 `plan_four_day_strength_hypertrophy`。
-- 完整可用的“经典三分化 PPL”引用 SQLite 中的系统模板 `plan_classic_three_day_ppl`。
-- 首次 seed 和 migration 会生成一份默认用户计划 `plan_user_four_day_strength_hypertrophy_default`，并让默认小组当前计划指向这份用户计划。
+- 当前可选系统方案以主流训练计划为主：新手全身、Push Pull Legs、经典四分化、上肢 / 下肢、5x5、减脂保肌、恢复训练和居家哑铃。
+- 首次 seed 会生成一份默认用户计划 `plan_user_beginner_full_body_default`，并让默认小组当前计划指向这份用户计划。
+- 旧四练模板继续写入本地 seed 用于历史兼容，但 `listSystemTrainingSchemes()` 和 `listUserPlans()` 不再把它作为用户可选计划展示。
+- 首次登录后的训练信息完善页使用 `recommendPlans()` 基于目标、频率、经验和器械条件推荐方案，并把用户选择复制为当前用户计划。
 - 用户点击“使用此方案”时，Repository 复制系统模板的 phases、days、plan_exercises，生成新的用户计划。
 - 导入 `.liftmark.json` 时，页面通过 `planDocumentService` 选择文件并调用 `PlanRepository.importUserPlan()` 写入 SQLite。
-- 计划页当前为仪表盘结构：当前计划、执行统计、本周安排、我的计划摘要、计划工具和系统方案。
+- 计划页当前为仪表盘结构：当前计划、执行统计、本周安排、我的计划摘要、计划库入口和计划操作弹层；系统方案只在计划库弹层中展开。
 - 用户计划可在“管理全部计划”弹层中删除；系统方案、当前计划和最后一个用户计划会被 Repository 阻止删除。
 - 创建计划页接入统一动作选择器，可添加系统动作或快速新建自定义动作。
 
@@ -27,10 +28,15 @@
 | `src/data/repositories/planRepository.ts` | `PlanRepository` 支持用户计划列表、复制系统方案、导入和删除用户计划。 |
 | `src/data/local/repositories/planRepository.ts` | SQLite 实现用户计划列表、系统方案复制、导入、删除和今日训练读取。 |
 | `src/data/local/migrations.ts` | v2 `plan_system_scheme_origin` 补 `origin_scheme_id` 并迁移旧默认当前计划。 |
-| `src/data/seed/defaultStrengthPlan.ts` | 增加默认用户计划 ID 和四练系统方案 ID 常量。 |
+| `src/data/seed/mainstreamPlans.ts` | 主流系统计划 seed 和默认新手全身用户计划复制源。 |
+| `src/data/seed/defaultStrengthPlan.ts` | legacy 四练模板 seed，仅用于兼容历史数据。 |
 | `src/data/seed/classicPplPlan.ts` | “经典三分化 PPL”系统模板 seed。 |
 | `src/data/seed/seedDefaultData.ts` | 写入系统模板和默认用户计划副本。 |
-| `app/(tabs)/plan.tsx` | 计划页展示当前计划仪表盘、本周安排、我的计划管理、系统方案和计划工具。 |
+| `src/domain/plan/planRecommendation.ts` | 训练信息到推荐计划的匹配规则。 |
+| `src/domain/onboarding/trainingProfile.types.ts` | 首次训练信息表单类型。 |
+| `app/(tabs)/plan.tsx` | 计划页展示当前计划仪表盘、本周安排、我的计划管理、计划库入口和收纳式计划操作弹层。 |
+| `app/onboarding/training-profile.tsx` | 首次训练信息完善和推荐计划选择流程。 |
+| `src/components/ui/MiniLineChart.tsx` | 计划页本周执行趋势使用的轻量折线图。 |
 | `app/(tabs)/today.tsx` | 训练页当前计划卡和计划切换弹层。 |
 | `app/plan/create.tsx` | 第一版创建计划页面，接入统一动作选择器。 |
 | `src/tests/plan.test.ts` | 系统方案复制、PPL 和动作库 seed 测试。 |
@@ -109,8 +115,10 @@ app: LiftMark
 
 已覆盖：
 
-- 系统四练方案存在且引用系统模板 ID。
-- 系统“经典三分化 PPL”存在且引用系统模板 ID。
+- 系统方案目录不展示 legacy 四练方案。
+- 系统“Push Pull Legs 三分化计划”存在且引用系统模板 ID。
+- 系统“经典四分化增肌计划”存在且引用系统模板 ID，复制后保留四个训练日和 24 个计划动作。
+- 主流推荐规则能按新手、增肌 4 天、力量、减脂和居家器械条件命中对应方案。
 - 复制系统方案时生成新的用户计划 ID。
 - 复制结果 `source` 为 `system_copy`。
 - 复制结果记录 `originSchemeId`。
@@ -126,3 +134,5 @@ app: LiftMark
 - 2026-06-12：同步本地图片资产落地：计划页和创建计划页 Hero 通过 `liftmarkImages.planHero` 使用本地训练计划图片；计划模板、seed、SQLite schema 和 Repository 未变。
 - 2026-06-14：新增“经典三分化 PPL”系统模板、导入计划落库、设置/计划页导入入口和训练页用户计划切换弹层。
 - 2026-06-15：计划页重做为当前计划仪表盘；新增用户计划删除边界；创建计划接入统一动作选择器；导入计划按动作名称复用本机动作。
+- 2026-06-29：计划页本周执行趋势改为折线图；创建、导入、导出和管理全部计划收进计划操作底部弹层，页面不再展示大块计划工具网格。
+- 2026-06-30：系统方案目录切换为主流计划库；新增经典四分化增肌计划；计划页系统方案移入计划库弹层；新增训练信息完善与推荐计划流程；默认当前计划改为新手全身训练计划；旧四练仅作为 legacy 数据兼容保留。

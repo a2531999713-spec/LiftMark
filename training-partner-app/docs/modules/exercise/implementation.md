@@ -109,7 +109,7 @@
 - 2026-06-09：同步 Sprint 1 代码骨架：Exercise 类型和 SQLite 表结构已创建，动作库完整 seed 暂未导入。
 - 2026-06-09：同步 Sprint 3：Excel 动作库、周五补弱菜单动作和替换库已导入 SQLite seed，新增 ExerciseRepository SQLite 实现。
 - 2026-06-09：同步 seed 拆分：移除合并 generated seed，动作和替换关系拆分为 `defaultExercises.ts`、`defaultAlternatives.ts`。
-- 2026-06-10：同步 Android development build 调整：动作库和替代关系继续通过 native SQLite seed 初始化；Web 预览不是当前验收标准，不为 Web 报错改动动作数据层。
+- 2026-06-10：同步 Android development build 调整：动作库和替代关系继续通过 native SQLite seed 初始化。
 - 2026-06-10：同步 Gradle/JDK toolchain 修复：动作 seed 未改动；native build 使用 JDK 17。
 - 2026-06-10：同步本地 Android 预览 APK 流程：动作库和替代动作 seed 未改动；本地 release APK 首屏已能展示默认计划动作，后续替换弹层在 Sprint 5 中继续实现。
 - 2026-06-15：扩展系统动作库为 100+ 正确中文动作；新增 `exercises.source`、自定义动作创建、统一动作选择器，并接入历史补录和计划创建。

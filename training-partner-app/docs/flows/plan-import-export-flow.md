@@ -1,6 +1,6 @@
 # 计划导入导出流程
 
-更新时间：2026-06-15
+更新时间：2026-06-29
 
 ## 1. 支持格式
 
@@ -71,6 +71,7 @@
 - `planDocumentService` 已接入 Expo DocumentPicker，支持选择 `.liftmark.json` 并读取文件内容。
 - `PlanRepository.importUserPlan()` 已支持导入草稿落库，导入结果为 `source: "imported"`、`visibility: "private"` 的用户计划。
 - 导入动作按名称复用本机已有动作；缺失动作才写入 SQLite，用户自定义动作保留 `source: "custom"`。
+- 用户可见入口统一命名为“导入计划”；`.liftmark.json` 只作为文件格式说明。
 - 计划页和设置页导入成功后都会询问“是否设为当前训练计划？”，确认后只更新当前本地小组的 current plan。
 - 导出后使用 App 风格弹层提示“内容已生成，但当前版本暂未保存到文件”，并提供“复制内容 / 知道了”。
 - 设置页和计划页不常驻展示 JSON 预览；文件保存和分享仍为后续增强。

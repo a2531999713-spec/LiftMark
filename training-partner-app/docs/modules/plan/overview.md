@@ -1,6 +1,19 @@
 # Plan 模块概览
 
-更新时间：2026-06-15
+更新时间：2026-06-30
+
+## 2026-06-30 主流计划库与推荐
+
+- 系统方案目录当前展示主流计划库：新手全身、Push Pull Legs、经典四分化、上肢 / 下肢、5x5、减脂保肌、恢复训练和居家哑铃。
+- 计划页主界面不直接铺开系统方案列表，只提供“计划库”弱入口；用户进入计划库弹层后再预览或使用系统方案。
+- 默认用户计划为“新手全身训练计划”；旧四练模板仅用于 legacy 数据兼容，不进入新用户推荐、系统方案列表或训练页切换列表。
+- 新增 `recommendPlans()` 和 onboarding 流程，用户填写资料后可复制推荐系统方案并设为当前计划。
+
+## 2026-06-29 计划日临时选择
+
+- 今日训练页支持临时选择当前周和训练日，用于“今天练 Day 1-4 / 补弱 / 自由训练”的现场决策。
+- 临时选择只影响首页展示和即将开始的 session，不修改 `groups.current_week` 或当前计划。
+- 用户可见入口统一称为“导入计划”；`.liftmark.json` 是文件格式说明，不再作为按钮主文案。
 
 ## 2026-06-15 plan-dashboard-exercise-library-custom-exercise-member-limit-weight-git-sprint
 
@@ -65,12 +78,15 @@ Plan 模块负责区分并管理两类对象：
 |---|---|
 | `src/domain/plan/plan.types.ts` | 计划模板、阶段、训练日、计划动作类型，`PlanTemplate.source` 区分 system/system_copy/imported 等来源。 |
 | `src/domain/plan/systemSchemes.ts` | 本地系统方案目录，包含标题、目标、难度、频率、标签、可用状态和系统模板 planId。 |
-| `src/data/seed/classicPplPlan.ts` | “经典三分化 PPL”系统模板 seed 数据。 |
+| `src/data/seed/mainstreamPlans.ts` | 主流系统计划库 seed 和默认新手全身用户计划复制源。 |
+| `src/data/seed/classicPplPlan.ts` | Push Pull Legs 三分化系统模板 seed 数据。 |
+| `src/domain/plan/planRecommendation.ts` | 基于训练资料返回推荐系统方案。 |
+| `app/onboarding/training-profile.tsx` | 新用户训练信息完善和推荐计划选择流程。 |
 | `src/domain/plan/planCopy.ts` | 把系统模板复制成用户计划草稿的纯函数。 |
 | `src/data/local/migrations.ts` | v2 增加 `origin_scheme_id`，并把旧默认系统计划迁移为用户计划副本。 |
 | `src/data/seed/seedDefaultData.ts` | 首次启动写入系统方案模板和默认用户计划副本。 |
 | `src/data/local/repositories/planRepository.ts` | 本地计划 Repository，支持用户计划列表、复制系统方案、导入、删除和今日训练读取。 |
-| `app/(tabs)/plan.tsx` | 计划页：当前计划仪表盘、本周安排、我的计划管理、系统方案和计划工具。 |
+| `app/(tabs)/plan.tsx` | 计划页：当前计划仪表盘、本周安排、我的计划管理、计划库入口和计划操作弹层。 |
 | `app/(tabs)/today.tsx` | 训练页当前计划卡和“切换计划”弹层，只切换用户计划。 |
 | `src/services/planFileService.ts` | 计划文件生成、校验和导入 ID 重映射。 |
 | `src/services/planDocumentService.ts` | 文件选择和计划导入草稿生成。 |

@@ -10,7 +10,7 @@ Accepted
 
 项目第一版目标是安卓本地可用，让 2-5 人在健身房训练时快速查看今日训练、计算建议重量、记录实际完成情况，并生成下次建议。训练现场不能依赖网络，训练记录不能丢失。
 
-需求资料曾提出 Web App / PWA 可作为早期方向，但开发文档最终明确第一阶段采用 React Native + Expo + TypeScript + SQLite，Android 优先，iOS 预留。
+项目采用 React Native + Expo + TypeScript + SQLite，支持 Android、iOS 和 Web 平台。
 
 ## 决策
 

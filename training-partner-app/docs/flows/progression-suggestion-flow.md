@@ -23,8 +23,8 @@
 
 1. 读取 session 内 workout_sets 和 workout_exercise_records。
 2. 识别当前计划阶段：strength、hypertrophy 或 deload。
-3. 增力期：根据是否全部完成、top RPE、近期失败次数计算建议。
-4. 增肌期：根据每组次数、repMin/repMax、lowest RIR 和动作质量计算建议。
+3. 增力期：根据是否全部完成、完成率、近期失败次数计算建议。
+4. 增肌期：根据每组次数、repMin/repMax、lowest 动作质量计算建议。
 5. 根据成员加重单位生成 suggestedWeight。
 6. 写入 progression_suggestions。
 7. 历史页和总结页读取最近建议。

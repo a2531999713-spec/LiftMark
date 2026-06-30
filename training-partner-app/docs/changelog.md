@@ -1,5 +1,90 @@
 # 变更记录
 
+## 2026-06-30 - training-plan-selection-detail-polish
+
+### 今日训练与训练执行
+- 开始训练统一使用最新选择的计划、周次、训练日和动作筛选结果创建 session，不再回退到固定计划日或旧缓存。
+- 训练执行页顶部副标题改为读取当前 session 的训练标题、周次和训练日，移除固定占位文案。
+- 旧的今日入口文案改为“动作筛选”，并明确会影响本次 session 的动作快照。
+
+### 计划、记录和小组分析
+- 计划页把系统方案长列表收进“计划库”弹层，主界面只保留低频入口。
+- 新增“经典四分化增肌计划”，作为每周 4 天增肌用户的可复制系统方案；旧 Excel 四练模板继续仅作 legacy 兼容。
+- 历史训练详情默认只读，编辑和删除整次训练收进顶部更多操作。
+- 小组动作详情新增指标、时间范围和成员筛选，并用多成员折线图展示趋势。
+
+### 头像、设置和文档
+- 训练执行轮换顺序接入成员 profile 头像，和训练首页、总结、历史小组分析保持一致。
+- 普通二级页关闭页面内重复顶部安全区；账号设置分组改为“安全与权益”，不再使用旧账号分组名。
+- 同步 product、architecture、plan、workout、history、group、member、settings、UI、recovery、API、schema 和 flow 文档。
+
+## 2026-06-30 - training-switch-onboarding-mainstream-plans
+
+### 今日训练与训练执行
+- 今日训练开始前会基于最新手动选择的周次和训练日重新解析计划日，避免旧 cached todayPlan 回退到小组当前周。
+- 开始训练行动卡上移到今日摘要附近；动作列表、小组成员和周概览下移为次要信息。
+- `WorkoutRepository.createSessionFromTodayPlan()` 增加回归测试，确认传入的 week / weekday 会用于查询计划日并写入 session。
+
+### 主流计划库和 Onboarding
+- 系统方案目录切换为新手全身、Push Pull Legs、经典四分化、上肢 / 下肢、5x5、减脂保肌、恢复训练和居家哑铃。
+- 旧四练模板仅保留在 legacy seed、migration 和历史 changelog 中，用于兼容既有本地数据，不再作为新用户推荐或系统方案展示。
+- 新增训练信息完善与推荐计划流程，使用推荐计划后会复制系统方案为用户计划并设为当前计划。
+
+### 头像、记录和账号设置
+- 成员列表、训练首页、训练执行页、训练总结页和历史小组分析统一使用 Avatar 组件。
+- 小组主项数据可点击进入动作详情页，展示成员最好重量、容量、预估 1RM 和最近有效组。
+- 普通二级页清空 Stack 默认标题，仅保留返回；退出登录移动到账号设置并二次确认，不删除本机训练记录。
+
+## 2026-06-29 - plan-switch-rpe-cleanup-group-analysis
+
+### 当前计划切换修复
+- 今日训练开始前会检查同一小组、同一日期是否存在未完成训练；只有计划、周次、训练日和记录模式一致时才继续复用。
+- 如果旧训练来自不同计划或不同选择，会弹出冲突确认：继续旧训练、放弃旧训练并从新计划开始，或返回调整。
+- 新训练 session 仍保存训练当时的计划快照，历史记录不受后续计划切换影响。
+
+### 设置和训练记录清理
+- 设置页移除普通用户可见的计划导出以外的数据维护入口，登录与绑定页改为更具体的命名。
+- 训练执行、历史补录、历史详情、计划创建和计划详情不再展示旧强度缩写；新建 session、补录和计划导入导出不会写入旧强度目标值。
+- SQLite schema 和 mapper 保留旧字段以读取既有本地数据，但当前 UI 和计划文件不会把这些字段作为功能展示。
+
+### 小组分析增强
+- 小组历史新增主项多人表现卡片，按卧推、深蹲、硬拉、肩推展示成员最好重量、最近容量和近 7 天趋势。
+- 成员贡献增加最常训练动作、最佳动作和最近训练日期，便于比较小组内不同成员的训练分布。
+- 新增 `MultiLineTrendChart` 支持同一主项下多成员趋势线。
+
+## 2026-06-29 - auth-code-home-scope-consent
+
+### 登录恢复
+- 登录页恢复为手机号 + 短信验证码登录；新手机号由后端 `login-with-code` 自动创建账号。
+- 移除移动端密码登录 / 密码注册入口；底层 auth service 仍保留密码接口兼容后端。
+- 验证码发送成功提示不再展示 `debugCode`；网络错误统一为“服务器连接失败，请检查网络或稍后再试。”
+
+### 今日训练页
+- 首页训练流调整为：当前计划 / 周次 / 训练日选择、动作筛选、今日摘要、重点动作、成员、周概览、开始训练。
+- 支持在首页临时切换当前周和训练日；自由训练入口进入补录训练，不修改小组当前周。
+- 开始训练前必须选择记录范围：仅我记录或小组成员；未选择成员不会生成本次训练组。
+
+### 小组训练授权边界
+- `workout_sessions` 新增 `training_mode`，区分 `solo_local` 和 `group_local`。
+- `createSessionFromTodayPlan()` 支持 `participantMemberIds`，只为参与成员生成 `workout_sets`。
+- 训练执行页和总结页按 session sets 过滤参与成员；小组总结新增“同步到成员数据”确认卡，成员确认 / 服务器同步仍为预留流程，确认前仅保存在本机。
+
+## 2026-06-29 - group-history-line-trends-plan-actions
+
+### 记录页小组视角
+- 记录页新增个人 / 小组切换；小组视角展示本机小组总览、成员贡献、近 7 天折线趋势、最近小组训练和小组洞察。
+- `src/domain/history/history-analysis.ts` 新增 `getGroupHistoryAnalysis()`，小组统计基于 SQLite 训练详情和本地成员列表推导，不使用假数据。
+- 基础小组汇总从 Pro-only 能力中移除，高级个人训练分析仍保留权限边界。
+
+### 图表与计划页
+- 记录页、训练分析页、计划页执行趋势统一改为 `MiniLineChart` 折线趋势。
+- 计划页移除大块“计划工具”网格，创建 / 导入 / 导出 / 管理全部收进“计划操作”底部弹层。
+- 今日训练主卡降低标题级别和高度，减少首页首屏压迫感。
+
+### 同步入口清理
+- 用户可见的云同步、数据同步、待同步、同步状态、云端恢复、邀请和二维码入口已隐藏或替换为当前版本本机数据说明。
+- 底层 sync 预留代码未删除，当前主流程不暴露。
+
 ## 2026-06-28 - title-dedup-liftmark-login
 
 ### 标题去重修复
@@ -56,8 +141,8 @@
 - 注销账号描述改为"删除账号数据，不可撤销"
 - 移除"不会删除本机训练数据"等旧版提示
 
-### 数据管理重构
-- "隐私与数据"重命名为"数据管理"
+### 计划导出重构
+- "隐私与数据"重命名为"计划导出"
 - 移除重复的账号注销入口（仅保留在账户安全中）
 - 移除"删除云端数据"入口
 - 保留"清除所有数据"功能
@@ -120,14 +205,14 @@
 
 ### 训练中组件重设计
 - `src/components/workout/CurrentSetRecorder.tsx` 移除"跳过动作"按钮
-- RPE/RIR 改为折叠式设计，默认不展开，点击切换
+- 完成情况 改为折叠式设计，默认不展开，点击切换
 - 休息倒计时集成到"跳过休息"按钮上（显示计时器徽章）
 - 删除独立的休息倒计时卡片
 
 ### 训练中已完成记录
 - `src/components/workout/CompletedSetList.tsx` 重设计为 chip 样式
 - 重量和次数独立显示，不再被截断
-- RPE/RIR 使用品牌色 chip 区分
+- 完成状态使用清晰按钮态区分
 - 编号徽章更醒目
 
 ### 训练中动作列表
@@ -178,7 +263,7 @@
 - `PlanRepository.deleteUserPlan()` 支持删除用户计划，并阻止删除系统方案、当前计划和最后一个用户计划；删除计划不删除训练记录。
 - 计划导入按动作名称复用本机已有动作，缺失动作才写入 SQLite，避免重复导入自定义动作。
 - 成员上限从 4 人调整为 5 人，并集中到 `src/config/appLimits.ts`。
-- 建议重量支持按次数区间保守估算，PPL 这类 RPE/RIR 计划也能给出成员建议重量。
+- 建议重量支持按次数区间保守估算，PPL 这类次数区间计划也能给出成员建议重量。
 - 新增测试覆盖系统动作库、成员上限、建议重量推算和用户计划删除边界。
 
 ## 2026-06-15 - ui-consistency-plan-entry-member-flow-sprint
@@ -205,16 +290,16 @@
 
 ## 2026-06-14 - 训练执行交互修正 + 记录/设置 UI 重设计 + 图标背景修复
 
-- 训练执行页 RPE/RIR 改为纯 preset 点选：RPE `6-10/清空`，RIR `0-5/清空`，不再显示数值输入框。
+- 训练执行页只保留重量、次数、完成/跳过和备注，不再展示旧强度快捷输入。
 - 生成记录页设计稿 `docs/ui/record-page-redesign.png`，并重做 `app/(tabs)/history.tsx`：紧凑个人概览、2x2 指标、基础趋势、可点击日历、最近训练列表和小组汇总开发中隔离提示。
-- 生成设置页设计稿 `docs/ui/settings-page-redesign.png`，并重做 `app/(tabs)/settings.tsx`：顶部状态卡、分组设置列表、开发中标签、数据管理、计划管理、诊断和危险操作。
+- 生成设置页设计稿 `docs/ui/settings-page-redesign.png`，并重做 `app/(tabs)/settings.tsx`：顶部状态卡、分组设置列表、开发中标签、计划导出、计划管理、诊断和调试保护。
 - 搭子页主页面本地小组说明压缩为一句话，完整规则移入“了解本地小组”弹层。
 - 修复图标背景资源：`app-icon-1024.png` 改为深色实底；adaptive foreground 保持透明安全边距；splash logo 改为透明居中；`app.json` 顶层 splash 改用 `splash-logo.png`。
 
 ## 2026-06-14 - 训练执行体验与记录数据口径修复 v1
 
 - 训练执行页支持完成本组后自动推进：下一组休息倒计时、无休息直接下一组、动作完成后自动下一个动作、最后动作完成后进入总结。
-- 重量和次数支持直接输入，保留加减号微调；RPE 支持为空或 6-10，RIR 支持为空或 0-5，非法输入会提示。
+- 重量和次数支持直接输入，保留加减号微调；完成状态由完成/跳过表达，非法输入会提示。
 - 当前动作已完成组可见，并支持编辑、删除和撤销上一组；编辑使用原 set 更新，避免重复记录。
 - 补录训练新增可选间歇秒，留空写入 `null`，不影响训练量、PR 和估算 1RM。
 - SQLite 新增 migration v4：`workout_exercise_records.planned_rest_seconds`，用于保存训练动作休息时间快照。
@@ -261,7 +346,7 @@
 - 产品原则：系统方案不是用户计划；用户必须点击“使用此方案”后才生成自己的计划；训练记录不能直接绑定系统方案。
 - 更新文档：同步 plan 模块 overview/design/principle/implementation/data-flow/test-plan，新增系统方案复制、计划创建、计划导入导出流程文档，并同步产品设计、数据库 schema、Repository API、开发路线图、changelog 和 handoff。
 - 测试情况：`npm run typecheck`、`npm run lint`、`npm test -- --runInBand` 通过；新增计划复制单元测试。
-- 风险说明：第一版只完整开放“四练增力增肌方案”；其它系统方案显示“开发中”。创建计划、导入落库、删除计划和深层编辑器仍为后续能力。
+- 风险说明：第一版只完整开放 legacy 四天兼容模板；其它系统方案显示“开发中”。创建计划、导入落库、删除计划和深层编辑器仍为后续能力。
 
 ### ui-redesign：设计系统、五栏底部导航和核心页面重构
 
@@ -277,10 +362,10 @@
 ### stability-ux：品牌中文化、APK 一键预览、设置页、计划导出和历史推算
 
 - 影响模块：Android build、settings、export、plan、history、progression、member、workout、today-training-flow。
-- 修改代码：品牌统一为“练刻 / LiftMark”，Android package 调整为 `com.liftmark.app`；新增 `android:install`、`android:open`、`android:preview`；主要用户可见文案中文化；设置页新增基础设置、数据管理、开发/调试信息，周五补弱开关会写入 `groups.friday_enabled`；底部 Tab 显式使用 Ionicons，避免 Android release APK 中默认图标显示为缺字方框；新增 `planFileService.ts` 支持 `.liftmark` 当前计划导出、schemaVersion 校验和导入 ID 重映射；`exportService.ts` 支持全量/训练记录 JSON 字符串导出和默认计划重置；新增 `history-analysis.ts` 支持 Epley 预估 1RM、最近 5 次趋势、PR 接近度、疲劳提示和中文建议；新增进阶建议中文 label 映射。
+- 修改代码：品牌统一为“练刻 / LiftMark”，Android package 调整为 `com.liftmark.app`；新增 `android:install`、`android:open`、`android:preview`；主要用户可见文案中文化；设置页新增基础设置、计划导出、开发/调试信息，周五补弱开关会写入 `groups.friday_enabled`；底部 Tab 显式使用 Ionicons，避免 Android release APK 中默认图标显示为缺字方框；新增 `planFileService.ts` 支持 `.liftmark` 当前计划导出、schemaVersion 校验和导入 ID 重映射；`exportService.ts` 支持全量/训练记录 JSON 字符串导出和默认计划重置；新增 `history-analysis.ts` 支持 Epley 预估 1RM、最近 5 次趋势、PR 接近度、疲劳提示和中文建议；新增进阶建议中文 label 映射。
 - 更新文档：同步项目总览、产品设计、技术架构、AI 开发规则、开发路线图、settings/plan/export/history/progression 模块文档和 changelog。
 - 测试情况：`npm install`、`npm run typecheck`、`npm run lint`、`npm test -- --runInBand`、`npm run android:preview` 均通过；APK 成功编译、安装并通过 `adb shell monkey -p com.liftmark.app -c android.intent.category.LAUNCHER 1` 打开，模拟器已截图确认中文首页和设置页。
-- 风险说明：`.liftmark` 第一版只生成 JSON 预览，文件保存/分享和导入落库后续接入；清空测试数据暂不执行删除，以避免误删真实训练记录。
+- 风险说明：`.liftmark` 第一版只生成 JSON 预览，文件保存/分享和导入落库后续接入；重建测试数据暂不执行删除，以避免误删真实训练记录。
 
 ## 2026-06-10
 
@@ -313,7 +398,7 @@
 ### sprint-4：实现训练执行页
 
 - 影响模块：workout、member、plan、exercise、weight、workout-execution-flow。
-- 修改代码：`createSessionFromTodayPlan` 生成 session、动作快照和每位成员 set；Today 页新增开始训练入口；训练执行页按动作轮换展示成员 set 卡，重量/次数 stepper、RPE/RIR 快捷输入和完成按钮均即时保存 SQLite；新增训练总结页和 workout 单元测试。
+- 修改代码：`createSessionFromTodayPlan` 生成 session、动作快照和每位成员 set；Today 页新增开始训练入口；训练执行页按动作轮换展示成员 set 卡，重量/次数 stepper、完成/跳过按钮和完成按钮均即时保存 SQLite；新增训练总结页和 workout 单元测试。
 - 更新文档：同步 workout 模块文档和测试计划、训练执行流程、数据库 schema、Repository API、开发路径图。
 - 测试情况：`npm run typecheck`、`npm run lint`、`npm test -- --runInBand` 均通过。
 - 风险说明：Expo/Android 真机页面烟测未在本环境完成；动作替换、跳过动作和历史页展示仍待后续 Sprint。
@@ -321,7 +406,7 @@
 ### sprint-3：实现默认计划和今日训练
 
 - 影响模块：plan、exercise、weight、recovery、today-training-flow。
-- 修改代码：将四练增力增肌 Excel 转为默认 seed；新增 ExerciseRepository；接入 `getTodayPlan` 恢复过滤；实现默认周期/周数设置、今日训练页、成员建议重量和恢复状态切换；新增 plan/weight/recovery 单元测试。
+- 修改代码：将旧 Excel 四练兼容模板转为默认 seed；新增 ExerciseRepository；接入 `getTodayPlan` 动作过滤；实现默认周期/周数设置、今日训练页、成员建议重量和动作筛选；新增 plan/weight/recovery 单元测试。
 - 更新文档：同步 plan、exercise、weight、recovery 模块文档和测试计划、今日训练流程、数据库 schema、Repository API、开发路径图。
 - 测试情况：`npm run typecheck`、`npm run lint`、`npm test -- --runInBand` 均通过。
 - 风险说明：Expo/Android 真机页面烟测未在本环境完成；Excel seed 的后续版本迁移和重置策略待 Sprint 7 明确。

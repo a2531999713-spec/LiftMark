@@ -5,7 +5,7 @@
 
 ## 1. 模块职责
 
-训练完成后基于完成情况、RPE/RIR、失败次数和双进阶规则生成下次建议。
+训练完成后基于完成情况、失败次数和双进阶规则生成下次建议。
 
 ## 2. 主要文件
 
@@ -24,7 +24,7 @@
 文件：见主要文件列表  
 符号：`getStrengthProgressionSuggestion()`  
 搜索锚点：`getStrengthProgressionSuggestion()`  
-职责：根据完成情况和 RPE 生成增力建议。  
+职责：根据完成率 生成增力建议。  
 调用方：history, workout-summary-flow  
 依赖：workout, weight, exercise, member  
 测试：见 `test-plan.md`  
@@ -40,7 +40,7 @@
 文件：见主要文件列表  
 符号：`getHypertrophyProgressionSuggestion()`  
 搜索锚点：`getHypertrophyProgressionSuggestion()`  
-职责：根据次数区间、RIR 和动作质量生成增肌建议。  
+职责：根据次数区间、动作质量生成增肌建议。  
 调用方：history, workout-summary-flow  
 依赖：workout, weight, exercise, member  
 测试：见 `test-plan.md`  
@@ -89,8 +89,8 @@
 
 ## 6. 测试位置
 
-- 全部完成且 RPE 8 -> increase。
-- 全部完成且 RPE 9 -> maintain。
+- 全部完成且最近表现稳定 -> increase。
+- 全部完成但近期压力偏高 -> maintain。
 - 连续失败 2 次 -> deload。
 - 4 组均达上限 -> increase；仍在区间 -> add_reps。
 

@@ -4,8 +4,8 @@
 
 ## 1. 单元测试范围
 
-- 全部完成且 RPE 8 -> increase。
-- 全部完成且 RPE 9 -> maintain。
+- 全部完成且最近表现稳定 -> increase。
+- 全部完成但近期压力偏高 -> maintain。
 - 连续失败 2 次 -> deload。
 - 4 组均达上限 -> increase；仍在区间 -> add_reps。
 
@@ -23,8 +23,8 @@
 
 ## 4. 必测场景
 
-- 全部完成且 RPE 8 -> increase。
-- 全部完成且 RPE 9 -> maintain。
+- 全部完成且最近表现稳定 -> increase。
+- 全部完成但近期压力偏高 -> maintain。
 - 连续失败 2 次 -> deload。
 - 4 组均达上限 -> increase；仍在区间 -> add_reps。
 

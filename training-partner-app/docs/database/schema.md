@@ -1,6 +1,6 @@
 # SQLite 数据库结构
 
-更新时间：2026-06-15
+更新时间：2026-06-30
 
 ## 1. 设计原则
 
@@ -19,6 +19,7 @@
 | 分组 | 表 |
 |---|---|
 | 小组和成员 | `groups`, `group_members`, `member_profiles` |
+| 账号资料缓存 | `account_profile_cache` |
 | 动作和替代 | `exercises`, `exercise_alternatives` |
 | 计划模板 | `plan_templates`, `plan_phases`, `plan_days`, `plan_exercises` |
 | 实际训练 | `workout_sessions`, `workout_exercise_records`, `workout_sets` |
@@ -39,16 +40,17 @@ Sprint 3 seed 文件：
 - `training-partner-app/src/data/seed/defaultHypertrophyPlan.ts`
 - `training-partner-app/src/data/seed/defaultDeloadPlan.ts`
 - `training-partner-app/src/data/seed/classicPplPlan.ts`
+- `training-partner-app/src/data/seed/mainstreamPlans.ts`
 - `training-partner-app/src/data/seed/seedDefaultData.ts`
 
-当前 seed 幂等写入扩展系统动作库、动作替换、系统四练方案模板、系统“经典三分化 PPL”模板、默认用户计划副本和默认小组。系统方案不是用户计划；默认小组 `active_plan_id` 指向用户计划副本，不直接指向系统方案模板。新增 PPL seed 不需要 schema migration，不会覆盖用户已复制出的计划。
+当前 seed 幂等写入扩展系统动作库、动作替换、主流系统计划库、经典四分化增肌计划、legacy 四练兼容模板、默认新手全身用户计划副本和默认小组。系统方案不是用户计划；默认小组 `active_plan_id` 指向用户计划副本，不直接指向系统方案模板。legacy 四练兼容模板仅用于兼容旧默认计划和历史记录，不进入新用户系统方案推荐。
 
 Sprint 4 训练执行：
 
 - `workout_sessions` 保存一次训练 session。
 - `workout_exercise_records` 保存从计划动作复制来的训练动作快照。
-- `workout_sets` 保存每位成员每一组的 planned/actual 重量、次数、RPE/RIR 和完成状态。
-- Sprint 4 未修改表结构，因此无需新增 migration。
+- `workout_sets` 保存每位成员每一组的计划/实际重量、次数和完成状态；旧强度列只用于兼容既有本地数据。
+- migration v7 新增 `workout_sessions.training_mode`，区分 `solo_local` 和 `group_local`。
 
 ## 3. 建表 SQL
 
@@ -92,6 +94,10 @@ CREATE TABLE IF NOT EXISTS member_profiles (
   id TEXT PRIMARY KEY,
   member_id TEXT NOT NULL,
   group_id TEXT NOT NULL,
+  avatar_url TEXT,
+  avatar_thumb_url TEXT,
+  avatar_local_uri TEXT,
+  avatar_updated_at TEXT,
   bodyweight REAL,
   bench_1rm REAL,
   squat_1rm REAL,
@@ -104,6 +110,26 @@ CREATE TABLE IF NOT EXISTS member_profiles (
   updated_at TEXT NOT NULL
 );
 ```
+
+头像字段只保存 URL、缩略图 URL、本地缓存路径和更新时间；SQLite 不保存图片二进制或 Base64。
+
+### account_profile_cache
+
+```sql
+CREATE TABLE IF NOT EXISTS account_profile_cache (
+  user_id TEXT PRIMARY KEY NOT NULL,
+  display_name TEXT,
+  phone_masked TEXT,
+  liftmark_id TEXT,
+  avatar_url TEXT,
+  avatar_thumb_url TEXT,
+  avatar_local_uri TEXT,
+  avatar_updated_at TEXT,
+  updated_at TEXT NOT NULL
+);
+```
+
+账号头像与训练成员头像分离。账号头像用于“我的”页和账号资料；成员头像归属于训练成员档案，用于训练成员列表和训练现场。
 
 ### exercises
 
@@ -224,6 +250,7 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
   weekday INTEGER NOT NULL,
   title TEXT NOT NULL,
   status TEXT NOT NULL,
+  training_mode TEXT NOT NULL DEFAULT 'group_local',
   started_at TEXT,
   finished_at TEXT,
   created_at TEXT NOT NULL,
@@ -276,6 +303,8 @@ CREATE TABLE IF NOT EXISTS workout_sets (
   updated_at TEXT NOT NULL
 );
 ```
+
+旧强度字段继续留在 SQLite schema 中用于读取历史数据和兼容旧库；当前 UI、seed 和计划导入导出不再把这些字段作为用户功能展示。
 
 ### progression_suggestions
 
@@ -368,10 +397,11 @@ Sprint 1 已落地 `schema_migrations` 版本表：
 - 当前 v3 为 `friday_strategy_and_activation_state`，为 `groups` 增加 `friday_strategy`，并创建 `activation_state` 本地试用/激活状态表。
 - 当前 v4 为 `workout_record_rest_time_snapshot`，为 `workout_exercise_records` 增加 `planned_rest_seconds`，补录休息时间可为空。
 - 当前 v5 为 `exercise_source_for_custom_library`，为 `exercises` 增加 `source`，并创建 `idx_exercises_source_name`。
+- 当前 v6 为 `account_and_member_avatar_cache`，为 `member_profiles` 增加头像 URL / 缩略图 / 本地路径 / 更新时间字段，并创建 `account_profile_cache`。
 - 后续不能直接改旧 migration 语义，应追加新 migration。
 
 ## 7. 需要人工确认的问题
 
 - 是否在 Sprint 1 就加入外键约束。
 - 是否在 Sprint 1 就加入 `remote_id`、`sync_status`、`deleted_at`。
-- 清空测试数据是否物理删除，真实数据是否软删除。
+- 重建测试数据是否物理删除，真实数据是否软删除。

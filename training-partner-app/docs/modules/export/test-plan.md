@@ -32,7 +32,7 @@
 ## 5. 边界场景
 
 - 导出不能漏掉 workout_sets、progression_suggestions、recovery_logs。
-- 清空测试数据必须有确认流程，避免误删真实训练记录。
+- 重建测试数据必须有确认流程，避免误删真实训练记录。
 
 ## 6. 回归测试点
 
