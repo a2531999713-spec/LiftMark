@@ -4,6 +4,48 @@
 
 ---
 
+## v2.2.0 — 2026-07-01
+
+### 🎯 核心更新
+
+#### 新增体重数据模块 (Body Metrics)
+- 新增 `body-metrics.tsx` 体重数据页面：快速记录、折叠围度、目标设置、变化摘要、训练关联和趋势图
+- 新增 `BodyMetricsRepository` 体重数据仓储层（本地 SQLite + 云端接口）
+- 新增 `body-metrics.types.ts` 体重数据类型定义
+- 新增 `body-metrics-analysis.ts` 体重数据分析引擎
+- 数据库 schema 新增 `body_metrics` 和 `body_metric_goals` 表
+- SQLite migration v11 支持体重数据迁移
+
+#### 训练执行组件增强
+- 新增 `RestTimerPanel` 休息面板组件：倒计时、建议休息、实际休息秒数保存
+- 新增 `RpeSelector` RPE 选择器组件：可折叠横向选择
+- 新增 `SetNotesInput` 备注输入组件：训练中实时记录
+- 新增 `WorkoutLiveStatsBar` 训练实时统计条
+- `CurrentSetRecorder` 增强：重量/次数实时保存、RPE/备注折叠面板
+
+#### UI 组件库扩展
+- 新增 `Avatar` 通用头像组件：支持账号头像与训练成员 profile 统一
+- 新增 `SecondaryPageHeader` 二级页面头部组件
+- 新增 `chartScale` 图表缩放工具：MiniLineChart / MultiLineTrendChart 共享 Y 轴刻度
+
+### 📊 数据与同步
+- 数据库 schema 扩展支持体重记录和目标
+- 同步队列增强：支持体重数据同步
+- 历史分析引擎增强：支持体重趋势和训练关联分析
+
+### 📝 文档
+- 新增 `CONTRIBUTING.md` 贡献指南
+- 新增 `RELEASE.md` 版本发布指南
+- 新增 `RELEASE_NOTES.md` 版本更新记录
+- 全量更新 120+ 模块文档和流程文档
+- 更新 `.gitignore` 排除 `.zip` 构建产物
+
+### 🐛 修复
+- 修复 Login 页面密码登录 scope 错误
+- 修复首次安装小米手机数据库初始化时序问题
+
+---
+
 ## v1.2.0 — 2026-06-30
 
 ### 🎯 核心更新
@@ -148,4 +190,4 @@
 
 ---
 
-最后更新：2026-06-30
+最后更新：2026-07-01

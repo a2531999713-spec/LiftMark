@@ -1,5 +1,41 @@
 ﻿# 变更记录
 
+## 2026-07-01 - v2.2.0-body-metrics-training-enhancement
+
+### Body Metrics 体重数据模块
+- 新增 `app/profile/body-metrics.tsx` 体重数据页面：快速记录、折叠围度、目标设置、变化摘要、训练关联和趋势图
+- 新增 `src/domain/body/` 体重数据域层：`body-metrics.types.ts` 类型定义、`body-metrics-analysis.ts` 分析引擎
+- 新增 `src/data/local/repositories/bodyMetricsRepository.ts` 本地 SQLite 仓储
+- 新增 `src/data/repositories/bodyMetricsRepository.ts` 云端仓储接口
+- 新增 `src/tests/body-metrics.test.ts` 体重数据单元测试
+- SQLite schema 新增 `body_metrics` 和 `body_metric_goals` 表，migration v11 支持
+
+### 训练执行组件增强
+- 新增 `RestTimerPanel` 休息面板：倒计时、建议休息、已休息、下一组和下一位成员，保存 `actual_rest_seconds`
+- 新增 `RpeSelector` RPE 选择器：可折叠横向选择，不恢复 RIR
+- 新增 `SetNotesInput` 备注输入：训练中实时记录
+- 新增 `WorkoutLiveStatsBar` 训练实时统计条
+- `CurrentSetRecorder` 增强：重量/次数实时保存、RPE/备注折叠面板
+
+### UI 组件库扩展
+- 新增 `Avatar` 通用头像组件：账号头像与训练成员 profile 统一
+- 新增 `SecondaryPageHeader` 二级页面头部组件
+- 新增 `chartScale` 图表缩放工具：MiniLineChart / MultiLineTrendChart 共享 Y 轴刻度、安全 padding 和同值/零值测试
+
+### 数据与同步
+- 数据库 schema 扩展支持体重记录和目标
+- 同步队列增强：支持体重数据同步类型
+- 历史分析引擎增强：支持体重趋势和训练关联分析
+
+### 文档与项目
+- 新增 `CONTRIBUTING.md` 贡献指南
+- 新增 `RELEASE.md` 版本发布指南
+- 新增 `RELEASE_NOTES.md` 版本更新记录
+- 全量更新 120+ 模块文档和流程文档
+- 更新 `.gitignore` 排除 `.zip` 构建产物
+
+---
+
 ## 2026-07-01 - history-workout-auth-registration-hardening
 
 ### History and charts
