@@ -1,4 +1,4 @@
-# Activation 模块设计
+﻿# Activation 模块设计
 
 更新时间：2026-06-12
 

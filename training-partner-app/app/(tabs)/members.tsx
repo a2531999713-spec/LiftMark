@@ -12,6 +12,7 @@ import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { MAX_GROUP_MEMBERS } from '@/domain/member/member.validation';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
 type PartnerStats = {
@@ -49,6 +50,8 @@ function calculateStreakDays(dates: string[]): number {
 export default function MembersRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
@@ -64,9 +67,13 @@ export default function MembersRoute() {
 
     try {
       await initializeLocalDatabase();
-      const nextGroup = await repositories.groupRepository.getDefaultGroup();
+      const allGroups = await repositories.groupRepository.listGroups();
+      const nextGroup = allGroups.find((item) => item.id === selectedGroupId) ?? allGroups[0] ?? null;
       if (!nextGroup) {
         throw new Error('默认小组尚未初始化。');
+      }
+      if (nextGroup.id !== selectedGroupId) {
+        setSelectedGroupId(nextGroup.id);
       }
 
       const nextMembers = await repositories.memberRepository.listMembers(nextGroup.id);
@@ -99,7 +106,7 @@ export default function MembersRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories]);
+  }, [repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

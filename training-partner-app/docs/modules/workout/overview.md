@@ -1,6 +1,6 @@
-# Workout 模块概览
+﻿# Workout 模块概览
 
-更新时间：2026-06-09
+更新时间：2026-06-30
 
 ## 1. 模块职责
 
@@ -10,6 +10,9 @@
 - 从今日训练生成 session、exercise records、workout sets。
 - 训练执行页默认按动作轮换，当前动作下按成员记录 set。
 - 每次修改立即保存 SQLite，离开页面后可恢复。
+- RPE 和备注是可选高级记录，不影响完成本组。
+- 完成本组后的休息面板展示倒计时、建议休息、已休息、下一组和下一位成员。
+- 训练中可替换当前动作；替换只影响本次训练，不修改原计划。
 
 ## 2. 非职责
 
@@ -50,6 +53,8 @@ Sprint 4 已实现训练执行页和 SQLite 即时保存；以下路径按当前
 | `src/data/local/repositories/workoutRepository.ts` | 训练记录 Repository。 |
 | `app/(tabs)/today.tsx` | 从今日训练创建或复用 session 的入口。 |
 | `app/workout/[sessionId].tsx` | 训练执行页。 |
+| `src/components/workout/RpeSelector.tsx` | 可选折叠 RPE 选择器。 |
+| `src/components/workout/RestTimerPanel.tsx` | 休息倒计时、建议休息、已休息和下一步信息。 |
 | `app/workout/summary/[sessionId].tsx` | 训练总结页。 |
 
 ## 7. 核心数据结构
@@ -70,5 +75,5 @@ Sprint 4 已实现训练执行页和 SQLite 即时保存；以下路径按当前
 ## 9. 需要人工确认的问题
 
 - Sprint 4 默认按动作轮换展示，每个动作下按成员卡片记录 set；不是 Excel 表格 UI。
-- 动作替换仍待 Sprint 5，实现前不要在执行页改写 `exercise_id`。
+- 动作替换只允许更新本次 `workout_exercise_records.exercise_id`，并保留 `replaced_from_exercise_id`；不得回写 `plan_exercises`。
 - 如果实际实现与本文档不一致，应以代码为准并同步更新文档。

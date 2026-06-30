@@ -90,3 +90,6 @@ aliyun-ram-accesskey.csv
 *.err.log
 expo-*.log
 expo-*.err.log
+
+# archives
+*.zip

@@ -20,7 +20,11 @@ function formatVolume(sets: WorkoutSet[]) {
 }
 
 export default function HistoryDetailRoute() {
-  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const { memberId, scope, sessionId } = useLocalSearchParams<{
+    memberId?: string;
+    scope?: 'personal' | 'group';
+    sessionId: string;
+  }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { authMode, guardFeature, sheets } = useAuthGate();
   const [detail, setDetail] = useState<WorkoutSessionDetail | null>(null);
@@ -34,6 +38,12 @@ export default function HistoryDetailRoute() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const scopedMemberId = scope === 'personal' && typeof memberId === 'string' ? memberId : undefined;
+  const visibleSets = useMemo(
+    () => (scopedMemberId && detail ? detail.sets.filter((set) => set.memberId === scopedMemberId) : detail?.sets ?? []),
+    [detail, scopedMemberId],
+  );
+  const isPersonalScope = Boolean(scopedMemberId);
 
   const loadDetail = useCallback(async () => {
     if (!sessionId) {
@@ -51,8 +61,7 @@ export default function HistoryDetailRoute() {
 
       await initializeLocalDatabase();
       const nextDetail = await repositories.workoutRepository.getSessionDetail(sessionId);
-      const group = await repositories.groupRepository.getDefaultGroup();
-      const nextMembers = group ? await repositories.memberRepository.listMembers(group.id) : [];
+      const nextMembers = await repositories.memberRepository.listMembers(nextDetail.session.groupId);
       const [nextExercises, nextAllExercises] = await Promise.all([
         repositories.exerciseRepository.listExercisesByIds(
           nextDetail.exercises.map((exercise) => exercise.exerciseId),
@@ -262,10 +271,10 @@ export default function HistoryDetailRoute() {
           <View style={styles.topBar}>
             <View style={styles.topText}>
               <AppText variant="bodySmall" weight="900">
-                训练记录详情
+                {isPersonalScope ? '我的训练详情' : '小组训练详情'}
               </AppText>
               <AppText tone="muted" variant="caption">
-                默认只读，编辑需从更多操作进入。
+                {isPersonalScope ? '仅显示当前成员记录；小组成员数据不会出现在这里。' : '显示本机小组全部成员记录。'}
               </AppText>
             </View>
             <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.moreButton}>
@@ -288,7 +297,7 @@ export default function HistoryDetailRoute() {
             )}
             <View style={styles.summaryGrid}>
               <SummaryItem icon="calendar-outline" label="日期" value={detail.session.date} />
-              <SummaryItem icon="barbell-outline" label="总训练量" value={formatVolume(detail.sets)} />
+              <SummaryItem icon="barbell-outline" label={isPersonalScope ? '我的训练量' : '总训练量'} value={formatVolume(visibleSets)} />
               <SummaryItem icon="time-outline" label="时长" value={detail.session.finishedAt ? '已完成' : '进行中'} />
             </View>
             {isEditMode ? (
@@ -313,7 +322,13 @@ export default function HistoryDetailRoute() {
           <SectionHeader title="动作与组" />
           {detail.exercises.map((record) => {
             const exercise = exercises[record.exerciseId];
-            const recordSets = detail.sets.filter((set) => set.exerciseRecordId === record.id);
+            const replacedFromExercise = record.replacedFromExerciseId
+              ? exercises[record.replacedFromExerciseId]
+              : null;
+            const recordSets = visibleSets.filter((set) => set.exerciseRecordId === record.id);
+            if (isPersonalScope && recordSets.length === 0) {
+              return null;
+            }
             return (
               <AppCard key={record.id} style={styles.card}>
                 <View style={styles.exerciseHeader}>
@@ -325,14 +340,19 @@ export default function HistoryDetailRoute() {
                     <AppText tone="muted" variant="caption">
                       {recordSets.length} 组 · {record.priority} 动作
                     </AppText>
+                    {record.replacedFromExerciseId ? (
+                      <AppText tone="muted" variant="caption">
+                        由 {replacedFromExercise?.name ?? record.replacedFromExerciseId} 替换为 {exercise?.name ?? record.exerciseId}
+                      </AppText>
+                    ) : null}
                   </View>
-                  {isEditMode ? (
+                  {isEditMode && !isPersonalScope ? (
                     <Pressable accessibilityRole="button" onPress={() => confirmDeleteExercise(record)}>
                       <Ionicons color={colors.danger} name="trash-outline" size={20} />
                     </Pressable>
                   ) : null}
                 </View>
-                {isEditMode ? (
+                {isEditMode && !isPersonalScope ? (
                   <View style={styles.inlineActions}>
                     <AppButton onPress={() => void changeExercise(record)} size="sm" variant="secondary">
                       更换动作
@@ -389,9 +409,10 @@ export default function HistoryDetailRoute() {
                   setActionsVisible(false);
                   confirmDeleteSession();
                 }}
+                disabled={isPersonalScope}
                 variant="danger"
               >
-                删除整次训练
+                {isPersonalScope ? '个人口径不可删除整次小组训练' : '删除整次训练'}
               </AppButton>
               <AppButton onPress={() => setActionsVisible(false)} variant="secondary">
                 取消

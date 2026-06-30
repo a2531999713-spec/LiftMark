@@ -236,6 +236,174 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 8,
+    name: 'workout_set_rest_and_body_metrics',
+    async up(db) {
+      const setColumns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(workout_sets)',
+      );
+      const setColumnNames = new Set(setColumns.map((column) => column.name));
+
+      if (!setColumnNames.has('actual_rest_seconds')) {
+        await db.execAsync('ALTER TABLE workout_sets ADD COLUMN actual_rest_seconds INTEGER;');
+      }
+
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS body_metrics (
+          id TEXT PRIMARY KEY,
+          member_id TEXT NOT NULL,
+          date TEXT NOT NULL,
+          weight_kg REAL,
+          body_fat_percent REAL,
+          chest_cm REAL,
+          waist_cm REAL,
+          hip_cm REAL,
+          bicep_cm REAL,
+          thigh_cm REAL,
+          calf_cm REAL,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_body_metrics_member_date ON body_metrics(member_id, date);
+      `);
+    },
+  },
+  {
+    version: 9,
+    name: 'body_metric_goals',
+    async up(db) {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS body_metric_goals (
+          id TEXT PRIMARY KEY,
+          member_id TEXT NOT NULL,
+          goal_type TEXT NOT NULL,
+          target_weight_kg REAL,
+          target_date TEXT,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_body_metric_goals_member ON body_metric_goals(member_id);
+      `);
+    },
+  },
+  {
+    version: 10,
+    name: 'cloud_sync_metadata_and_queue',
+    async up(db) {
+      const columnsByTable: Record<string, string[]> = {
+        groups: [
+          'remote_id TEXT',
+          "sync_status TEXT NOT NULL DEFAULT 'local_only'",
+          'sync_error TEXT',
+          'version INTEGER NOT NULL DEFAULT 0',
+          'last_synced_at TEXT',
+          'deleted_at TEXT',
+        ],
+        group_members: [
+          'remote_id TEXT',
+          "sync_status TEXT NOT NULL DEFAULT 'local_only'",
+          'sync_error TEXT',
+          'version INTEGER NOT NULL DEFAULT 0',
+          'last_synced_at TEXT',
+          'deleted_at TEXT',
+        ],
+        plan_templates: [
+          'remote_id TEXT',
+          "sync_status TEXT NOT NULL DEFAULT 'local_only'",
+          'sync_error TEXT',
+          'sync_version INTEGER NOT NULL DEFAULT 0',
+          'last_synced_at TEXT',
+          'deleted_at TEXT',
+        ],
+        workout_sessions: [
+          'remote_id TEXT',
+          "sync_status TEXT NOT NULL DEFAULT 'local_only'",
+          'sync_error TEXT',
+          'version INTEGER NOT NULL DEFAULT 0',
+          'last_synced_at TEXT',
+          'deleted_at TEXT',
+        ],
+        workout_exercise_records: [
+          'remote_id TEXT',
+          "sync_status TEXT NOT NULL DEFAULT 'local_only'",
+          'sync_error TEXT',
+          'version INTEGER NOT NULL DEFAULT 0',
+          'last_synced_at TEXT',
+          'deleted_at TEXT',
+          'updated_at TEXT',
+        ],
+        workout_sets: [
+          'remote_id TEXT',
+          "sync_status TEXT NOT NULL DEFAULT 'local_only'",
+          'sync_error TEXT',
+          'version INTEGER NOT NULL DEFAULT 0',
+          'last_synced_at TEXT',
+          'deleted_at TEXT',
+        ],
+        body_metrics: [
+          'remote_id TEXT',
+          "sync_status TEXT NOT NULL DEFAULT 'local_only'",
+          'sync_error TEXT',
+          'version INTEGER NOT NULL DEFAULT 0',
+          'last_synced_at TEXT',
+          'deleted_at TEXT',
+        ],
+      };
+
+      for (const [tableName, columnDefinitions] of Object.entries(columnsByTable)) {
+        const existingColumns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+          `PRAGMA table_info(${tableName})`,
+        );
+        const existingColumnNames = new Set(existingColumns.map((column) => column.name));
+
+        for (const definition of columnDefinitions) {
+          const columnName = definition.split(' ')[0];
+          if (!existingColumnNames.has(columnName)) {
+            await db.execAsync(`ALTER TABLE ${tableName} ADD COLUMN ${definition};`);
+          }
+        }
+      }
+
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS local_sync_queue (
+          id TEXT PRIMARY KEY,
+          entity_type TEXT NOT NULL,
+          local_id TEXT NOT NULL,
+          remote_id TEXT,
+          operation TEXT NOT NULL,
+          status TEXT NOT NULL,
+          payload TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          sync_error TEXT,
+          last_attempted_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_local_sync_queue_status ON local_sync_queue(status, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_local_sync_queue_entity ON local_sync_queue(entity_type, local_id);
+      `);
+    },
+  },
+  {
+    version: 11,
+    name: 'group_member_avatar_url_compat',
+    async up(db) {
+      const memberColumns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(group_members)',
+      );
+      const columnNames = new Set(memberColumns.map((column) => column.name));
+
+      if (!columnNames.has('avatar_url')) {
+        await db.execAsync('ALTER TABLE group_members ADD COLUMN avatar_url TEXT;');
+      }
+    },
+  },
 ];
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {

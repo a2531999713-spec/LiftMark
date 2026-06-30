@@ -1,4 +1,11 @@
-# Settings 模块实现文档
+﻿# Settings 模块实现文档
+
+## 2026-06-30 补充：我的页二级页面与头像一致性
+
+- 我的页二级页面统一隐藏 Expo Stack 原生头部，使用 `SecondaryPageHeader` 渲染返回按钮、标题、摘要和必要状态。
+- 账号头像仍保存到 `account_profile_cache`；训练页、记录页和小组分析读取的是 `member_profiles`。在我的页或头像页更新账号头像时，同步当前小组第一位训练成员的 `member_profiles` 头像字段，避免训练、历史、小组页继续显示旧头像。
+- 我的页菜单新增 `身体数据`，进入 `app/profile/body-metrics.tsx` 记录体重、体脂和围度。
+- 当前小组由 `selectedGroupStore` 记录；我的页、头像页、训练档案、身体数据和成员设置均跟随当前小组。
 
 ## 2026-06-30 账号设置实现补充
 

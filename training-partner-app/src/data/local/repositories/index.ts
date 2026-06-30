@@ -1,4 +1,5 @@
 import { getDatabase } from '../db';
+import { SQLiteBodyMetricsRepository } from './bodyMetricsRepository';
 import { SQLiteExerciseRepository } from './exerciseRepository';
 import { SQLiteGroupRepository } from './groupRepository';
 import { SQLiteMemberRepository } from './memberRepository';
@@ -8,6 +9,7 @@ import { SQLiteWorkoutRepository } from './workoutRepository';
 
 export function createLocalRepositories() {
   return {
+    bodyMetricsRepository: new SQLiteBodyMetricsRepository(getDatabase),
     exerciseRepository: new SQLiteExerciseRepository(getDatabase),
     groupRepository: new SQLiteGroupRepository(getDatabase),
     memberRepository: new SQLiteMemberRepository(getDatabase),

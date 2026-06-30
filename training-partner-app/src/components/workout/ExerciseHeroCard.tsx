@@ -69,7 +69,7 @@ export function ExerciseHeroCard({ exercise, record, currentSetIndex, totalSets 
           </View>
           <View style={styles.setProgressTag}>
             <AppText style={styles.progressText} tone="inverse" variant="bodySmall" weight="900">
-              {currentSetIndex} / {totalSets}
+              第 {currentSetIndex} / {totalSets} 组
             </AppText>
           </View>
         </View>

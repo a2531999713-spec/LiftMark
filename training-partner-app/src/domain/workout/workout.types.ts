@@ -52,10 +52,11 @@ export type WorkoutSet = {
   actualWeight?: number;
   plannedReps?: number;
   actualReps?: number;
-  /** Legacy compatibility only. New training flows keep this hidden. */
+  /** Optional advanced record: self-reported effort from 1 to 10. */
   rpe?: number;
   /** Legacy compatibility only. New training flows keep this hidden. */
   rir?: number;
+  actualRestSeconds?: number;
   completed: boolean;
   skipped?: boolean;
   notes?: string;
@@ -104,7 +105,10 @@ export type WorkoutSessionDetail = {
 };
 
 export type SaveWorkoutSetInput = Partial<
-  Pick<WorkoutSet, 'actualWeight' | 'actualReps' | 'completed' | 'skipped' | 'notes'>
+  Pick<
+    WorkoutSet,
+    'actualWeight' | 'actualReps' | 'actualRestSeconds' | 'completed' | 'notes' | 'rpe' | 'skipped'
+  >
 > & {
   id: ID;
 };

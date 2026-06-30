@@ -1,4 +1,4 @@
-# Activation 模块原则
+﻿# Activation 模块原则
 
 更新时间：2026-06-12
 

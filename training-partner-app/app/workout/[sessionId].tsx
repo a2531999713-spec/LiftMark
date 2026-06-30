@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AuthGateSheets } from '@/components/auth';
+import { ExercisePickerSheet } from '@/components/exercises/ExercisePickerSheet';
 import { AppButton, AppText } from '@/components/ui';
 import { CompletedSetList } from '@/components/workout/CompletedSetList';
 import { CurrentSetRecorder } from '@/components/workout/CurrentSetRecorder';
@@ -19,17 +20,23 @@ import { ExerciseHeroCard } from '@/components/workout/ExerciseHeroCard';
 import { GroupMemberStrip } from '@/components/workout/GroupMemberStrip';
 import { RotationOrderCard } from '@/components/workout/RotationOrderCard';
 import { WorkoutProgressStrip } from '@/components/workout/WorkoutProgressStrip';
-import { WorkoutStatsBar } from '@/components/workout/WorkoutStatsBar';
+import { WorkoutLiveStatsBar } from '@/components/workout/WorkoutLiveStatsBar';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
-import { getWorkoutRecordInitialReps } from '@/domain/workout/workout.service';
+import {
+  checkShortWorkout,
+  getNextWorkoutSetForRotation,
+  getWorkoutExerciseSetProgress,
+  getWorkoutRecordInitialReps,
+} from '@/domain/workout/workout.service';
 import type {
   SaveWorkoutSetInput,
   WorkoutSessionDetail,
   WorkoutSet,
 } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { colors, radius, spacing } from '@/theme';
 
 function formatTimer(seconds: number): string {
@@ -68,8 +75,37 @@ function removeSet(detail: WorkoutSessionDetail | null, setId: string): WorkoutS
   };
 }
 
-function selectDisplaySet(memberSets: WorkoutSet[]): WorkoutSet | null {
-  return memberSets.find((set) => !set.completed && !set.skipped) ?? memberSets.at(-1) ?? null;
+type MemberRestTimerState = {
+  endTime: number;
+  isResting: boolean;
+  plannedSeconds?: number;
+  remaining: number;
+  sourceSetId?: string;
+  startedAt?: number;
+};
+
+function confirmExceptionalSetInput(weight: number, reps: number): Promise<boolean> {
+  const reasons: string[] = [];
+  if (weight > 1000) {
+    reasons.push(`重量为 ${weight}kg`);
+  }
+  if (reps === 0) {
+    reasons.push('次数为 0');
+  }
+  if (reps > 100) {
+    reasons.push(`次数为 ${reps}`);
+  }
+
+  if (reasons.length === 0) {
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve) => {
+    Alert.alert('确认本组数据？', `${reasons.join('、')}，请确认是否按当前数据保存。`, [
+      { text: '返回修改', style: 'cancel', onPress: () => resolve(false) },
+      { text: '确认保存', onPress: () => resolve(true) },
+    ]);
+  });
 }
 
 export default function WorkoutRoute() {
@@ -80,14 +116,16 @@ export default function WorkoutRoute() {
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
   const [exerciseMap, setExerciseMap] = useState<Record<string, Exercise>>({});
+  const [replacementExercises, setReplacementExercises] = useState<Exercise[]>([]);
   const [activeExerciseIndex, setActiveExerciseIndex] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [memberRestState, setMemberRestState] = useState<Record<string, { remaining: number; endTime: number; isResting: boolean }>>({});
+  const [memberRestState, setMemberRestState] = useState<Record<string, MemberRestTimerState>>({});
   const [isWorkoutReadyToFinish, setWorkoutReadyToFinish] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFinishing, setIsFinishing] = useState(false);
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
+  const [isReplaceSheetVisible, setReplaceSheetVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,26 +137,20 @@ export default function WorkoutRoute() {
   }, [detail?.session.startedAt]);
 
   useEffect(() => {
-    const activeRestMembers = Object.entries(memberRestState).filter(([, state]) => state.isResting && state.remaining > 0);
+    const activeRestMembers = Object.entries(memberRestState).filter(([, state]) => state.isResting);
     if (activeRestMembers.length === 0) {
       return;
     }
     const timer = setInterval(() => {
       setMemberRestState((prev) => {
         const next = { ...prev };
-        let hasActive = false;
         Object.entries(next).forEach(([memberId, state]) => {
           if (state.isResting && state.remaining > 0) {
             const remaining = Math.max(0, Math.ceil((state.endTime - Date.now()) / 1000));
-            if (remaining <= 0) {
-              next[memberId] = { ...state, remaining: 0, isResting: false };
-            } else {
-              next[memberId] = { ...state, remaining };
-              hasActive = true;
-            }
+            next[memberId] = { ...state, remaining };
           }
         });
-        return hasActive ? next : prev;
+        return next;
       });
     }, 250);
     return () => clearInterval(timer);
@@ -193,6 +225,28 @@ export default function WorkoutRoute() {
         });
         setDetail((current) => replaceSet(current, saved));
         setLastSavedAt(new Date().toISOString());
+        void enqueueSyncCandidate({
+          entityType: 'workoutSets',
+          localId: saved.id,
+          operation: 'update',
+          payload: {
+            actualReps: saved.actualReps,
+            actualRestSeconds: saved.actualRestSeconds,
+            actualWeight: saved.actualWeight,
+            completed: saved.completed,
+            exerciseRecordId: saved.exerciseRecordId,
+            memberId: saved.memberId,
+            notes: saved.notes,
+            plannedReps: saved.plannedReps,
+            plannedWeight: saved.plannedWeight,
+            rpe: saved.rpe,
+            sessionId: saved.sessionId,
+            setNumber: saved.setNumber,
+            skipped: saved.skipped,
+          },
+          status: 'pending_update',
+          updatedAt: saved.updatedAt,
+        }).catch(() => undefined);
         return saved;
       } catch (saveError) {
         setError(saveError instanceof Error ? saveError.message : '本组保存失败。');
@@ -203,7 +257,26 @@ export default function WorkoutRoute() {
     [guardFeature, repositories],
   );
 
-  const finishWorkout = useCallback(async () => {
+  const discardWorkout = useCallback(async () => {
+    if (!sessionId) {
+      return;
+    }
+    try {
+      await repositories.workoutRepository.deleteSession(sessionId);
+      router.replace('/(tabs)/today');
+    } catch (discardError) {
+      setError(discardError instanceof Error ? discardError.message : '放弃本次训练失败。');
+    }
+  }, [repositories, sessionId]);
+
+  const confirmDiscardWorkout = useCallback(() => {
+    Alert.alert('放弃本次训练？', '这会删除本次已经记录的组数据，且无法撤销。', [
+      { text: '取消', style: 'cancel' },
+      { text: '确认放弃', style: 'destructive', onPress: () => void discardWorkout() },
+    ]);
+  }, [discardWorkout]);
+
+  const saveCompletedWorkout = useCallback(async () => {
     if (!sessionId) {
       return;
     }
@@ -213,28 +286,110 @@ export default function WorkoutRoute() {
     if (!guardFeature('save_workout')) {
       return;
     }
+
     setIsFinishing(true);
     setError(null);
     try {
       await repositories.workoutRepository.finishSession(sessionId);
+      if (detail) {
+        void enqueueSyncCandidate({
+          entityType: 'workoutSessions',
+          localId: detail.session.id,
+          operation: 'update',
+          payload: {
+            date: detail.session.date,
+            groupId: detail.session.groupId,
+            planId: detail.session.planId,
+            status: 'completed',
+            title: detail.session.title,
+            trainingMode: detail.session.trainingMode,
+            week: detail.session.week,
+            weekday: detail.session.weekday,
+          },
+          status: 'pending_update',
+          updatedAt: new Date().toISOString(),
+        }).catch(() => undefined);
+      }
       router.replace({ pathname: '/workout/summary/[sessionId]', params: { sessionId } });
     } catch (finishError) {
       setError(finishError instanceof Error ? finishError.message : '完成训练失败。');
     } finally {
       setIsFinishing(false);
     }
-  }, [guardFeature, isFinishing, repositories, sessionId]);
+  }, [detail, guardFeature, isFinishing, repositories, sessionId]);
+
+  const finishWorkout = useCallback(async (options: { force?: boolean } = {}) => {
+    if (!sessionId) {
+      return;
+    }
+    if (isFinishing) {
+      return;
+    }
+    if (!guardFeature('save_workout')) {
+      return;
+    }
+
+    if (!options.force && detail) {
+      const completedSetCount = detail.sets.filter((set) => set.completed).length;
+      const completedExerciseCount = detail.exercises.filter((record) =>
+        detail.sets.some((set) => set.exerciseRecordId === record.id && set.completed),
+      ).length;
+      const currentTotalVolumeKg = detail.sets
+        .filter((set) => set.completed)
+        .reduce(
+          (sum, set) =>
+            sum + (set.actualWeight ?? set.plannedWeight ?? 0) * (set.actualReps ?? set.plannedReps ?? 0),
+          0,
+        );
+      const shortWorkout = checkShortWorkout({
+        completedExerciseCount,
+        completedSetCount,
+        elapsedSeconds,
+        totalExerciseCount: detail.exercises.length,
+        totalVolumeKg: currentTotalVolumeKg,
+      });
+
+      if (shortWorkout.shouldConfirm) {
+        Alert.alert(
+          '本次训练记录较少',
+          `当前${shortWorkout.reasons.join('、')}。是否仍然保存为正式训练记录？`,
+          [
+            { text: '继续训练', style: 'cancel' },
+            { text: '保存记录', onPress: () => void saveCompletedWorkout() },
+            { text: '放弃本次', style: 'destructive', onPress: confirmDiscardWorkout },
+          ],
+        );
+        return;
+      }
+    }
+
+    await saveCompletedWorkout();
+  }, [confirmDiscardWorkout, detail, elapsedSeconds, guardFeature, isFinishing, saveCompletedWorkout, sessionId]);
 
   const activeRecord = detail?.exercises[activeExerciseIndex] ?? null;
   const activeExercise = activeRecord ? exerciseMap[activeRecord.exerciseId] ?? null : null;
   const activeSets = activeRecord
     ? detail?.sets.filter((set) => set.exerciseRecordId === activeRecord.id) ?? []
     : [];
-  const completedSets = activeSets.filter((set) => set.completed).length;
-  const roundSets = members
-    .map((member) => activeSets.filter((set) => set.memberId === member.id).sort((a, b) => a.setNumber - b.setNumber))
-    .map(selectDisplaySet)
-    .filter((set): set is WorkoutSet => Boolean(set));
+  const memberOrder = useMemo(() => members.map((member) => member.id), [members]);
+  const exerciseSetProgress = activeRecord
+    ? getWorkoutExerciseSetProgress(activeSets, activeRecord.id)
+    : {
+        completedMemberSets: 0,
+        currentSetNumber: 0,
+        isComplete: false,
+        totalMemberSets: 0,
+        totalPlannedSets: 0,
+      };
+  const sortedActiveSets = [...activeSets].sort(
+    (left, right) =>
+      left.setNumber - right.setNumber ||
+      memberOrder.indexOf(left.memberId) - memberOrder.indexOf(right.memberId) ||
+      left.id.localeCompare(right.id),
+  );
+  const pendingRotationSet = activeRecord
+    ? getNextWorkoutSetForRotation(activeSets, memberOrder, activeRecord.id, activeMemberId ?? undefined)
+    : null;
   const membersById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const memberNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -252,6 +407,17 @@ export default function WorkoutRoute() {
       .filter((set) => set.completed)
       .reduce((sum, set) => sum + (set.actualWeight ?? set.plannedWeight ?? 0) * (set.actualReps ?? set.plannedReps ?? 0), 0);
   }, [detail]);
+  const completedSessionSets = useMemo(
+    () => detail?.sets.filter((set) => set.completed).length ?? 0,
+    [detail],
+  );
+  const totalSessionSets = detail?.sets.length ?? 0;
+  const averageRpe = useMemo(() => {
+    const values = detail?.sets
+      .filter((set) => set.completed && set.rpe !== undefined)
+      .map((set) => set.rpe as number) ?? [];
+    return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
+  }, [detail]);
 
   const exerciseProgressItems = useMemo(() => {
     if (!detail) return [];
@@ -262,17 +428,44 @@ export default function WorkoutRoute() {
     }));
   }, [detail, exerciseMap, activeExerciseIndex]);
 
-  const currentDisplaySet = activeMemberId
-    ? (roundSets.find((set) => set.memberId === activeMemberId) ?? roundSets[0] ?? null)
-    : (roundSets[0] ?? null);
+  const fallbackDisplaySet =
+    (activeMemberId
+      ? sortedActiveSets.filter((set) => set.memberId === activeMemberId).at(-1)
+      : sortedActiveSets.at(-1)) ??
+    sortedActiveSets.at(-1) ??
+    null;
+  const currentDisplaySet = pendingRotationSet ?? fallbackDisplaySet;
   const currentProfile = currentDisplaySet ? profiles[currentDisplaySet.memberId] ?? null : null;
   const currentIncrement = getWeightIncrement(currentProfile, activeExercise);
   const currentMemberId = currentDisplaySet?.memberId ?? members[0]?.id ?? '';
+  const previousCompletedWeightForCurrentSet = currentDisplaySet
+    ? [...activeSets]
+        .filter(
+          (set) =>
+            set.memberId === currentDisplaySet.memberId &&
+            set.completed &&
+            set.setNumber < currentDisplaySet.setNumber &&
+            set.actualWeight !== undefined &&
+            Number.isFinite(set.actualWeight),
+        )
+        .sort((left, right) => right.setNumber - left.setNumber)[0]?.actualWeight
+    : undefined;
   const completedActiveSets = [...activeSets]
     .filter((set) => set.completed && set.memberId === currentMemberId)
     .sort((left, right) => left.setNumber - right.setNumber);
-  const nextMemberIndex = (members.findIndex((m) => m.id === currentMemberId) + 1) % members.length;
-  const nextMemberName = members.length > 1 ? members[nextMemberIndex]?.displayName : undefined;
+  const activeSetsAfterCurrent = currentDisplaySet
+    ? activeSets.map((set) =>
+        set.id === currentDisplaySet.id ? { ...set, completed: true, skipped: false } : set,
+      )
+    : activeSets;
+  const nextPendingAfterCurrent =
+    activeRecord && currentDisplaySet
+      ? getNextWorkoutSetForRotation(activeSetsAfterCurrent, memberOrder, activeRecord.id)
+      : null;
+  const nextMemberName =
+    members.length > 1 && nextPendingAfterCurrent
+      ? membersById.get(nextPendingAfterCurrent.memberId)?.displayName
+      : undefined;
   function goNextExercise() {
     if (!detail) return;
     setMemberRestState({});
@@ -280,16 +473,41 @@ export default function WorkoutRoute() {
     setActiveExerciseIndex((index) => Math.min(detail.exercises.length - 1, index + 1));
   }
 
-  function skipMemberRest(memberId: string) {
+  async function completeMemberRest(memberId: string) {
+    const restState = memberRestState[memberId];
     setMemberRestState((prev) => ({
       ...prev,
       [memberId]: { remaining: 0, endTime: 0, isResting: false },
     }));
+
+    if (!restState?.sourceSetId || !restState.startedAt) {
+      return;
+    }
+
+    const sourceSet = detail?.sets.find((set) => set.id === restState.sourceSetId);
+    if (!sourceSet) {
+      return;
+    }
+
+    const actualRestSeconds = Math.max(0, Math.round((Date.now() - restState.startedAt) / 1000));
+    await saveSetPatch(sourceSet, { actualRestSeconds });
+    setActiveMemberId(null);
   }
 
   const currentMemberRest = memberRestState[currentMemberId];
   const isCurrentMemberResting = currentMemberRest?.isResting ?? false;
   const currentMemberRestSeconds = currentMemberRest?.remaining ?? 0;
+  const currentRestElapsedSeconds = currentMemberRest?.plannedSeconds
+    ? Math.max(0, currentMemberRest.plannedSeconds - currentMemberRestSeconds)
+    : 0;
+  const nextSetForCurrentMember = activeSets
+    .filter((set) => set.memberId === currentMemberId && set.setNumber > (currentDisplaySet?.setNumber ?? 0) && !set.skipped)
+    .sort((left, right) => left.setNumber - right.setNumber)[0];
+  const nextSetLabel = nextPendingAfterCurrent
+    ? `第 ${nextPendingAfterCurrent.setNumber} 组`
+    : nextSetForCurrentMember
+      ? `第 ${nextSetForCurrentMember.setNumber} 组`
+      : hasNextExercise ? '下一个动作' : '完成训练';
 
   async function completeCurrentRound() {
     if (isWorkoutReadyToFinish) {
@@ -298,11 +516,13 @@ export default function WorkoutRoute() {
     }
     const currentRestState = memberRestState[currentMemberId];
     if (currentRestState?.isResting) {
-      skipMemberRest(currentMemberId);
+      await completeMemberRest(currentMemberId);
       return;
     }
-    const targetSets = roundSets.filter((set) => !set.completed && !set.skipped && set.memberId === currentMemberId);
-    if (targetSets.length === 0) {
+    const targetSet = currentDisplaySet && !currentDisplaySet.completed && !currentDisplaySet.skipped
+      ? currentDisplaySet
+      : pendingRotationSet;
+    if (!targetSet) {
       if (hasNextExercise) {
         goNextExercise();
       } else {
@@ -310,32 +530,72 @@ export default function WorkoutRoute() {
       }
       return;
     }
-    const currentSetNumber = Math.min(...targetSets.map((set) => set.setNumber));
-    const hasNextSet = activeSets.some((set) => set.setNumber > currentSetNumber && !set.skipped && set.memberId === currentMemberId);
-    await Promise.all(
-      targetSets.map((set) =>
-        saveSetPatch(set, {
-          actualReps: set.actualReps ?? set.plannedReps ?? (activeRecord ? getWorkoutRecordInitialReps(activeRecord) : undefined),
-          actualWeight: set.actualWeight ?? set.plannedWeight,
-          completed: true,
-          skipped: false,
-        }),
-      ),
-    );
-    if (hasNextSet) {
-      const restSeconds = activeRecord?.plannedRestSeconds ?? 0;
-      if (restSeconds > 0) {
-        setMemberRestState((prev) => ({
-          ...prev,
-          [currentMemberId]: {
-            remaining: restSeconds,
-            endTime: Date.now() + restSeconds * 1000,
-            isResting: true,
-          },
-        }));
-      }
+
+    const previousCompletedWeight = [...activeSets]
+      .filter(
+        (set) =>
+          set.memberId === targetSet.memberId &&
+          set.completed &&
+          set.setNumber < targetSet.setNumber &&
+          set.actualWeight !== undefined &&
+          Number.isFinite(set.actualWeight),
+      )
+      .sort((left, right) => right.setNumber - left.setNumber)[0]?.actualWeight;
+    const actualWeight = targetSet.actualWeight ?? targetSet.plannedWeight ?? previousCompletedWeight;
+    const actualReps =
+      targetSet.actualReps ??
+      targetSet.plannedReps ??
+      (activeRecord ? getWorkoutRecordInitialReps(activeRecord) : undefined);
+
+    if (actualWeight === undefined || !Number.isFinite(actualWeight)) {
+      Alert.alert('请先填写重量', '当前组没有可用的建议重量，请填写实际重量后再保存。');
       return;
     }
+    if (actualReps === undefined || !Number.isInteger(actualReps) || actualReps < 0) {
+      Alert.alert('请先填写次数', '当前组次数必须是非负整数。');
+      return;
+    }
+    if (!(await confirmExceptionalSetInput(actualWeight, actualReps))) {
+      return;
+    }
+
+    const savedSet = await saveSetPatch(targetSet, {
+      actualReps,
+      actualWeight,
+      completed: true,
+      skipped: false,
+    });
+    if (!savedSet) {
+      Alert.alert('保存失败', '本组数据未保存，请重试。');
+      return;
+    }
+
+    const nextActiveSets = activeSets.map((set) => (set.id === savedSet.id ? savedSet : set));
+    const nextPendingSet = activeRecord
+      ? getNextWorkoutSetForRotation(nextActiveSets, memberOrder, activeRecord.id)
+      : null;
+    const restSeconds = activeRecord?.plannedRestSeconds ?? 0;
+    if (restSeconds > 0) {
+      const startedAt = Date.now();
+      setMemberRestState((prev) => ({
+        ...prev,
+        [savedSet.memberId]: {
+          remaining: restSeconds,
+          endTime: startedAt + restSeconds * 1000,
+          isResting: true,
+          plannedSeconds: restSeconds,
+          sourceSetId: savedSet.id,
+          startedAt,
+        },
+      }));
+    }
+
+    if (nextPendingSet) {
+      setWorkoutReadyToFinish(false);
+      setActiveMemberId(nextPendingSet.memberId);
+      return;
+    }
+
     if (hasNextExercise) {
       goNextExercise();
       return;
@@ -388,6 +648,57 @@ export default function WorkoutRoute() {
       }},
       { text: '结束训练', style: 'destructive', onPress: () => void finishWorkout() },
     ]);
+  }
+
+  async function openReplaceSheet() {
+    if (!activeRecord) return;
+    if (completedActiveSets.length > 0) {
+      Alert.alert('替换当前动作？', '当前动作已有完成组。替换只影响本次训练，历史分析会按替换后的动作统计。', [
+        { text: '取消', style: 'cancel' },
+        { text: '继续替换', onPress: () => void openReplaceSheetAfterConfirm() },
+      ]);
+      return;
+    }
+    await openReplaceSheetAfterConfirm();
+  }
+
+  async function openReplaceSheetAfterConfirm() {
+    if (!activeRecord) return;
+    const [exercises, alternatives] = await Promise.all([
+      repositories.exerciseRepository.listExercises(),
+      repositories.exerciseRepository.listAlternatives(activeRecord.exerciseId),
+    ]);
+    const alternativeIds = new Set(alternatives.map((item) => item.alternativeExerciseId));
+    setReplacementExercises(
+      exercises
+        .slice()
+        .sort(
+          (left, right) =>
+            Number(alternativeIds.has(right.id)) - Number(alternativeIds.has(left.id)) ||
+            left.name.localeCompare(right.name),
+        ),
+    );
+    setReplaceSheetVisible(true);
+  }
+
+  async function replaceCurrentExercise(exercise: Exercise) {
+    if (!activeRecord || !detail) return;
+    try {
+      await repositories.workoutRepository.updateExerciseRecordExercise(activeRecord.id, exercise.id);
+      const nextExercises = { ...exerciseMap, [exercise.id]: exercise };
+      setExerciseMap(nextExercises);
+      setDetail({
+        ...detail,
+        exercises: detail.exercises.map((record) =>
+          record.id === activeRecord.id
+            ? { ...record, exerciseId: exercise.id, replacedFromExerciseId: record.replacedFromExerciseId ?? record.exerciseId }
+            : record,
+        ),
+      });
+      setReplaceSheetVisible(false);
+    } catch (replaceError) {
+      setError(replaceError instanceof Error ? replaceError.message : '动作替换失败。');
+    }
   }
 
   return (
@@ -447,17 +758,20 @@ export default function WorkoutRoute() {
           {detail && activeRecord ? (
             <>
               <View style={styles.statsRow}>
-                <WorkoutStatsBar
+                <WorkoutLiveStatsBar
+                  averageRpe={averageRpe}
+                  completedSets={completedSessionSets}
                   elapsedLabel={formatTimer(elapsedSeconds)}
+                  totalSets={totalSessionSets}
                   totalVolumeKg={totalVolumeKg}
                 />
               </View>
 
               <ExerciseHeroCard
-                currentSetIndex={completedSets + 1}
+                currentSetIndex={exerciseSetProgress.currentSetNumber}
                 exercise={activeExercise}
                 record={activeRecord}
-                totalSets={activeSets.length}
+                totalSets={exerciseSetProgress.totalPlannedSets}
               />
 
               {members.length > 1 ? (
@@ -471,20 +785,29 @@ export default function WorkoutRoute() {
 
               {currentDisplaySet ? (
                 <CurrentSetRecorder
+                  key={currentDisplaySet.id}
                   exercise={activeExercise}
                   isResting={isCurrentMemberResting}
                   isWorkoutReadyToFinish={isWorkoutReadyToFinish}
                   memberName={membersById.get(currentDisplaySet.memberId)?.displayName ?? '成员'}
                   onCompleteSet={() => void completeCurrentRound()}
+                  onNotesChange={(v) => void saveSetPatch(currentDisplaySet, { notes: v })}
                   onRepsChange={(v) => void saveSetPatch(currentDisplaySet, { actualReps: v })}
-                  onSkipRest={() => skipMemberRest(currentMemberId)}
+                  onRpeChange={(v) => void saveSetPatch(currentDisplaySet, { rpe: v })}
+                  onSkipRest={() => void completeMemberRest(currentMemberId)}
                   onWeightChange={(v) => void saveSetPatch(currentDisplaySet, { actualWeight: v })}
+                  notes={currentDisplaySet.notes}
+                  plannedRestSeconds={currentMemberRest?.plannedSeconds ?? activeRecord.plannedRestSeconds}
                   profile={currentProfile}
                   record={activeRecord}
+                  restElapsedSeconds={currentRestElapsedSeconds}
                   restSeconds={currentMemberRestSeconds}
+                  rpe={currentDisplaySet.rpe}
+                  nextMemberName={nextMemberName}
+                  nextSetLabel={nextSetLabel}
                   reps={currentDisplaySet.actualReps ?? currentDisplaySet.plannedReps}
                   setNumber={currentDisplaySet.setNumber}
-                  weight={currentDisplaySet.actualWeight ?? currentDisplaySet.plannedWeight}
+                  weight={currentDisplaySet.actualWeight ?? currentDisplaySet.plannedWeight ?? previousCompletedWeightForCurrentSet}
                   weightIncrement={currentIncrement}
                 />
               ) : null}
@@ -565,12 +888,12 @@ export default function WorkoutRoute() {
               <View style={styles.auxDivider} />
               <Pressable
                 accessibilityRole="button"
-                disabled
-                style={[styles.auxButton, styles.auxButtonDisabled]}
+                onPress={() => void openReplaceSheet()}
+                style={styles.auxButton}
               >
-                <Ionicons color={colors.textSubtle} name="swap-horizontal-outline" size={16} />
-                <AppText tone="subtle" variant="caption">
-                  替换待开放
+                <Ionicons color={colors.darkMuted} name="swap-horizontal-outline" size={16} />
+                <AppText tone="muted" variant="caption">
+                  替换动作
                 </AppText>
               </Pressable>
               <View style={styles.auxDivider} />
@@ -588,6 +911,15 @@ export default function WorkoutRoute() {
           </View>
         ) : null}
       </View>
+      <ExercisePickerSheet
+        exercises={replacementExercises}
+        onClose={() => setReplaceSheetVisible(false)}
+        onCreateCustomExercise={(input) => repositories.exerciseRepository.createCustomExercise(input)}
+        onSelect={(exercise) => void replaceCurrentExercise(exercise)}
+        selectedExerciseIds={activeRecord ? [activeRecord.exerciseId] : []}
+        title="替换当前动作"
+        visible={isReplaceSheetVisible}
+      />
       <AuthGateSheets {...sheets} />
     </SafeAreaView>
   );

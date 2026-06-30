@@ -1,4 +1,4 @@
-# Export 模块实现文档
+﻿# Export 模块实现文档
 
 更新时间：2026-06-12  
 对应代码目录：`training-partner-app/`；设置页已接入基础 JSON 导出、训练记录导出、系统方案数据重置和 `.liftmark.json` 当前用户计划导出。

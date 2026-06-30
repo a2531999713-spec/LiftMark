@@ -360,6 +360,7 @@ export type WorkoutSetRow = {
   actual_reps: number | null;
   rpe: number | null;
   rir: number | null;
+  actual_rest_seconds?: number | null;
   completed: number;
   skipped: number;
   notes: string | null;
@@ -380,6 +381,7 @@ export function mapWorkoutSet(row: WorkoutSetRow): WorkoutSet {
     actualReps: row.actual_reps ?? undefined,
     rpe: row.rpe ?? undefined,
     rir: row.rir ?? undefined,
+    actualRestSeconds: row.actual_rest_seconds ?? undefined,
     completed: row.completed === 1,
     skipped: row.skipped === 1,
     notes: row.notes ?? undefined,

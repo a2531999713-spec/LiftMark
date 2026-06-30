@@ -1,4 +1,4 @@
-# Plan 模块实现文档
+﻿# Plan 模块实现文档
 
 更新时间：2026-06-30  
 对应代码目录：`training-partner-app/`

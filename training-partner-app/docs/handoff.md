@@ -1,4 +1,37 @@
-# LiftMark 项目交接记录
+﻿# LiftMark 项目交接记录
+
+## 2026-06-30 cloud-first-workout-history-stability 交接
+
+- 当前项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`；后端路径：`C:\Users\zhw\Documents\LiftMark\apps\liftmark-api`。
+- 架构方向：云端 PostgreSQL 为主数据源，本地 SQLite 为缓存、副本和弱网训练保障；不要再按“本机唯一真源”设计新功能。
+- 移动端新增 migration v10：同步元数据字段和 `local_sync_queue`；`src/sync/syncQueue.ts` / `src/sync/syncService.ts` 已能统计、入队、推送 `/api/sync/push` 并标记成功 / 失败。
+- 训练执行页：小组轮换按“set number 优先、成员顺序其次”；完成本组必须校验重量/次数并保存当前 set，保存失败不推进。
+- 短训练结束：完成动作少、组数少、时间少、总量为 0 或多数动作未完成时弹窗确认继续训练 / 保存记录 / 放弃本次。
+- 个人记录页：改为分析导向，支持动作筛选、日历当天记录和训练查询；点击日期不再触发整页 reload。
+- 小组记录：动作卡默认展示训练容量趋势；动作详情标题显示“动作 + 指标”。
+- 成员表单：删除解释区；保存按钮按变更和校验状态启用。
+- 图表：`MiniLineChart` / `MultiLineTrendChart` 横轴标签自动抽样，避免手机窄屏堆叠。
+- 下一步建议：把 groups、group_members、member_profiles、plan_templates、body_metrics 按现有 `SyncEntity` 契约逐步接入队列，并在后端补齐资源化 API 或扩展 `/sync/push` schema。
+
+## 2026-06-30 charts-body-groups-workout-replacement 交接
+
+- 当前项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`。
+- 图表：`MiniLineChart` / `MultiLineTrendChart` 已修复绘图区 padding、Y 轴比例、同值/全 0 安全范围、单位和空状态；周趋势使用日期或周起止日期。
+- 身体数据：`app/profile/body-metrics.tsx` 已重构为快速记录、折叠围度、目标设置、变化摘要、训练关联和趋势图；新增 `body_metric_goals` 和 migration v9。
+- 头像：根因是账号头像缓存与训练成员 profile 分表；账号头像更新/删除时同步当前小组第一位训练成员，训练、记录、小组分析统一使用 `Avatar`。
+- 多小组：`GroupRepository.listGroups()` 已接入小组页、今日、成员、记录、设置、头像和身体数据页；新建小组后可立即切换，旧训练记录保留原 `group_id`。
+- 小组记录：默认展示总览，动作表现选择器列出真实练过的 `exerciseId`，详情页按当前小组和真实动作 ID 过滤。
+- 训练执行：RPE 是可选折叠横向选择器；休息面板显示倒计时、建议休息、已休息、下一组和下一位，并保存实际休息秒数；训练中替换动作保留 `replaced_from_exercise_id`，不改原计划。
+- 已验证：`npx tsc --noEmit --pretty false`、`npm run lint`、`npm test -- --runInBand`。
+- 仍建议手工回归：多小组切换后的今日训练、记录页、成员页和身体数据页；头像重启后展示；训练中替换动作后历史详情的“由 A 替换为 B”；Android 预览安装启动。
+
+## 2026-06-30 my-secondary-pages-history-workout-body-metrics 交接
+
+- 当前项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`。
+- 已完成：二级页面统一 `SecondaryPageHeader`、头像默认成员同步、历史图表 Y 轴与训练次数轴、个人动作历史页、小组动作容量默认指标、训练 RPE/备注/实际休息、身体数据录入与趋势。
+- 数据迁移：migration v8 添加 `workout_sets.actual_rest_seconds` 和 `body_metrics`；新安装 schema 已同步。
+- 已验证：`npm run typecheck`、`npm run lint`、`npm test -- --runInBand`、`npm run android:preview`。
+- `android:preview` 已完成 release APK 构建、安装并通过 adb monkey 启动；仍建议手工检查二级页顶部、训练休息计时和身体数据页面的视觉细节。
 
 ## 2026-06-30 training-switch-onboarding-mainstream-plans 交接
 
@@ -8,7 +41,7 @@
 - 系统方案目录为主流计划库；旧四练 seed 和 migration 仅为历史兼容，不要作为新用户默认计划、推荐计划或系统方案展示。
 - 新用户登录后进入 `/onboarding/training-profile`，填写训练信息并使用 `recommendPlans()` 选择计划；使用后复制系统方案为用户计划并更新默认小组当前计划。
 - 头像统一走 `src/components/avatar/Avatar.tsx`，成员列表、训练首页、执行页、总结页和历史小组分析都应复用该组件。
-- 小组主项详情页为 `app/history/group-exercise/[exerciseId].tsx`，数据来自本机 SQLite session 明细，不显示旧强度字段。
+- 小组动作详情页为 `app/history/group-exercise/[exerciseId].tsx`，数据来自本机 SQLite session 明细，不显示旧强度字段。
 - 退出登录只保留在 `app/account/settings.tsx`，确认后清理账号 session 并跳转登录页，不删除本机训练记录。
 
 ## 2026-06-29 auth-code-home-scope-consent 交接
@@ -76,7 +109,7 @@
 - 计划导入已接入 `.liftmark.json` 文件选择、校验、ID 重映射和 SQLite 落库；导入结果为 `source: "imported"` 的用户计划，可选择设为当前计划。
 - 系统方案新增只读模板“经典三分化 PPL”，用户必须通过“使用此方案”复制为我的计划后才能训练。
 - 训练页当前计划卡可打开“切换计划”弹层，只列出我的计划；切换不会修改历史训练记录。
-- 记录页最近训练改为摘要卡，点击进入 `app/history/[sessionId].tsx`。
+- 记录页训练查询改为摘要卡，点击进入 `app/history/[sessionId].tsx`。
 - 当前 Git 根目录检查结果：仓库根在 `C:\Users\zhw\Documents\LiftMark`，项目内没有单独 `.git`，未发现 `training-partner-app\training-partner-app` 嵌套残留；仓库当前追踪内容仍位于 `training-partner-app/` 下和根 `.gitignore`。
 - 本次新增依赖：`expo-document-picker`、`expo-file-system`，已通过 `npx expo install` 写入 package 文件。
 

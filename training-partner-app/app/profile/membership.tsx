@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SecondaryPageHeader, SettingsRow, Tag } from '@/components/ui';
 import { getMembership, type Membership } from '@/services/membershipService';
 import { useAuthStore } from '@/store/authStore';
 import { useAuthGate } from '@/hooks/useAuthGate';
@@ -43,7 +43,14 @@ export default function ProfileMembershipRoute() {
   const showDeveloping = (title: string) => setNotice({ title, message: '该功能正在开发中，后续版本开放。' });
 
   return (
-    <Screen safeTop={false}>
+    <Screen>
+      <SecondaryPageHeader
+        caption="会员与激活"
+        icon="diamond-outline"
+        meta={isLoggedIn ? '账号权益' : '需登录'}
+        subtitle="免费版保留真实训练能力，高级能力按账号权益逐步开放。"
+        title="权益状态"
+      />
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="会员状态加载失败" description={error} actionLabel="重新加载" onActionPress={() => void load()} /> : null}
 

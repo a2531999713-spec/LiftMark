@@ -72,7 +72,6 @@ export default function ManualHistoryRoute() {
   const [setCount, setSetCount] = useState('3');
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('8');
-  const [restSeconds, setRestSeconds] = useState('');
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -155,12 +154,10 @@ export default function ManualHistoryRoute() {
       const parsedSetCount = parseOptionalInteger(setCount);
       const parsedReps = parseOptionalInteger(reps);
       const parsedWeight = parseOptionalNumber(weight);
-      const parsedRestSeconds = parseOptionalInteger(restSeconds);
 
       assertOptionalRange('组数', parsedSetCount, 1);
       assertOptionalRange('次数', parsedReps, 0);
       assertOptionalRange('重量', parsedWeight, 0);
-      assertOptionalRange('休息时间', parsedRestSeconds, 0);
 
       const session = await repositories.workoutRepository.createManualSession({
         completed: true,
@@ -170,7 +167,7 @@ export default function ManualHistoryRoute() {
         memberId: selectedMemberId,
         planId: group.activePlanId,
         reps: parsedReps,
-        restSeconds: parsedRestSeconds ?? null,
+        restSeconds: null,
         setCount: parsedSetCount ?? 1,
         title,
         weight: parsedWeight,
@@ -179,7 +176,7 @@ export default function ManualHistoryRoute() {
       setNotice({
         sessionId: session.id,
         title: '已保存',
-        message: '历史训练已保存。休息时间留空不会影响训练量、PR 或估算 1RM。',
+        message: '历史训练已保存，可在记录详情中查看本次组数、重量和次数。',
       });
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存补录训练失败。');
@@ -200,7 +197,7 @@ export default function ManualHistoryRoute() {
             icon="create-outline"
             imageSource={liftmarkImages.historyHero}
             minHeight={154}
-            subtitle="补录只修改训练记录，不会改动原训练计划。休息时间可以留空。"
+            subtitle="补录只修改训练记录，不会改动原训练计划。"
             title="保存过去完成的训练"
           />
 
@@ -273,11 +270,7 @@ export default function ManualHistoryRoute() {
               <Field label="组数" onChangeText={setSetCount} value={setCount} />
               <Field label="重量 kg" onChangeText={setWeight} placeholder="可留空" value={weight} />
               <Field label="次数" onChangeText={setReps} value={reps} />
-              <Field label="休息秒" onChangeText={setRestSeconds} placeholder="可留空" value={restSeconds} />
             </View>
-            <AppText tone="muted" variant="caption">
-              休息时间留空不影响训练量、PR 和估算 1RM，也不会参与密度或疲劳分析。
-            </AppText>
           </AppCard>
 
           <AppButton disabled={isSaving} icon="save-outline" onPress={() => void saveManualSession()} size="lg">

@@ -2,8 +2,11 @@ import { describe, expect, it } from '@jest/globals';
 
 import type { PlanExercise } from '@/domain/plan/plan.types';
 import {
+  checkShortWorkout,
+  getNextWorkoutSetForRotation,
   getPlanExerciseInitialReps,
   getPlanExerciseSetCount,
+  getWorkoutExerciseSetProgress,
   getWorkoutRecordInitialReps,
   summarizeWorkoutSets,
 } from '@/domain/workout/workout.service';
@@ -79,10 +82,72 @@ describe('workout domain rules', () => {
     });
   });
 
+  it('rotates group workout by set number before member order', () => {
+    const sets = [
+      createSet({ id: 'zhang_1', memberId: 'zhang', setNumber: 1, completed: true }),
+      createSet({ id: 'zhang_2', memberId: 'zhang', setNumber: 2 }),
+      createSet({ id: 'li_1', memberId: 'li', setNumber: 1 }),
+      createSet({ id: 'li_2', memberId: 'li', setNumber: 2 }),
+    ];
+
+    expect(getNextWorkoutSetForRotation(sets, ['zhang', 'li'], 'record_1')?.id).toBe('li_1');
+    expect(
+      getNextWorkoutSetForRotation(
+        sets.map((set) => (set.id === 'li_1' ? { ...set, completed: true } : set)),
+        ['zhang', 'li'],
+        'record_1',
+      )?.id,
+    ).toBe('zhang_2');
+  });
+
+  it('reports current planned set separately from total participant sets', () => {
+    const progress = getWorkoutExerciseSetProgress(
+      [
+        createSet({ id: 'zhang_1', memberId: 'zhang', setNumber: 1, completed: true }),
+        createSet({ id: 'li_1', memberId: 'li', setNumber: 1, completed: true }),
+        createSet({ id: 'zhang_2', memberId: 'zhang', setNumber: 2 }),
+        createSet({ id: 'li_2', memberId: 'li', setNumber: 2 }),
+      ],
+      'record_1',
+    );
+
+    expect(progress).toEqual({
+      completedMemberSets: 2,
+      currentSetNumber: 2,
+      isComplete: false,
+      totalMemberSets: 4,
+      totalPlannedSets: 2,
+    });
+  });
+
   it('rejects invalid live set inputs', () => {
     expect(() => validateWorkoutSetInput({ id: 'set_1', actualWeight: -1 })).toThrow();
+    expect(() => validateWorkoutSetInput({ id: 'set_1', actualWeight: Number.NaN })).toThrow();
+    expect(() => validateWorkoutSetInput({ id: 'set_1', actualWeight: Number.POSITIVE_INFINITY })).toThrow();
     expect(() => validateWorkoutSetInput({ id: 'set_1', actualReps: -1 })).toThrow();
     expect(() => validateWorkoutSetInput({ id: 'set_1', actualReps: 4.5 })).toThrow();
     expect(() => validateWorkoutSetInput({ id: 'set_1', actualWeight: 97.5, actualReps: 5 })).not.toThrow();
+  });
+
+  it('asks for confirmation before saving short workout records', () => {
+    expect(
+      checkShortWorkout({
+        completedExerciseCount: 1,
+        completedSetCount: 2,
+        elapsedSeconds: 180,
+        totalExerciseCount: 6,
+        totalVolumeKg: 1200,
+      }).shouldConfirm,
+    ).toBe(true);
+
+    expect(
+      checkShortWorkout({
+        completedExerciseCount: 4,
+        completedSetCount: 12,
+        elapsedSeconds: 2400,
+        totalExerciseCount: 6,
+        totalVolumeKg: 12000,
+      }).shouldConfirm,
+    ).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-# Training Record 模块实现文档
+﻿# Training Record 模块实现文档
 
 更新时间：2026-06-14
 

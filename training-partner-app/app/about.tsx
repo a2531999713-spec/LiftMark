@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { useCallback } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
 
-import { AppText, Screen } from '@/components/ui';
+import { AppText, Screen, SecondaryPageHeader } from '@/components/ui';
 import { ProfileMenuItem, ProfileSection } from '@/components/profile';
 import { colors, radius, spacing } from '@/theme';
 
@@ -15,7 +15,14 @@ export default function AboutRoute() {
   }, []);
 
   return (
-    <Screen contentStyle={styles.screen} safeTop={false}>
+    <Screen contentStyle={styles.screen}>
+      <SecondaryPageHeader
+        caption="关于练刻"
+        icon="information-circle-outline"
+        meta={`v${Constants.expoConfig?.version ?? '0.1.0'}`}
+        subtitle="云端优先、弱网可用的力量训练计划执行器，服务多人轮换和训练记录。"
+        title="练刻 LiftMark"
+      />
       <View style={styles.hero}>
         <View style={styles.logoMark}>
           <AppText variant="headline" weight="900" style={styles.logoText}>练刻</AppText>

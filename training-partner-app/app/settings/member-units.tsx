@@ -8,6 +8,7 @@ import { AppCard, AppText, EmptyState, Screen } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
 type MemberUnitRow = {
@@ -22,6 +23,8 @@ function formatIncrement(value: number | undefined, fallback: number): string {
 export default function SettingsMemberUnitsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [rows, setRows] = useState<MemberUnitRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,9 +35,13 @@ export default function SettingsMemberUnitsRoute() {
 
     try {
       await initializeLocalDatabase();
-      const group = await repositories.groupRepository.getDefaultGroup();
+      const groups = await repositories.groupRepository.listGroups();
+      const group = groups.find((item) => item.id === selectedGroupId) ?? groups[0] ?? null;
       if (!group) {
         throw new Error('默认小组尚未初始化。');
+      }
+      if (group.id !== selectedGroupId) {
+        setSelectedGroupId(group.id);
       }
 
       const members = await repositories.memberRepository.listMembers(group.id);
@@ -50,7 +57,7 @@ export default function SettingsMemberUnitsRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories]);
+  }, [repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

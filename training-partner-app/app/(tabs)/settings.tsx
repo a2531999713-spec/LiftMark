@@ -15,11 +15,14 @@ import {
   type AccountProfileCache,
 } from '@/services/avatar';
 import { useAuthStore } from '@/store/authStore';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, spacing } from '@/theme';
 
 export default function SettingsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { isLoading: isAuthLoading, loadCurrentUser, user } = useAuthStore();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profilesByMemberId, setProfilesByMemberId] = useState<Record<string, MemberProfile | null>>({});
@@ -46,9 +49,13 @@ export default function SettingsRoute() {
       await initializeLocalDatabase();
       await loadCurrentUser();
       const latestUser = useAuthStore.getState().user;
-      const nextGroup = await repositories.groupRepository.getDefaultGroup();
+      const groups = await repositories.groupRepository.listGroups();
+      const nextGroup = groups.find((item) => item.id === selectedGroupId) ?? groups[0] ?? null;
       if (!nextGroup) {
         throw new Error('默认小组尚未初始化。');
+      }
+      if (nextGroup.id !== selectedGroupId) {
+        setSelectedGroupId(nextGroup.id);
       }
 
       const [nextMembers, nextPlan, nextAccountProfile] = await Promise.all([
@@ -73,7 +80,7 @@ export default function SettingsRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [loadCurrentUser, repositories]);
+  }, [loadCurrentUser, repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -86,8 +93,20 @@ export default function SettingsRoute() {
     const result = await updateAccountAvatarFromPicker(user, 'library');
     if (result.ok) {
       setAccountProfile(result.profile);
+      if (currentMember) {
+        const nextProfile = await repositories.memberRepository.updateProfile(currentMember.id, {
+          avatarLocalUri: result.profile.avatarLocalUri,
+          avatarThumbUrl: result.profile.avatarThumbUrl,
+          avatarUpdatedAt: result.profile.avatarUpdatedAt,
+          avatarUrl: result.profile.avatarUrl,
+        });
+        setProfilesByMemberId((current) => ({
+          ...current,
+          [currentMember.id]: nextProfile,
+        }));
+      }
     }
-  }, [user]);
+  }, [currentMember, repositories, user]);
 
   return (
     <Screen contentStyle={styles.screen}>
@@ -129,6 +148,12 @@ export default function SettingsRoute() {
               icon="person-outline"
               label="训练档案"
               onPress={() => router.push('/profile/training-identity' as never)}
+            />
+            <ProfileMenuItem
+              description="体重、体脂和围度趋势"
+              icon="body-outline"
+              label="身体数据"
+              onPress={() => router.push('/profile/body-metrics' as never)}
             />
             <ProfileMenuItem
               description="管理训练成员和角色"

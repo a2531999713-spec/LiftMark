@@ -1,7 +1,14 @@
-# Member 模块实现文档
+﻿# Member 模块实现文档
 
 更新时间：2026-06-30  
 对应代码目录：`training-partner-app/`；已实现成员列表、新增成员、编辑成员、MemberProfile 表单、1RM 输入、加重单位设置和成员头像展示。
+
+## 2026-06-30 补充：成员表单保存状态
+
+- `src/components/members/MemberForm.tsx` 删除“这些数据会用于什么”解释区，成员资料页只保留基础信息、训练参数和加重单位。
+- 表单使用 React Hook Form `mode: 'onChange'`，保存按钮必须满足“有变更 + 校验通过 + 非保存中”才可点击。
+- 未修改的编辑表单按钮显示“已保存”并禁用；新建表单未填写时显示“填写后可保存”并禁用；保存中显示“保存中...”。
+- 后续不得把保存按钮做成一直高亮可点的固定误触入口。
 
 ## 1. 模块职责
 
@@ -46,7 +53,7 @@
 文件：见主要文件列表  
 符号：`MemberRepository.getMemberProfile`  
 搜索锚点：`MemberRepository`  
-职责：读取成员 1RM、体重和加重单位。  
+职责：读取成员 1RM、体重、加重单位和头像字段。  
 调用方：workout, history, progression, export  
 依赖：group, weight  
 测试：见 `test-plan.md`  
@@ -109,6 +116,8 @@
 
 `MemberProfile` 中的头像字段只代表训练成员头像。账号头像由 `src/services/avatar/*` 和 `account_profile_cache` 维护。
 
+头像根因说明：我的页账号头像展示优先读 `account_profile_cache`，但训练执行、训练首页、记录和小组分析按成员读取 `member_profiles`。因此只更新账号缓存不会让训练相关页面自动变化；当前实现会在账号头像更新/删除时同步当前小组第一位训练成员的 profile 头像字段，UI 层统一使用 `Avatar` 组件解析本地路径、缩略图 URL、远程 URL 和成员兜底头像。
+
 ## 5. 调用关系
 
 - 依赖：group, weight
@@ -143,3 +152,4 @@
 - 2026-06-15：本地小组成员上限从 4 调整为 5，并集中到 `src/config/appLimits.ts`。
 - 2026-06-28：成员档案增加头像 URL、缩略图、本地缓存路径和更新时间字段；账号头像与成员头像分离，SQLite 不保存图片二进制或 Base64。
 - 2026-06-30：训练执行轮换顺序卡接入成员 profile 头像；训练现场不再只依赖 `GroupMember.avatarUrl` 或姓名首字。
+- 2026-06-30：成员列表、新增成员、成员编辑、加重单位、训练档案和身体数据入口改为跟随 `selectedGroupStore` 当前小组。

@@ -3,20 +3,22 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { EmptyState } from '@/components/common/EmptyState';
-import { Screen } from '@/components/common/Screen';
+import { EmptyState, Screen, SecondaryPageHeader } from '@/components/ui';
 import { MemberForm } from '@/components/members/MemberForm';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { MemberFormValues } from '@/domain/member/member.validation';
 import { canAddGroupMember, MAX_GROUP_MEMBERS } from '@/domain/member/member.validation';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors } from '@/theme/colors';
 
 export default function NewMemberRoute() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
   const [memberCount, setMemberCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -32,14 +34,18 @@ export default function NewMemberRoute() {
 
       try {
         await initializeLocalDatabase();
-        const defaultGroup = await repositories.groupRepository.getDefaultGroup();
-        if (!defaultGroup) {
+        const groups = await repositories.groupRepository.listGroups();
+        const currentGroup = groups.find((item) => item.id === selectedGroupId) ?? groups[0] ?? null;
+        if (!currentGroup) {
           throw new Error('默认小组尚未初始化。');
         }
+        if (currentGroup.id !== selectedGroupId) {
+          setSelectedGroupId(currentGroup.id);
+        }
 
-        const members = await repositories.memberRepository.listMembers(defaultGroup.id);
+        const members = await repositories.memberRepository.listMembers(currentGroup.id);
         if (isMounted) {
-          setGroup(defaultGroup);
+          setGroup(currentGroup);
           setMemberCount(members.length);
         }
       } catch (loadError) {
@@ -58,7 +64,7 @@ export default function NewMemberRoute() {
     return () => {
       isMounted = false;
     };
-  }, [repositories]);
+  }, [repositories, selectedGroupId, setSelectedGroupId]);
 
   const handleSubmit = useCallback(
     async (values: MemberFormValues) => {
@@ -102,7 +108,14 @@ export default function NewMemberRoute() {
   const canCreateMember = canAddGroupMember(memberCount);
 
   return (
-    <Screen subtitle="创建训练搭子，并保存当前训练参数。">
+    <Screen>
+      <SecondaryPageHeader
+        caption="小组成员"
+        icon="person-add-outline"
+        meta={`${memberCount}/${MAX_GROUP_MEMBERS}`}
+        subtitle="创建训练搭子，并保存常用训练参数。"
+        title="新增成员"
+      />
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
 
       {error ? <EmptyState title="成员表单出错" description={error} /> : null}

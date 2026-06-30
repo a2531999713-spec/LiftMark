@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { LogoutButton, ProfileMenuItem, ProfileSection } from '@/components/profile';
-import { AppText, Screen } from '@/components/ui';
+import { AppText, Screen, SecondaryPageHeader } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
 import { colors, radius, spacing } from '@/theme';
 
@@ -24,7 +24,14 @@ export default function AccountSettingsRoute() {
   }, [logout]);
 
   return (
-    <Screen safeTop={false}>
+    <Screen>
+      <SecondaryPageHeader
+        caption="账号设置"
+        icon="shield-checkmark-outline"
+        subtitle="安全、权益和退出登录集中在这里，本机训练记录独立保留。"
+        tag="账号"
+        title="登录与权益状态"
+      />
       <ProfileSection icon="shield-checkmark-outline" title="安全与权益">
         <ProfileMenuItem
           description="手机号、密码、登录设备"

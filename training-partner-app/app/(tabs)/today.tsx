@@ -36,6 +36,8 @@ import type {
 } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { useAuthStore } from '@/store/authStore';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
+import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { colors, radius, shadows, spacing } from '@/theme';
 
 type NoticeState = {
@@ -400,6 +402,8 @@ export default function TodayRoute() {
   const todayWeekday = useMemo(() => getTodayWeekday(), []);
   const { guardFeature, sheets } = useAuthGate();
   const authStatus = useAuthStore((state) => state.authStatus);
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [recoveryMode, setRecoveryMode] = useState<RecoveryMode>('good');
   const [todayPlan, setTodayPlan] = useState<TodayPlanResult | null>(null);
   const [activePlan, setActivePlan] = useState<PlanTemplate | null>(null);
@@ -431,7 +435,8 @@ export default function TodayRoute() {
 
     try {
       await initializeLocalDatabase();
-      const nextGroup = await repositories.groupRepository.getDefaultGroup();
+      const allGroups = await repositories.groupRepository.listGroups();
+      const nextGroup = allGroups.find((item) => item.id === selectedGroupId) ?? allGroups[0] ?? null;
       if (!nextGroup) {
         setGroup(null);
         setActivePlan(null);
@@ -445,6 +450,9 @@ export default function TodayRoute() {
         setExerciseMap({});
         setWeeklyOverview(emptyWeeklyOverview);
         return;
+      }
+      if (nextGroup.id !== selectedGroupId) {
+        setSelectedGroupId(nextGroup.id);
       }
 
       const [nextActivePlan, nextMembers] = await Promise.all([
@@ -540,7 +548,7 @@ export default function TodayRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories, recoveryMode, selectedWeek, selectedWeekday, todayWeekday]);
+  }, [repositories, recoveryMode, selectedGroupId, selectedWeek, selectedWeekday, setSelectedGroupId, todayWeekday]);
 
   useFocusEffect(
     useCallback(() => {
@@ -655,6 +663,24 @@ export default function TodayRoute() {
   const createWorkoutSession = useCallback(
     async (input: CreateSessionFromTodayPlanInput) => {
       const session = await repositories.workoutRepository.createSessionFromTodayPlan(input);
+      void enqueueSyncCandidate({
+        entityType: 'workoutSessions',
+        localId: session.id,
+        operation: 'create',
+        payload: {
+          date: session.date,
+          groupId: session.groupId,
+          phaseId: session.phaseId,
+          planId: session.planId,
+          status: session.status,
+          title: session.title,
+          trainingMode: session.trainingMode,
+          week: session.week,
+          weekday: session.weekday,
+        },
+        status: 'pending_create',
+        updatedAt: session.updatedAt,
+      }).catch(() => undefined);
       setScopeSheetVisible(false);
       setConflictingSession(null);
       setPendingWorkoutStart(null);

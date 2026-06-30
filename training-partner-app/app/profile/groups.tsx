@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SettingsRow } from '@/components/ui';
@@ -9,6 +9,7 @@ import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, GroupMemberRole } from '@/domain/member/member.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, spacing } from '@/theme';
 
 type NoticeState = {
@@ -26,25 +27,37 @@ function roleLabel(role: GroupMemberRole) {
 export default function ProfileGroupsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [plan, setPlan] = useState<PlanTemplate | null>(null);
+  const [newGroupName, setNewGroupName] = useState('');
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [isCreateVisible, setCreateVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preferredGroupId?: string) => {
     setIsLoading(true);
     setError(null);
     try {
       await initializeLocalDatabase();
-      const nextGroup = await repositories.groupRepository.getDefaultGroup();
+      const nextGroups = await repositories.groupRepository.listGroups();
+      const fallbackGroup = nextGroups[0] ?? null;
+      const nextGroup =
+        nextGroups.find((item) => item.id === (preferredGroupId ?? selectedGroupId)) ?? fallbackGroup;
       if (!nextGroup) throw new Error('默认小组尚未初始化。');
       const [nextMembers, nextPlan] = await Promise.all([
         repositories.memberRepository.listMembers(nextGroup.id),
         repositories.planRepository.getPlanById(nextGroup.activePlanId),
       ]);
+      if (!selectedGroupId || selectedGroupId !== nextGroup.id) {
+        setSelectedGroupId(nextGroup.id);
+      }
       setGroup(nextGroup);
+      setGroups(nextGroups);
       setMembers(nextMembers);
       setPlan(nextPlan);
     } catch (loadError) {
@@ -52,7 +65,7 @@ export default function ProfileGroupsRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories]);
+  }, [repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -60,7 +73,34 @@ export default function ProfileGroupsRoute() {
     }, [load]),
   );
 
-  const showDeveloping = (title: string) => setNotice({ title, message: '该功能正在开发中，后续版本开放。' });
+  const createGroup = async () => {
+    if (!group) return;
+    const name = newGroupName.trim();
+    if (!name) {
+      setNotice({ title: '小组名称不能为空', message: '请输入 2-12 个字的小组名称。' });
+      return;
+    }
+
+    try {
+      const created = await repositories.groupRepository.createGroup({
+        activePlanId: group.activePlanId,
+        currentPhaseType: group.currentPhaseType,
+        currentWeek: group.currentWeek,
+        fridayEnabled: group.fridayEnabled,
+        fridayStrategy: group.fridayStrategy,
+        name,
+      });
+      setNewGroupName('');
+      setCreateVisible(false);
+      setSelectedGroupId(created.id);
+      await load(created.id);
+    } catch (createError) {
+      setNotice({
+        title: '创建小组失败',
+        message: createError instanceof Error ? createError.message : '请稍后重试。',
+      });
+    }
+  };
 
   return (
     <Screen safeTop={false}>
@@ -86,9 +126,14 @@ export default function ProfileGroupsRoute() {
           </AppCard>
 
           <AppCard style={styles.memberCard}>
-            <AppText variant="bodySmall" weight="900">
-              成员列表
-            </AppText>
+            <View style={styles.headerRow}>
+              <AppText variant="bodySmall" weight="900">
+                当前小组成员
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                {group?.name}
+              </AppText>
+            </View>
             {members.map((member) => (
               <SettingsRow key={member.id} label={member.displayName} value={roleLabel(member.role)} />
             ))}
@@ -99,6 +144,39 @@ export default function ProfileGroupsRoute() {
             ) : null}
           </AppCard>
 
+          <AppCard style={styles.memberCard}>
+            <AppText variant="bodySmall" weight="900">
+              切换小组
+            </AppText>
+            {groups.map((item) => (
+              <Pressable
+                accessibilityRole="button"
+                key={item.id}
+                onPress={() => {
+                  setSelectedGroupId(item.id);
+                  void load(item.id);
+                }}
+                style={({ pressed }) => [
+                  styles.groupRow,
+                  item.id === group?.id && styles.groupRowActive,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <View style={styles.headerText}>
+                  <AppText numberOfLines={1} variant="bodySmall" weight="900">
+                    {item.name}
+                  </AppText>
+                  <AppText tone="muted" variant="caption">
+                    第 {item.currentWeek} 周 · {item.activePlanId === group?.activePlanId ? '当前计划一致' : '独立计划'}
+                  </AppText>
+                </View>
+                <AppText tone={item.id === group?.id ? 'brand' : 'muted'} variant="caption" weight="900">
+                  {item.id === group?.id ? '当前' : '切换'}
+                </AppText>
+              </Pressable>
+            ))}
+          </AppCard>
+
           <View style={styles.actions}>
             <AppButton
               onPress={() => {
@@ -107,12 +185,9 @@ export default function ProfileGroupsRoute() {
             >
               管理成员
             </AppButton>
-            <AppButton onPress={() => showDeveloping('切换小组')} variant="secondary">
-              切换小组
-            </AppButton>
             <AppButton
               onPress={() => {
-                if (guardFeature('create_group', { groupCount: group ? 1 : 0 })) showDeveloping('创建小组');
+                if (guardFeature('create_group', { groupCount: groups.length })) setCreateVisible(true);
               }}
               variant="secondary"
             >
@@ -132,6 +207,29 @@ export default function ProfileGroupsRoute() {
         <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
       </AppModalSheet>
 
+      <AppModalSheet
+        onClose={() => setCreateVisible(false)}
+        position="center"
+        subtitle="新小组会沿用当前计划指针，但成员和训练记录从空开始。"
+        title="创建新小组"
+        visible={isCreateVisible}
+      >
+        <TextInput
+          autoFocus
+          onChangeText={setNewGroupName}
+          placeholder="例如：周末训练组"
+          placeholderTextColor={colors.textSubtle}
+          style={styles.input}
+          value={newGroupName}
+        />
+        <View style={styles.modalActions}>
+          <AppButton onPress={() => setCreateVisible(false)} variant="secondary">
+            取消
+          </AppButton>
+          <AppButton onPress={() => void createGroup()}>创建并切换</AppButton>
+        </View>
+      </AppModalSheet>
+
       <AuthGateSheets {...sheets} />
     </Screen>
   );
@@ -143,6 +241,20 @@ const styles = StyleSheet.create({
   },
   card: {
     gap: spacing.md,
+  },
+  groupRow: {
+    alignItems: 'center',
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  groupRowActive: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
   },
   headerRow: {
     alignItems: 'flex-start',
@@ -157,5 +269,21 @@ const styles = StyleSheet.create({
   },
   memberCard: {
     gap: spacing.sm,
+  },
+  input: {
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    color: colors.text,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  pressed: {
+    opacity: 0.72,
   },
 });

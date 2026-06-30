@@ -1,4 +1,4 @@
-# Recovery 模块实现文档
+﻿# Recovery 模块实现文档
 
 更新时间：2026-06-30  
 对应代码目录：`training-partner-app/`；已实现恢复评分引擎，并将 A/B/C 过滤以“动作筛选”接入今日训练和 session 创建。

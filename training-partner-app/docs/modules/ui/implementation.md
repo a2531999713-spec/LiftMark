@@ -7,7 +7,12 @@
 - `app/(tabs)/plan.tsx`：系统方案改为计划库弹层，主界面只保留计划库入口。
 - `app/history/[sessionId].tsx`：历史详情默认只读，编辑和删除收进更多操作。
 - `app/onboarding/training-profile.tsx`：四步训练资料和推荐计划流程。
-- `app/history/group-exercise/[exerciseId].tsx`：小组主项详情页，支持指标、时间范围、成员筛选和多成员趋势线，页面内轻量返回，不展示默认 Stack 标题。
+- `app/history/group-exercise/[exerciseId].tsx`：小组动作详情页，支持指标、时间范围、成员筛选和多成员趋势线，页面内轻量返回，不展示默认 Stack 标题。
+- `app/(tabs)/history.tsx`：个人记录页采用分析导向结构，包含动作筛选、趋势、日历当天记录和训练查询，不再以近期训练流水作为主模块。
+- `app/profile/body-metrics.tsx`：身体数据页重构为快速记录、折叠围度、目标设置、变化摘要、训练关联和趋势图。
+- `src/components/ui/MiniLineChart.tsx`、`src/components/ui/MultiLineTrendChart.tsx`：修复 Y 轴比例、绘图区 padding、同值/全 0 安全范围、单位、空状态和横轴标签自动抽样；默认最多显示 5 个横轴标签，首尾保留。
+- `src/components/members/MemberForm.tsx`：删除解释说明卡，保存按钮按表单变更、校验状态和保存中状态启用。
+- `src/components/workout/RpeSelector.tsx`、`src/components/workout/RestTimerPanel.tsx`：RPE 折叠横向选择，休息面板展示倒计时、建议休息、已休息和下一步。
 - `app/_layout.tsx`：普通二级页清空 Stack 默认标题，保留返回；登录、onboarding、训练执行等全屏流程隐藏 header。
 - `src/components/ui/Screen.tsx`：新增 `safeTop` 控制，普通二级页可关闭页面内顶部安全区。
 - `src/components/avatar/Avatar.tsx`：统一头像展示，训练首页、成员页、执行页、总结页和历史小组分析复用。

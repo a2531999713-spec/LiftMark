@@ -1,6 +1,6 @@
-# ADR-001 React Native + Expo + SQLite 技术方案
+﻿# ADR-001 React Native + Expo + SQLite 技术方案
 
-更新时间：2026-06-09
+更新时间：2026-06-30
 
 ## 状态
 
@@ -24,7 +24,7 @@ Accepted
 - Zustand。
 - Jest + React Native Testing Library。
 
-训练数据保存到 SQLite。AsyncStorage 只用于轻量设置、首次启动标记、最近选中的 `group_id` 和主题偏好。
+训练现场数据先保存到 SQLite 缓存并写入同步队列。云端 PostgreSQL 是主数据源；SQLite 负责弱网训练、快速读取和本地副本。AsyncStorage 只用于轻量设置、首次启动标记、最近选中的 `group_id` 和主题偏好。
 
 ## 原因
 
@@ -32,7 +32,7 @@ Accepted
 - SQLite 支持离线训练、结构化记录和历史查询。
 - TypeScript 有利于计划模板、训练记录和进阶规则的类型约束。
 - Expo Router 适合页面路由和后续移动端扩展。
-- Repository 层能隔离本地 SQLite 和未来 Supabase 同步。
+- Repository 和 sync 层能隔离本地 SQLite 缓存与 Fastify / PostgreSQL 云端同步。
 
 ## 被拒绝方案
 
@@ -58,7 +58,7 @@ Accepted
 
 - 能支持离线训练闭环。
 - 训练记录结构清晰。
-- 后续可在 Repository 和 sync 层接 Supabase。
+- 已在 `src/sync/*` 建立本地同步队列，并可对接 `apps/liftmark-api` 的 `/api/sync/*`。
 - Domain 层算法可测试。
 
 代价：
@@ -72,3 +72,4 @@ Accepted
 - Sprint 1 已确认 Expo SQLite 接入，并以 `schema_migrations` 表和顺序 migration 数组实现本地 migration 骨架。
 - 数据库字段若变化，同步 `docs/database/schema.md`。
 - Repository 接口若变化，同步 `docs/api/local-repository-api.md`。
+- 同步队列或后端接口变化时，同步 `docs/technical-architecture.md`、`docs/api/local-repository-api.md` 和 `docs/handoff.md`。

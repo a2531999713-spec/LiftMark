@@ -33,7 +33,7 @@ export type HistorySeries = {
   entries: HistorySetEntry[];
 };
 
-export type HistoryRangeWeeks = 4 | 8;
+export type HistoryRangeWeeks = 4 | 8 | 12;
 
 export type HistoryAnalysisRangeOption = {
   label: string;
@@ -43,6 +43,7 @@ export type HistoryAnalysisRangeOption = {
 export const historyAnalysisRangeOptions: HistoryAnalysisRangeOption[] = [
   { label: '最近 4 周', weeks: 4 },
   { label: '最近 8 周', weeks: 8 },
+  { label: '最近 12 周', weeks: 12 },
 ];
 
 export function getAvailableHistoryAnalysisRanges(): HistoryAnalysisRangeOption[] {
@@ -147,11 +148,14 @@ export type GroupMemberTrendSeries = {
 };
 
 export type GroupExerciseAnalysis = {
-  key: GroupExerciseKey;
+  key: string;
+  exerciseId: string;
   exerciseName: string;
   metric: 'weight' | 'volume' | 'estimated_1rm';
   labels: string[];
   members: GroupExerciseMemberPerformance[];
+  completedSets: number;
+  sessionCount: number;
   trendSeries: GroupMemberTrendSeries[];
 };
 
@@ -209,12 +213,12 @@ function addDays(date: Date, count: number): Date {
   return next;
 }
 
-function getRangeLabels(rangeWeeks: HistoryRangeWeeks): string[] {
-  if (rangeWeeks === 4) {
-    return ['3周前', '2周前', '上周', '本周'];
-  }
+function formatMonthDay(date: Date): string {
+  return `${date.getMonth() + 1}/${`${date.getDate()}`.padStart(2, '0')}`;
+}
 
-  return ['7周前', '6周前', '5周前', '4周前', '3周前', '2周前', '上周', '本周'];
+function formatWeekRangeLabel(start: Date, end: Date): string {
+  return `${formatMonthDay(start)}-${formatMonthDay(end)}`;
 }
 
 function getChangePercent(current: number, previous: number): number | undefined {
@@ -312,14 +316,13 @@ export function getPersonalHistoryAnalysis(
   rangeWeeks: HistoryRangeWeeks = 4,
   today = new Date(),
 ): PersonalHistoryAnalysis {
-  const labels = getRangeLabels(rangeWeeks);
   const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
   const rangeStart = addDays(endDate, -(rangeWeeks * 7 - 1));
-  const buckets: WeeklyHistoryBucket[] = labels.map((label, index) => {
+  const buckets: WeeklyHistoryBucket[] = Array.from({ length: rangeWeeks }, (_, index) => {
     const start = addDays(rangeStart, index * 7);
     const end = addDays(start, 6);
     return {
-      label,
+      label: formatWeekRangeLabel(start, end),
       startDate: toLocalDateString(start),
       endDate: toLocalDateString(end),
       volume: 0,
@@ -441,7 +444,7 @@ export function getPersonalHistoryAnalysis(
           : undefined,
       direction: getDirectionFromValues(values),
       points: values.map((estimatedOneRM, index) => ({
-        label: labels[index],
+        label: buckets[index].label,
         estimatedOneRM: estimatedOneRM > 0 ? estimatedOneRM : undefined,
       })),
     };
@@ -462,9 +465,9 @@ export function getPersonalHistoryAnalysis(
       ? `本周训练量较上周提升 ${formatChangeLabel(currentWeek.volume, previousWeek.volume)}`
       : currentWeek.volume < previousWeek.volume * 0.95 && previousWeek.volume > 0
         ? '本周训练量较上周回落，建议控制恢复节奏'
-        : '最近训练量整体稳定',
+        : '近期训练量整体稳定',
     currentWeek.sessionCount >= previousWeek.sessionCount
-      ? '最近训练频率保持稳定'
+      ? '近期训练频率保持稳定'
       : '本周训练次数减少，可优先保证下一次训练完成',
     completionRate >= 0.85
       ? '完成率较好，可以继续按计划推进'
@@ -588,7 +591,6 @@ export function getGroupHistoryAnalysis(input: GroupHistoryAnalysisInput): Group
   const today = input.today ?? new Date();
   const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
   const rangeStart = addDays(endDate, -(rangeDays - 1));
-  const weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
   const memberMap = new Map(input.members.map((member) => [member.id, member]));
   const memberStats = new Map<
     string,
@@ -610,26 +612,29 @@ export function getGroupHistoryAnalysis(input: GroupHistoryAnalysisInput): Group
       volume: 0,
     });
   });
-  const groupExerciseKeys: GroupExerciseKey[] = ['bench', 'squat', 'deadlift', 'press', 'row', 'pullup', 'other'];
-  const coreStats = new Map<
-    GroupExerciseKey,
+  const exerciseStatsById = new Map<
+    string,
     Map<
       string,
       {
         bestEstimatedOneRM: number;
         bestWeight: number;
+        completedSets: number;
         latestDate?: string;
         latestLabel?: string;
+        sessionIds: Set<string>;
+        totalVolume: number;
         volumeByDate: Map<string, number>;
       }
     >
-  >(groupExerciseKeys.map((key) => [key, new Map()]));
+  >();
+  const exerciseNameById = new Map<string, string>();
 
   const trend = Array.from({ length: rangeDays }, (_, index) => {
     const date = addDays(rangeStart, index);
     return {
       date: toLocalDateString(date),
-      label: weekdayLabels[date.getDay()],
+      label: formatMonthDay(date),
       volume: 0,
       sessionCount: 0,
       completedSets: 0,
@@ -664,7 +669,8 @@ export function getGroupHistoryAnalysis(input: GroupHistoryAnalysisInput): Group
 
       const volume = getWorkoutSetVolume(set);
       const record = detail.exercises.find((exercise) => exercise.id === set.exerciseRecordId);
-      const exerciseName = input.exerciseNamesById?.[record?.exerciseId ?? ''] ?? '未知动作';
+      const exerciseId = record?.exerciseId ?? set.exerciseRecordId;
+      const exerciseName = input.exerciseNamesById?.[exerciseId] ?? '未知动作';
       const weight = set.actualWeight ?? set.plannedWeight ?? 0;
       const reps = set.actualReps ?? set.plannedReps ?? 0;
       stats.completedSets += 1;
@@ -684,23 +690,30 @@ export function getGroupHistoryAnalysis(input: GroupHistoryAnalysisInput): Group
       memberExerciseStats.bestWeight = Math.max(memberExerciseStats.bestWeight, weight);
       stats.exerciseStats.set(exerciseName, memberExerciseStats);
 
-      const coreKey = getGroupExerciseKey(exerciseName) ?? 'other';
-      if (coreKey) {
-        const memberCoreStats = coreStats.get(coreKey)!;
-        const current = memberCoreStats.get(set.memberId) ?? {
-          bestEstimatedOneRM: 0,
-          bestWeight: 0,
-          volumeByDate: new Map<string, number>(),
-        };
-        current.bestWeight = Math.max(current.bestWeight, weight);
-        current.bestEstimatedOneRM = Math.max(current.bestEstimatedOneRM, estimateOneRM(weight, reps));
-        current.volumeByDate.set(detail.session.date, (current.volumeByDate.get(detail.session.date) ?? 0) + volume);
-        if (!current.latestDate || detail.session.date >= current.latestDate) {
-          current.latestDate = detail.session.date;
-          current.latestLabel = weight > 0 && reps > 0 ? `${weight}kg x ${reps}` : undefined;
-        }
-        memberCoreStats.set(set.memberId, current);
+      exerciseNameById.set(exerciseId, exerciseName);
+      if (!exerciseStatsById.has(exerciseId)) {
+        exerciseStatsById.set(exerciseId, new Map());
       }
+      const memberExerciseById = exerciseStatsById.get(exerciseId)!;
+      const current = memberExerciseById.get(set.memberId) ?? {
+        bestEstimatedOneRM: 0,
+        bestWeight: 0,
+        completedSets: 0,
+        sessionIds: new Set<string>(),
+        totalVolume: 0,
+        volumeByDate: new Map<string, number>(),
+      };
+      current.bestWeight = Math.max(current.bestWeight, weight);
+      current.bestEstimatedOneRM = Math.max(current.bestEstimatedOneRM, estimateOneRM(weight, reps));
+      current.completedSets += 1;
+      current.sessionIds.add(detail.session.id);
+      current.totalVolume += volume;
+      current.volumeByDate.set(detail.session.date, (current.volumeByDate.get(detail.session.date) ?? 0) + volume);
+      if (!current.latestDate || detail.session.date >= current.latestDate) {
+        current.latestDate = detail.session.date;
+        current.latestLabel = weight > 0 && reps > 0 ? `${weight}kg x ${reps}` : undefined;
+      }
+      memberExerciseById.set(set.memberId, current);
 
       if (trendPoint) {
         trendPoint.completedSets += 1;
@@ -749,14 +762,18 @@ export function getGroupHistoryAnalysis(input: GroupHistoryAnalysisInput): Group
 
   const trendDates = normalizedTrend.map((point) => point.date);
   const trendLabels = normalizedTrend.map((point) => point.label);
-  const exerciseAnalyses: GroupExerciseAnalysis[] = groupExerciseKeys
-    .map((key) => {
-      const byMember = coreStats.get(key)!;
+  const exerciseAnalyses: GroupExerciseAnalysis[] = [...exerciseStatsById.entries()]
+    .map(([exerciseId, byMember]) => {
+      const exerciseName = exerciseNameById.get(exerciseId) ?? '未知动作';
+      const sessionIds = new Set<string>();
+      let completedSets = 0;
       const members = input.members
         .map((member) => {
           const stats = byMember.get(member.id);
           const values = trendDates.map((date) => stats?.volumeByDate.get(date) ?? 0);
           const latestVolume = stats?.latestDate ? (stats.volumeByDate.get(stats.latestDate) ?? 0) : 0;
+          stats?.sessionIds.forEach((sessionId) => sessionIds.add(sessionId));
+          completedSets += stats?.completedSets ?? 0;
           return {
             memberId: member.id,
             memberName: member.displayName,
@@ -780,15 +797,26 @@ export function getGroupHistoryAnalysis(input: GroupHistoryAnalysisInput): Group
       });
 
       return {
-        key,
-        exerciseName: getGroupExerciseName(key),
+        key: exerciseId,
+        exerciseId,
+        exerciseName,
         metric: 'volume' as const,
         labels: trendLabels,
         members,
+        completedSets,
+        sessionCount: sessionIds.size,
         trendSeries,
       };
     })
-    .filter((analysis) => analysis.members.length > 0);
+    .filter((analysis) => analysis.members.length > 0)
+    .sort(
+      (left, right) =>
+        right.sessionCount - left.sessionCount ||
+        right.completedSets - left.completedSets ||
+        right.members.reduce((sum, member) => sum + member.latestVolume, 0) -
+          left.members.reduce((sum, member) => sum + member.latestVolume, 0) ||
+        left.exerciseName.localeCompare(right.exerciseName),
+    );
 
   const recentDetails = (input.recentDetails ?? input.details).slice().sort(compareSessionDetailDesc).slice(0, 5);
   const recentSessions = recentDetails.map((detail) => {

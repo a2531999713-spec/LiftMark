@@ -1,3 +1,13 @@
+﻿## 2026-06-30 图表、身体数据、多小组和训练替换架构补充
+
+- 图表组件仍为本地 UI 组件，不引入大体积图表库；`MiniLineChart` / `MultiLineTrendChart` 在组件内完成坐标缩放、绘图区 padding、刻度、单位和空状态。
+- `body_metrics` 与 `body_metric_goals` 通过 SQLite + Repository 持久化；身体数据不进入 AsyncStorage。
+- 当前小组使用 `src/store/selectedGroupStore.ts` 作为轻量 UI 状态；训练记录归属仍以 `workout_sessions.group_id` 为准。
+- `GroupRepository.listGroups()` 是多小组视图解析入口；页面不得用默认小组硬编码替代。
+- 头像链路分为账号缓存 `account_profile_cache` 和成员 profile `member_profiles`；训练相关页面统一读取成员头像。
+- 训练中替换动作只更新 `workout_exercise_records.exercise_id`，并保留 `replaced_from_exercise_id`；计划表不被修改。
+- RPE 和实际休息秒数走 `WorkoutRepository.saveSet()`，RIR 仅保留旧字段兼容，不作为新 UI 能力。
+
 ## 2026-06-30 本地计划推荐与训练选择补充
 
 - 本次未新增 SQLite schema 或 migration；主流系统计划通过 seed 数据写入现有 `plan_templates`、`plan_phases`、`plan_days` 和 `plan_exercises`。
@@ -22,8 +32,8 @@
 - API smoke 脚本位于 `scripts/api-smoke-test.js`，通过 `npm run test:api-smoke` 执行。
 - Android Studio debug 运行需要 Expo Dev Client + Metro + 深链打开，步骤见 `docs/android-studio-run.md`。
 - App token 使用 `expo-secure-store` 保存；App 不保存阿里云 AccessKey，也不直接调用阿里云短信接口。
-- 本次没有修改本地 SQLite schema，也没有把训练记录改存 AsyncStorage。
-- 云同步第一版服务端表已创建，但 App 端自动同步队列尚未把本地 SQLite 训练记录打包上传；训练记录仍先写本机 SQLite。
+- 2026-06-30 起，本地 SQLite schema 增加同步元数据和 `local_sync_queue`，训练 session / set 保存后进入待同步队列。
+- 云同步第一版服务端表已创建；App 端 `src/sync/syncQueue.ts` 和 `src/sync/syncService.ts` 负责本地队列、状态统计和 `/sync/push` 推送。训练记录仍先写本机缓存，不能因云端失败丢失现场数据。
 
 # 技术架构文档
 ## 2026-06-14 品牌与 Android 包名迁移
@@ -39,7 +49,7 @@
 
 ## 1. 架构概览
 
-目标架构是 React Native + Expo + TypeScript 的本地优先移动 App。数据写入以 Expo SQLite 为准，Domain 层承载训练计划、重量计算、进阶建议、恢复评分等核心逻辑，UI 只负责展示和输入。
+目标架构是 React Native + Expo + TypeScript 的云端优先 + 本地缓存移动 App。云端 PostgreSQL 是主数据源；移动端写入先落本机 SQLite 缓存并进入 `local_sync_queue`，弱网训练不被阻断，网络可用后通过同步服务推送到后端。Domain 层承载训练计划、重量计算、进阶建议、恢复评分等核心逻辑，UI 只负责展示和输入。
 
 ```text
 UI / App Routes
@@ -48,7 +58,9 @@ UI / App Routes
   -> Domain Services
   -> Repository Interfaces
   -> SQLite local repositories
-  -> Future Sync Layer
+  -> local_sync_queue
+  -> Sync Service
+  -> Fastify API / PostgreSQL
 ```
 
 ## 2. 前端架构
@@ -96,15 +108,16 @@ development build 需要 Metro；本地预览 APK 不需要 Metro。当前阶段
 
 ## 3. 后端架构
 
-第一阶段无强制后端。Repository 层必须预留 remote sync 边界，第二或第三阶段接 Supabase。
+当前后端位于仓库根目录 `apps/liftmark-api`，使用 Node.js 22+、TypeScript、Fastify、PostgreSQL、Knex migration、JWT 和短信验证码登录。公网通过 Nginx `/api` 反向代理到本机 `127.0.0.1:3000`。
 
-后续候选：
+已存在能力：
 
-- Supabase Auth。
-- Supabase PostgreSQL。
-- Supabase Storage。
-- Supabase Edge Functions。
-- Supabase Realtime，可选。
+- 账号系统、短信验证码登录 / 注册、JWT 鉴权。
+- PostgreSQL migration：用户、小组、成员关系、训练同步实体表、`sync_mappings`、`sync_state`。
+- 同步接口：`POST /api/sync/push`、`GET /api/sync/pull?since=...`、`GET /api/sync/status`。
+- 训练上传/查询接口：`POST /api/groups/:id/workouts/upload`、`GET /api/groups/:id/workouts` 和统计接口。
+
+移动端不直接把训练现场写入远端作为唯一成功条件；本地 SQLite 写入成功后进入同步队列，云端失败时保留待重试状态。
 
 ## 4. 数据库架构
 
@@ -233,7 +246,7 @@ Sprint 1 已创建 `src/theme/colors.ts`、`spacing.ts`、`typography.ts`、`sha
 - 计划和训练记录分离。
 - 系统方案和用户计划分离；训练记录不能直接绑定系统方案。
 - 多人逻辑从第一版就保留。
-- 本地 SQLite 优先。
+- 云端优先，本地 SQLite 作为缓存与离线副本。
 - Domain 层不依赖 UI。
 - 训练记录不能用 AsyncStorage 保存。
 - Excel 训练计划只整理为后续 seed 数据设计说明，不硬编码进页面组件。
@@ -281,3 +294,9 @@ Excel 训练计划的 seed 设计映射：
 - `WorkoutRepository` 增加历史补录和历史编辑接口，仍写入 `workout_sessions`、`workout_exercise_records`、`workout_sets`。
 - `PlanRepository` 增加 `createUserPlan()`，创建用户拥有的 `blank_created` 计划；训练计划仍作为数据保存到 SQLite，不写死在页面组件中。
 - 新增 `src/components/ui/VisualHeroCard.tsx` 和 `src/assets/images|icons|illustrations/` 目录；`VisualHeroCard` 支持本地图片背景和深色遮罩，页面通过 `src/assets/images/index.ts` 的 `liftmarkImages` 语义 key 引用图片。
+## 2026-07-01 registration metadata, chart scale, and avatar migration
+
+- `MiniLineChart` / `MultiLineTrendChart` share `src/components/ui/chartScale.ts`, so single-line and multi-line charts use the same real Y-axis strategy.
+- SQLite migration v11 adds `group_members.avatar_url` for old local databases; new installs already have the column in initial schema.
+- API migration `002_user_registration_metadata` adds server-side registration sequence and campaign fields to `users`.
+- Account creation and SMS-code auto-registration use server time and PostgreSQL sequence values, not client time, for early-user eligibility.

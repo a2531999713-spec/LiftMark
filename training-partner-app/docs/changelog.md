@@ -1,4 +1,77 @@
-# 变更记录
+﻿# 变更记录
+
+## 2026-07-01 - history-workout-auth-registration-hardening
+
+### History and charts
+- Personal history uses a single action selector; the default all-action state shows current-member total volume instead of defaulting to one exercise.
+- Group history keeps the overview as default; exercise comparison appears only after selecting one real trained exercise.
+- History detail supports `scope=personal&memberId=...`, so personal entry points show only that member's sets while group detail keeps all members.
+- `MiniLineChart` and `MultiLineTrendChart` share `chartScale` for real Y-axis ticks, shared multi-line scale, safe padding, and equal / zero value tests.
+
+### Workout execution
+- Rest state now has one primary action: early start next set while counting down, or start next set when the timer reaches zero; the action saves `actual_rest_seconds`.
+- Weight and reps inputs save valid text changes immediately, so no-suggestion exercises can be typed and completed without pressing Enter.
+- Next sets reuse the previous actual weight in the same session, and new sessions can fall back to the latest completed historical weight when no suggested weight exists.
+
+### Auth and registration
+- Login page restores password login for phone / LiftMark ID plus password, alongside SMS code login / registration.
+- SQLite migration v11 adds missing `group_members.avatar_url` for old local databases.
+- API users now receive server-generated `registration_seq`, `registered_at`, `registration_source`, `campaign_code`, and `early_user_tier` for founding-user and campaign eligibility.
+
+## 2026-06-30 - cloud-first-workout-history-stability
+
+### 云端优先与同步队列
+- 移动端 schema / migration v10 增加同步元数据字段和 `local_sync_queue`。
+- 新增真实同步队列能力：入队、待同步统计、批量推送、同步中 / 成功 / 失败状态。
+- `syncService` 通过现有后端 `/api/sync/push` 推送 `workoutSessions` / `workoutSets`，云端失败不影响训练现场本地保存。
+
+### 训练执行 P0
+- 修复小组训练轮换：同一动作内按组号优先、成员顺序其次，不再完成一组后直接跳到同一成员下一组或下一个动作。
+- 完成本组前校验重量和次数；拒绝 `NaN`、`Infinity`、负数和非法次数，异常大重量 / 0 次 / 超高次数需确认。
+- 保存失败时不推进动作；当前组、计划组和全局已完成组数显示按真实 set 计算。
+- 结束短训练前增加继续训练 / 保存记录 / 放弃本次确认。
+
+### 记录、图表和成员表单
+- 个人记录页改为分析导向：本周概览、动作筛选、趋势、日历当天记录和训练查询。
+- 点击日历日期只更新本地 `selectedDate`，不触发整页数据重载。
+- 小组动作默认展示训练容量趋势，详情页图表标题包含动作 + 指标。
+- `MiniLineChart` / `MultiLineTrendChart` 横轴标签自动抽样，默认最多 5 个标签。
+- 成员表单删除解释区，保存按钮按变更、校验和保存中状态启用。
+
+## 2026-06-30 - charts-body-groups-workout-replacement
+
+### 图表、记录和小组
+- 修复 `MiniLineChart` / `MultiLineTrendChart` 的绘图区 padding、Y 轴 min/max、同值/全 0 安全范围、单位和空状态。
+- 周趋势标签改为日期 / 周起止日期，不再使用旧的相对周文案。
+- 小组记录默认展示总览；动作表现通过选择器查看真实练过的 `exerciseId`，小组动作详情按当前小组和真实动作 ID 过滤。
+
+### 身体数据与头像
+- `app/profile/body-metrics.tsx` 重构为快速记录、折叠围度、目标设置、变化摘要、训练关联和趋势图。
+- 新增 `body_metric_goals` 表、Repository 目标接口和目标进度 Domain 计算。
+- 明确头像根因：账号头像缓存和训练成员 profile 分表；账号头像更新/删除会同步当前小组第一位训练成员头像，训练、记录、小组分析统一使用 `Avatar`。
+
+### 多小组与训练执行
+- `GroupRepository.listGroups()` 接入小组页、今日、成员、记录、设置、头像和身体数据页；支持创建新小组并立即切换。
+- RPE 改为可选折叠横向选择器，不恢复 RIR。
+- 休息面板显示倒计时、建议休息、已休息、下一组和下一位成员，并保存 `actual_rest_seconds`。
+- 训练中替换动作接入统一动作选择器，推荐替代动作优先排序，保存 `replaced_from_exercise_id` 且不修改原计划。
+
+## 2026-06-30 - my-secondary-pages-history-workout-body-metrics
+
+### 我的页与头像
+- 二级页面统一使用 `SecondaryPageHeader`，隐藏 Expo Stack 原生头部空标题。
+- 账号头像更新后同步当前小组训练成员头像，训练、历史、小组等成员头像入口保持一致。
+- 我的页新增 `身体数据` 入口。
+
+### 训练、历史与图表
+- 训练现场新增可展开 RPE / 备注记录、实际休息秒数写入和现场平均 RPE 统计。
+- `MiniLineChart` / `MultiLineTrendChart` 新增 Y 轴刻度与单位；训练趋势改为实际训练次数轴。
+- 历史分析支持 4 / 8 / 12 周；新增个人动作历史页和身体数据趋势页。
+
+### 数据与验证
+- SQLite migration v8 新增 `workout_sets.actual_rest_seconds` 和 `body_metrics`。
+- 新增 `BodyMetricsRepository` 与 `src/tests/body-metrics.test.ts`。
+- 已通过 `npm run typecheck`、`npm run lint`、`npm test -- --runInBand` 和 `npm run android:preview`。
 
 ## 2026-06-30 - training-plan-selection-detail-polish
 
@@ -32,7 +105,7 @@
 
 ### 头像、记录和账号设置
 - 成员列表、训练首页、训练执行页、训练总结页和历史小组分析统一使用 Avatar 组件。
-- 小组主项数据可点击进入动作详情页，展示成员最好重量、容量、预估 1RM 和最近有效组。
+- 小组动作数据可点击进入动作详情页，展示成员最好重量、容量、预估 1RM 和最近有效组。
 - 普通二级页清空 Stack 默认标题，仅保留返回；退出登录移动到账号设置并二次确认，不删除本机训练记录。
 
 ## 2026-06-29 - plan-switch-rpe-cleanup-group-analysis
@@ -49,7 +122,7 @@
 
 ### 小组分析增强
 - 小组历史新增主项多人表现卡片，按卧推、深蹲、硬拉、肩推展示成员最好重量、最近容量和近 7 天趋势。
-- 成员贡献增加最常训练动作、最佳动作和最近训练日期，便于比较小组内不同成员的训练分布。
+- 成员贡献增加最常训练动作、最佳动作和最近一次训练日期，便于比较小组内不同成员的训练分布。
 - 新增 `MultiLineTrendChart` 支持同一主项下多成员趋势线。
 
 ## 2026-06-29 - auth-code-home-scope-consent
@@ -130,10 +203,10 @@
 - "帮助与关于"重命名为"关于练刻"，图标改为 information-circle-outline
 
 ### 去除技术术语
-- about.tsx：移除"本地优先"、"SQLite"、"预留清晰的边界"等技术描述
+- about.tsx：移除"云端优先 + 本地缓存"、"SQLite"、"预留清晰的边界"等技术描述
 - profile/data.tsx：移除"本机 SQLite"、"训练现场不依赖网络"等
 - profile/preferences.tsx：移除"偏好优先复用现有本地设置"
-- profile/sync.tsx：移除"本地 SQLite 先写"、"训练现场仍然本地优先"
+- profile/sync.tsx：移除"本地 SQLite 先写"、"训练现场仍然云端优先 + 本地缓存"
 - groups.tsx：移除"本地小组"标签
 
 ### 账户安全简化
@@ -284,14 +357,14 @@
 - 计划页和设置页接入 `.liftmark.json` 导入：DocumentPicker 选择文件、`planFileService` 校验和 ID 重映射、`PlanRepository.importUserPlan()` 写入 SQLite，导入后可选择设为当前计划。
 - 新增系统只读模板“经典三分化 PPL”，seed 写入系统模板，系统方案列表可见并可复制为我的计划；新增测试覆盖系统方案和复制草稿。
 - 训练页当前计划卡新增“切换计划”弹层，只列出我的计划，切换后更新当前小组 current plan 并刷新今日训练。
-- 记录页最近训练改为移动端摘要卡，展示日期/时长、动作数、完成组数、总训练量、成员口径、PR/估算 1RM/趋势标签，点击进入详情。
+- 记录页训练查询改为移动端摘要卡，展示日期/时长、动作数、完成组数、总训练量、成员口径、PR/估算 1RM/趋势标签，点击进入详情。
 - 新增 `expo-document-picker`、`expo-file-system` 依赖用于 Android 本地文件选择和计划文件读取。
 - Git 忽略规则补齐 `.expo/`、Android build 目录、APK/AAB/keystore 和环境变量文件。
 
 ## 2026-06-14 - 训练执行交互修正 + 记录/设置 UI 重设计 + 图标背景修复
 
 - 训练执行页只保留重量、次数、完成/跳过和备注，不再展示旧强度快捷输入。
-- 生成记录页设计稿 `docs/ui/record-page-redesign.png`，并重做 `app/(tabs)/history.tsx`：紧凑个人概览、2x2 指标、基础趋势、可点击日历、最近训练列表和小组汇总开发中隔离提示。
+- 生成记录页设计稿 `docs/ui/record-page-redesign.png`，并重做 `app/(tabs)/history.tsx`：紧凑个人概览、2x2 指标、基础趋势、可点击日历、训练查询列表和小组汇总开发中隔离提示。
 - 生成设置页设计稿 `docs/ui/settings-page-redesign.png`，并重做 `app/(tabs)/settings.tsx`：顶部状态卡、分组设置列表、开发中标签、计划导出、计划管理、诊断和调试保护。
 - 搭子页主页面本地小组说明压缩为一句话，完整规则移入“了解本地小组”弹层。
 - 修复图标背景资源：`app-icon-1024.png` 改为深色实底；adaptive foreground 保持透明安全边距；splash logo 改为透明居中；`app.json` 顶层 splash 改用 `splash-logo.png`。

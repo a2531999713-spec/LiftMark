@@ -1,6 +1,20 @@
-# SQLite 数据库结构
+﻿# SQLite 数据库结构
 
 更新时间：2026-06-30
+
+## 2026-06-30 补充：云同步元数据、训练记录增强与身体数据
+
+- migration v10 新增云同步元数据：`remote_id`、`sync_status`、`sync_error`、`version` / `sync_version`、`last_synced_at`、`deleted_at`。覆盖 `groups`、`group_members`、`plan_templates`、`workout_sessions`、`workout_exercise_records`、`workout_sets`、`body_metrics`。
+- 新增 `local_sync_queue`：记录本机待同步实体、操作类型、payload、尝试次数、错误信息和最近尝试时间。训练 session / set 保存后进入队列，云端不可用不阻断训练现场。
+- 统一同步状态：`local_only`、`pending_create`、`pending_update`、`pending_delete`、`syncing`、`synced`、`sync_failed`、`conflict`。
+- 本地 SQLite 不再是产品唯一真源；它承担缓存、副本、弱网训练、减少带宽和本机快速读取职责。
+
+- `workout_sets` 新增 `actual_rest_seconds INTEGER`，用于记录完成本组后的实际休息秒数；`rpe` 与 `notes` 继续作为可选高级训练记录字段，旧 `rir` 仅保留兼容，不在新训练 UI 暴露。
+- migration v11 为旧 SQLite 库的 `group_members` 补 `avatar_url TEXT`；新库初始 schema 已包含该列，用于避免旧库 onboarding 后读取头像列失败。
+- 新增 `body_metrics`：`id`, `member_id`, `date`, `weight_kg`, `body_fat_percent`, `chest_cm`, `waist_cm`, `hip_cm`, `bicep_cm`, `thigh_cm`, `calf_cm`, `notes`, `created_at`, `updated_at`。
+- 新增 `body_metric_goals`：按成员保存增肌 / 减脂 / 维持目标、可选目标体重、目标日期和备注。
+- 新增索引 `idx_body_metrics_member_date`、`idx_body_metric_goals_member`，身体数据和目标走 SQLite 缓存与云同步队列，不使用 AsyncStorage。
+- 账号头像缓存 `account_profile_cache` 与训练成员头像 `member_profiles` 仍分表保存；头像文件不进入 SQLite 二进制列。
 
 ## 1. 设计原则
 
@@ -8,7 +22,7 @@
 - 计划模板和个人参数分离。
 - 计划和训练记录分离。
 - 多人逻辑从第一版就保留。
-- 本地 SQLite 优先。
+- 云端优先，本地 SQLite 作为缓存与离线副本。
 - Domain 层不依赖 UI。
 - 训练记录不能用 AsyncStorage 保存。
 
@@ -23,6 +37,8 @@
 | 动作和替代 | `exercises`, `exercise_alternatives` |
 | 计划模板 | `plan_templates`, `plan_phases`, `plan_days`, `plan_exercises` |
 | 实际训练 | `workout_sessions`, `workout_exercise_records`, `workout_sets` |
+| 身体数据 | `body_metrics`, `body_metric_goals` |
+| 同步队列 | `local_sync_queue` |
 | 建议和恢复 | `progression_suggestions`, `recovery_logs` |
 | 试用与激活 | `activation_state` |
 
@@ -51,6 +67,13 @@ Sprint 4 训练执行：
 - `workout_exercise_records` 保存从计划动作复制来的训练动作快照。
 - `workout_sets` 保存每位成员每一组的计划/实际重量、次数和完成状态；旧强度列只用于兼容既有本地数据。
 - migration v7 新增 `workout_sessions.training_mode`，区分 `solo_local` 和 `group_local`。
+- `workout_exercise_records.replaced_from_exercise_id` 保存训练中替换前的原计划动作；分析按当前 `exercise_id` 统计，历史详情可展示原动作 -> 实际动作。
+
+Sprint 2026-06-30 云端优先同步：
+
+- 移动端写入后先本地落库，再把实体写入 `local_sync_queue`。
+- `/sync/push` 返回 `remote_id` / mapping 后，队列项标记为 `synced`；失败时保留 `sync_failed` 与错误信息，等待重试。
+- 文件类数据不进入同步队列 payload：头像只同步元数据，压缩后图片由上传服务处理；训练摘要图、导出文件和调试日志默认本地生成。
 
 ## 3. 建表 SQL
 
@@ -340,6 +363,42 @@ CREATE TABLE IF NOT EXISTS recovery_logs (
 );
 ```
 
+### body_metrics
+
+```sql
+CREATE TABLE IF NOT EXISTS body_metrics (
+  id TEXT PRIMARY KEY,
+  member_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  weight_kg REAL,
+  body_fat_percent REAL,
+  chest_cm REAL,
+  waist_cm REAL,
+  hip_cm REAL,
+  bicep_cm REAL,
+  thigh_cm REAL,
+  calf_cm REAL,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+```
+
+### body_metric_goals
+
+```sql
+CREATE TABLE IF NOT EXISTS body_metric_goals (
+  id TEXT PRIMARY KEY,
+  member_id TEXT NOT NULL,
+  goal_type TEXT NOT NULL,
+  target_weight_kg REAL,
+  target_date TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+```
+
 ### activation_state
 
 ```sql
@@ -370,6 +429,8 @@ CREATE INDEX IF NOT EXISTS idx_workout_sessions_group_date ON workout_sessions(g
 CREATE INDEX IF NOT EXISTS idx_workout_sets_session_id ON workout_sets(session_id);
 CREATE INDEX IF NOT EXISTS idx_workout_sets_member_exercise ON workout_sets(member_id, exercise_record_id);
 CREATE INDEX IF NOT EXISTS idx_progression_member_exercise ON progression_suggestions(member_id, exercise_id);
+CREATE INDEX IF NOT EXISTS idx_body_metrics_member_date ON body_metrics(member_id, date);
+CREATE INDEX IF NOT EXISTS idx_body_metric_goals_member ON body_metric_goals(member_id);
 ```
 
 ## 5. 未来同步字段
@@ -398,6 +459,9 @@ Sprint 1 已落地 `schema_migrations` 版本表：
 - 当前 v4 为 `workout_record_rest_time_snapshot`，为 `workout_exercise_records` 增加 `planned_rest_seconds`，补录休息时间可为空。
 - 当前 v5 为 `exercise_source_for_custom_library`，为 `exercises` 增加 `source`，并创建 `idx_exercises_source_name`。
 - 当前 v6 为 `account_and_member_avatar_cache`，为 `member_profiles` 增加头像 URL / 缩略图 / 本地路径 / 更新时间字段，并创建 `account_profile_cache`。
+- 当前 v7 为 `workout_session_training_mode`，为 `workout_sessions` 增加 `training_mode`。
+- 当前 v8 为 `workout_set_rest_and_body_metrics`，为 `workout_sets` 增加 `actual_rest_seconds`，并创建 `body_metrics` 与 `idx_body_metrics_member_date`。
+- 当前 v9 为 `body_metric_goals`，创建身体目标表与 `idx_body_metric_goals_member`。
 - 后续不能直接改旧 migration 语义，应追加新 migration。
 
 ## 7. 需要人工确认的问题

@@ -49,6 +49,7 @@ type DaySummary = {
 
 type PlanDashboardStats = {
   lastFourWeeks: number[];
+  lastFourWeekLabels: string[];
   recentSessionDate?: string;
   weeklyCompletedSets: number;
   weeklySessionCount: number;
@@ -57,6 +58,7 @@ type PlanDashboardStats = {
 
 const emptyStats: PlanDashboardStats = {
   lastFourWeeks: [0, 0, 0, 0],
+  lastFourWeekLabels: ['', '', '', ''],
   weeklyCompletedSets: 0,
   weeklySessionCount: 0,
   weeklyVolume: 0,
@@ -92,6 +94,14 @@ function addDays(date: Date, count: number) {
   return next;
 }
 
+function formatMonthDay(date: Date): string {
+  return `${date.getMonth() + 1}/${`${date.getDate()}`.padStart(2, '0')}`;
+}
+
+function formatDateRange(start: Date, end: Date): string {
+  return `${formatMonthDay(start)}-${formatMonthDay(end)}`;
+}
+
 function formatKg(value: number): string {
   return `${Math.round(value).toLocaleString('zh-CN')} kg`;
 }
@@ -107,12 +117,14 @@ function summarizeWorkoutDetails(details: WorkoutSessionDetail[]): Pick<PlanDash
   };
 }
 
-function buildLastFourWeeks(details: WorkoutSessionDetail[]) {
+function buildLastFourWeeks(details: WorkoutSessionDetail[]): Pick<PlanDashboardStats, 'lastFourWeeks' | 'lastFourWeekLabels'> {
   const now = new Date();
   const buckets = [21, 14, 7, 0].map((offset) => {
-    const start = getLocalDateString(addDays(now, -offset - 6));
-    const end = getLocalDateString(addDays(now, -offset));
-    return { start, end, count: 0 };
+    const startDate = addDays(now, -offset - 6);
+    const endDate = addDays(now, -offset);
+    const start = getLocalDateString(startDate);
+    const end = getLocalDateString(endDate);
+    return { start, end, count: 0, label: formatDateRange(startDate, endDate) };
   });
 
   details.forEach((detail) => {
@@ -122,7 +134,10 @@ function buildLastFourWeeks(details: WorkoutSessionDetail[]) {
     }
   });
 
-  return buckets.map((bucket) => bucket.count);
+  return {
+    lastFourWeekLabels: buckets.map((bucket) => bucket.label),
+    lastFourWeeks: buckets.map((bucket) => bucket.count),
+  };
 }
 
 export default function PlanRoute() {
@@ -206,10 +221,11 @@ export default function PlanRoute() {
         const details = await Promise.all(sessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)));
         const weeklyDetails = details.filter((detail) => detail.session.date >= weekStart && detail.session.date <= today);
         const weeklySummary = summarizeWorkoutDetails(weeklyDetails);
+        const lastFourWeekStats = buildLastFourWeeks(details);
 
         nextStats = {
           ...weeklySummary,
-          lastFourWeeks: buildLastFourWeeks(details),
+          ...lastFourWeekStats,
           recentSessionDate: sessions[0]?.date,
           weeklySessionCount: weeklyDetails.filter((detail) => detail.sets.some((set) => set.completed)).length,
         };
@@ -551,7 +567,7 @@ export default function PlanRoute() {
               chartHeight={92}
               data={stats.lastFourWeeks}
               emptyMessage="最近 4 周还没有当前计划训练记录"
-              labels={['3周前', '2周前', '上周', '本周']}
+              labels={stats.lastFourWeekLabels}
               minChartHeight={Math.max(1, ...stats.lastFourWeeks)}
               showValues
             />

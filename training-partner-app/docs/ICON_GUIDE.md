@@ -1,4 +1,4 @@
-# Android Icon & Splash Screen Guide
+﻿# Android Icon & Splash Screen Guide
 
 ## Overview
 

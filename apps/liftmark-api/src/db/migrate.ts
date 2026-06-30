@@ -40,6 +40,11 @@ async function createInitialSchema(trx: Knex.Transaction) {
       table.string('nickname').notNullable();
       table.string('avatar_url');
       table.string('liftmark_id').notNullable().unique();
+      table.integer('registration_seq').unique();
+      table.timestamp('registered_at', { useTz: true }).notNullable().defaultTo(trx.fn.now());
+      table.string('registration_source').notNullable().defaultTo('app');
+      table.string('campaign_code');
+      table.string('early_user_tier').notNullable().defaultTo('standard');
       table.string('role').notNullable().defaultTo('user');
       table.string('status').notNullable().defaultTo('normal');
       table.timestamp('last_login_at', { useTz: true });
@@ -163,6 +168,57 @@ async function createInitialSchema(trx: Knex.Transaction) {
   await createSyncTables(trx);
   await createContentTables(trx);
   await createIndexes(trx);
+}
+
+async function addRegistrationMetadata(trx: Knex.Transaction) {
+  await trx.raw('CREATE SEQUENCE IF NOT EXISTS users_registration_seq START WITH 1');
+
+  const columnDefinitions: Array<[string, (table: Knex.AlterTableBuilder) => void]> = [
+    ['registration_seq', (table) => table.integer('registration_seq')],
+    ['registered_at', (table) => table.timestamp('registered_at', { useTz: true })],
+    ['registration_source', (table) => table.string('registration_source')],
+    ['campaign_code', (table) => table.string('campaign_code')],
+    ['early_user_tier', (table) => table.string('early_user_tier')],
+  ];
+
+  for (const [columnName, addColumn] of columnDefinitions) {
+    if (!(await trx.schema.hasColumn('users', columnName))) {
+      await trx.schema.alterTable('users', addColumn);
+    }
+  }
+
+  await trx.raw(`
+    WITH numbered AS (
+      SELECT id, row_number() OVER (ORDER BY created_at ASC, id ASC) AS seq
+      FROM users
+      WHERE registration_seq IS NULL
+    )
+    UPDATE users
+    SET registration_seq = numbered.seq,
+        registered_at = COALESCE(users.registered_at, users.created_at, now()),
+        registration_source = COALESCE(users.registration_source, 'legacy'),
+        early_user_tier = CASE
+          WHEN numbered.seq <= 100 THEN 'founding_100'
+          ELSE COALESCE(users.early_user_tier, 'standard')
+        END
+    FROM numbered
+    WHERE users.id = numbered.id
+  `);
+
+  await trx.raw(`
+    UPDATE users
+    SET registered_at = COALESCE(registered_at, created_at, now()),
+        registration_source = COALESCE(registration_source, 'legacy'),
+        early_user_tier = COALESCE(early_user_tier, 'standard')
+  `);
+  await trx.raw('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_registration_seq ON users(registration_seq) WHERE registration_seq IS NOT NULL');
+  await trx.raw(`
+    SELECT setval(
+      'users_registration_seq',
+      GREATEST(COALESCE((SELECT MAX(registration_seq) FROM users), 0), 1),
+      COALESCE((SELECT MAX(registration_seq) FROM users), 0) > 0
+    )
+  `);
 }
 
 async function createSyncTables(trx: Knex.Transaction) {
@@ -326,6 +382,7 @@ async function createIndexes(trx: Knex.Transaction) {
 export async function migrate() {
   await ensureMigrationsTable();
   await runMigration('001_initial_cloud_schema', createInitialSchema);
+  await runMigration('002_user_registration_metadata', addRegistrationMetadata);
 }
 
 if (require.main === module) {
@@ -340,4 +397,3 @@ if (require.main === module) {
       process.exit(1);
     });
 }
-

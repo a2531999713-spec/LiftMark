@@ -1,4 +1,4 @@
-# Progression 模块实现文档
+﻿# Progression 模块实现文档
 
 更新时间：2026-06-11  
 对应代码目录：`training-partner-app/`；Sprint 1 已创建基础类型和 Repository 骨架，稳定性 Sprint 新增进阶建议中文展示映射。

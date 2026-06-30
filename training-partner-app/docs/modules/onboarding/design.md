@@ -1,4 +1,4 @@
-# Onboarding 模块设计文档
+﻿# Onboarding 模块设计文档
 
 更新时间：2026-06-30
 

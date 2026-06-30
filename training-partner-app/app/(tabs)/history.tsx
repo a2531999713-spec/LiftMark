@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
 import { Avatar } from '@/components/avatar';
-import { AppButton, AppCard, AppText, EmptyState, MiniLineChart, MultiLineTrendChart, Screen, SectionHeader, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MiniLineChart, MultiLineTrendChart, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import {
@@ -20,6 +20,7 @@ import {
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { WorkoutSession, WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
 type DataScope = 'personal' | 'group';
@@ -36,14 +37,22 @@ type SessionSummary = {
 };
 
 type WeekTrendPoint = {
-  date: string;
+  date?: string;
+  label: string;
   volume: number;
+};
+
+type ExerciseFilterOption = {
+  id: string;
+  name: string;
 };
 
 type HistoryState = {
   analysis: HistoryAnalysis | null;
   currentMember: GroupMember | null;
   exercise: Exercise | null;
+  exerciseEntries: HistorySetEntry[];
+  exerciseOptions: ExerciseFilterOption[];
   groupAnalysis: GroupHistoryAnalysis | null;
   groupName: string;
   memberProfilesById: Record<string, MemberProfile | null>;
@@ -61,6 +70,8 @@ function createEmptyHistory(currentMember: GroupMember | null = null): HistorySt
     analysis: null,
     currentMember,
     exercise: null,
+    exerciseEntries: [],
+    exerciseOptions: [],
     groupAnalysis: null,
     groupName: '默认训练小组',
     memberProfilesById: {},
@@ -208,28 +219,47 @@ function summarizeSession(
   };
 }
 
-function buildWeeklyTrend(startDate: Date, summaries: SessionSummary[]): WeekTrendPoint[] {
-  const byDate = new Map<string, number>();
-  summaries.forEach((summary) => {
-    byDate.set(summary.session.date, (byDate.get(summary.session.date) ?? 0) + summary.volume);
-  });
+function buildWeeklyTrend(summaries: SessionSummary[]): WeekTrendPoint[] {
+  return summaries
+    .filter((summary) => summary.setCount > 0 || summary.volume > 0)
+    .sort((left, right) => `${left.session.date} ${left.session.updatedAt}`.localeCompare(`${right.session.date} ${right.session.updatedAt}`))
+    .slice(-7)
+    .map((summary) => ({
+      date: summary.session.date,
+      label: formatShortDate(summary.session.date),
+      volume: summary.volume,
+    }));
+}
 
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = getLocalDateString(addDays(startDate, index));
-    return {
-      date,
-      volume: byDate.get(date) ?? 0,
-    };
-  });
+function buildExerciseTrend(entries: HistorySetEntry[]): WeekTrendPoint[] {
+  const bySession = new Map<string, WeekTrendPoint>();
+  entries
+    .filter((entry) => entry.completed && (entry.weight ?? 0) > 0 && (entry.reps ?? 0) > 0)
+    .forEach((entry) => {
+      const current = bySession.get(entry.sessionId) ?? {
+        date: entry.date,
+        label: formatShortDate(entry.date),
+        volume: 0,
+      };
+      current.volume += (entry.weight ?? 0) * (entry.reps ?? 0);
+      bySession.set(entry.sessionId, current);
+    });
+
+  return [...bySession.values()]
+    .sort((left, right) => (left.date ?? '').localeCompare(right.date ?? ''))
+    .slice(-7);
 }
 
 export default function HistoryRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { authMode, guardFeature, sheets } = useAuthGate();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [selectedDate, setSelectedDate] = useState(getLocalDateString());
   const [monthCursor, setMonthCursor] = useState(new Date());
   const [isMonthVisible, setMonthVisible] = useState(false);
   const [dataScope, setDataScope] = useState<DataScope>('personal');
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryState>(createEmptyHistory());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -245,9 +275,13 @@ export default function HistoryRoute() {
       }
 
       await initializeLocalDatabase();
-      const group = await repositories.groupRepository.getDefaultGroup();
+      const groups = await repositories.groupRepository.listGroups();
+      const group = groups.find((item) => item.id === selectedGroupId) ?? groups[0] ?? null;
       if (!group) {
         throw new Error('默认小组尚未初始化。');
+      }
+      if (group.id !== selectedGroupId) {
+        setSelectedGroupId(group.id);
       }
 
       const members = await repositories.memberRepository.listMembers(group.id);
@@ -268,15 +302,8 @@ export default function HistoryRoute() {
       const sevenDaysAgo = addDays(new Date(), -6);
       const weekStart = getLocalDateString(sevenDaysAgo);
       const today = getLocalDateString();
-      const [recentSessions, selectedSessions, monthSessions, weekSessions, groupRecentSessions, groupWeekSessions] = await Promise.all([
-        repositories.workoutRepository.listSessions({ groupId: group.id, memberId: currentMember.id, limit: 10 }),
-        repositories.workoutRepository.listSessions({
-          groupId: group.id,
-          memberId: currentMember.id,
-          fromDate: selectedDate,
-          toDate: selectedDate,
-          limit: 30,
-        }),
+      const [personalSessions, monthSessions, weekSessions, groupRecentSessions, groupWeekSessions] = await Promise.all([
+        repositories.workoutRepository.listSessions({ groupId: group.id, memberId: currentMember.id, limit: 200 }),
         repositories.workoutRepository.listSessions({
           groupId: group.id,
           memberId: currentMember.id,
@@ -302,9 +329,8 @@ export default function HistoryRoute() {
           limit: 200,
         }),
       ]);
-      const [recentDetails, selectedDetails, weekDetails] = await Promise.all([
-        Promise.all(recentSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id))),
-        Promise.all(selectedSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id))),
+      const [personalDetails, weekDetails] = await Promise.all([
+        Promise.all(personalSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id))),
         Promise.all(weekSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id))),
       ]);
       const groupSessionIds = Array.from(new Set([...groupRecentSessions, ...groupWeekSessions].map((session) => session.id)));
@@ -316,7 +342,7 @@ export default function HistoryRoute() {
       const groupRecentDetails = groupRecentSessions
         .map((session) => groupDetailsById.get(session.id))
         .filter((detail): detail is WorkoutSessionDetail => Boolean(detail));
-      const recentEntries = recentDetails.flatMap((detail) => getMemberEntries(detail, currentMember.id));
+      const recentEntries = personalDetails.flatMap((detail) => getMemberEntries(detail, currentMember.id));
       const series = selectLargestExerciseSeries(recentEntries);
       const analysis = series ? analyzeExerciseHistory(series.entries) : null;
       const exercise = series
@@ -324,7 +350,7 @@ export default function HistoryRoute() {
         : null;
       const summaryExerciseIds = Array.from(
         new Set(
-          [...recentDetails, ...selectedDetails, ...weekDetails, ...groupDetails].flatMap((detail) =>
+          [...personalDetails, ...weekDetails, ...groupDetails].flatMap((detail) =>
             detail.exercises.map((exerciseRecord) => exerciseRecord.exerciseId),
           ),
         ),
@@ -332,15 +358,21 @@ export default function HistoryRoute() {
       const summaryExercises = await repositories.exerciseRepository.listExercisesByIds(summaryExerciseIds);
       const exerciseNamesById = Object.fromEntries(summaryExercises.map((exerciseItem) => [exerciseItem.id, exerciseItem.name]));
       const weeklySummaries = weekDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById));
+      const personalSummaries = personalDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById));
 
       setHistory({
         analysis,
         currentMember,
         exercise,
+        exerciseEntries: recentEntries,
+        exerciseOptions: Array.from(new Set(recentEntries.map((entry) => entry.exerciseId))).map((exerciseId) => ({
+          id: exerciseId,
+          name: exerciseNamesById[exerciseId] ?? '训练动作',
+        })),
         monthlyTrainingDates: new Set(monthSessions.map((session) => session.date)),
         memberProfilesById: Object.fromEntries(memberProfiles),
-        recentSessions: recentDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById)),
-        selectedDateSessions: selectedDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById)),
+        recentSessions: personalSummaries,
+        selectedDateSessions: [],
         groupAnalysis: getGroupHistoryAnalysis({
           details: groupWeekDetails,
           groupId: group.id,
@@ -353,7 +385,7 @@ export default function HistoryRoute() {
         groupName: group.name,
         weeklyCompletedSets: weeklySummaries.reduce((sum, summary) => sum + summary.setCount, 0),
         weeklySessionCount: weeklySummaries.filter((summary) => summary.setCount > 0).length,
-        weeklyTrend: buildWeeklyTrend(sevenDaysAgo, weeklySummaries),
+        weeklyTrend: buildWeeklyTrend(weeklySummaries),
         weeklyVolume: weeklySummaries.reduce((sum, summary) => sum + summary.volume, 0),
       });
     } catch (loadError) {
@@ -361,7 +393,7 @@ export default function HistoryRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [authMode, monthCursor, repositories, selectedDate]);
+  }, [authMode, monthCursor, repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -371,6 +403,42 @@ export default function HistoryRoute() {
 
   const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
   const monthDates = useMemo(() => getMonthDates(monthCursor), [monthCursor]);
+  const effectiveSelectedExerciseId =
+    selectedExerciseId && history.exerciseOptions.some((option) => option.id === selectedExerciseId)
+      ? selectedExerciseId
+      : null;
+  const selectedExerciseOption = useMemo(
+    () => history.exerciseOptions.find((option) => option.id === effectiveSelectedExerciseId) ?? null,
+    [effectiveSelectedExerciseId, history.exerciseOptions],
+  );
+  const selectedExerciseEntries = useMemo(
+    () =>
+      effectiveSelectedExerciseId
+        ? history.exerciseEntries.filter((entry) => entry.exerciseId === effectiveSelectedExerciseId)
+        : history.exerciseEntries,
+    [effectiveSelectedExerciseId, history.exerciseEntries],
+  );
+  const selectedExerciseAnalysis = useMemo(() => {
+    if (effectiveSelectedExerciseId) {
+      return selectedExerciseEntries.length > 0 ? analyzeExerciseHistory(selectedExerciseEntries) : null;
+    }
+    return null;
+  }, [effectiveSelectedExerciseId, selectedExerciseEntries]);
+  const selectedExerciseTrend = useMemo(
+    () => (effectiveSelectedExerciseId ? buildExerciseTrend(selectedExerciseEntries) : history.weeklyTrend),
+    [effectiveSelectedExerciseId, history.weeklyTrend, selectedExerciseEntries],
+  );
+  const querySessions = useMemo(() => {
+    if (!effectiveSelectedExerciseId) {
+      return history.recentSessions;
+    }
+    const sessionIds = new Set(selectedExerciseEntries.map((entry) => entry.sessionId));
+    return history.recentSessions.filter((summary) => sessionIds.has(summary.session.id));
+  }, [effectiveSelectedExerciseId, history.recentSessions, selectedExerciseEntries]);
+  const selectedDateSessions = useMemo(
+    () => querySessions.filter((summary) => summary.session.date === selectedDate),
+    [querySessions, selectedDate],
+  );
 
   const openRecentForEdit = useCallback(() => {
     if (!guardFeature('manual_history')) {
@@ -379,12 +447,19 @@ export default function HistoryRoute() {
 
     const latest = history.recentSessions[0]?.session;
     if (!latest) {
-      Alert.alert('暂无训练', '完成或补录一次训练后，就可以编辑最近训练。');
+      Alert.alert('暂无训练', '完成或补录一次训练后，就可以查看训练详情。');
       return;
     }
 
-    router.push({ pathname: '/history/[sessionId]', params: { sessionId: latest.id } } as never);
-  }, [guardFeature, history.recentSessions]);
+    router.push({
+      pathname: '/history/[sessionId]',
+      params: {
+        memberId: history.currentMember?.id,
+        scope: 'personal',
+        sessionId: latest.id,
+      },
+    } as never);
+  }, [guardFeature, history.currentMember?.id, history.recentSessions]);
 
   const isGuestPreview = authMode === 'guest_preview';
 
@@ -450,10 +525,21 @@ export default function HistoryRoute() {
                 <MiniStat icon="barbell-outline" label="本周训练" value={`${history.weeklySessionCount} 次`} accent={history.weeklySessionCount > 0} />
                 <MiniStat icon="layers-outline" label="完成组数" value={`${history.weeklyCompletedSets} 组`} accent={history.weeklyCompletedSets > 0} />
                 <MiniStat icon="flame-outline" label="本周容量" value={formatKg(history.weeklyVolume)} accent={history.weeklyVolume > 0} />
-                <MiniStat icon="time-outline" label="最近训练" value={history.recentSessions[0] ? formatShortDate(history.recentSessions[0].session.date) : '暂无'} />
+                <MiniStat icon="search-outline" label="训练查询" value={`${querySessions.length} 条`} />
               </View>
 
-              <TrendChart analysis={history.analysis} exerciseName={history.exercise?.name} trend={history.weeklyTrend} />
+              <ExerciseFilterBar
+                onSelect={setSelectedExerciseId}
+                options={history.exerciseOptions}
+                selectedExerciseId={effectiveSelectedExerciseId}
+              />
+
+              <TrendChart
+                analysis={selectedExerciseAnalysis}
+                exerciseId={effectiveSelectedExerciseId ?? undefined}
+                exerciseName={selectedExerciseOption?.name ?? '总训练量'}
+                trend={selectedExerciseTrend}
+              />
 
               <CalendarWeek
                 monthCursor={monthCursor}
@@ -471,49 +557,49 @@ export default function HistoryRoute() {
                     router.push({ pathname: '/history/manual', params: { date: selectedDate } } as never);
                   }
                 }}
-                title={`${formatShortDate(selectedDate)} 训练`}
+                title={`${formatShortDate(selectedDate)} 当天记录`}
               />
-              {history.selectedDateSessions.length === 0 ? (
+              {selectedDateSessions.length === 0 ? (
                 <AppCard style={styles.emptyDayCard} tone="soft">
                   <Ionicons color={colors.textSubtle} name="calendar-clear-outline" size={20} />
                   <View style={styles.emptyDayText}>
                     <AppText variant="bodySmall" weight="900">
-                      当天暂无训练
+                      当天暂无匹配训练
                     </AppText>
                     <AppText tone="muted" variant="caption">
-                      点击「补录」添加已完成的训练
+                      可切换动作筛选，或点击「补录」添加已完成训练
                     </AppText>
                   </View>
                 </AppCard>
               ) : (
                 <View style={styles.sessionList}>
-                  {history.selectedDateSessions.map((summary) => (
-                    <CompactSessionCard key={summary.session.id} summary={summary} />
+                  {selectedDateSessions.map((summary) => (
+                    <CompactSessionCard key={summary.session.id} memberId={history.currentMember?.id} summary={summary} />
                   ))}
                 </View>
               )}
 
               <SectionHeader
-                actionLabel="全部"
+                actionLabel="补录"
                 onActionPress={() => {
                   if (guardFeature('manual_history')) router.push('/history/manual' as never);
                 }}
-                subtitle={`${history.recentSessions.length} 条`}
-                title="最近训练"
+                subtitle={`${querySessions.length} 条`}
+                title="训练查询"
               />
-              {history.recentSessions.length === 0 ? (
+              {querySessions.length === 0 ? (
                 <EmptyState
                   actionLabel="去训练"
-                  description="完成一次训练后，这里会显示训练摘要和趋势。"
+                  description="完成一次匹配训练后，这里会显示可查询的训练摘要。"
                   onActionPress={() => {
                     if (guardFeature('start_workout')) router.push('/(tabs)/today');
                   }}
-                  title="还没有训练记录"
+                  title="没有匹配训练记录"
                 />
               ) : (
                 <View style={styles.sessionList}>
-                  {history.recentSessions.slice(0, 8).map((summary) => (
-                    <CompactSessionCard key={summary.session.id} summary={summary} />
+                  {querySessions.slice(0, 12).map((summary) => (
+                    <CompactSessionCard key={summary.session.id} memberId={history.currentMember?.id} summary={summary} />
                   ))}
                 </View>
               )}
@@ -672,10 +758,10 @@ function QuickActions({ onAdd, onEdit, onAnalytics }: { onAdd: () => void; onEdi
       </Pressable>
       <Pressable accessibilityRole="button" onPress={onEdit} style={styles.quickBtn}>
         <View style={[styles.quickBtnIcon, { backgroundColor: colors.accentSoft }]}>
-          <Ionicons color={colors.accent} name="create-outline" size={16} />
+          <Ionicons color={colors.accent} name="eye-outline" size={16} />
         </View>
         <AppText variant="bodySmall" weight="900">
-          编辑最近
+          训练详情
         </AppText>
       </Pressable>
       <Pressable accessibilityRole="button" onPress={onAnalytics} style={styles.quickBtn}>
@@ -714,12 +800,177 @@ function MiniStat({
   );
 }
 
+function ExerciseFilterBar({
+  onSelect,
+  options,
+  selectedExerciseId,
+}: {
+  onSelect: (exerciseId: string | null) => void;
+  options: ExerciseFilterOption[];
+  selectedExerciseId: string | null;
+}) {
+  const [isOpen, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selectedOption = options.find((option) => option.id === selectedExerciseId) ?? null;
+  const recentOptions = options.slice(0, 4);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredOptions = options.filter((option) => option.name.toLowerCase().includes(normalizedQuery));
+  const otherOptions = normalizedQuery
+    ? filteredOptions
+    : options.filter((option) => !recentOptions.some((recent) => recent.id === option.id));
+
+  const chooseExercise = (exerciseId: string | null) => {
+    onSelect(exerciseId);
+    setOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <AppCard style={styles.exerciseFilterCard}>
+      <View style={styles.trendHeader}>
+        <View style={styles.trendTitleBlock}>
+          <AppText variant="subtitle">动作表现</AppText>
+          <AppText tone="muted" variant="caption">
+            按真实训练动作筛选趋势和记录
+          </AppText>
+        </View>
+        <Tag label={selectedExerciseId ? '已筛选' : '总览'} tone={selectedExerciseId ? 'brand' : 'neutral'} />
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setOpen(true)}
+        style={({ pressed }) => [styles.actionSelector, pressed && styles.pressed]}
+      >
+        <View style={styles.trendTitleBlock}>
+          <AppText variant="bodySmall" weight="900">
+            {selectedOption?.name ?? '全部动作'}
+          </AppText>
+          <AppText tone="muted" variant="caption">
+            默认查看总训练量，选择动作后收敛记录和趋势
+          </AppText>
+        </View>
+        <Ionicons color={colors.textMuted} name="chevron-down" size={18} />
+      </Pressable>
+
+      <AppModalSheet
+        onClose={() => setOpen(false)}
+        subtitle="搜索或选择真实练过的动作"
+        title="选择动作"
+        visible={isOpen}
+      >
+        <View style={styles.selectorSearch}>
+          <Ionicons color={colors.textMuted} name="search-outline" size={16} />
+          <TextInput
+            onChangeText={setQuery}
+            placeholder="搜索动作"
+            placeholderTextColor={colors.textSubtle}
+            style={styles.selectorInput}
+            value={query}
+          />
+        </View>
+        <ScrollView style={styles.selectorList} keyboardShouldPersistTaps="handled">
+          <SelectorOption
+            active={!selectedExerciseId}
+            meta={`${options.length} 个动作 · 总训练量趋势`}
+            name="全部动作"
+            onPress={() => chooseExercise(null)}
+          />
+          {!normalizedQuery && recentOptions.length > 0 ? (
+            <SelectorSection
+              activeId={selectedExerciseId}
+              onSelect={(id) => chooseExercise(id)}
+              options={recentOptions}
+              title="最近动作"
+            />
+          ) : null}
+          <SelectorSection
+            activeId={selectedExerciseId}
+            emptyLabel="没有匹配动作"
+            onSelect={(id) => chooseExercise(id)}
+            options={otherOptions}
+            title={normalizedQuery ? '搜索结果' : '全部动作'}
+          />
+        </ScrollView>
+      </AppModalSheet>
+    </AppCard>
+  );
+}
+
+function SelectorSection({
+  activeId,
+  emptyLabel = '暂无动作',
+  onSelect,
+  options,
+  title,
+}: {
+  activeId: string | null;
+  emptyLabel?: string;
+  onSelect: (exerciseId: string) => void;
+  options: ExerciseFilterOption[];
+  title: string;
+}) {
+  return (
+    <View style={styles.selectorSection}>
+      <AppText tone="muted" variant="caption" weight="900">
+        {title}
+      </AppText>
+      {options.length === 0 ? (
+        <AppText tone="muted" variant="bodySmall">
+          {emptyLabel}
+        </AppText>
+      ) : (
+        options.map((option) => (
+          <SelectorOption
+            active={activeId === option.id}
+            key={option.id}
+            meta="动作趋势与训练查询"
+            name={option.name}
+            onPress={() => onSelect(option.id)}
+          />
+        ))
+      )}
+    </View>
+  );
+}
+
+function SelectorOption({
+  active,
+  meta,
+  name,
+  onPress,
+}: {
+  active: boolean;
+  meta: string;
+  name: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.selectorOption, active && styles.selectorOptionActive, pressed && styles.pressed]}
+    >
+      <View style={styles.selectorOptionText}>
+        <AppText numberOfLines={1} variant="bodySmall" weight="900">
+          {name}
+        </AppText>
+        <AppText numberOfLines={1} tone="muted" variant="caption">
+          {meta}
+        </AppText>
+      </View>
+      {active ? <Ionicons color={colors.primary} name="checkmark-circle" size={18} /> : null}
+    </Pressable>
+  );
+}
+
 function TrendChart({
   analysis,
+  exerciseId,
   exerciseName,
   trend,
 }: {
   analysis: HistoryAnalysis | null;
+  exerciseId?: string;
   exerciseName?: string;
   trend: WeekTrendPoint[];
 }) {
@@ -735,7 +986,14 @@ function TrendChart({
             近 7 天 · {exerciseName ?? '暂无重点动作'}
           </AppText>
         </View>
-        {analysis ? <Tag label="有趋势" tone="success" /> : <Tag label="积累中" tone="neutral" />}
+        {exerciseId ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: '/history/exercise/[exerciseId]', params: { exerciseId } } as never)}
+          >
+            <Tag label="动作详情" tone="brand" />
+          </Pressable>
+        ) : analysis ? <Tag label="有趋势" tone="success" /> : <Tag label="积累中" tone="neutral" />}
       </View>
 
       <MiniLineChart
@@ -743,8 +1001,9 @@ function TrendChart({
         data={trend.map((point) => point.volume)}
         emptyMessage="近 7 天还没有训练量"
         formatValue={(value) => `${Math.round(value / 1000)}k`}
-        labels={trend.map((point) => formatShortDate(point.date).slice(3))}
+        labels={trend.map((point) => point.label)}
         minChartHeight={maxVolume}
+        unitLabel="kg"
       />
 
       <View style={styles.suggestionBox}>
@@ -930,16 +1189,30 @@ function GroupExercisePerformanceCard({
   analysis: GroupHistoryAnalysis;
   memberProfilesById: Record<string, MemberProfile | null>;
 }) {
-  const primary = analysis.exerciseAnalyses.find((item) => item.key === 'bench') ?? analysis.exerciseAnalyses[0];
+  const sortedAnalyses = analysis.exerciseAnalyses
+    .slice()
+    .sort(
+      (left, right) =>
+        right.sessionCount - left.sessionCount ||
+        right.completedSets - left.completedSets ||
+        right.members.reduce((sum, member) => sum + member.latestVolume, 0) -
+          left.members.reduce((sum, member) => sum + member.latestVolume, 0),
+    );
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [isSelectorOpen, setSelectorOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const primary = sortedAnalyses.find((item) => item.key === selectedKey) ?? null;
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredAnalyses = sortedAnalyses.filter((item) => item.exerciseName.toLowerCase().includes(normalizedQuery));
 
-  if (!primary) {
+  if (analysis.exerciseAnalyses.length === 0) {
     return (
       <AppCard style={styles.groupCard}>
         <View style={styles.trendHeader}>
           <View style={styles.trendTitleBlock}>
-            <AppText variant="subtitle">主项表现</AppText>
+            <AppText variant="subtitle">动作表现</AppText>
             <AppText tone="muted" variant="caption">
-              卧推、深蹲、硬拉和肩推的多人对比
+              从真实训练动作中选择后查看多人对比
             </AppText>
           </View>
           <Tag label="待积累" tone="neutral" />
@@ -954,61 +1227,125 @@ function GroupExercisePerformanceCard({
     );
   }
 
+  const chartIndexes = primary
+    ? primary.labels
+    .map((_, index) => index)
+    .filter((index) => primary.trendSeries.some((series) => (series.values[index] ?? 0) > 0))
+    .slice(-7)
+    : [];
+  const chartLabels = chartIndexes.map((sourceIndex, index) => primary?.labels[sourceIndex] ?? `第${index + 1}次`);
+  const chartSeries = primary?.trendSeries.map((series) => ({
+    label: series.memberName,
+    values: chartIndexes.map((index) => series.values[index] ?? 0),
+  })) ?? [];
+
   return (
     <AppCard style={styles.groupCard}>
       <View style={styles.trendHeader}>
         <View style={styles.trendTitleBlock}>
-          <AppText variant="subtitle">{primary.exerciseName}表现</AppText>
+          <AppText variant="subtitle">{primary ? `${primary.exerciseName}训练容量趋势` : '动作表现'}</AppText>
           <AppText tone="muted" variant="caption">
-            成员最好重量、最近容量和 7 天趋势
+            默认保留小组总览，选择动作后查看成员容量趋势
           </AppText>
         </View>
-        <Tag label={`${primary.members.length} 名成员`} tone="brand" />
+        <Tag label={primary ? `${primary.members.length} 名成员` : `${sortedAnalyses.length} 个动作`} tone={primary ? 'brand' : 'neutral'} />
       </View>
 
-      <View style={styles.exerciseSummaryGrid}>
-        {analysis.exerciseAnalyses.slice(0, 4).map((item) => {
-          const bestWeight = Math.max(0, ...item.members.map((member) => member.bestWeight ?? 0));
-          return (
-            <Pressable
-              accessibilityRole="button"
-              key={item.key}
-              onPress={() =>
-                router.push({
-                  pathname: '/history/group-exercise/[exerciseId]',
-                  params: { exerciseId: item.key },
-                } as never)
-              }
-              style={({ pressed }) => [
-                styles.exerciseSummaryChip,
-                item.key === primary.key && styles.exerciseSummaryChipActive,
-                pressed && styles.pressed,
-              ]}
-            >
-              <AppText numberOfLines={1} variant="caption" weight="900">
-                {item.exerciseName}
-              </AppText>
-              <AppText tone="muted" variant="caption">
-                {item.members.length} 人 · {bestWeight > 0 ? `${bestWeight} kg` : '暂无重量'}
-              </AppText>
-            </Pressable>
-          );
-        })}
-      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setSelectorOpen(true)}
+        style={({ pressed }) => [styles.actionSelector, pressed && styles.pressed]}
+      >
+        <View style={styles.trendTitleBlock}>
+          <AppText variant="bodySmall" weight="900">
+            {primary?.exerciseName ?? '全部动作'}
+          </AppText>
+          <AppText tone="muted" variant="caption">
+            点击选择分析动作
+          </AppText>
+        </View>
+        <Ionicons color={colors.textMuted} name="chevron-down" size={18} />
+      </Pressable>
 
-      <MultiLineTrendChart
-        chartHeight={116}
-        emptyMessage="近 7 天暂无主项容量"
-        formatValue={(value) => `${Math.round(value / 1000)}k`}
-        labels={primary.labels}
-        series={primary.trendSeries.map((series) => ({
-          label: series.memberName,
-          values: series.values,
-        }))}
-      />
+      <AppModalSheet
+        onClose={() => setSelectorOpen(false)}
+        subtitle="选择一个真实练过的动作查看多人对比"
+        title="小组动作选择"
+        visible={isSelectorOpen}
+      >
+        <View style={styles.selectorSearch}>
+          <Ionicons color={colors.textMuted} name="search-outline" size={16} />
+          <TextInput
+            onChangeText={setQuery}
+            placeholder="搜索动作"
+            placeholderTextColor={colors.textSubtle}
+            style={styles.selectorInput}
+            value={query}
+          />
+        </View>
+        <ScrollView style={styles.selectorList} keyboardShouldPersistTaps="handled">
+          <SelectorOption
+            active={!primary}
+            meta={`${sortedAnalyses.length} 个动作 · 小组总览`}
+            name="全部动作"
+            onPress={() => {
+              setSelectedKey(null);
+              setSelectorOpen(false);
+              setQuery('');
+            }}
+          />
+          <View style={styles.selectorSection}>
+            <AppText tone="muted" variant="caption" weight="900">
+              {normalizedQuery ? '搜索结果' : '真实训练动作'}
+            </AppText>
+            {filteredAnalyses.length === 0 ? (
+              <AppText tone="muted" variant="bodySmall">
+                没有匹配动作
+              </AppText>
+            ) : (
+              filteredAnalyses.map((item) => {
+                const bestWeight = Math.max(0, ...item.members.map((member) => member.bestWeight ?? 0));
+                return (
+                  <SelectorOption
+                    active={item.key === primary?.key}
+                    key={item.key}
+                    meta={`${item.sessionCount} 次 · ${item.members.length} 人 · ${
+                      bestWeight > 0 ? `${bestWeight} kg` : '暂无重量'
+                    }`}
+                    name={item.exerciseName}
+                    onPress={() => {
+                      setSelectedKey(item.key);
+                      setSelectorOpen(false);
+                      setQuery('');
+                    }}
+                  />
+                );
+              })
+            )}
+          </View>
+        </ScrollView>
+      </AppModalSheet>
 
-      <View style={styles.performanceList}>
-        {primary.members.map((member) => (
+      {!primary ? (
+        <View style={styles.inlineEmpty}>
+          <Ionicons color={colors.textMuted} name="analytics-outline" size={20} />
+          <AppText tone="muted" variant="bodySmall">
+            当前默认展示小组总览。需要查看某个动作时，从上方选择器进入成员对比。
+          </AppText>
+        </View>
+      ) : (
+        <>
+          <MultiLineTrendChart
+            chartHeight={116}
+            emptyMessage="近 7 天暂无动作容量"
+            formatValue={(value) => `${Math.round(value / 1000)}k`}
+            labels={chartLabels}
+            series={chartSeries}
+            unitLabel="kg"
+          />
+
+          <View style={styles.performanceList}>
+            {primary.members.map((member) => (
           <Pressable
             accessibilityRole="button"
             key={member.memberId}
@@ -1059,14 +1396,20 @@ function GroupExercisePerformanceCard({
             </View>
             <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
           </Pressable>
-        ))}
-      </View>
+            ))}
+          </View>
+        </>
+      )}
     </AppCard>
   );
 }
 
 function GroupTrendCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
-  const maxVolume = Math.max(1, ...analysis.trend.map((point) => point.volume));
+  const activeTrend = analysis.trend
+    .filter((point) => point.volume > 0 || point.completedSets > 0)
+    .slice(-7)
+    .map((point, index) => ({ ...point, label: `第${index + 1}次` }));
+  const maxVolume = Math.max(1, ...activeTrend.map((point) => point.volume));
   return (
     <AppCard style={styles.trendCard}>
       <View style={styles.trendHeader}>
@@ -1080,12 +1423,13 @@ function GroupTrendCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
       </View>
       <MiniLineChart
         chartHeight={112}
-        data={analysis.trend.map((point) => point.volume)}
+        data={activeTrend.map((point) => point.volume)}
         emptyMessage="近 7 天还没有小组训练量"
         formatValue={(value) => `${Math.round(value / 1000)}k`}
-        labels={analysis.trend.map((point) => point.label)}
+        labels={activeTrend.map((point) => point.label)}
         minChartHeight={maxVolume}
         showValues
+        unitLabel="kg"
       />
     </AppCard>
   );
@@ -1117,7 +1461,12 @@ function GroupRecentSessionsCard({ analysis }: { analysis: GroupHistoryAnalysis 
             <Pressable
               accessibilityRole="button"
               key={session.sessionId}
-              onPress={() => router.push({ pathname: '/history/[sessionId]', params: { sessionId: session.sessionId } } as never)}
+              onPress={() =>
+                router.push({
+                  pathname: '/history/[sessionId]',
+                  params: { scope: 'group', sessionId: session.sessionId },
+                } as never)
+              }
               style={({ pressed }) => [styles.groupSessionRow, pressed && styles.pressed]}
             >
               <View style={styles.sessionIcon}>
@@ -1224,9 +1573,15 @@ function CalendarWeek({
   );
 }
 
-function CompactSessionCard({ summary }: { summary: SessionSummary }) {
+function CompactSessionCard({ memberId, summary }: { memberId?: string; summary: SessionSummary }) {
   const session = summary.session;
-  const detailRoute = { pathname: '/history/[sessionId]', params: { sessionId: session.id } } as never;
+  const detailRoute = {
+    pathname: '/history/[sessionId]',
+    params: {
+      ...(memberId ? { memberId, scope: 'personal' } : { scope: 'group' }),
+      sessionId: session.id,
+    },
+  } as never;
   const completed = session.status === 'completed';
 
   return (
@@ -1256,6 +1611,88 @@ function CompactSessionCard({ summary }: { summary: SessionSummary }) {
 }
 
 const styles = StyleSheet.create({
+  actionSelector: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  exerciseFilterCard: {
+    gap: spacing.md,
+  },
+  exerciseFilterChip: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    maxWidth: '48%',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  exerciseFilterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  exerciseFilterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  exerciseFilterText: {
+    color: colors.textMuted,
+  },
+  exerciseFilterTextActive: {
+    color: colors.surface,
+  },
+  selectorInput: {
+    color: colors.textStrong,
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    minHeight: 42,
+  },
+  selectorList: {
+    maxHeight: 360,
+  },
+  selectorOption: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+  },
+  selectorOptionActive: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
+  },
+  selectorOptionText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  selectorSearch: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  selectorSection: {
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
   loadingWrap: {
     alignItems: 'center',
     paddingVertical: spacing.xxl,

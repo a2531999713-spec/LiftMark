@@ -4,16 +4,12 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
-import { AppCard, AppText, EmptyState, MultiLineTrendChart, Screen, SectionHeader, Tag } from '@/components/ui';
+import { AppCard, AppText, EmptyState, MultiLineTrendChart, Screen, SecondaryPageHeader, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
-import {
-  estimateOneRM,
-  getGroupExerciseKey,
-  getGroupExerciseName,
-  type GroupExerciseKey,
-} from '@/domain/history/history-analysis';
+import { estimateOneRM } from '@/domain/history/history-analysis';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
 type ExerciseMemberSummary = {
@@ -53,28 +49,22 @@ type ExerciseDetailView = {
 };
 
 const metricOptions: { label: string; value: ExerciseAnalysisMetric }[] = [
-  { label: '最佳重量', value: 'best_weight' },
   { label: '训练容量', value: 'volume' },
+  { label: '最佳重量', value: 'best_weight' },
   { label: '估算 1RM', value: 'estimated_1rm' },
 ];
+
+const metricTitleLabels: Record<ExerciseAnalysisMetric, string> = {
+  best_weight: '最佳重量',
+  estimated_1rm: '估算 1RM',
+  volume: '训练容量',
+};
 
 const rangeOptions: { label: string; value: ExerciseAnalysisRange }[] = [
   { label: '30 天', value: '30d' },
   { label: '90 天', value: '90d' },
   { label: '全部', value: 'all' },
 ];
-
-function isGroupExerciseKey(value?: string): value is GroupExerciseKey {
-  return (
-    value === 'bench' ||
-    value === 'squat' ||
-    value === 'deadlift' ||
-    value === 'press' ||
-    value === 'row' ||
-    value === 'pullup' ||
-    value === 'other'
-  );
-}
 
 function formatKg(value: number): string {
   return `${Math.round(value).toLocaleString('zh-CN')} kg`;
@@ -90,14 +80,14 @@ function getDetailSortValue(detail: WorkoutSessionDetail): string {
 
 function buildExerciseDetailView({
   details,
-  exerciseKey,
+  exerciseId,
   exerciseNamesById,
   groupName,
   members,
   profilesByMemberId,
 }: {
   details: WorkoutSessionDetail[];
-  exerciseKey: GroupExerciseKey;
+  exerciseId: string;
   exerciseNamesById: Record<string, string>;
   groupName: string;
   members: GroupMember[];
@@ -114,9 +104,7 @@ function buildExerciseDetailView({
       if (!set.completed) continue;
 
       const exerciseRecord = detail.exercises.find((record) => record.id === set.exerciseRecordId);
-      const exerciseName = exerciseNamesById[exerciseRecord?.exerciseId ?? ''] ?? '未知动作';
-      const matchedKey = getGroupExerciseKey(exerciseName);
-      if (exerciseKey === 'other' ? matchedKey !== null : matchedKey !== exerciseKey) continue;
+      if (exerciseRecord?.exerciseId !== exerciseId) continue;
 
       const member = memberMap.get(set.memberId);
       if (!member) continue;
@@ -170,7 +158,7 @@ function buildExerciseDetailView({
 
   return {
     completedSets: records.length,
-    exerciseName: getGroupExerciseName(exerciseKey),
+    exerciseName: exerciseNamesById[exerciseId] ?? '训练动作',
     groupName,
     memberSummaries,
     records: records.slice().sort((left, right) => `${right.date}:${right.sessionId}`.localeCompare(`${left.date}:${left.sessionId}`)),
@@ -203,8 +191,14 @@ function buildTrendSeries(
   members: ExerciseMemberSummary[],
   metric: ExerciseAnalysisMetric,
 ) {
-  const labels = [...new Set(records.map((record) => record.date))]
-    .sort((left, right) => left.localeCompare(right))
+  const sessionSlots = Array.from(
+    new Map(
+      records
+        .slice()
+        .sort((left, right) => `${left.date}:${left.sessionId}`.localeCompare(`${right.date}:${right.sessionId}`))
+        .map((record) => [record.sessionId, { date: record.date, sessionId: record.sessionId }] as const),
+    ).values(),
+  )
     .slice(-10);
   const visibleMemberIds = new Set(records.map((record) => record.memberId));
   const series = members
@@ -212,8 +206,8 @@ function buildTrendSeries(
     .slice(0, 4)
     .map((member) => ({
       label: member.memberName,
-      values: labels.map((date) => {
-        const dayRecords = records.filter((record) => record.memberId === member.memberId && record.date === date);
+      values: sessionSlots.map((slot) => {
+        const dayRecords = records.filter((record) => record.memberId === member.memberId && record.sessionId === slot.sessionId);
         if (metric === 'volume') {
           return dayRecords.reduce((sum, record) => sum + record.volume, 0);
         }
@@ -227,7 +221,7 @@ function buildTrendSeries(
     }));
 
   return {
-    labels: labels.map(formatShortDate),
+    labels: sessionSlots.map((_, index) => `第${index + 1}次`),
     series,
   };
 }
@@ -243,16 +237,17 @@ function formatMetricValue(metric: ExerciseAnalysisMetric, value: number): strin
 export default function GroupExerciseDetailRoute() {
   const { exerciseId } = useLocalSearchParams<{ exerciseId: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [view, setView] = useState<ExerciseDetailView | null>(null);
-  const [metric, setMetric] = useState<ExerciseAnalysisMetric>('best_weight');
+  const [metric, setMetric] = useState<ExerciseAnalysisMetric>('volume');
   const [range, setRange] = useState<ExerciseAnalysisRange>('90d');
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadDetail = useCallback(async () => {
-    const exerciseKey = isGroupExerciseKey(exerciseId) ? exerciseId : null;
-    if (!exerciseKey) {
+    if (!exerciseId) {
       setError('未找到可分析的训练动作。');
       setIsLoading(false);
       return;
@@ -263,9 +258,13 @@ export default function GroupExerciseDetailRoute() {
 
     try {
       await initializeLocalDatabase();
-      const group = await repositories.groupRepository.getDefaultGroup();
+      const groups = await repositories.groupRepository.listGroups();
+      const group = groups.find((item) => item.id === selectedGroupId) ?? groups[0] ?? null;
       if (!group) {
         throw new Error('默认小组尚未初始化。');
+      }
+      if (group.id !== selectedGroupId) {
+        setSelectedGroupId(group.id);
       }
 
       const members = await repositories.memberRepository.listMembers(group.id);
@@ -288,7 +287,7 @@ export default function GroupExerciseDetailRoute() {
       setView(
         buildExerciseDetailView({
           details,
-          exerciseKey,
+          exerciseId,
           exerciseNamesById,
           groupName: group.name,
           members,
@@ -300,7 +299,7 @@ export default function GroupExerciseDetailRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [exerciseId, repositories]);
+  }, [exerciseId, repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -319,17 +318,13 @@ export default function GroupExerciseDetailRoute() {
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons color={colors.text} name="chevron-back" size={22} />
-        </Pressable>
-        <View style={styles.headerText}>
-          <AppText variant="headline">{view?.exerciseName ?? '动作详情'}</AppText>
-          <AppText tone="muted" variant="bodySmall">
-            {view ? `${view.groupName} · 小组动作对比` : '小组动作对比'}
-          </AppText>
-        </View>
-      </View>
+      <SecondaryPageHeader
+        caption="小组动作"
+        icon="barbell-outline"
+        meta={view ? `${view.memberSummaries.length} 名成员` : undefined}
+        subtitle={view ? `${view.groupName} · 小组动作对比` : '小组动作对比'}
+        title={view?.exerciseName ?? '动作详情'}
+      />
 
       {isLoading ? (
         <View style={styles.loadingWrap}>
@@ -414,12 +409,16 @@ export default function GroupExerciseDetailRoute() {
                 ))}
               </View>
             </View>
+            <AppText variant="bodySmall" weight="900">
+              {view.exerciseName}{metricTitleLabels[metric]}趋势
+            </AppText>
             <MultiLineTrendChart
               chartHeight={128}
               emptyMessage="当前筛选范围内还没有有效训练数据"
               formatValue={(value) => formatMetricValue(metric, value)}
               labels={trend.labels}
               series={trend.series}
+              unitLabel="kg"
             />
           </AppCard>
 

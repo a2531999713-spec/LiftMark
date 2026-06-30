@@ -3,14 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton } from '@/components/common/AppButton';
-import { EmptyState } from '@/components/common/EmptyState';
-import { Screen } from '@/components/common/Screen';
+import { AppButton, EmptyState, Screen, SecondaryPageHeader } from '@/components/ui';
 import { MemberForm } from '@/components/members/MemberForm';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { MemberFormValues } from '@/domain/member/member.validation';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors } from '@/theme/colors';
 
 function createInitialValues(member: GroupMember, profile: MemberProfile | null): MemberFormValues {
@@ -31,6 +30,8 @@ export default function MemberDetailRoute() {
   const { memberId } = useLocalSearchParams<{ memberId: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [member, setMember] = useState<GroupMember | null>(null);
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,9 +53,13 @@ export default function MemberDetailRoute() {
 
       try {
         await initializeLocalDatabase();
-        const group = await repositories.groupRepository.getDefaultGroup();
+        const groups = await repositories.groupRepository.listGroups();
+        const group = groups.find((item) => item.id === selectedGroupId) ?? groups[0] ?? null;
         if (!group) {
           throw new Error('默认小组尚未初始化。');
+        }
+        if (group.id !== selectedGroupId) {
+          setSelectedGroupId(group.id);
         }
 
         const members = await repositories.memberRepository.listMembers(group.id);
@@ -85,7 +90,7 @@ export default function MemberDetailRoute() {
     return () => {
       isMounted = false;
     };
-  }, [memberId, repositories]);
+  }, [memberId, repositories, selectedGroupId, setSelectedGroupId]);
 
   const handleSubmit = useCallback(
     async (values: MemberFormValues) => {
@@ -128,10 +133,14 @@ export default function MemberDetailRoute() {
   );
 
   return (
-    <Screen
-      title={member ? member.displayName : '成员资料'}
-      subtitle="修改个人参数不会改变既有训练历史。"
-    >
+    <Screen>
+      <SecondaryPageHeader
+        avatarUri={profile?.avatarLocalUri ?? profile?.avatarThumbUrl ?? profile?.avatarUrl ?? member?.avatarUrl}
+        caption="训练成员"
+        meta={profile?.bodyweight ? `${profile.bodyweight} kg` : '参数可选'}
+        subtitle="修改个人参数不会改变既有训练历史。"
+        title={member ? member.displayName : '成员资料'}
+      />
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
 
       {error ? <EmptyState title="成员资料出错" description={error} /> : null}

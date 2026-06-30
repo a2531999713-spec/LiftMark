@@ -57,14 +57,22 @@ export function MemberForm({
   const {
     control,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isDirty, isValid },
   } = useForm<MemberFormValues>({
+    mode: 'onChange',
     resolver: zodResolver(memberFormSchema),
     defaultValues: {
       ...defaultMemberFormValues,
       ...initialValues,
     },
   });
+  const hasInitialValues = Boolean(initialValues?.displayName);
+  const canSubmit = isDirty && isValid && !isSubmitting;
+  const saveLabel = isSubmitting
+    ? '保存中...'
+    : isDirty
+      ? submitLabel
+      : hasInitialValues ? '已保存' : '填写后可保存';
 
   return (
     <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })}>
@@ -144,22 +152,8 @@ export function MemberForm({
           </View>
         </AppCard>
 
-        <AppCard style={styles.helpCard} tone="brand">
-          <View style={styles.helpTitle}>
-            <View style={styles.helpIcon}>
-              <Ionicons color={colors.surface} name="help-outline" size={20} />
-            </View>
-            <AppText variant="subtitle">这些数据会用于什么？</AppText>
-          </View>
-          <View style={styles.helpGrid}>
-            <HelpItem icon="navigate-outline" title="推荐重量" description="智能推荐合适的训练重量" />
-            <HelpItem icon="people-outline" title="多人轮换" description="快速匹配与切换搭子" />
-            <HelpItem icon="bar-chart-outline" title="训练建议" description="个性化训练计划与建议" />
-          </View>
-        </AppCard>
-
-        <AppButton disabled={isSubmitting} icon="save-outline" onPress={handleSubmit(onSubmit)} size="lg">
-          {isSubmitting ? '保存中...' : submitLabel}
+        <AppButton disabled={!canSubmit} icon="save-outline" onPress={handleSubmit(onSubmit)} size="lg">
+          {saveLabel}
         </AppButton>
         <Pressable
           accessibilityRole="button"
@@ -269,20 +263,6 @@ function ParamInput({
   );
 }
 
-function HelpItem({ description, icon, title }: { description: string; icon: keyof typeof Ionicons.glyphMap; title: string }) {
-  return (
-    <View style={styles.helpItem}>
-      <Ionicons color={colors.text} name={icon} size={20} />
-      <AppText variant="bodySmall" weight="900">
-        {title}
-      </AppText>
-      <AppText tone="muted" variant="caption">
-        {description}
-      </AppText>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     gap: spacing.lg,
@@ -330,30 +310,6 @@ const styles = StyleSheet.create({
     height: 32,
     justifyContent: 'center',
     width: 32,
-  },
-  helpCard: {
-    gap: spacing.md,
-  },
-  helpTitle: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  helpIcon: {
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    height: 36,
-    justifyContent: 'center',
-    width: 36,
-  },
-  helpGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  helpItem: {
-    flex: 1,
-    gap: spacing.xs,
   },
   laterButton: {
     alignItems: 'center',

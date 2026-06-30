@@ -1,4 +1,4 @@
-# 练刻 LiftMark UI 设计规范
+﻿# 练刻 LiftMark UI 设计规范
 
 更新时间：2026-06-14
 

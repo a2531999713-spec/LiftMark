@@ -1,4 +1,4 @@
-# Exercise 模块实现文档
+﻿# Exercise 模块实现文档
 
 更新时间：2026-06-15  
 对应代码目录：`training-partner-app/`；当前已导入扩展系统动作库、动作替换 seed，并新增自定义动作本地 Repository 能力。
@@ -56,7 +56,7 @@
 ### ExerciseRepository.listExercises
 
 职责：按搜索词、来源、肌群、器械和动作模式筛选动作库。  
-调用方：历史补录、计划创建、训练自由动作入口。  
+调用方：历史补录、计划创建、训练自由动作入口、训练中替换动作弹层。  
 注意：列表页或选择器不得绕过 Repository 直接拼 SQL。
 
 ### ExerciseRepository.createCustomExercise
@@ -89,7 +89,7 @@
 - 动作替换库能按原动作返回替代项。
 - 今日训练能按 `exercise_id` 读取动作名和器械类型。
 - 替换后历史记录保留原动作和新动作。
-- 无替代动作时 UI 给出空状态。
+- 无替代动作时训练中替换弹层仍可搜索完整动作库，不伪造推荐数据。
 - 补录和计划创建都能通过统一选择器选择系统/自定义动作。
 - 快速新建自定义动作后可立即选入补录或计划。
 
@@ -111,5 +111,6 @@
 - 2026-06-09：同步 seed 拆分：移除合并 generated seed，动作和替换关系拆分为 `defaultExercises.ts`、`defaultAlternatives.ts`。
 - 2026-06-10：同步 Android development build 调整：动作库和替代关系继续通过 native SQLite seed 初始化。
 - 2026-06-10：同步 Gradle/JDK toolchain 修复：动作 seed 未改动；native build 使用 JDK 17。
-- 2026-06-10：同步本地 Android 预览 APK 流程：动作库和替代动作 seed 未改动；本地 release APK 首屏已能展示默认计划动作，后续替换弹层在 Sprint 5 中继续实现。
+- 2026-06-10：同步本地 Android 预览 APK 流程：动作库和替代动作 seed 未改动；本地 release APK 首屏已能展示默认计划动作。训练中替换弹层已在 2026-06-30 接入。
 - 2026-06-15：扩展系统动作库为 100+ 正确中文动作；新增 `exercises.source`、自定义动作创建、统一动作选择器，并接入历史补录和计划创建。
+- 2026-06-30：训练中替换动作接入统一动作选择器；弹层按 `exercise_alternatives` 将推荐替代动作排在前面，同时支持搜索系统/自定义动作和快速新建自定义动作。

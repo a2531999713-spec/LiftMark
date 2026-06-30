@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { EditableAvatar } from '@/components/avatar';
-import { AppModalSheet, AppText, EmptyState, Screen } from '@/components/ui';
+import { AppModalSheet, AppText, EmptyState, Screen, SecondaryPageHeader } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import {
@@ -14,6 +14,7 @@ import {
   type AccountProfileCache,
 } from '@/services/avatar';
 import { useAuthStore } from '@/store/authStore';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
 type NoticeState = {
@@ -24,6 +25,8 @@ type NoticeState = {
 export default function AvatarRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { isLoggedIn, loadCurrentUser, user } = useAuthStore();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [accountProfile, setAccountProfile] = useState<AccountProfileCache | null>(null);
   const [currentMember, setCurrentMember] = useState<GroupMember | null>(null);
   const [currentProfile, setCurrentProfile] = useState<MemberProfile | null>(null);
@@ -47,7 +50,11 @@ export default function AvatarRoute() {
       await initializeLocalDatabase();
       await loadCurrentUser();
       const latestUser = useAuthStore.getState().user;
-      const group = await repositories.groupRepository.getDefaultGroup();
+      const groups = await repositories.groupRepository.listGroups();
+      const group = groups.find((item) => item.id === selectedGroupId) ?? groups[0] ?? null;
+      if (group && group.id !== selectedGroupId) {
+        setSelectedGroupId(group.id);
+      }
       const members = group ? await repositories.memberRepository.listMembers(group.id) : [];
       const member = members[0] ?? null;
       setCurrentMember(member);
@@ -58,7 +65,7 @@ export default function AvatarRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [loadCurrentUser, repositories]);
+  }, [loadCurrentUser, repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -76,6 +83,15 @@ export default function AvatarRoute() {
       return;
     }
     setAccountProfile(result.profile);
+    if (currentMember) {
+      const nextProfile = await repositories.memberRepository.updateProfile(currentMember.id, {
+        avatarLocalUri: result.profile.avatarLocalUri,
+        avatarThumbUrl: result.profile.avatarThumbUrl,
+        avatarUpdatedAt: result.profile.avatarUpdatedAt,
+        avatarUrl: result.profile.avatarUrl,
+      });
+      setCurrentProfile(nextProfile);
+    }
     setNotice({ title: '头像已更新', message: '头像已保存并上传。' });
   };
 
@@ -85,11 +101,26 @@ export default function AvatarRoute() {
     const profile = await deleteAccountAvatar(user);
     setIsWorking(false);
     setAccountProfile(profile);
+    if (currentMember) {
+      const nextProfile = await repositories.memberRepository.updateProfile(currentMember.id, {
+        avatarLocalUri: undefined,
+        avatarThumbUrl: undefined,
+        avatarUpdatedAt: profile.avatarUpdatedAt,
+        avatarUrl: undefined,
+      });
+      setCurrentProfile(nextProfile);
+    }
     setNotice({ title: '头像已删除', message: '账号头像已清空。' });
   };
 
   return (
-    <Screen contentStyle={styles.screen} safeTop={false}>
+    <Screen contentStyle={styles.screen}>
+      <SecondaryPageHeader
+        avatarUri={avatarDisplay.avatarLocalUri ?? avatarDisplay.avatarThumbUrl ?? avatarDisplay.avatarUrl}
+        caption="头像"
+        subtitle="账号头像会同步到当前小组训练成员，训练中和记录页保持一致。"
+        title={user?.displayName ?? '练刻用户'}
+      />
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? (
         <EmptyState title="加载失败" description={error} actionLabel="重新加载" onActionPress={() => void load()} />

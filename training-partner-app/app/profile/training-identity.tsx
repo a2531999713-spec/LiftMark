@@ -8,6 +8,7 @@ import { AppButton, AppCard, AppText, EmptyState, Screen, SettingsRow, Tag } fro
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, spacing } from '@/theme';
 
 function formatKg(value?: number) {
@@ -17,6 +18,8 @@ function formatKg(value?: number) {
 export default function TrainingIdentityRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [member, setMember] = useState<GroupMember | null>(null);
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -27,8 +30,12 @@ export default function TrainingIdentityRoute() {
     setError(null);
     try {
       await initializeLocalDatabase();
-      const group = await repositories.groupRepository.getDefaultGroup();
+      const groups = await repositories.groupRepository.listGroups();
+      const group = groups.find((item) => item.id === selectedGroupId) ?? groups[0] ?? null;
       if (!group) throw new Error('默认小组尚未初始化。');
+      if (group.id !== selectedGroupId) {
+        setSelectedGroupId(group.id);
+      }
       const members = await repositories.memberRepository.listMembers(group.id);
       const current = members[0] ?? null;
       setMember(current);
@@ -38,7 +45,7 @@ export default function TrainingIdentityRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories]);
+  }, [repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

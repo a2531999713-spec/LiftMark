@@ -1,6 +1,15 @@
-# Workout 测试计划
+﻿# Workout 测试计划
 
 更新时间：2026-06-15
+
+## 2026-06-30 补充
+
+- 完成本组后有计划休息时，应写入 `actualRestSeconds`；提前跳过休息应覆盖为实际经过秒数。
+- RPE 只能保存 1-10 整数；清除 RPE 后不应保留旧值。
+- 本组备注应随 `saveSet` 写入 SQLite，并在动作历史中可作为记录上下文保留。
+- 训练现场统计应展示时长、容量、完成组数和平均 RPE。
+- 休息面板应显示倒计时、建议休息、已休息、下一组和下一位成员。
+- 训练中替换动作只更新本次 `workout_exercise_records.exercise_id`，并保留首次 `replaced_from_exercise_id`；不得修改原计划。
 
 ## 1. 单元测试范围
 
@@ -50,3 +59,4 @@
 当前已覆盖：
 
 - `src/tests/workout.test.ts`：set 数量、初始 reps、完成度统计、训练输入边界。
+- `src/tests/workout-repository.test.ts`：session 创建参数、开放 session 复用、RPE/备注/实际休息保存、替换动作保留原计划动作。

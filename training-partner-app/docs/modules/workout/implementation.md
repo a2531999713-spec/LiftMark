@@ -1,7 +1,26 @@
-# Workout 模块实现文档
+﻿# Workout 模块实现文档
 
-更新时间：2026-06-29  
+更新时间：2026-07-01  
 对应代码目录：`training-partner-app/`；Sprint 4 已实现从今日训练创建 session、生成 records/sets、训练执行页和即时保存。
+
+## 2026-07-01 addendum: rest action and default weight fallback
+
+- `RestTimerPanel` now has one primary action: "提前开始下一组" while counting down and "开始下一组" at zero. The action writes `actual_rest_seconds`.
+- `CurrentSetRecorder` saves valid weight / rep text changes immediately, so a no-suggestion exercise can be typed and completed without pressing Enter.
+- The workout route falls back to the previous completed actual weight for the same member and exercise inside the current session.
+- `WorkoutRepository.createSessionFromTodayPlan()` fills no-suggestion set weights from the member's latest completed historical set for that exercise.
+
+## 2026-06-30 补充：训练保存 P0、RPE、备注、实际休息与现场统计
+
+- `app/workout/[sessionId].tsx` 使用 `WorkoutLiveStatsBar` 展示时长、容量、完成组数和平均 RPE。
+- `CurrentSetRecorder` 默认保持重量/次数主流程，RPE 与本组备注收纳在可展开的高级记录区。
+- 完成本组后，如果动作有计划休息，训练页为该成员开启休息状态；用户点击开始下一组时写入实际经过秒数，不在历史记录页默认展示休息秒。
+- `WorkoutRepository.saveSet()` 持续作为训练现场唯一写入入口，保存 `actualWeight`、`actualReps`、`rpe`、`notes`、`actualRestSeconds`、`completed` 和 `skipped`。
+- 小组训练轮换由 `getNextWorkoutSetForRotation()` 控制，顺序为同一动作内“set number 优先、成员顺序其次”，避免张三完成第 1 组后直接进入张三第 2 组。
+- `getWorkoutExerciseSetProgress()` 提供当前组 / 计划组和已完成成员组 / 总成员组，不再用参与成员总 set 数充当计划组数。
+- 完成本组前必须校验重量和次数；`NaN`、`Infinity`、负数、非法次数不会写入 Repository。超过 1000kg、0 次或超过 100 次需要用户确认。
+- `checkShortWorkout()` 在完成训练前判断短训练或记录过少，并提示继续训练、保存记录或放弃本次。
+- 保存 set / 完成 session 后会把 `workoutSets` / `workoutSessions` 写入 `local_sync_queue`，云端失败不影响本地训练现场。
 
 ## 2026-06-29 记录模式与参与成员
 
@@ -110,6 +129,17 @@
 文件：见主要文件列表  
 职责：支持历史详情页修改日期、标题、组重量、次数、完成情况，并支持删除 set、动作记录或整次训练。危险删除必须二次确认。
 
+### WorkoutRepository.updateExerciseRecordExercise
+
+文件：见主要文件列表  
+职责：训练中或历史编辑中替换当前训练动作快照。更新 `workout_exercise_records.exercise_id`，并在首次替换时通过 `replaced_from_exercise_id` 保留原计划动作。  
+注意：该操作只影响本次训练 session，不修改 `plan_exercises`。
+
+### 训练执行页 RPE 与休息
+
+文件：`app/workout/[sessionId].tsx`、`src/components/workout/RpeSelector.tsx`、`src/components/workout/RestTimerPanel.tsx`、`src/components/workout/CurrentSetRecorder.tsx`  
+职责：RPE 作为可选高级记录折叠展示，展开后使用横向数字选择器；完成一组后休息面板展示倒计时、建议休息、已休息、下一组和下一位成员，并在继续时保存 `actual_rest_seconds`。
+
 ## 4. 数据结构
 
 - WorkoutSession
@@ -154,3 +184,4 @@
 - 2026-06-10：同步本地 Android 预览 APK 流程：训练记录 Repository 和 SQLite schema 未改动；APK 首屏启动已通过，完整训练执行和退出重进恢复仍需后续手工烟测。
 - 2026-06-12：同步可用性 + UI 落地 Sprint：新增历史补录、历史详情编辑、自由训练创建 session、训练页周五休息手动覆盖；新增 `createManualSession`、`updateSession`、`updateExerciseRecordExercise` 和删除接口。
 - 2026-06-12：同步本地图片资产落地：训练执行页当前动作卡接入 `liftmarkImages.trainingHero` 图片背景和深色遮罩；训练总结页接入 `liftmarkImages.historyHero`。训练记录、即时保存和 Repository 接口未变。
+- 2026-06-30：同步训练执行增强：RPE 改为可选折叠横向选择器，休息面板展示倒计时、建议休息、已休息、下一组和下一位成员；`saveSet` 保存 `actualRestSeconds`；训练中可打开动作替换弹层，替代动作优先按 `exercise_alternatives` 排序，替换关系保留 `replaced_from_exercise_id` 且不回写原计划。

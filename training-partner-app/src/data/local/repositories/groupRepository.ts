@@ -24,6 +24,12 @@ export class SQLiteGroupRepository implements GroupRepository {
     return row ? mapGroup(row) : null;
   }
 
+  async listGroups(): Promise<Group[]> {
+    const db = await this.getDb();
+    const rows = await db.getAllAsync<GroupRow>('SELECT * FROM groups ORDER BY created_at ASC');
+    return rows.map(mapGroup);
+  }
+
   async createGroup(input: CreateGroupInput): Promise<Group> {
     const db = await this.getDb();
     const now = nowIso();

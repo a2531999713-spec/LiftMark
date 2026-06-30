@@ -169,6 +169,48 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
     expect(session.weekday).toBe(4);
   });
 
+  it('uses the latest completed weight when no suggested weight exists', async () => {
+    const insertedSetParams: unknown[][] = [];
+    const transaction = {
+      getFirstAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM workout_sessions')) return null;
+        if (sql.includes('ws.actual_weight AS actual_weight')) return { actual_weight: 72.5 };
+        return null;
+      }),
+      getAllAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM plan_exercises')) return [planExerciseRow];
+        if (sql.includes('FROM group_members')) return [memberRow];
+        if (sql.includes('FROM member_profiles')) return [];
+        if (sql.includes('FROM exercises')) return [exerciseRow];
+        return [];
+      }),
+      runAsync: jest.fn(async (sql: string, ...params: unknown[]) => {
+        if (sql.includes('INSERT INTO workout_sets')) {
+          insertedSetParams.push(params);
+        }
+      }),
+    };
+    const db = {
+      withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
+        await callback(transaction);
+      }),
+    };
+
+    await new SQLiteWorkoutRepository(async () => db as never).createSessionFromTodayPlan({
+      date: '2026-06-30',
+      groupId: 'group_1',
+      phaseId: 'phase_strength',
+      planId: 'plan_current',
+      title: '第 8 周 Day 3',
+      trainingMode: 'group_local',
+      week: 8,
+      weekday: 3,
+    });
+
+    expect(insertedSetParams[0][5]).toBe(72.5);
+    expect(insertedSetParams[0][6]).toBe(72.5);
+  });
+
   it('reuses an existing open session only when the selected plan, week, day, and mode match', async () => {
     const transaction = {
       getFirstAsync: jest.fn(async () => openSessionRow),
@@ -218,5 +260,93 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
     expect(sessions).toHaveLength(2);
     expect(sessions.map((session) => session.weekday)).toEqual([3, 4]);
     expect(db.getAllAsync).toHaveBeenCalledWith(expect.stringContaining("status IN ('draft', 'in_progress')"), 'group_1', '2026-06-30');
+  });
+});
+
+describe('SQLiteWorkoutRepository.saveSet', () => {
+  it('persists optional RPE, notes, and actual rest seconds', async () => {
+    const setRow = {
+      id: 'set_1',
+      session_id: 'session_1',
+      exercise_record_id: 'record_1',
+      member_id: 'member_1',
+      set_number: 1,
+      planned_weight: null,
+      actual_weight: 100,
+      planned_reps: null,
+      actual_reps: 5,
+      rpe: null,
+      rir: null,
+      actual_rest_seconds: null,
+      completed: 0,
+      skipped: 0,
+      notes: null,
+      created_at: '2026-06-30T00:00:00.000Z',
+      updated_at: '2026-06-30T00:00:00.000Z',
+    };
+    const db = {
+      getFirstAsync: jest.fn(async () => setRow),
+      runAsync: jest.fn(async () => undefined),
+    };
+
+    const saved = await new SQLiteWorkoutRepository(async () => db as never).saveSet({
+      actualRestSeconds: 95,
+      completed: true,
+      id: 'set_1',
+      notes: 'fast bar speed',
+      rpe: 8,
+    });
+
+    expect(saved.rpe).toBe(8);
+    expect(saved.notes).toBe('fast bar speed');
+    expect(saved.actualRestSeconds).toBe(95);
+    expect(db.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining('actual_rest_seconds'),
+      100,
+      5,
+      8,
+      null,
+      95,
+      1,
+      0,
+      'fast bar speed',
+      '2026-06-30T00:00:00.000Z',
+      'set_1',
+    );
+  });
+
+  it('rejects invalid RPE values before writing', async () => {
+    const db = {
+      getFirstAsync: jest.fn(),
+      runAsync: jest.fn(),
+    };
+
+    await expect(
+      new SQLiteWorkoutRepository(async () => db as never).saveSet({
+        id: 'set_1',
+        rpe: 11,
+      }),
+    ).rejects.toThrow('RPE must be an integer from 1 to 10.');
+    expect(db.getFirstAsync).not.toHaveBeenCalled();
+    expect(db.runAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('SQLiteWorkoutRepository.updateExerciseRecordExercise', () => {
+  it('keeps the original planned exercise when replacing the current exercise', async () => {
+    const db = {
+      runAsync: jest.fn(async () => undefined),
+    };
+
+    await new SQLiteWorkoutRepository(async () => db as never).updateExerciseRecordExercise(
+      'record_1',
+      'exercise_dumbbell_bench',
+    );
+
+    expect(db.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining('replaced_from_exercise_id = COALESCE(replaced_from_exercise_id, exercise_id)'),
+      'exercise_dumbbell_bench',
+      'record_1',
+    );
   });
 });

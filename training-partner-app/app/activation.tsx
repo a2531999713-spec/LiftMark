@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton, AppCard, AppModalSheet, AppText, Screen, SettingsRow, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, Screen, SecondaryPageHeader, SettingsRow, Tag } from '@/components/ui';
 import { redeemActivationCode } from '@/services/membershipService';
 import { useAuthStore } from '@/store/authStore';
 import { useAuthGate } from '@/hooks/useAuthGate';
@@ -39,7 +39,14 @@ export default function ActivationRoute() {
   };
 
   return (
-    <Screen safeTop={false}>
+    <Screen>
+      <SecondaryPageHeader
+        caption="会员与激活"
+        icon="diamond-outline"
+        meta={isLoggedIn ? '已登录' : '需登录'}
+        subtitle="激活码兑换到账户权益中，不影响本机训练记录。"
+        title="激活权益"
+      />
       <AppCard style={styles.card} tone="dark">
         <Tag label={isLoggedIn ? '已登录' : '需登录'} tone="dark" />
         <AppText tone="inverse" variant="title" weight="900">

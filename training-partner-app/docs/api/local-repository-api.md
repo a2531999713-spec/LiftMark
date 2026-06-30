@@ -1,6 +1,27 @@
-# 本地 Repository API 文档
+﻿# 本地 Repository API 文档
 
 更新时间：2026-06-30
+
+## 2026-06-30 补充：Workout set 高级字段与 BodyMetricsRepository
+
+- `WorkoutRepository.saveSet()` 现在可保存 `rpe?: number`、`notes?: string`、`actualRestSeconds?: number`。`rpe` 校验范围为 1-10 的整数，`actualRestSeconds` 必须是非负整数。
+- `WorkoutRepository.saveSet()` 会拒绝 `NaN`、`Infinity`、负重量、非整数次数和非法 RPE；训练执行页在完成本组前校验重量/次数，异常大重量和 0 次会要求用户确认。
+- 训练执行页保存 session / set 成功后调用 `enqueueSyncCandidate()` 写入 `local_sync_queue`，云端不可用时不回滚本地训练记录。
+- `SaveWorkoutSetInput` 不接受新的 `rir` 写入；`rir` 仅为旧数据兼容字段。
+- 新增 `BodyMetricsRepository`：
+
+```ts
+export interface BodyMetricsRepository {
+  getMetricForDate(memberId: ID, date: string): Promise<BodyMetric | null>;
+  getGoal(memberId: ID): Promise<BodyMetricGoal | null>;
+  listMetrics(memberId: ID, limit?: number): Promise<BodyMetric[]>;
+  upsertGoal(input: UpsertBodyMetricGoalInput): Promise<BodyMetricGoal>;
+  upsertMetric(input: UpsertBodyMetricInput): Promise<BodyMetric>;
+}
+```
+
+- `BodyMetric` 覆盖体重、体脂、胸围、腰围、臀围、肱二头肌围、大腿围、小腿围与备注；同一成员同一天写入时复用当天记录 ID。
+- `BodyMetricGoal` 覆盖 `bulk` / `cut` / `maintain` 三类目标，目标体重和目标日期均为可选。
 
 ## 2026-06-30 契约补充
 
@@ -12,9 +33,9 @@
 
 ## 1. API 定位
 
-本文件记录第一版本地 Repository 接口。它不是 HTTP API，而是 UI/Domain 与 SQLite 之间的本地数据访问契约。
+本文件记录移动端 Repository 接口。它不是 HTTP API，而是 UI/Domain 与 SQLite 缓存之间的本地数据访问契约；云端同步通过 `src/sync/syncQueue.ts` 和 `src/sync/syncService.ts` 连接后端 `/api/sync/*`。
 
-Repository 层必须保留后续 remote sync 接口空间，不应让 UI 直接依赖 SQLite 实现。
+Repository 层不得让 UI 直接依赖 SQLite 实现。训练现场写入成功后，调用方负责把可同步实体写入同步队列；同步服务再把队列转换为服务端 `changes` payload。
 
 Sprint 1 实现位置：
 
@@ -26,6 +47,7 @@ Sprint 1 实现位置：
 
 ```ts
 export interface GroupRepository {
+  listGroups(): Promise<Group[]>;
   getDefaultGroup(): Promise<Group | null>;
   getGroupById(id: ID): Promise<Group | null>;
   createGroup(input: CreateGroupInput): Promise<Group>;
@@ -36,7 +58,8 @@ export interface GroupRepository {
 用途：
 
 - 首次使用创建默认小组。
-- 今日训练读取当前计划、周期、周数和周五开关。
+- `listGroups()` 用于当前小组切换、创建新小组后立即切换、历史/今日/成员页按当前小组隔离数据。
+- 今日训练读取当前小组的计划、周期、周数和周五开关。
 - 设置页更新小组状态。
 
 ## 3. MemberRepository
@@ -140,8 +163,40 @@ export interface WorkoutRepository {
 - 历史详情页可编辑日期、标题、动作、组数据，并可二次确认删除 set、动作或整次训练。
 - 完成训练并生成总结。
 - 历史页按日期、月份和成员条件读取训练。
+- `updateExerciseRecordExercise(recordId, exerciseId)` 仅改当前训练动作快照的实际 `exercise_id`，并用 `COALESCE(replaced_from_exercise_id, exercise_id)` 保留首次原计划动作，不回写 `plan_exercises`。
 
 `CreateSessionFromTodayPlanInput` 当前包含 `planExerciseIds?: ID[]`、`participantMemberIds?: ID[]` 和 `trainingMode?: 'solo_local' | 'group_local'`。今日训练页传入动作筛选后的动作列表和本次参与成员，Repository 只为参与成员生成 `workout_sets`。未完成的同计划、同周次、同训练日、同记录模式 session 会优先复用，避免中途退出后重复创建 set。
+
+训练执行状态机：
+
+- 单人：动作 A 第 1 组 -> 动作 A 第 2 组 -> 动作 A 完成后进入下一个动作。
+- 小组：动作 A 张三第 1 组 -> 李四第 1 组 -> 张三第 2 组 -> 李四第 2 组 -> 下一个动作。
+- `getNextWorkoutSetForRotation()` 和 `getWorkoutExerciseSetProgress()` 位于 `src/domain/workout/workout.service.ts`，页面不得重新手写组轮换算法。
+- 保存失败时页面必须停留在当前组，并显示“本组数据未保存，请重试”。
+
+## 6.1 SyncQueue / SyncService
+
+```ts
+export async function enqueueSyncCandidate(entity: SyncEntity): Promise<void>;
+export async function countPendingSyncItems(): Promise<number>;
+export async function listPendingSyncItems(limit?: number): Promise<SyncQueueItem[]>;
+export async function requestImmediateSync(): Promise<{ ok: true; message?: string } | { ok: false; message: string }>;
+```
+
+移动端同步状态：
+
+```text
+local_only
+pending_create
+pending_update
+pending_delete
+syncing
+synced
+sync_failed
+conflict
+```
+
+当前后端已支持 `exercises`、`workoutSessions`、`workoutSets`、`trainingPlans`、`planDays`、`planExercises` 的 `/api/sync/push` 通用 upsert。移动端本次先把训练 session / set 接入队列；小组、成员、计划、身体数据继续按该队列契约逐步接入。
 
 ## 7. ProgressionRepository
 
@@ -165,7 +220,7 @@ export interface ProgressionRepository {
 - 计划模板和个人参数分离。
 - 计划和训练记录分离。
 - 多人逻辑从第一版就保留。
-- 本地 SQLite 优先。
+- 云端优先，本地 SQLite 作为缓存与离线副本。
 - Domain 层不依赖 UI。
 - 训练记录不能用 AsyncStorage 保存。
 

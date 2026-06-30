@@ -56,10 +56,11 @@ export default function RootLayout() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="workout/[sessionId]" options={{ headerShown: false }} />
       <Stack.Screen name="workout/summary/[sessionId]" options={{ headerShown: false }} />
-      <Stack.Screen name="member/new" options={{ title: '' }} />
-      <Stack.Screen name="member/[memberId]" options={{ title: '' }} />
+      <Stack.Screen name="member/new" options={{ headerShown: false }} />
+      <Stack.Screen name="member/[memberId]" options={{ headerShown: false }} />
       <Stack.Screen name="history/manual" options={{ title: '' }} />
       <Stack.Screen name="history/analytics" options={{ headerShown: false }} />
+      <Stack.Screen name="history/exercise/[exerciseId]" options={{ headerShown: false }} />
       <Stack.Screen name="history/group-exercise/[exerciseId]" options={{ headerShown: false }} />
       <Stack.Screen name="history/[sessionId]" options={{ title: '' }} />
       <Stack.Screen name="plan/[planId]" options={{ title: '' }} />
@@ -67,20 +68,21 @@ export default function RootLayout() {
       <Stack.Screen name="account/index" options={{ title: '' }} />
       <Stack.Screen name="account/login" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding/training-profile" options={{ headerShown: false }} />
-      <Stack.Screen name="account/settings" options={{ title: '' }} />
-      <Stack.Screen name="account/security" options={{ title: '' }} />
-      <Stack.Screen name="profile/avatar" options={{ title: '' }} />
+      <Stack.Screen name="account/settings" options={{ headerShown: false }} />
+      <Stack.Screen name="account/security" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/avatar" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/body-metrics" options={{ headerShown: false }} />
       <Stack.Screen name="profile/training-identity" options={{ title: '' }} />
       <Stack.Screen name="profile/groups" options={{ title: '' }} />
       <Stack.Screen name="profile/preferences" options={{ title: '' }} />
       <Stack.Screen name="profile/data" options={{ title: '' }} />
       <Stack.Screen name="profile/privacy" options={{ title: '' }} />
       <Stack.Screen name="profile/sync" options={{ title: '' }} />
-      <Stack.Screen name="profile/membership" options={{ title: '' }} />
+      <Stack.Screen name="profile/membership" options={{ headerShown: false }} />
       <Stack.Screen name="settings/members" options={{ title: '' }} />
       <Stack.Screen name="settings/member-units" options={{ title: '' }} />
-      <Stack.Screen name="activation" options={{ title: '' }} />
-      <Stack.Screen name="about" options={{ title: '' }} />
+      <Stack.Screen name="activation" options={{ headerShown: false }} />
+      <Stack.Screen name="about" options={{ headerShown: false }} />
       <Stack.Screen name="terms" options={{ title: '' }} />
       <Stack.Screen name="privacy" options={{ title: '' }} />
     </Stack>

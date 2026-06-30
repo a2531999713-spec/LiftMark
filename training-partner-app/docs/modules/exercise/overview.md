@@ -1,6 +1,6 @@
-# Exercise 模块概览
+﻿# Exercise 模块概览
 
-更新时间：2026-06-15
+更新时间：2026-06-30
 
 ## 1. 模块职责
 
@@ -10,6 +10,7 @@
 - 默认系统动作库、用户自定义动作和动作替换库 seed。
 - 动作分类：胸推、垂直拉、水平拉、深蹲类、髋铰链、肩推、孤立动作等。
 - 替代动作必须保持动作模式和训练目的尽量一致。
+- 训练中替换弹层优先展示 `exercise_alternatives` 推荐动作，并允许搜索完整动作库。
 
 ## 2. 非职责
 
@@ -46,6 +47,7 @@
 | `src/data/repositories/exerciseRepository.ts` | 动作库 Repository 接口。 |
 | `src/data/local/repositories/exerciseRepository.ts` | 动作库 Repository。 |
 | `src/components/exercises/ExercisePickerSheet.tsx` | 统一动作选择器，支持搜索、筛选和快速新建自定义动作。 |
+| `app/workout/[sessionId].tsx` | 训练中替换动作入口，按替代动作优先排序动作库。 |
 
 ## 7. 核心数据结构
 

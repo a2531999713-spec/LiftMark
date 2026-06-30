@@ -8,8 +8,12 @@ import type { MemberProfile } from '@/domain/member/member.types';
 import type { WorkoutExerciseRecord } from '@/domain/workout/workout.types';
 import { colors, radius, spacing } from '@/theme';
 
+import { RestTimerPanel } from './RestTimerPanel';
+import { RpeSelector } from './RpeSelector';
+import { SetNotesInput } from './SetNotesInput';
+
 function formatNumber(value: number | undefined, fallback = '0'): string {
-  if (value === undefined) {
+  if (value === undefined || !Number.isFinite(value)) {
     return fallback;
   }
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
@@ -51,7 +55,7 @@ function NumberStepper({
   value,
 }: NumberStepperProps) {
   const [draft, setDraft] = useState(formatNumber(value, ''));
-  const current = value ?? min;
+  const current = value !== undefined && Number.isFinite(value) ? value : min;
 
   function commitDraft() {
     const parsed = parseNumericInput(draft, integer);
@@ -75,6 +79,18 @@ function NumberStepper({
       return;
     }
     setDraft(formatNumber(parsed, ''));
+    onChange(parsed);
+  }
+
+  function handleDraftChange(text: string) {
+    setDraft(text);
+    const parsed = parseNumericInput(text, integer);
+    if (parsed === null || !Number.isFinite(parsed)) {
+      return;
+    }
+    if (parsed < min || (max !== undefined && parsed > max)) {
+      return;
+    }
     onChange(parsed);
   }
 
@@ -108,9 +124,9 @@ function NumberStepper({
         <TextInput
           keyboardType={integer ? 'number-pad' : 'decimal-pad'}
           onBlur={commitDraft}
-          onChangeText={setDraft}
+          onChangeText={handleDraftChange}
           onSubmitEditing={commitDraft}
-          placeholder={allowEmpty ? '空' : '0'}
+          placeholder={allowEmpty ? '未设置' : '填写'}
           placeholderTextColor={colors.textMuted}
           style={styles.stepperInput}
           value={draft}
@@ -132,13 +148,21 @@ type CurrentSetRecorderProps = {
   isResting: boolean;
   isWorkoutReadyToFinish: boolean;
   memberName: string;
+  nextMemberName?: string;
+  nextSetLabel?: string;
   onCompleteSet: () => void;
+  onNotesChange?: (value: string | undefined) => void;
+  onRpeChange?: (value: number | undefined) => void;
   onSkipRest: () => void;
   onWeightChange: (value: number) => void;
   onRepsChange: (value: number) => void;
+  notes?: string;
+  plannedRestSeconds?: number;
   profile: MemberProfile | null;
   record: WorkoutExerciseRecord;
+  restElapsedSeconds?: number;
   restSeconds?: number;
+  rpe?: number;
   setNumber: number;
   weight: number | undefined;
   reps: number | undefined;
@@ -149,21 +173,26 @@ export function CurrentSetRecorder({
   isResting,
   isWorkoutReadyToFinish,
   memberName,
+  nextMemberName,
+  nextSetLabel,
   onCompleteSet,
+  onNotesChange,
+  onRpeChange,
   onSkipRest,
   onWeightChange,
   onRepsChange,
+  notes,
+  plannedRestSeconds,
+  restElapsedSeconds,
   setNumber,
   restSeconds,
+  rpe,
   weight,
   reps,
   weightIncrement,
 }: CurrentSetRecorderProps) {
-  function formatTimer(seconds: number): string {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  }
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const hasAdvancedValues = rpe !== undefined || Boolean(notes);
 
   return (
     <AppCard padded={false} style={styles.card}>
@@ -201,27 +230,38 @@ export function CurrentSetRecorder({
         />
       </View>
 
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setShowAdvanced((current) => !current)}
+        style={styles.advancedToggle}
+      >
+        <View style={styles.advancedToggleText}>
+          <Ionicons color={colors.textMuted} name="options-outline" size={16} />
+          <AppText tone="muted" variant="caption" weight="800">
+            RPE / 备注
+          </AppText>
+        </View>
+        <Ionicons color={colors.textMuted} name={showAdvanced ? 'chevron-up' : 'chevron-down'} size={16} />
+      </Pressable>
+
+      {showAdvanced || hasAdvancedValues ? (
+        <View style={styles.advancedPanel}>
+          <RpeSelector onChange={(value) => onRpeChange?.(value)} value={rpe} />
+          <SetNotesInput onChange={(value) => onNotesChange?.(value)} value={notes} />
+        </View>
+      ) : null}
+
       <View style={styles.actionRow}>
         {isResting ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={onSkipRest}
-            style={styles.restButton}
-          >
-            <View style={styles.restButtonContent}>
-              <Ionicons color={colors.primary} name="play-forward" size={18} />
-              <AppText variant="bodySmall" weight="800" style={styles.restButtonText}>
-                跳过休息
-              </AppText>
-            </View>
-            {restSeconds !== undefined && restSeconds > 0 ? (
-              <View style={styles.restTimerBadge}>
-                <AppText variant="caption" weight="900" style={styles.restTimerText}>
-                  {formatTimer(restSeconds)}
-                </AppText>
-              </View>
-            ) : null}
-          </Pressable>
+          <RestTimerPanel
+            currentSetLabel={`第 ${setNumber} 组`}
+            elapsedSeconds={restElapsedSeconds}
+            nextMemberName={nextMemberName}
+            nextSetLabel={nextSetLabel}
+            onStartNextSet={onSkipRest}
+            plannedSeconds={plannedRestSeconds}
+            remainingSeconds={restSeconds ?? 0}
+          />
         ) : (
           <Pressable
             accessibilityRole="button"
@@ -244,6 +284,23 @@ export function CurrentSetRecorder({
 }
 
 const styles = StyleSheet.create({
+  advancedPanel: {
+    gap: spacing.sm,
+  },
+  advancedToggle: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 38,
+    paddingHorizontal: spacing.md,
+  },
+  advancedToggleText: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
   card: {
     gap: spacing.sm,
     padding: spacing.md,

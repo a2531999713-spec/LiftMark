@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Alert } from 'react-native';
 
-import { AppButton, AppModalSheet, Screen } from '@/components/ui';
+import { AppButton, AppModalSheet, Screen, SecondaryPageHeader } from '@/components/ui';
 import { ProfileMenuItem, ProfileSection } from '@/components/profile';
 
 type NoticeState = {
@@ -28,7 +28,14 @@ export default function AccountSecurityRoute() {
   };
 
   return (
-    <Screen safeTop={false}>
+    <Screen>
+      <SecondaryPageHeader
+        caption="账号安全"
+        icon="lock-closed-outline"
+        meta="本机优先"
+        subtitle="手机号登录、密码和设备状态会逐步接入，训练数据不在这里清空。"
+        title="登录保护"
+      />
       <ProfileSection icon="lock-closed-outline" title="登录与绑定">
         <ProfileMenuItem icon="call-outline" label="手机号 / 邮箱" description="绑定信息" onPress={() => showDeveloping('手机号 / 邮箱')} />
         <ProfileMenuItem icon="key-outline" label="修改密码" description="需要验证身份" onPress={() => showDeveloping('修改密码')} />

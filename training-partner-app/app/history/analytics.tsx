@@ -256,6 +256,7 @@ function VolumeTrendCard({ buckets }: { buckets: WeeklyHistoryBucket[] }) {
         labels={buckets.map((bucket) => bucket.label)}
         minChartHeight={maxVolume}
         showValues
+        unitLabel="kg"
       />
     </AppCard>
   );
@@ -336,8 +337,10 @@ function CoreLiftCard({ lift }: { lift: CoreLiftTrend }) {
         chartHeight={58}
         data={values}
         emptyMessage="暂无趋势"
-        labels={lift.points.map((point) => point.label.replace('周前', ''))}
+        includeZero={false}
+        labels={lift.points.map((point) => point.label)}
         minChartHeight={max}
+        unitLabel="kg"
       />
     </View>
   );

@@ -17,12 +17,16 @@ import { useAuthStore } from '@/store/authStore';
 import { colors, radius, spacing, typography } from '@/theme';
 
 type NoticeState = { message: string; title: string };
+type LoginMode = 'password' | 'sms';
 
 const PHONE_RE = /^1[3-9]\d{9}$/;
 const CODE_RE = /^\d{4,6}$/;
 
 export default function LoginRoute() {
-  const { authStatus, isLoading, loginWithCode, sendCode } = useAuthStore();
+  const { authStatus, isLoading, login, loginWithCode, sendCode } = useAuthStore();
+  const [mode, setMode] = useState<LoginMode>('password');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [agreed, setAgreed] = useState(false);
@@ -80,6 +84,26 @@ export default function LoginRoute() {
 
   const doLogin = async () => {
     if (!checkAgreed()) return;
+    if (mode === 'password') {
+      const account = identifier.trim();
+      if (account.length === 0) {
+        alert('账号不能为空', '请输入手机号或练刻 ID。');
+        return;
+      }
+      if (password.length === 0) {
+        alert('密码不能为空', '请输入账号密码。');
+        return;
+      }
+
+      const message = await login({ identifier: account, password });
+      if (message) {
+        alert('登录失败', message);
+        return;
+      }
+      router.replace('/onboarding/training-profile' as never);
+      return;
+    }
+
     const validPhone = getValidPhone();
     if (!validPhone) return;
     if (!CODE_RE.test(code.trim())) {
@@ -110,7 +134,7 @@ export default function LoginRoute() {
                 LiftMark
               </AppText>
               <AppText style={styles.heroSub} tone="muted" variant="bodySmall">
-                用手机号快速登录，新手机号会自动创建账号。
+                使用手机号密码登录；也可以通过短信验证码登录或创建账号。
               </AppText>
             </View>
           </View>
@@ -118,48 +142,75 @@ export default function LoginRoute() {
           <View style={styles.card}>
             <View style={styles.formHeader}>
               <AppText variant="title" weight="900">
-                手机验证码登录
+                登录练刻
               </AppText>
               <AppText tone="muted" variant="bodySmall">
-                验证码用于登录和账号绑定，不再单独提供密码注册入口。
+                密码登录支持手机号或练刻 ID；短信验证码适合新账号注册和找回入口。
               </AppText>
             </View>
 
-            <Input
-              icon="phone-portrait-outline"
-              keyboard="phone-pad"
-              label="手机号"
-              onChangeText={setPhone}
-              placeholder="请输入手机号"
-              value={phone}
-            />
-
-            <View style={styles.codeRow}>
-              <View style={styles.codeField}>
-                <Input
-                  icon="keypad-outline"
-                  keyboard="number-pad"
-                  label="验证码"
-                  onChangeText={setCode}
-                  placeholder="4-6 位短信验证码"
-                  value={code}
-                />
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                disabled={cooldown > 0 || sending}
-                onPress={() => void requestLoginCode()}
-                style={[styles.codeBtn, (cooldown > 0 || sending) && styles.codeBtnOff]}
-              >
-                <AppText
-                  style={cooldown > 0 || sending ? styles.codeBtnOffText : styles.codeBtnText}
-                  variant="caption"
-                  weight="900"
-                >
-                  {cooldown > 0 ? `${cooldown}s` : sending ? '发送中' : '获取验证码'}
-                </AppText>
-              </Pressable>
+            <View style={styles.modeSwitch}>
+              <ModeButton active={mode === 'password'} label="密码登录" onPress={() => setMode('password')} />
+              <ModeButton active={mode === 'sms'} label="验证码登录" onPress={() => setMode('sms')} />
             </View>
+
+            {mode === 'password' ? (
+              <>
+                <Input
+                  icon="person-circle-outline"
+                  label="手机号 / 练刻 ID"
+                  onChangeText={setIdentifier}
+                  placeholder="请输入手机号或练刻 ID"
+                  value={identifier}
+                />
+                <Input
+                  icon="lock-closed-outline"
+                  label="密码"
+                  onChangeText={setPassword}
+                  placeholder="请输入密码"
+                  secureTextEntry
+                  value={password}
+                />
+              </>
+            ) : (
+              <>
+                <Input
+                  icon="phone-portrait-outline"
+                  keyboard="phone-pad"
+                  label="手机号"
+                  onChangeText={setPhone}
+                  placeholder="请输入手机号"
+                  value={phone}
+                />
+
+                <View style={styles.codeRow}>
+                  <View style={styles.codeField}>
+                    <Input
+                      icon="keypad-outline"
+                      keyboard="number-pad"
+                      label="验证码"
+                      onChangeText={setCode}
+                      placeholder="4-6 位短信验证码"
+                      value={code}
+                    />
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={cooldown > 0 || sending}
+                    onPress={() => void requestLoginCode()}
+                    style={[styles.codeBtn, (cooldown > 0 || sending) && styles.codeBtnOff]}
+                  >
+                    <AppText
+                      style={cooldown > 0 || sending ? styles.codeBtnOffText : styles.codeBtnText}
+                      variant="caption"
+                      weight="900"
+                    >
+                      {cooldown > 0 ? `${cooldown}s` : sending ? '发送中' : '获取验证码'}
+                    </AppText>
+                  </Pressable>
+                </View>
+              </>
+            )}
 
             <Agree checked={agreed} onToggle={() => setAgreed((current) => !current)} />
 
@@ -170,7 +221,7 @@ export default function LoginRoute() {
               size="lg"
               style={styles.submitButton}
             >
-              登录 / 注册
+              {mode === 'password' ? '登录' : '验证码登录 / 注册'}
             </AppButton>
           </View>
         </ScrollView>
@@ -195,6 +246,7 @@ function Input({
   label,
   onChangeText,
   placeholder,
+  secureTextEntry,
   value,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
@@ -202,6 +254,7 @@ function Input({
   label: string;
   onChangeText: (value: string) => void;
   placeholder: string;
+  secureTextEntry?: boolean;
   value: string;
 }) {
   return (
@@ -216,6 +269,7 @@ function Input({
           onChangeText={onChangeText}
           placeholder={placeholder}
           placeholderTextColor={colors.textSubtle}
+          secureTextEntry={secureTextEntry}
           style={styles.fieldInput}
           value={value}
         />
@@ -254,6 +308,20 @@ function Agree({ checked, onToggle }: { checked: boolean; onToggle: () => void }
         </Pressable>
       </View>
     </View>
+  );
+}
+
+function ModeButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.modeButton, active && styles.modeButtonActive, pressed && styles.modeButtonPressed]}
+    >
+      <AppText tone={active ? 'inverse' : 'muted'} variant="caption" weight="900">
+        {label}
+      </AppText>
+    </Pressable>
   );
 }
 
@@ -387,6 +455,28 @@ const styles = StyleSheet.create({
   },
   logoText: {
     color: colors.surface,
+  },
+  modeButton: {
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 36,
+  },
+  modeButtonActive: {
+    backgroundColor: colors.primary,
+  },
+  modeButtonPressed: {
+    opacity: 0.82,
+  },
+  modeSwitch: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 2,
+    padding: 3,
   },
   safe: {
     backgroundColor: colors.background,

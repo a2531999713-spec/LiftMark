@@ -1,6 +1,6 @@
-# Auth 模块实现
+﻿# Auth 模块实现
 
-更新时间：2026-06-29
+更新时间：2026-07-01
 
 ## 1. API 接入
 
@@ -14,12 +14,20 @@
 
 API base URL 来自 `src/config/api.ts` / `EXPO_PUBLIC_API_BASE_URL`，当前公网开发地址为 `http://47.100.239.29/api`。
 
-当前移动端 UI 调用短信验证码登录 / 注册一体路径：
+当前移动端 UI 暴露两种登录路径：
 
-- `POST /auth/send-code`
-- `POST /auth/login-with-code`
+- 密码登录：手机号 / 练刻 ID + 密码，调用 `POST /auth/login`。
+- 短信验证码登录 / 注册：手机号 + 验证码，调用 `POST /auth/send-code` 与 `POST /auth/login-with-code`。
 
-`POST /auth/login` 和 `POST /auth/register` 保留在 service/store 层兼容后端，但当前移动端 UI 不暴露为主流程。`POST /auth/login-with-code` 对新手机号执行自动创建账号。
+`POST /auth/register` 保留为显式注册接口；`POST /auth/login-with-code` 对新手机号执行自动创建账号。移动端不信任客户端注册时间，后端在创建用户事务中写入注册顺序和活动字段。
+
+后端用户注册元数据：
+
+- `registration_seq`：PostgreSQL sequence 生成的全局注册序号。
+- `registered_at`：服务端时间。
+- `registration_source`：默认 `app`，验证码自动创建账号默认 `sms_login`。
+- `campaign_code`：可选活动码，规范化为大写。
+- `early_user_tier`：前 100 位用户为 `founding_100`，活动码可进入活动分层。
 
 网络请求由 `src/services/httpClient.ts` 统一进入，底层复用 `src/services/apiClient.ts`：
 

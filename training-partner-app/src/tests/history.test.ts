@@ -3,7 +3,9 @@ import { describe, expect, it } from '@jest/globals';
 import {
   analyzeExerciseHistory,
   estimateOneRM,
+  getAvailableHistoryAnalysisRanges,
   getGroupHistoryAnalysis,
+  getPersonalHistoryAnalysis,
   selectLargestExerciseSeries,
   type HistorySetEntry,
 } from '@/domain/history/history-analysis';
@@ -63,6 +65,16 @@ describe('history analysis', () => {
     expect(series?.exerciseId).toBe('exercise_bench');
     expect(series?.memberId).toBe('member_1');
     expect(series?.entries).toHaveLength(2);
+  });
+
+  it('supports 12-week personal history analysis ranges', () => {
+    const ranges = getAvailableHistoryAnalysisRanges().map((range) => range.weeks);
+    const analysis = getPersonalHistoryAnalysis([], 'member_1', {}, 12, new Date('2026-06-30T12:00:00'));
+
+    expect(ranges).toEqual([4, 8, 12]);
+    expect(analysis.rangeWeeks).toBe(12);
+    expect(analysis.weeklyBuckets).toHaveLength(12);
+    expect(analysis.weeklyBuckets.at(-1)?.label).toBe('6/24-6/30');
   });
 
   it('summarizes local group history from workout details', () => {
@@ -149,7 +161,7 @@ describe('history analysis', () => {
     expect(analysis.recentSessions[0].completedMembers).toBe(2);
   });
 
-  it('groups row, pull-up and other exercises for clickable group exercise details', () => {
+  it('lists real exercised action ids for clickable group exercise details', () => {
     const detail: WorkoutSessionDetail = {
       session: {
         id: 'session_2',
@@ -231,6 +243,11 @@ describe('history analysis', () => {
       today: new Date('2026-06-29T12:00:00'),
     });
 
-    expect(analysis.exerciseAnalyses.map((item) => item.key)).toEqual(expect.arrayContaining(['row', 'pullup', 'other']));
+    expect(analysis.exerciseAnalyses.map((item) => item.key)).toEqual(
+      expect.arrayContaining(['exercise_row', 'exercise_pullup', 'exercise_curl']),
+    );
+    expect(analysis.exerciseAnalyses.map((item) => item.exerciseName)).toEqual(
+      expect.arrayContaining(['杠铃划船', '引体向上', '哑铃弯举']),
+    );
   });
 });

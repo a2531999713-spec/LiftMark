@@ -1,4 +1,4 @@
-# Activation 模块实现文档
+﻿# Activation 模块实现文档
 
 更新时间：2026-06-12
 

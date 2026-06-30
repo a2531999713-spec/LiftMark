@@ -210,15 +210,38 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
                   profile,
                 })
               : null;
-          const plannedWeight = suggestedWeight?.status === 'ready' ? suggestedWeight.weight : null;
+          const suggestedPlannedWeight = suggestedWeight?.status === 'ready' ? suggestedWeight.weight : null;
+          const latestWeightRow =
+            suggestedPlannedWeight === null
+              ? await txn.getFirstAsync<{ actual_weight: number | null }>(
+                  `SELECT ws.actual_weight AS actual_weight
+                   FROM workout_sets ws
+                   INNER JOIN workout_exercise_records wer ON wer.id = ws.exercise_record_id
+                   WHERE ws.member_id = ?
+                     AND wer.exercise_id = ?
+                     AND ws.completed = 1
+                     AND ws.actual_weight IS NOT NULL
+                   ORDER BY ws.updated_at DESC, ws.created_at DESC
+                   LIMIT 1`,
+                  member.id,
+                  planExercise.exerciseId,
+                )
+              : null;
+          const latestActualWeight =
+            latestWeightRow?.actual_weight !== null &&
+            latestWeightRow?.actual_weight !== undefined &&
+            Number.isFinite(latestWeightRow.actual_weight)
+              ? latestWeightRow.actual_weight
+              : null;
+          const plannedWeight = suggestedPlannedWeight ?? latestActualWeight;
 
           for (let setNumber = 1; setNumber <= setCount; setNumber += 1) {
             await txn.runAsync(
               `INSERT INTO workout_sets (
                 id, session_id, exercise_record_id, member_id, set_number,
                 planned_weight, actual_weight, planned_reps, actual_reps,
-                rpe, rir, completed, skipped, notes, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               createId('set'),
               createdSession.id,
               recordId,
@@ -228,6 +251,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
               plannedWeight,
               plannedReps,
               plannedReps,
+              null,
               null,
               null,
               0,
@@ -324,8 +348,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
           `INSERT INTO workout_sets (
             id, session_id, exercise_record_id, member_id, set_number,
             planned_weight, actual_weight, planned_reps, actual_reps,
-            rpe, rir, completed, skipped, notes, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           createId('set'),
           session.id,
           recordId,
@@ -335,6 +359,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
           input.weight ?? null,
           input.reps ?? null,
           input.reps ?? null,
+          null,
           null,
           null,
           input.completed === false ? 0 : 1,
@@ -425,7 +450,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const db = await this.getDb();
     await db.runAsync(
       `UPDATE workout_exercise_records
-       SET exercise_id = ?
+       SET exercise_id = ?,
+           replaced_from_exercise_id = COALESCE(replaced_from_exercise_id, exercise_id)
        WHERE id = ?`,
       exerciseId,
       recordId,
@@ -455,12 +481,13 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     await db.runAsync(
       `UPDATE workout_sets
        SET actual_weight = ?, actual_reps = ?, rpe = ?, rir = ?,
-           completed = ?, skipped = ?, notes = ?, updated_at = ?
+           actual_rest_seconds = ?, completed = ?, skipped = ?, notes = ?, updated_at = ?
        WHERE id = ?`,
       updated.actualWeight ?? null,
       updated.actualReps ?? null,
       updated.rpe ?? null,
       updated.rir ?? null,
+      updated.actualRestSeconds ?? null,
       updated.completed ? 1 : 0,
       updated.skipped ? 1 : 0,
       updated.notes ?? null,
