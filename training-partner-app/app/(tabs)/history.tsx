@@ -1208,7 +1208,7 @@ function GroupExercisePerformanceCard({
     .filter((index) => primary.trendSeries.some((series) => (series.values[index] ?? 0) > 0))
     .slice(-7)
     : [];
-  const chartLabels = chartIndexes.map((sourceIndex, index) => primary?.labels[sourceIndex] ?? `第${index + 1}次`);
+  const chartLabels = chartIndexes.map((sourceIndex) => primary?.labels[sourceIndex] ?? '');
   const chartSeries = primary?.trendSeries.map((series) => ({
     label: series.memberName,
     values: chartIndexes.map((index) => series.values[index] ?? 0),
@@ -1383,7 +1383,7 @@ function GroupTrendCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
   const activeTrend = analysis.trend
     .filter((point) => point.volume > 0 || point.completedSets > 0)
     .slice(-7)
-    .map((point, index) => ({ ...point, label: `第${index + 1}次` }));
+    .map((point) => ({ ...point, label: formatShortDate(point.date) }));
   const maxVolume = Math.max(1, ...activeTrend.map((point) => point.volume));
   return (
     <AppCard style={styles.trendCard}>

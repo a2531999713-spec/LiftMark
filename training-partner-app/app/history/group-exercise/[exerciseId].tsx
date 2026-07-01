@@ -219,9 +219,16 @@ function buildTrendSeries(
         return Math.max(0, ...dayRecords.map((record) => record.weight));
       }),
     }));
+  const dateLabelCounts = new Map<string, number>();
+  const labels = sessionSlots.map((slot) => {
+    const nextDateCount = (dateLabelCounts.get(slot.date) ?? 0) + 1;
+    dateLabelCounts.set(slot.date, nextDateCount);
+    const dateLabel = formatShortDate(slot.date);
+    return nextDateCount > 1 ? `${dateLabel}-${nextDateCount}` : dateLabel;
+  });
 
   return {
-    labels: sessionSlots.map((_, index) => `第${index + 1}次`),
+    labels,
     series,
   };
 }

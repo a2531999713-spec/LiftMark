@@ -66,5 +66,5 @@ API base URL 来自 `src/config/api.ts` / `EXPO_PUBLIC_API_BASE_URL`，当前公
 ## 5. 2026-07-01 同步记录
 
 - 登录页密码入口改为手机号 / 练刻 ID + 密码，并增加密码显示切换。
-- 短信验证码入口承担注册和找回路径，页面文案改为“验证码注册 / 找回”。
+- 短信验证码入口承担短信登录 / 注册路径，页面文案为“短信登录 / 注册”；新手机号由 `POST /auth/login-with-code` 自动创建账号。
 - 后端新增 `POST /auth/password/login`，旧 `POST /auth/login` 继续兼容。

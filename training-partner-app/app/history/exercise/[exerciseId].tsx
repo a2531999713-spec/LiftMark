@@ -98,12 +98,16 @@ function buildExerciseHistoryView({
   const sessionSlots = Array.from(
     new Map(records.map((record) => [record.sessionId, { date: record.date, sessionId: record.sessionId }] as const)).values(),
   ).slice(-12);
-  const sessionPoints = sessionSlots.map((slot, index) => {
+  const dateLabelCounts = new Map<string, number>();
+  const sessionPoints = sessionSlots.map((slot) => {
     const sessionRecords = records.filter((record) => record.sessionId === slot.sessionId);
+    const nextDateCount = (dateLabelCounts.get(slot.date) ?? 0) + 1;
+    dateLabelCounts.set(slot.date, nextDateCount);
+    const dateLabel = formatShortDate(slot.date);
     return {
       date: slot.date,
       estimatedOneRM: Math.max(0, ...sessionRecords.map((record) => record.estimatedOneRM)),
-      label: `第${index + 1}次`,
+      label: nextDateCount > 1 ? `${dateLabel}-${nextDateCount}` : dateLabel,
       sessionId: slot.sessionId,
       volume: sessionRecords.reduce((sum, record) => sum + record.volume, 0),
       weight: Math.max(0, ...sessionRecords.map((record) => record.weight)),

@@ -1,6 +1,7 @@
 import { createId } from '@/domain/common/ids';
 import { nowIso } from '@/domain/common/time';
 import type { CreateMemberInput, GroupMember, MemberProfile } from '@/domain/member/member.types';
+import { DEFAULT_BARBELL_INCREMENT, DEFAULT_DUMBBELL_INCREMENT } from '@/domain/weight/weight-calculator';
 import type { MemberRepository } from '@/data/repositories/memberRepository';
 
 import type { DatabaseProvider } from './base';
@@ -80,8 +81,8 @@ export class SQLiteMemberRepository implements MemberRepository {
         input.profile?.deadlift1RM ?? null,
         input.profile?.overheadPress1RM ?? null,
         input.profile?.pullupReferenceWeight ?? null,
-        input.profile?.barbellIncrement ?? 2.5,
-        input.profile?.dumbbellIncrement ?? 2,
+        input.profile?.barbellIncrement ?? DEFAULT_BARBELL_INCREMENT,
+        input.profile?.dumbbellIncrement ?? DEFAULT_DUMBBELL_INCREMENT,
         now,
         now,
       );

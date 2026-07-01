@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { LOCAL_GROUP_LIMITS } from '@/config/appLimits';
+import { DEFAULT_BARBELL_INCREMENT, DEFAULT_DUMBBELL_INCREMENT } from '@/domain/weight/weight-calculator';
 
 export const MIN_GROUP_MEMBERS = LOCAL_GROUP_LIMITS.minMembersPerGroup;
 export const MAX_GROUP_MEMBERS = LOCAL_GROUP_LIMITS.maxMembersPerGroup;
@@ -39,8 +40,8 @@ export const defaultMemberFormValues: MemberFormValues = {
   deadlift1RM: undefined,
   overheadPress1RM: undefined,
   pullupReferenceWeight: undefined,
-  barbellIncrement: 2.5,
-  dumbbellIncrement: 2,
+  barbellIncrement: DEFAULT_BARBELL_INCREMENT,
+  dumbbellIncrement: DEFAULT_DUMBBELL_INCREMENT,
 };
 
 export function canAddGroupMember(currentMemberCount: number): boolean {

@@ -3,14 +3,22 @@ import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppCard, AppText } from '@/components/ui';
+import { formatWeight } from '@/domain/weight/weight-calculator';
 import type { SaveWorkoutSetInput, WorkoutSet } from '@/domain/workout/workout.types';
 import { colors, radius, spacing } from '@/theme';
 
 function formatNumber(value: number | undefined, fallback = '0'): string {
-  if (value === undefined) {
-    return fallback;
-  }
-  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+  return formatWeight(value, fallback);
+}
+
+function parseDraftNumber(value: string, fallback: number | undefined): number | undefined {
+  const parsed = Number(value.trim().replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseDraftInteger(value: string, fallback: number | undefined): number | undefined {
+  const parsed = Number(value.trim());
+  return Number.isInteger(parsed) ? parsed : fallback;
 }
 
 type CompletedSetItemProps = {
@@ -29,8 +37,8 @@ function CompletedSetItem({ memberName, onDelete, onSavePatch, set }: CompletedS
   function toggleEdit() {
     if (isEditing) {
       onSavePatch({
-        actualWeight: parseFloat(editWeight) || (set.actualWeight ?? set.plannedWeight),
-        actualReps: parseInt(editReps, 10) || (set.actualReps ?? set.plannedReps),
+        actualWeight: parseDraftNumber(editWeight, set.actualWeight ?? set.plannedWeight),
+        actualReps: parseDraftInteger(editReps, set.actualReps ?? set.plannedReps),
         notes: notesDraft.trim() || undefined,
       });
     }

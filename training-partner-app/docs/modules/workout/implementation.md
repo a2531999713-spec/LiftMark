@@ -3,12 +3,16 @@
 更新时间：2026-07-01  
 对应代码目录：`training-partner-app/`；Sprint 4 已实现从今日训练创建 session、生成 records/sets、训练执行页和即时保存。
 
-## 2026-07-01 addendum: rest action and default weight fallback
+## 2026-07-01 addendum: group rotation, extra sets, rest focus, and summary source
 
 - `RestTimerPanel` now has one primary action: "提前开始下一组" while counting down and "开始下一组" at zero. The action writes `actual_rest_seconds`.
+- The workout route no longer lets a preferred member override the canonical rotation queue. Group rotation is always ordered by set number first and member order second; after the last member in a round finishes, the UI can focus that member's rest timer, then recomputes the next pending set from the full queue.
+- The rest panel displays the currently resting member and the next member / next set label so the current training member and countdown are visible during group sessions.
+- The workout options menu supports adding an extra set for the current member or for every member in the current exercise. Extra sets are written through `WorkoutRepository.addSetToExerciseRecord()`, start as incomplete, keep `notes: "加做组"`, and do not modify the original plan.
 - `CurrentSetRecorder` saves valid weight / rep text changes immediately, so a no-suggestion exercise can be typed and completed without pressing Enter.
 - The workout route falls back to the previous completed actual weight for the same member and exercise inside the current session.
 - `WorkoutRepository.createSessionFromTodayPlan()` fills no-suggestion set weights from the member's latest completed historical set for that exercise.
+- `app/workout/summary/[sessionId].tsx` shows the exercise / weight / reps source for the best estimated 1RM and removes the redundant "再看一次总结" action.
 
 ## 2026-06-30 补充：训练保存 P0、RPE、备注、实际休息与现场统计
 
@@ -185,3 +189,4 @@
 - 2026-06-12：同步可用性 + UI 落地 Sprint：新增历史补录、历史详情编辑、自由训练创建 session、训练页周五休息手动覆盖；新增 `createManualSession`、`updateSession`、`updateExerciseRecordExercise` 和删除接口。
 - 2026-06-12：同步本地图片资产落地：训练执行页当前动作卡接入 `liftmarkImages.trainingHero` 图片背景和深色遮罩；训练总结页接入 `liftmarkImages.historyHero`。训练记录、即时保存和 Repository 接口未变。
 - 2026-06-30：同步训练执行增强：RPE 改为可选折叠横向选择器，休息面板展示倒计时、建议休息、已休息、下一组和下一位成员；`saveSet` 保存 `actualRestSeconds`；训练中可打开动作替换弹层，替代动作优先按 `exercise_alternatives` 排序，替换关系保留 `replaced_from_exercise_id` 且不回写原计划。
+- 2026-07-01：同步小组训练修复：轮换队列不再被选中成员覆盖，最后成员休息后回到第一位下一组；训练中可加做当前成员或全员额外组；总结页 1RM 指标展示动作来源并移除重复总结按钮。

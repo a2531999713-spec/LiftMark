@@ -1,7 +1,13 @@
 ﻿# Weight 模块实现文档
 
-更新时间：2026-06-15  
+更新时间：2026-07-01
 对应代码目录：`training-partner-app/`；当前已实现基于成员 1RM、计划百分比、目标次数区间和器械加重单位的建议重量。
+
+## 2026-07-01 补充：步进默认值和小数精度
+
+- 杠铃和哑铃默认加重单位均为 2.5kg；已有成员手动保存的 2kg 或其他数值继续按成员配置执行。
+- `roundWeightToIncrement()`、`addWeightStep()`、`subtractWeightStep()` 和 `formatWeight()` 统一处理 2.5kg、1.25kg 等小数步进，避免训练中加减按钮和已完成组编辑丢精度。
+- `roundToIncrement()` 保留为兼容别名，内部走同一套精度处理。
 
 ## 1. 模块职责
 
@@ -49,6 +55,12 @@
 2. 保持输入输出可测试。
 3. 修改后同步相关模块和流程文档。
 
+### roundWeightToIncrement() / addWeightStep() / subtractWeightStep() / formatWeight()
+
+文件：见主要文件列表
+职责：训练现场和历史编辑共用的重量步进、减重和展示格式化工具。必须保留 1.25kg 等自定义加重单位，不得把小数强制压成一位。
+测试：`src/tests/weight.test.ts`
+
 ### estimatePercentFromTargetReps()
 
 文件：见主要文件列表  
@@ -90,6 +102,7 @@
 - 1RM 102kg，75%，2.5kg increment -> 77.5kg。
 - 1RM 80kg，72.5%，2.5kg increment 的取整策略需明确。
 - 杠铃动作使用 `barbellIncrement`，哑铃动作使用 `dumbbellIncrement`。
+- 默认哑铃加重单位为 2.5kg；自定义 2kg、1.25kg 等配置必须被尊重。
 - 引体参考总负重缺失时可回退到体重。
 - 没有百分比但有 5-8 次目标区间时，能推算出保守建议重量。
 - `referenceLift: none` 时返回 manual 状态，UI 展示“参考上次重量”。
@@ -110,3 +123,4 @@
 - 2026-06-09：同步 Sprint 1 代码骨架：Weight 类型、取整、参考 1RM 和预估 1RM 函数已创建。
 - 2026-06-09：同步 Sprint 3：`calculateSuggestedWeight` 已接入今日训练页，为不同成员生成不同建议重量。
 - 2026-06-15：`calculateSuggestedWeight` 支持从目标次数区间推算保守百分比；训练页和创建 session 时都传入 reps/repMin/repMax。
+- 2026-07-01：默认哑铃加重单位改为 2.5kg；新增重量步进和格式化 helper，训练执行、已完成组编辑和建议重量统一保留小数步进精度。

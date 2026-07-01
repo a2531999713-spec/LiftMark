@@ -94,7 +94,7 @@ export default function TrainingIdentityRoute() {
             <SettingsRow label="硬拉 1RM" value={formatKg(profile?.deadlift1RM)} />
             <SettingsRow label="推举 1RM" value={formatKg(profile?.overheadPress1RM)} />
             <SettingsRow label="杠铃加重单位" value={`${profile?.barbellIncrement ?? 2.5} kg`} />
-            <SettingsRow label="哑铃加重单位" value={`${profile?.dumbbellIncrement ?? 2} kg`} />
+            <SettingsRow label="哑铃加重单位" value={`${profile?.dumbbellIncrement ?? 2.5} kg`} />
           </AppCard>
 
           <View style={styles.actions}>

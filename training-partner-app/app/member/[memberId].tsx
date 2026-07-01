@@ -22,7 +22,7 @@ function createInitialValues(member: GroupMember, profile: MemberProfile | null)
     overheadPress1RM: profile?.overheadPress1RM,
     pullupReferenceWeight: profile?.pullupReferenceWeight,
     barbellIncrement: profile?.barbellIncrement ?? 2.5,
-    dumbbellIncrement: profile?.dumbbellIncrement ?? 2,
+    dumbbellIncrement: profile?.dumbbellIncrement ?? 2.5,
   };
 }
 

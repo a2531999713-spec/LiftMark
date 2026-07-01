@@ -57,7 +57,7 @@ export default function ProfilePreferencesRoute() {
           <AppCard style={styles.card}>
             <SettingsRow label="默认单位" value="kg" />
             <SettingsRow label="杠铃加重单位" value={`${profile?.barbellIncrement ?? 2.5} kg`} />
-            <SettingsRow label="哑铃加重单位" value={`${profile?.dumbbellIncrement ?? 2} kg`} />
+            <SettingsRow label="哑铃加重单位" value={`${profile?.dumbbellIncrement ?? 2.5} kg`} />
             <SettingsRow label="默认记录方式" value="重量 / 次数" />
             <SettingsRow label="休息计时" right={<Tag label="开启" tone="success" />} />
             <SettingsRow label="周五策略" value={fridayStrategyLabel(group?.fridayStrategy)} />

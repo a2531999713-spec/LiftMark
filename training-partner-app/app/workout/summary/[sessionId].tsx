@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MetricCard, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
@@ -212,7 +212,11 @@ export default function WorkoutSummaryRoute() {
           </AppCard>
 
           <View style={styles.metricGrid}>
-            <MetricCard label="预估 1RM" value={view.bestEstimatedOneRM ? `${view.bestEstimatedOneRM} kg` : '样本不足'} />
+            <MetricCard
+              delta={view.bestEstimatedOneRM ? view.bestExerciseName : undefined}
+              label="预估 1RM 来源"
+              value={view.bestEstimatedOneRM ? `${view.bestEstimatedOneRM} kg` : '样本不足'}
+            />
             <MetricCard label="总训练时长" value={`${view.durationMinutes} min`} />
           </View>
 
@@ -290,9 +294,6 @@ export default function WorkoutSummaryRoute() {
           <View style={styles.buttonRow}>
             <AppButton onPress={() => router.replace('/(tabs)/history')} style={styles.button} variant="secondary">
               返回记录
-            </AppButton>
-            <AppButton onPress={() => Alert.alert('训练总结', '当前页面已经是本次总结，可继续查看各项数据。')} style={styles.button}>
-              再看一次总结
             </AppButton>
           </View>
         </>

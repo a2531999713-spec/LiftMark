@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS member_profiles (
   overhead_press_1rm REAL,
   pullup_reference_weight REAL,
   barbell_increment REAL NOT NULL DEFAULT 2.5,
-  dumbbell_increment REAL NOT NULL DEFAULT 2.0,
+  dumbbell_increment REAL NOT NULL DEFAULT 2.5,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

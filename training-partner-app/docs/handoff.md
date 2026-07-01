@@ -16,7 +16,7 @@
 ## 2026-06-30 charts-body-groups-workout-replacement 交接
 
 - 当前项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`。
-- 图表：`MiniLineChart` / `MultiLineTrendChart` 已修复绘图区 padding、Y 轴比例、同值/全 0 安全范围、单位和空状态；周趋势使用日期或周起止日期。
+- 图表：`MiniLineChart` / `MultiLineTrendChart` 已修复绘图区 padding、Y 轴比例、同值/全 0 安全范围、单位和空状态；周趋势使用日期或周起始日期。
 - 身体数据：`app/profile/body-metrics.tsx` 已重构为快速记录、折叠围度、目标设置、变化摘要、训练关联和趋势图；新增 `body_metric_goals` 和 migration v9。
 - 头像：根因是账号头像缓存与训练成员 profile 分表；账号头像更新/删除时同步当前小组第一位训练成员，训练、记录、小组分析统一使用 `Avatar`。
 - 多小组：`GroupRepository.listGroups()` 已接入小组页、今日、成员、记录、设置、头像和身体数据页；新建小组后可立即切换，旧训练记录保留原 `group_id`。

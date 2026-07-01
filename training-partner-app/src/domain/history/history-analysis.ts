@@ -217,10 +217,6 @@ function formatMonthDay(date: Date): string {
   return `${date.getMonth() + 1}/${`${date.getDate()}`.padStart(2, '0')}`;
 }
 
-function formatWeekRangeLabel(start: Date, end: Date): string {
-  return `${formatMonthDay(start)}-${formatMonthDay(end)}`;
-}
-
 function getChangePercent(current: number, previous: number): number | undefined {
   if (previous <= 0) {
     return current > 0 ? 100 : undefined;
@@ -322,7 +318,7 @@ export function getPersonalHistoryAnalysis(
     const start = addDays(rangeStart, index * 7);
     const end = addDays(start, 6);
     return {
-      label: formatWeekRangeLabel(start, end),
+      label: formatMonthDay(start),
       startDate: toLocalDateString(start),
       endDate: toLocalDateString(end),
       volume: 0,

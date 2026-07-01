@@ -103,7 +103,7 @@ export default function SettingsMemberUnitsRoute() {
                     </AppText>
                     <AppText tone="muted" variant="caption">
                       杠铃 {formatIncrement(profile?.barbellIncrement, 2.5)} / 哑铃{' '}
-                      {formatIncrement(profile?.dumbbellIncrement, 2)}
+                      {formatIncrement(profile?.dumbbellIncrement, 2.5)}
                     </AppText>
                   </View>
                   <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />

@@ -67,14 +67,14 @@ describe('history analysis', () => {
     expect(series?.entries).toHaveLength(2);
   });
 
-  it('supports 12-week personal history analysis ranges', () => {
+  it('supports 12-week personal history ranges with week-start labels', () => {
     const ranges = getAvailableHistoryAnalysisRanges().map((range) => range.weeks);
     const analysis = getPersonalHistoryAnalysis([], 'member_1', {}, 12, new Date('2026-06-30T12:00:00'));
 
     expect(ranges).toEqual([4, 8, 12]);
     expect(analysis.rangeWeeks).toBe(12);
     expect(analysis.weeklyBuckets).toHaveLength(12);
-    expect(analysis.weeklyBuckets.at(-1)?.label).toBe('6/24-6/30');
+    expect(analysis.weeklyBuckets.at(-1)?.label).toBe('6/24');
   });
 
   it('summarizes local group history from workout details', () => {

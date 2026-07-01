@@ -37,6 +37,7 @@ describe('member domain rules', () => {
     });
 
     expect(result.success).toBe(true);
+    expect(defaultMemberFormValues.dumbbellIncrement).toBe(2.5);
   });
 
   it('rejects a missing display name', () => {

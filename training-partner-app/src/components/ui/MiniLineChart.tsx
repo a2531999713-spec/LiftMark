@@ -86,7 +86,7 @@ export function MiniLineChart({
 
   const gap = pointCount > 1 ? 1 / (pointCount - 1) : 0;
   const points = sanitizedData.map((value, index) => {
-    const xPercent = pointCount > 1 ? index * gap : 0.5;
+    const xPercent = pointCount > 1 ? index * gap : 0;
     const yPercent = normalizeYAxisValue(value, scale);
     return { index, value, xPercent, yPercent };
   });
@@ -119,7 +119,7 @@ export function MiniLineChart({
         {labels.map((label, index) => {
           const isAxisLabelVisible = visibleXAxisIndexes.has(index);
           return (
-          <View key={`${label}-${index}`} style={styles.labelColumn}>
+          <View key={`${label}-${index}`} style={[styles.labelColumn, pointCount === 1 && styles.labelColumnSingle]}>
             {isAxisLabelVisible && showValues && sanitizedData[index] > 0 ? (
               <AppText
                 numberOfLines={1}
@@ -318,6 +318,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     gap: 2,
+  },
+  labelColumnSingle: {
+    alignItems: 'flex-start',
   },
   valuePlaceholder: {
     height: 12,

@@ -98,8 +98,14 @@ function formatMonthDay(date: Date): string {
   return `${date.getMonth() + 1}/${`${date.getDate()}`.padStart(2, '0')}`;
 }
 
-function formatDateRange(start: Date, end: Date): string {
-  return `${formatMonthDay(start)}-${formatMonthDay(end)}`;
+function parseLocalDate(date: string): Date {
+  return new Date(`${date}T12:00:00`);
+}
+
+function getNaturalWeekStart(date: Date): Date {
+  const day = date.getDay();
+  const mondayOffset = day === 0 ? 6 : day - 1;
+  return addDays(date, -mondayOffset);
 }
 
 function formatKg(value: number): string {
@@ -118,18 +124,39 @@ function summarizeWorkoutDetails(details: WorkoutSessionDetail[]): Pick<PlanDash
 }
 
 function buildLastFourWeeks(details: WorkoutSessionDetail[]): Pick<PlanDashboardStats, 'lastFourWeeks' | 'lastFourWeekLabels'> {
-  const now = new Date();
-  const buckets = [21, 14, 7, 0].map((offset) => {
-    const startDate = addDays(now, -offset - 6);
-    const endDate = addDays(now, -offset);
-    const start = getLocalDateString(startDate);
-    const end = getLocalDateString(endDate);
-    return { start, end, count: 0, label: formatDateRange(startDate, endDate) };
-  });
+  const completedDetails = details
+    .filter((detail) => detail.sets.some((set) => set.completed))
+    .sort((left, right) => left.session.date.localeCompare(right.session.date));
 
-  details.forEach((detail) => {
-    const bucket = buckets.find((item) => detail.session.date >= item.start && detail.session.date <= item.end);
-    if (bucket && detail.sets.some((set) => set.completed)) {
+  if (completedDetails.length === 0) {
+    return { lastFourWeeks: [0, 0, 0, 0], lastFourWeekLabels: ['', '', '', ''] };
+  }
+
+  const firstWeekStart = getNaturalWeekStart(parseLocalDate(completedDetails[0].session.date));
+  const currentWeekStart = getNaturalWeekStart(new Date());
+  const bucketStarts: Date[] = [];
+  for (
+    let cursor = firstWeekStart;
+    getLocalDateString(cursor) <= getLocalDateString(currentWeekStart);
+    cursor = addDays(cursor, 7)
+  ) {
+    bucketStarts.push(cursor);
+  }
+
+  const visibleBucketStarts = bucketStarts.slice(-4);
+  const buckets = visibleBucketStarts.map((start) => ({
+    count: 0,
+    label: formatMonthDay(start),
+    start,
+  }));
+
+  completedDetails.forEach((detail) => {
+    const sessionDate = parseLocalDate(detail.session.date);
+    const bucket = buckets.find((item, index) => {
+      const nextStart = buckets[index + 1]?.start ?? addDays(item.start, 7);
+      return sessionDate >= item.start && sessionDate < nextStart;
+    });
+    if (bucket) {
       bucket.count += 1;
     }
   });
@@ -531,6 +558,21 @@ export default function PlanRoute() {
               <AppButton onPress={() => router.push('/(tabs)/today')} size="sm">
                 去训练页
               </AppButton>
+              <AppButton onPress={() => setManageVisible(true)} size="sm" variant="secondary">
+                切换计划
+              </AppButton>
+              <AppButton
+                disabled={!activePlan || activePlan.source === 'system'}
+                onPress={() => {
+                  if (activePlan && activePlan.source !== 'system') {
+                    router.push({ pathname: '/plan/create', params: { editPlanId: activePlan.id } } as never);
+                  }
+                }}
+                size="sm"
+                variant="secondary"
+              >
+                编辑计划
+              </AppButton>
             </View>
           </VisualHeroCard>
 
@@ -627,6 +669,33 @@ export default function PlanRoute() {
         title="计划操作"
         visible={isActionsVisible}
       >
+        <PlanActionRow
+          icon="swap-horizontal-outline"
+          label="切换当前计划"
+          onPress={() => {
+            setActionsVisible(false);
+            setManageVisible(true);
+          }}
+        />
+        <PlanActionRow
+          disabled={!activePlan || activePlan.source === 'system'}
+          icon="create-outline"
+          label="编辑当前计划"
+          onPress={() => {
+            setActionsVisible(false);
+            if (activePlan && activePlan.source !== 'system') {
+              router.push({ pathname: '/plan/create', params: { editPlanId: activePlan.id } } as never);
+            }
+          }}
+        />
+        <PlanActionRow
+          icon="library-outline"
+          label="主流计划库"
+          onPress={() => {
+            setActionsVisible(false);
+            setSchemeLibraryVisible(true);
+          }}
+        />
         <PlanActionRow
           icon="add-outline"
           label="创建空白计划"
@@ -735,6 +804,17 @@ export default function PlanRoute() {
                   <View style={styles.inlineActions}>
                     <AppButton onPress={() => router.push({ pathname: '/plan/[planId]', params: { planId: plan.id } })} size="sm" variant="secondary">
                       查看
+                    </AppButton>
+                    <AppButton
+                      disabled={plan.source === 'system'}
+                      onPress={() => {
+                        setManageVisible(false);
+                        router.push({ pathname: '/plan/create', params: { editPlanId: plan.id } } as never);
+                      }}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      编辑
                     </AppButton>
                     <AppButton disabled={isActive} onPress={() => void setCurrentPlan(plan)} size="sm">
                       设为当前

@@ -100,6 +100,36 @@ describe('workout domain rules', () => {
     ).toBe('zhang_2');
   });
 
+  it('returns to the first member after the last member completes a rested round', () => {
+    const sets = [
+      createSet({ id: 'a_1', memberId: 'a', setNumber: 1, completed: true }),
+      createSet({ id: 'b_1', memberId: 'b', setNumber: 1, completed: true }),
+      createSet({ id: 'c_1', memberId: 'c', setNumber: 1, completed: true }),
+      createSet({ id: 'a_2', memberId: 'a', setNumber: 2 }),
+      createSet({ id: 'b_2', memberId: 'b', setNumber: 2 }),
+      createSet({ id: 'c_2', memberId: 'c', setNumber: 2 }),
+    ];
+
+    expect(getNextWorkoutSetForRotation(sets, ['a', 'b', 'c'], 'record_1')?.id).toBe('a_2');
+  });
+
+  it('finishes every member in the last planned set before moving on', () => {
+    const memberOrder = ['a', 'b', 'c'];
+    const sets = [
+      createSet({ id: 'a_4', memberId: 'a', setNumber: 4, completed: true }),
+      createSet({ id: 'b_4', memberId: 'b', setNumber: 4 }),
+      createSet({ id: 'c_4', memberId: 'c', setNumber: 4 }),
+    ];
+
+    expect(getNextWorkoutSetForRotation(sets, memberOrder, 'record_1')?.id).toBe('b_4');
+
+    const afterB = sets.map((set) => (set.id === 'b_4' ? { ...set, completed: true } : set));
+    expect(getNextWorkoutSetForRotation(afterB, memberOrder, 'record_1')?.id).toBe('c_4');
+
+    const afterC = afterB.map((set) => (set.id === 'c_4' ? { ...set, completed: true } : set));
+    expect(getNextWorkoutSetForRotation(afterC, memberOrder, 'record_1')).toBeNull();
+  });
+
   it('reports current planned set separately from total participant sets', () => {
     const progress = getWorkoutExerciseSetProgress(
       [

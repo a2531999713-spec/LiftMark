@@ -5,6 +5,7 @@ import { AppText } from '@/components/ui';
 import { colors, radius, spacing } from '@/theme';
 
 type RestTimerPanelProps = {
+  currentMemberName?: string;
   currentSetLabel?: string;
   elapsedSeconds?: number;
   nextMemberName?: string;
@@ -21,6 +22,7 @@ function formatTimer(seconds: number): string {
 }
 
 export function RestTimerPanel({
+  currentMemberName,
   currentSetLabel,
   elapsedSeconds = 0,
   nextMemberName,
@@ -30,12 +32,15 @@ export function RestTimerPanel({
   remainingSeconds,
 }: RestTimerPanelProps) {
   const actionLabel = remainingSeconds > 0 ? '提前开始下一组' : '开始下一组';
+  const nextLabel = nextMemberName
+    ? `${nextMemberName} · ${nextSetLabel ?? '下一组'}`
+    : nextSetLabel ?? '下一组';
 
   return (
     <View style={styles.panel}>
       <View style={styles.timerBlock}>
         <AppText tone="muted" variant="caption">
-          休息倒计时
+          {currentMemberName ? `${currentMemberName} 休息中` : '休息倒计时'}
         </AppText>
         <AppText tone="brand" variant="subtitle" weight="900">
           {formatTimer(remainingSeconds)}
@@ -44,7 +49,7 @@ export function RestTimerPanel({
           已休 {formatTimer(elapsedSeconds)} · 建议 {plannedSeconds ? formatTimer(plannedSeconds) : '未设置'}
         </AppText>
         <AppText numberOfLines={1} tone="muted" variant="caption">
-          {currentSetLabel ?? '当前组'} → {nextSetLabel ?? '下一组'}{nextMemberName ? ` · ${nextMemberName}` : ''}
+          {currentSetLabel ?? '当前组'} → {nextLabel}
         </AppText>
       </View>
       <Pressable accessibilityRole="button" onPress={onStartNextSet} style={styles.startButton}>

@@ -18,6 +18,8 @@
 - Group history keeps overview as the default. `GroupExercisePerformanceCard` no longer auto-selects the first exercise or shows a duplicate four-exercise grid.
 - Personal session cards pass `scope=personal` and `memberId`; `app/history/[sessionId].tsx` filters visible sets to that member. Group detail continues to show all members.
 - `src/components/ui/chartScale.ts` provides shared Y-axis scale for `MiniLineChart` and `MultiLineTrendChart`, with tests for equal values, zero-only values, and shared multi-line ranges.
+- History and exercise trend charts use real date labels. Personal exercise detail and group exercise detail label sessions by date, adding a same-day suffix only when multiple sessions share the same date; training analytics weekly buckets show the week start date.
+- Single-point line charts place the point and X-axis label at the left edge instead of centering sparse data.
 
 ## 2026-06-30 补充：个人记录页产品级重构
 
@@ -32,7 +34,7 @@
 ## 2026-06-30 补充：趋势图与动作详情
 
 - `MiniLineChart` 和 `MultiLineTrendChart` 统一增加 Y 轴刻度与 `unitLabel`，训练容量、重量、1RM、身体数据等图表必须显示量纲。
-- 个人训练趋势、小组趋势和小组动作趋势改为按实际训练记录或实际训练日期展示，不用自然日补零制造断崖；周趋势使用周起止日期，例如 `6/24-6/30`。
+- 个人训练趋势、小组趋势和小组动作趋势改为按实际训练记录或实际训练日期展示，不用自然日补零制造断崖；周趋势使用周起始日期，例如 `6/24`。
 - 训练分析页支持最近 4 / 8 / 12 周。
 - 新增 `app/history/exercise/[exerciseId].tsx`：展示当前成员单动作历史、容量、最佳重量、估算 1RM 趋势和最近有效组。
 - 小组记录默认展示总览，不默认进入卧推；动作表现通过带箭头的选择器切换真实练过的 `exerciseId`。
@@ -158,6 +160,7 @@
 - 2026-06-29：记录页新增个人 / 小组视角；小组汇总接入 `getGroupHistoryAnalysis()` 和本机 SQLite 训练详情；记录页、训练分析页、计划执行趋势统一改为折线趋势。
 - 2026-06-30：历史详情页改为默认只读，编辑和删除收进顶部更多菜单；小组动作表现卡新增详情入口；`app/history/group-exercise/[exerciseId].tsx` 从 SQLite session 明细即时汇总成员对比和最近有效组，按真实 `exerciseId` 展示动作，并新增指标、时间范围、成员筛选和多成员趋势线。
 - 2026-07-01：个人历史移除重复查询区块；补录支持多动作和多组独立数据；详情编辑支持新增动作、新增组和删组；动作历史移除 RPE 展示。
+- 2026-07-01：动作历史、小组动作详情、小组趋势和训练分析 1RM 图表 X 轴改为日期 / 周起始日期；短数据或单点数据从左侧开始展示。
 
 ### analyzeExerciseHistory()
 

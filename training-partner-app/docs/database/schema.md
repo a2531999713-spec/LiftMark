@@ -1,6 +1,11 @@
 ﻿# SQLite 数据库结构
 
-更新时间：2026-06-30
+更新时间：2026-07-01
+
+## 2026-07-01 补充：成员默认步进
+
+- 新库 `member_profiles.dumbbell_increment` 默认值从 2.0 调整为 2.5，与训练页、成员表单和重量计算 fallback 保持一致。
+- 不新增迁移批量覆盖旧成员资料；旧库中用户已经保存的 2kg 或其他自定义哑铃步进继续保留。
 
 ## 2026-06-30 补充：云同步元数据、训练记录增强与身体数据
 
@@ -128,7 +133,7 @@ CREATE TABLE IF NOT EXISTS member_profiles (
   overhead_press_1rm REAL,
   pullup_reference_weight REAL,
   barbell_increment REAL NOT NULL DEFAULT 2.5,
-  dumbbell_increment REAL NOT NULL DEFAULT 2.0,
+  dumbbell_increment REAL NOT NULL DEFAULT 2.5,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

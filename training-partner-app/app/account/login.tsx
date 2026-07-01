@@ -137,7 +137,7 @@ export default function LoginRoute() {
                 LiftMark
               </AppText>
               <AppText style={styles.heroSub} tone="muted" variant="bodySmall">
-                使用手机号 / 练刻 ID 登录；新账号注册或找回密码请使用验证码入口。
+                使用手机号 / 练刻 ID 密码登录；也可以用手机号短信验证码登录，新手机号会自动注册。
               </AppText>
             </View>
           </View>
@@ -154,7 +154,7 @@ export default function LoginRoute() {
 
             <View style={styles.modeSwitch}>
               <ModeButton active={mode === 'password'} label="密码登录" onPress={() => setMode('password')} />
-              <ModeButton active={mode === 'sms'} label="验证码注册 / 找回" onPress={() => setMode('sms')} />
+              <ModeButton active={mode === 'sms'} label="短信登录 / 注册" onPress={() => setMode('sms')} />
             </View>
 
             {mode === 'password' ? (
@@ -234,7 +234,7 @@ export default function LoginRoute() {
               size="lg"
               style={styles.submitButton}
             >
-              {mode === 'password' ? '登录' : '继续验证'}
+              {mode === 'password' ? '登录' : '登录 / 注册'}
             </AppButton>
           </View>
         </ScrollView>

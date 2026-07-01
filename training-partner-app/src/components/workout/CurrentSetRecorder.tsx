@@ -5,6 +5,7 @@ import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { AppCard, AppText } from '@/components/ui';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { MemberProfile } from '@/domain/member/member.types';
+import { addWeightStep, formatWeight, subtractWeightStep } from '@/domain/weight/weight-calculator';
 import type { WorkoutExerciseRecord } from '@/domain/workout/workout.types';
 import { colors, radius, spacing } from '@/theme';
 
@@ -13,10 +14,7 @@ import { RpeSelector } from './RpeSelector';
 import { SetNotesInput } from './SetNotesInput';
 
 function formatNumber(value: number | undefined, fallback = '0'): string {
-  if (value === undefined || !Number.isFinite(value)) {
-    return fallback;
-  }
-  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+  return formatWeight(value, fallback);
 }
 
 function parseNumericInput(raw: string, integer: boolean): number | null {
@@ -28,7 +26,7 @@ function parseNumericInput(raw: string, integer: boolean): number | null {
   if (!Number.isFinite(value)) {
     return Number.NaN;
   }
-  return integer ? Math.round(value) : Math.round(value * 10) / 10;
+  return integer ? Math.round(value) : Math.round((value + Number.EPSILON) * 1000) / 1000;
 }
 
 type NumberStepperProps = {
@@ -95,8 +93,13 @@ function NumberStepper({
   }
 
   function changeByStep(direction: 1 | -1) {
-    const next = Math.max(min, current + step * direction);
-    const bounded = max === undefined ? next : Math.min(max, next);
+    const next = integer
+      ? current + step * direction
+      : direction === 1
+        ? addWeightStep(current, step)
+        : subtractWeightStep(current, step);
+    const lowerBounded = Math.max(min, next);
+    const bounded = max === undefined ? lowerBounded : Math.min(max, lowerBounded);
     setDraft(formatNumber(bounded, ''));
     onChange(bounded);
   }
@@ -254,6 +257,7 @@ export function CurrentSetRecorder({
       <View style={styles.actionRow}>
         {isResting ? (
           <RestTimerPanel
+            currentMemberName={memberName}
             currentSetLabel={`第 ${setNumber} 组`}
             elapsedSeconds={restElapsedSeconds}
             nextMemberName={nextMemberName}

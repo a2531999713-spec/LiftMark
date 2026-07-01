@@ -2,12 +2,49 @@ import type { MemberProfile } from '../member/member.types';
 import type { ReferenceLift } from '../plan/plan.types';
 import type { SuggestedWeightInput, SuggestedWeightResult } from './weight.types';
 
-export function roundToIncrement(weight: number, increment: number): number {
-  if (increment <= 0) {
+export const DEFAULT_BARBELL_INCREMENT = 2.5;
+export const DEFAULT_DUMBBELL_INCREMENT = 2.5;
+export const DEFAULT_WEIGHT_INCREMENT = DEFAULT_BARBELL_INCREMENT;
+
+function normalizeIncrement(increment = DEFAULT_WEIGHT_INCREMENT): number {
+  if (!Number.isFinite(increment) || increment <= 0) {
     throw new Error('Increment must be greater than zero.');
   }
 
-  return Math.round(weight / increment) * increment;
+  return increment;
+}
+
+function roundWeightPrecision(value: number): number {
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
+}
+
+export function roundWeightToIncrement(weight: number, increment = DEFAULT_WEIGHT_INCREMENT): number {
+  const safeIncrement = normalizeIncrement(increment);
+  return roundWeightPrecision(Math.round(weight / safeIncrement) * safeIncrement);
+}
+
+export function roundToIncrement(weight: number, increment: number): number {
+  return roundWeightToIncrement(weight, increment);
+}
+
+export function addWeightStep(weight: number, increment = DEFAULT_WEIGHT_INCREMENT): number {
+  const safeIncrement = normalizeIncrement(increment);
+  const current = Number.isFinite(weight) ? weight : 0;
+  return roundWeightToIncrement(current + safeIncrement, safeIncrement);
+}
+
+export function subtractWeightStep(weight: number, increment = DEFAULT_WEIGHT_INCREMENT): number {
+  const safeIncrement = normalizeIncrement(increment);
+  const current = Number.isFinite(weight) ? weight : 0;
+  return Math.max(0, roundWeightToIncrement(current - safeIncrement, safeIncrement));
+}
+
+export function formatWeight(weight: number | undefined, fallback = '0'): string {
+  if (weight === undefined || !Number.isFinite(weight)) {
+    return fallback;
+  }
+
+  return roundWeightPrecision(weight).toFixed(3).replace(/\.?0+$/, '');
 }
 
 export function getReferenceOneRm(profile: MemberProfile, referenceLift: ReferenceLift): number | undefined {
@@ -91,13 +128,13 @@ export function calculateSuggestedWeight(input: SuggestedWeightInput): Suggested
 
   const increment =
     input.equipment === 'dumbbell'
-      ? input.profile.dumbbellIncrement
-      : input.profile.barbellIncrement;
+      ? input.profile.dumbbellIncrement ?? DEFAULT_DUMBBELL_INCREMENT
+      : input.profile.barbellIncrement ?? DEFAULT_BARBELL_INCREMENT;
 
   return {
     status: 'ready',
     percent1RM,
-    weight: roundToIncrement(referenceOneRm * percent1RM, increment),
+    weight: roundWeightToIncrement(referenceOneRm * percent1RM, increment),
   };
 }
 

@@ -24,6 +24,7 @@ import { WorkoutLiveStatsBar } from '@/components/workout/WorkoutLiveStatsBar';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
+import { DEFAULT_BARBELL_INCREMENT, DEFAULT_DUMBBELL_INCREMENT } from '@/domain/weight/weight-calculator';
 import {
   checkShortWorkout,
   getNextWorkoutSetForRotation,
@@ -45,11 +46,15 @@ function formatTimer(seconds: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(remain).padStart(2, '0')}`;
 }
 
+function getNowMs(): number {
+  return Date.now();
+}
+
 function getWeightIncrement(profile: MemberProfile | null, exercise: Exercise | null): number {
   if (exercise?.equipment === 'dumbbell') {
-    return profile?.dumbbellIncrement ?? 2;
+    return profile?.dumbbellIncrement ?? DEFAULT_DUMBBELL_INCREMENT;
   }
-  return profile?.barbellIncrement ?? 2.5;
+  return profile?.barbellIncrement ?? DEFAULT_BARBELL_INCREMENT;
 }
 
 function replaceSet(
@@ -129,9 +134,9 @@ export default function WorkoutRoute() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const startedAt = detail?.session.startedAt ? new Date(detail.session.startedAt).getTime() : Date.now();
+    const startedAt = detail?.session.startedAt ? new Date(detail.session.startedAt).getTime() : getNowMs();
     const timer = setInterval(() => {
-      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+      setElapsedSeconds(Math.max(0, Math.floor((getNowMs() - startedAt) / 1000)));
     }, 1000);
     return () => clearInterval(timer);
   }, [detail?.session.startedAt]);
@@ -146,7 +151,7 @@ export default function WorkoutRoute() {
         const next = { ...prev };
         Object.entries(next).forEach(([memberId, state]) => {
           if (state.isResting && state.remaining > 0) {
-            const remaining = Math.max(0, Math.ceil((state.endTime - Date.now()) / 1000));
+            const remaining = Math.max(0, Math.ceil((state.endTime - getNowMs()) / 1000));
             next[memberId] = { ...state, remaining };
           }
         });
@@ -388,7 +393,7 @@ export default function WorkoutRoute() {
       left.id.localeCompare(right.id),
   );
   const pendingRotationSet = activeRecord
-    ? getNextWorkoutSetForRotation(activeSets, memberOrder, activeRecord.id, activeMemberId ?? undefined)
+    ? getNextWorkoutSetForRotation(activeSets, memberOrder, activeRecord.id)
     : null;
   const membersById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const memberNameMap = useMemo(() => {
@@ -434,7 +439,16 @@ export default function WorkoutRoute() {
       : sortedActiveSets.at(-1)) ??
     sortedActiveSets.at(-1) ??
     null;
-  const currentDisplaySet = pendingRotationSet ?? fallbackDisplaySet;
+  const focusedRestState = activeMemberId ? memberRestState[activeMemberId] : null;
+  const focusedRestSourceSet =
+    activeRecord && focusedRestState?.isResting && focusedRestState.sourceSetId
+      ? activeSets.find(
+          (set) =>
+            set.id === focusedRestState.sourceSetId &&
+            set.exerciseRecordId === activeRecord.id,
+        ) ?? null
+      : null;
+  const currentDisplaySet = focusedRestSourceSet ?? pendingRotationSet ?? fallbackDisplaySet;
   const currentProfile = currentDisplaySet ? profiles[currentDisplaySet.memberId] ?? null : null;
   const currentIncrement = getWeightIncrement(currentProfile, activeExercise);
   const currentMemberId = currentDisplaySet?.memberId ?? members[0]?.id ?? '';
@@ -489,17 +503,25 @@ export default function WorkoutRoute() {
       return;
     }
 
-    const actualRestSeconds = Math.max(0, Math.round((Date.now() - restState.startedAt) / 1000));
+    const actualRestSeconds = Math.max(0, Math.round((getNowMs() - restState.startedAt) / 1000));
     await saveSetPatch(sourceSet, { actualRestSeconds });
-    setActiveMemberId(null);
+    const nextPendingSet = activeRecord
+      ? getNextWorkoutSetForRotation(activeSets, memberOrder, activeRecord.id)
+      : null;
+    setActiveMemberId(nextPendingSet?.memberId ?? null);
   }
 
   const currentMemberRest = memberRestState[currentMemberId];
-  const isCurrentMemberResting = currentMemberRest?.isResting ?? false;
+  const isCurrentMemberResting =
+    Boolean(currentMemberRest?.isResting) &&
+    (!currentMemberRest?.sourceSetId || currentMemberRest.sourceSetId === currentDisplaySet?.id);
   const currentMemberRestSeconds = currentMemberRest?.remaining ?? 0;
   const currentRestElapsedSeconds = currentMemberRest?.plannedSeconds
     ? Math.max(0, currentMemberRest.plannedSeconds - currentMemberRestSeconds)
     : 0;
+  const otherRestingMembers = members.filter(
+    (member) => member.id !== currentMemberId && memberRestState[member.id]?.isResting,
+  );
   const nextSetForCurrentMember = activeSets
     .filter((set) => set.memberId === currentMemberId && set.setNumber > (currentDisplaySet?.setNumber ?? 0) && !set.skipped)
     .sort((left, right) => left.setNumber - right.setNumber)[0];
@@ -515,7 +537,10 @@ export default function WorkoutRoute() {
       return;
     }
     const currentRestState = memberRestState[currentMemberId];
-    if (currentRestState?.isResting) {
+    if (
+      currentRestState?.isResting &&
+      (!currentRestState.sourceSetId || currentRestState.sourceSetId === currentDisplaySet?.id)
+    ) {
       await completeMemberRest(currentMemberId);
       return;
     }
@@ -576,7 +601,7 @@ export default function WorkoutRoute() {
       : null;
     const restSeconds = activeRecord?.plannedRestSeconds ?? 0;
     if (restSeconds > 0) {
-      const startedAt = Date.now();
+      const startedAt = getNowMs();
       setMemberRestState((prev) => ({
         ...prev,
         [savedSet.memberId]: {
@@ -592,7 +617,11 @@ export default function WorkoutRoute() {
 
     if (nextPendingSet) {
       setWorkoutReadyToFinish(false);
-      setActiveMemberId(nextPendingSet.memberId);
+      setActiveMemberId(
+        restSeconds > 0 && nextPendingSet.setNumber > savedSet.setNumber
+          ? savedSet.memberId
+          : nextPendingSet.memberId,
+      );
       return;
     }
 
@@ -638,9 +667,128 @@ export default function WorkoutRoute() {
     ]);
   }
 
+  function getExtraSetDefaults(memberId: string) {
+    const latestSet = activeSets
+      .filter((set) => set.memberId === memberId)
+      .sort(
+        (left, right) =>
+          right.setNumber - left.setNumber ||
+          right.updatedAt.localeCompare(left.updatedAt) ||
+          right.id.localeCompare(left.id),
+      )[0];
+
+    return {
+      reps:
+        latestSet?.actualReps ??
+        latestSet?.plannedReps ??
+        (activeRecord ? getWorkoutRecordInitialReps(activeRecord) : undefined),
+      weight: latestSet?.actualWeight ?? latestSet?.plannedWeight,
+    };
+  }
+
+  async function addExtraSetsForMembers(targetMemberIds: string[]) {
+    if (!activeRecord || !detail) {
+      return;
+    }
+    if (!guardFeature('save_workout')) {
+      return;
+    }
+
+    const uniqueTargetMemberIds = Array.from(new Set(targetMemberIds.filter(Boolean)));
+    if (uniqueTargetMemberIds.length === 0) {
+      Alert.alert('无法添加', '当前动作没有可添加加做组的成员。');
+      return;
+    }
+
+    try {
+      setError(null);
+      const addedSets = await Promise.all(
+        uniqueTargetMemberIds.map((memberId) => {
+          const defaults = getExtraSetDefaults(memberId);
+          return repositories.workoutRepository.addSetToExerciseRecord({
+            completed: false,
+            exerciseRecordId: activeRecord.id,
+            memberId,
+            notes: '加做组',
+            reps: defaults.reps,
+            sessionId: detail.session.id,
+            weight: defaults.weight,
+          });
+        }),
+      );
+
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              sets: [...current.sets, ...addedSets],
+            }
+          : current,
+      );
+      setWorkoutReadyToFinish(false);
+      setActiveMemberId(addedSets[0]?.memberId ?? null);
+      setLastSavedAt(new Date().toISOString());
+
+      void Promise.all(
+        addedSets.map((set) =>
+          enqueueSyncCandidate({
+            entityType: 'workoutSets',
+            localId: set.id,
+            operation: 'create',
+            payload: {
+              actualReps: set.actualReps,
+              actualRestSeconds: set.actualRestSeconds,
+              actualWeight: set.actualWeight,
+              completed: set.completed,
+              exerciseRecordId: set.exerciseRecordId,
+              memberId: set.memberId,
+              notes: set.notes,
+              plannedReps: set.plannedReps,
+              plannedWeight: set.plannedWeight,
+              rpe: set.rpe,
+              sessionId: set.sessionId,
+              setNumber: set.setNumber,
+              skipped: set.skipped,
+            },
+            status: 'pending_create',
+            updatedAt: set.updatedAt,
+          }),
+        ),
+      ).catch((syncError) => {
+        console.warn('Failed to enqueue extra workout set sync candidate', syncError);
+      });
+    } catch (addError) {
+      setError(addError instanceof Error ? addError.message : '添加加做组失败。');
+    }
+  }
+
+  function confirmAddExtraSet() {
+    if (!activeRecord || !detail) {
+      return;
+    }
+
+    if (members.length <= 1) {
+      void addExtraSetsForMembers([currentMemberId]);
+      return;
+    }
+
+    Alert.alert('添加加做组', '加做组只影响本次训练记录，不会修改原计划。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: `仅 ${membersById.get(currentMemberId)?.displayName ?? '当前成员'}`,
+        onPress: () => void addExtraSetsForMembers([currentMemberId]),
+      },
+      {
+        text: '所有成员各加一组',
+        onPress: () => void addExtraSetsForMembers(memberOrder),
+      },
+    ]);
+  }
+
   function handleMoreOptions() {
     Alert.alert('训练选项', '', [
       { text: '取消', style: 'cancel' },
+      { text: '添加加做组', onPress: confirmAddExtraSet },
       { text: '跳过当前动作', onPress: () => {
         if (activeExerciseIndex < (detail?.exercises.length ?? 1) - 1) {
           setActiveExerciseIndex((prev) => prev + 1);
@@ -812,11 +960,11 @@ export default function WorkoutRoute() {
                 />
               ) : null}
 
-              {members.length > 1 && Object.entries(memberRestState).some(([, s]) => s.isResting) ? (
+              {members.length > 1 && otherRestingMembers.length > 0 ? (
                 <View style={styles.otherMembersRestSection}>
                   <AppText variant="caption" weight="700" style={styles.otherMembersTitle}>其他成员休息中</AppText>
                   <View style={styles.otherMembersGrid}>
-                    {members.filter((m) => m.id !== currentMemberId && memberRestState[m.id]?.isResting).map((member) => (
+                    {otherRestingMembers.map((member) => (
                       <View key={member.id} style={styles.otherMemberCard}>
                         <AppText variant="caption" weight="800">{member.displayName}</AppText>
                         <AppText variant="caption" weight="900" style={styles.otherMemberTime}>

@@ -105,7 +105,13 @@ export function MultiLineTrendChart({
         <View style={styles.axisSpacer} />
         <View style={styles.labelRow}>
           {labels.map((label, index) => (
-            <AppText key={`${label}-${index}`} numberOfLines={1} style={styles.axisLabel} tone="muted" variant="caption">
+            <AppText
+              key={`${label}-${index}`}
+              numberOfLines={1}
+              style={[styles.axisLabel, labels.length === 1 && styles.axisLabelSingle]}
+              tone="muted"
+              variant="caption"
+            >
               {visibleXAxisIndexes.has(index) ? labelFormatter(label, index) : ''}
             </AppText>
           ))}
@@ -187,7 +193,7 @@ function renderSeries(
   const points = series.values.map((value, index) => ({
     index,
     value,
-    x: PLOT_PADDING + (series.values.length > 1 ? index * gap : 0.5) * plotWidth,
+    x: PLOT_PADDING + (series.values.length > 1 ? index * gap : 0) * plotWidth,
     y: PLOT_PADDING + (1 - normalizeYAxisValue(value, scale)) * plotHeight,
   }));
   const nodes: ReactNode[] = [];
@@ -248,6 +254,9 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 10,
     textAlign: 'center',
+  },
+  axisLabelSingle: {
+    textAlign: 'left',
   },
   axisSpacer: {
     width: 42,
