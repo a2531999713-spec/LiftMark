@@ -10,6 +10,7 @@ import type { Group } from '@/domain/group/group.types';
 import type { MemberFormValues } from '@/domain/member/member.validation';
 import { canAddGroupMember, MAX_GROUP_MEMBERS } from '@/domain/member/member.validation';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors } from '@/theme/colors';
 
@@ -17,6 +18,7 @@ export default function NewMemberRoute() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const user = useAuthStore((state) => state.user);
   const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
@@ -83,6 +85,7 @@ export default function NewMemberRoute() {
         await repositories.memberRepository.createMember({
           groupId: group.id,
           displayName: values.displayName.trim(),
+          avatarUrl: user?.avatarUrl,
           profile: {
             bodyweight: values.bodyweight,
             bench1RM: values.bench1RM,
@@ -102,7 +105,7 @@ export default function NewMemberRoute() {
         setIsSaving(false);
       }
     },
-    [group, guardFeature, memberCount, repositories, returnTo],
+    [group, guardFeature, memberCount, repositories, returnTo, user],
   );
 
   const canCreateMember = canAddGroupMember(memberCount);

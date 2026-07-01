@@ -1,4 +1,5 @@
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
 
@@ -13,6 +14,9 @@ import { registerFeedbackRoutes } from './modules/feedback/feedback.routes';
 import { registerGroupRoutes } from './modules/groups/groups.routes';
 import { registerMembershipRoutes } from './modules/memberships/memberships.routes';
 import { registerSyncRoutes } from './modules/sync/sync.routes';
+import { registerProfileSyncRoutes } from './modules/sync/profileSync.routes';
+import { registerInvitationRoutes } from './modules/invitations/invitation.routes';
+import { registerPendingTrainingRoutes } from './modules/pending-training/pendingTraining.routes';
 import { registerWorkoutRoutes } from './modules/workouts/workouts.routes';
 import { ApiError } from './utils/errors';
 
@@ -24,6 +28,12 @@ export async function buildApp() {
 
   await app.register(cors, {
     origin: true,
+  });
+
+  await app.register(multipart, {
+    limits: {
+      fileSize: 5 * 1024 * 1024, // 5MB limit for avatar uploads
+    },
   });
 
   app.setErrorHandler((error, _request, reply) => {
@@ -66,6 +76,9 @@ export async function buildApp() {
     await registerMembershipRoutes(api);
     await registerGroupRoutes(api);
     await registerSyncRoutes(api);
+    await registerProfileSyncRoutes(api);
+    await registerInvitationRoutes(api);
+    await registerPendingTrainingRoutes(api);
     await registerWorkoutRoutes(api);
     await registerAchievementsRoutes(api);
     await registerAnnouncementsRoutes(api);

@@ -35,6 +35,7 @@ import type {
   WorkoutSessionDetail,
 } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
@@ -497,6 +498,9 @@ export default function TodayRoute() {
       if (nextGroup.id !== selectedGroupId) {
         setSelectedGroupId(nextGroup.id);
       }
+
+      // 从服务器同步成员头像
+      await syncGroupMembersAvatar(nextGroup.id);
 
       const [nextActivePlan, nextMembers] = await Promise.all([
         repositories.planRepository.getPlanById(nextGroup.activePlanId),

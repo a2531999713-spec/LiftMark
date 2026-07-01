@@ -165,6 +165,24 @@ async function createInitialSchema(trx: Knex.Transaction) {
     });
   }
 
+  if (!(await trx.schema.hasTable('member_profiles'))) {
+    await trx.schema.createTable('member_profiles', (table) => {
+      table.string('id').primary();
+      table.string('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+      table.string('group_id').notNullable().references('id').inTable('groups').onDelete('CASCADE');
+      table.decimal('bodyweight', 10, 2);
+      table.decimal('bench_1rm', 10, 2);
+      table.decimal('squat_1rm', 10, 2);
+      table.decimal('deadlift_1rm', 10, 2);
+      table.decimal('overhead_press_1rm', 10, 2);
+      table.decimal('pullup_reference_weight', 10, 2);
+      table.decimal('barbell_increment', 10, 2).defaultTo(2.5);
+      table.decimal('dumbbell_increment', 10, 2).defaultTo(2);
+      timestamps(table, trx);
+      table.unique(['user_id', 'group_id']);
+    });
+  }
+
   await createSyncTables(trx);
   await createContentTables(trx);
   await createIndexes(trx);
@@ -379,10 +397,68 @@ async function createIndexes(trx: Knex.Transaction) {
   await trx.raw('CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status)');
 }
 
+async function createMemberProfiles(trx: Knex.Transaction) {
+  if (!(await trx.schema.hasTable('member_profiles'))) {
+    await trx.schema.createTable('member_profiles', (table) => {
+      table.string('id').primary();
+      table.string('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+      table.string('group_id').notNullable().references('id').inTable('groups').onDelete('CASCADE');
+      table.decimal('bodyweight', 10, 2);
+      table.decimal('bench_1rm', 10, 2);
+      table.decimal('squat_1rm', 10, 2);
+      table.decimal('deadlift_1rm', 10, 2);
+      table.decimal('overhead_press_1rm', 10, 2);
+      table.decimal('pullup_reference_weight', 10, 2);
+      table.decimal('barbell_increment', 10, 2).defaultTo(2.5);
+      table.decimal('dumbbell_increment', 10, 2).defaultTo(2);
+      timestamps(table, trx);
+      table.unique(['user_id', 'group_id']);
+    });
+  }
+}
+
+async function createPendingTrainingData(trx: Knex.Transaction) {
+  if (!(await trx.schema.hasTable('pending_training_data'))) {
+    await trx.schema.createTable('pending_training_data', (table) => {
+      table.string('id').primary();
+      table.string('group_id').notNullable().references('id').inTable('groups').onDelete('CASCADE');
+      table.string('uploader_user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+      table.string('target_user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+      table.specificType('session_data', 'jsonb').notNullable().defaultTo('{}');
+      table.specificType('sets_data', 'jsonb').notNullable().defaultTo('[]');
+      table.string('status').notNullable().defaultTo('pending');
+      table.timestamp('uploaded_at', { useTz: true }).notNullable().defaultTo(trx.fn.now());
+      table.timestamp('responded_at', { useTz: true });
+      timestamps(table, trx);
+    });
+    await trx.raw('CREATE INDEX idx_pending_training_target ON pending_training_data(target_user_id, status)');
+  }
+}
+
+async function createGroupInvitations(trx: Knex.Transaction) {
+  if (!(await trx.schema.hasTable('group_invitations'))) {
+    await trx.schema.createTable('group_invitations', (table) => {
+      table.string('id').primary();
+      table.string('group_id').notNullable().references('id').inTable('groups').onDelete('CASCADE');
+      table.string('code').notNullable().unique();
+      table.string('created_by_user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+      table.integer('max_uses').defaultTo(1);
+      table.integer('use_count').defaultTo(0);
+      table.timestamp('expires_at', { useTz: true });
+      table.timestamp('disabled_at', { useTz: true });
+      timestamps(table, trx);
+    });
+    await trx.raw('CREATE INDEX idx_invitations_code ON group_invitations(code)');
+  }
+}
+
 export async function migrate() {
   await ensureMigrationsTable();
   await runMigration('001_initial_cloud_schema', createInitialSchema);
   await runMigration('002_user_registration_metadata', addRegistrationMetadata);
+  await runMigration('003_member_profiles', createMemberProfiles);
+  await runMigration('004_pending_training_data', createPendingTrainingData);
+  await runMigration('005_group_invitations', createGroupInvitations);
 }
 
 if (require.main === module) {

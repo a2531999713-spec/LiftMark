@@ -1,4 +1,4 @@
-﻿# 后端部署指南
+# 后端部署指南
 
 更新时间：2026-06-28
 
@@ -83,16 +83,28 @@ server {
     listen 80;
     server_name 47.100.239.29;
 
+    client_max_body_size 5m;
+
+    # 静态文件服务 - 头像等上传文件
+    location /uploads/ {
+        alias /home/deploy/liftmark/uploads/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
     location /api/ {
-        proxy_pass http://127.0.0.1:3000/;
+        proxy_pass http://127.0.0.1:3000/api/;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
+
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_cache_bypass $http_upgrade;
-        client_max_body_size 10m;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 60s;
     }
 }
 ```
@@ -103,6 +115,14 @@ server {
 sudo ln -s /etc/nginx/sites-available/liftmark /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
+```
+
+### 1.7 创建上传目录
+
+```bash
+sudo mkdir -p /home/deploy/liftmark/uploads/avatars
+sudo chown -R deploy:deploy /home/deploy/liftmark/uploads
+sudo chmod -R 755 /home/deploy/liftmark/uploads
 ```
 
 ## 2. 部署代码（日常更新）
@@ -284,8 +304,27 @@ sudo -u postgres psql -d liftmark_prod
 -- 查看用户表
 SELECT id, phone, email, liftmark_id, nickname FROM users LIMIT 10;
 
+-- 查看小组表
+SELECT id, name, owner_user_id FROM groups LIMIT 10;
+
+-- 查看小组成员表
+SELECT gm.id, gm.user_id, gm.role, u.nickname 
+FROM group_members gm 
+JOIN users u ON gm.user_id = u.id 
+LIMIT 10;
+
+-- 查看待确认训练数据
+SELECT id, uploader_user_id, target_user_id, status 
+FROM pending_training_data 
+LIMIT 10;
+
+-- 查看邀请码
+SELECT id, code, max_uses, use_count, expires_at 
+FROM group_invitations 
+LIMIT 10;
+
 -- 查看迁移版本
-SELECT * FROM schema_migrations ORDER BY version DESC;
+SELECT * FROM schema_migrations ORDER BY applied_at DESC;
 
 -- 退出
 \q

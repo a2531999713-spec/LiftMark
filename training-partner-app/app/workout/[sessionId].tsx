@@ -37,6 +37,7 @@ import type {
   WorkoutSet,
 } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { colors, radius, spacing } from '@/theme';
 
@@ -174,6 +175,13 @@ export default function WorkoutRoute() {
       }
 
       await initializeLocalDatabase();
+
+      // 先从服务器同步成员头像
+      const tempDetail = await repositories.workoutRepository.getSessionDetail(sessionId);
+      if (tempDetail.session.groupId) {
+        await syncGroupMembersAvatar(tempDetail.session.groupId);
+      }
+
       const nextDetail = await repositories.workoutRepository.getSessionDetail(sessionId);
       const allMembers = await repositories.memberRepository.listMembers(nextDetail.session.groupId);
       const participantIds = new Set(nextDetail.sets.map((set) => set.memberId));

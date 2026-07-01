@@ -9,6 +9,7 @@ import { createId, createLiftmarkId } from '../../utils/ids';
 import { addDays, hashPassword, hashValue, verifyPassword } from '../../utils/security';
 import { signAccessToken, signRefreshToken, verifyRefreshToken, type TokenUser } from '../../utils/tokens';
 import { sendSmsCode, verifySmsCode } from './sms.service';
+import { saveAvatarFile, deleteAvatarFile, getAllowedExtension } from './avatar.service';
 
 type UserRow = {
   avatar_url?: string | null;
@@ -341,7 +342,71 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   app.patch('/auth/avatar', { preHandler: requireAuth }, async (request) => {
     const authUser = getAuthUser(request);
     const body = z.object({ avatar_url: z.string().max(2048).nullable() }).parse(request.body);
+
+    // 如果是上传了新头像，删除旧文件
+    if (body.avatar_url && body.avatar_url.startsWith('/uploads/avatars/')) {
+      const currentUser = await db('users').where({ id: authUser.id }).first();
+      if (currentUser?.avatar_url && currentUser.avatar_url.startsWith('/uploads/avatars/')) {
+        await deleteAvatarFile(currentUser.avatar_url);
+      }
+    }
+
     await db('users').where({ id: authUser.id }).update({ avatar_url: body.avatar_url, updated_at: new Date() });
     return { ok: true, avatar_url: body.avatar_url };
+  });
+
+  // 文件上传接口
+  app.post('/auth/avatar/upload', { preHandler: requireAuth }, async (request, reply) => {
+    const authUser = getAuthUser(request);
+
+    try {
+      const data = await request.file();
+      if (!data) {
+        return reply.status(400).send({ error: 'NO_FILE', message: '请选择要上传的图片。' });
+      }
+
+      // 验证文件类型
+      const allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      if (!allowedMimes.includes(data.mimetype)) {
+        return reply.status(400).send({ error: 'INVALID_TYPE', message: '只支持 JPG、PNG、WebP 格式的图片。' });
+      }
+
+      // 获取文件扩展名
+      const extension = getAllowedExtension(data.mimetype);
+      if (!extension) {
+        return reply.status(400).send({ error: 'INVALID_TYPE', message: '无法识别的图片格式。' });
+      }
+
+      // 读取文件内容
+      const fileBuffer = await data.toBuffer();
+
+      // 验证文件大小 (最大 5MB)
+      if (fileBuffer.length > 5 * 1024 * 1024) {
+        return reply.status(400).send({ error: 'FILE_TOO_LARGE', message: '图片大小不能超过 5MB。' });
+      }
+
+      // 获取当前头像，准备删除旧文件
+      const currentUser = await db('users').where({ id: authUser.id }).first();
+      const oldAvatarUrl = currentUser?.avatar_url;
+
+      // 保存新头像文件
+      const avatarUrl = await saveAvatarFile(authUser.id, fileBuffer, extension);
+
+      // 删除旧头像文件
+      if (oldAvatarUrl && oldAvatarUrl.startsWith('/uploads/avatars/')) {
+        await deleteAvatarFile(oldAvatarUrl);
+      }
+
+      // 更新数据库
+      await db('users').where({ id: authUser.id }).update({
+        avatar_url: avatarUrl,
+        updated_at: new Date(),
+      });
+
+      return { ok: true, avatar_url: avatarUrl };
+    } catch (error) {
+      request.log.error(error);
+      return reply.status(500).send({ error: 'UPLOAD_FAILED', message: '头像上传失败，请稍后重试。' });
+    }
   });
 }

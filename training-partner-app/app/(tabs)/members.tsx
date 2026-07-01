@@ -12,6 +12,7 @@ import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { MAX_GROUP_MEMBERS } from '@/domain/member/member.validation';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
@@ -75,6 +76,9 @@ export default function MembersRoute() {
       if (nextGroup.id !== selectedGroupId) {
         setSelectedGroupId(nextGroup.id);
       }
+
+      // 从服务器同步成员头像
+      await syncGroupMembersAvatar(nextGroup.id);
 
       const nextMembers = await repositories.memberRepository.listMembers(nextGroup.id);
       const profileEntries = await Promise.all(
