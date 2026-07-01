@@ -1,5 +1,7 @@
 import type { ID } from '@/domain/common/ids';
 import type {
+  AddWorkoutExerciseInput,
+  AddWorkoutSetInput,
   CreateSessionFromTodayPlanInput,
   CreateManualSessionInput,
   ListOpenWorkoutSessionsForDateInput,
@@ -19,6 +21,8 @@ export interface WorkoutRepository {
   getSessionDetail(sessionId: ID): Promise<WorkoutSessionDetail>;
   listOpenSessionsForDate(input: ListOpenWorkoutSessionsForDateInput): Promise<WorkoutSession[]>;
   updateSession(input: UpdateWorkoutSessionInput): Promise<WorkoutSession>;
+  addExerciseToSession(input: AddWorkoutExerciseInput): Promise<WorkoutSessionDetail>;
+  addSetToExerciseRecord(input: AddWorkoutSetInput): Promise<WorkoutSet>;
   updateExerciseRecordExercise(recordId: ID, exerciseId: ID): Promise<void>;
   saveSet(input: SaveWorkoutSetInput): Promise<WorkoutSet>;
   deleteSet(setId: ID): Promise<void>;

@@ -46,6 +46,11 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const passwordLoginSchema = z.object({
+  identifier: z.string().min(1),
+  password: z.string().min(1),
+});
+
 const codeLoginSchema = z.object({
   phone: z.string(),
   code: z.string().min(1),
@@ -164,11 +169,20 @@ async function createSession(user: UserRow) {
 }
 
 async function findUserByAccount(account: string) {
+  const normalized = account.trim();
   return db('users')
-    .where({ phone: account })
-    .orWhere({ email: account })
-    .orWhere({ liftmark_id: account })
+    .where({ phone: normalized })
+    .orWhere({ email: normalized })
+    .orWhere({ liftmark_id: normalized })
     .first<UserRow>();
+}
+
+async function loginWithPassword(account: string, password: string) {
+  const user = await findUserByAccount(account);
+  if (!user || user.status !== 'normal' || !(await verifyPassword(password, user.password_hash))) {
+    throw unauthorized('账号或密码不正确。');
+  }
+  return createSession(user);
 }
 
 async function createUser(input: {
@@ -258,11 +272,12 @@ export async function registerAuthRoutes(app: FastifyInstance) {
 
   app.post('/auth/login', async (request) => {
     const body = loginSchema.parse(request.body);
-    const user = await findUserByAccount(body.account);
-    if (!user || user.status !== 'normal' || !(await verifyPassword(body.password, user.password_hash))) {
-      throw unauthorized('账号或密码不正确。');
-    }
-    return createSession(user);
+    return loginWithPassword(body.account, body.password);
+  });
+
+  app.post('/auth/password/login', async (request) => {
+    const body = passwordLoginSchema.parse(request.body);
+    return loginWithPassword(body.identifier, body.password);
   });
 
   app.post('/auth/login-with-code', async (request) => {

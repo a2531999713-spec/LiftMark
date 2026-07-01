@@ -3,7 +3,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
-import { AppCard, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { PlanDay, PlanExercise, PlanTemplate } from '@/domain/plan/plan.types';
@@ -18,6 +18,11 @@ type PlanDetailState = {
   days: DayDetail[];
   exerciseMap: Record<string, Exercise>;
   plan: PlanTemplate;
+};
+
+type NoticeState = {
+  message: string;
+  title: string;
 };
 
 function describePlanSource(source: PlanTemplate['source']) {
@@ -56,6 +61,8 @@ export default function PlanDetailRoute() {
   const { planId } = useLocalSearchParams<{ planId: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const [detail, setDetail] = useState<PlanDetailState | null>(null);
+  const [isActionsVisible, setActionsVisible] = useState(false);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,12 +109,12 @@ export default function PlanDetailRoute() {
   return (
     <Screen
       headerRight={
-        <Pressable accessibilityRole="button" onPress={() => router.push('/(tabs)/plan')} style={styles.iconButton}>
-          <Ionicons color={colors.text} name="list-outline" size={20} />
+        <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.iconButton}>
+          <Ionicons color={colors.text} name="ellipsis-horizontal" size={20} />
         </Pressable>
       }
-      subtitle={detail ? `${describePlanSource(detail.plan.source)} · ${detail.plan.durationWeeks} 周 · 每周 ${detail.plan.frequencyPerWeek} 天` : '计划摘要'}
-      title={detail?.plan.name ?? '计划详情'}
+      subtitle={detail ? `${detail.plan.name} · ${describePlanSource(detail.plan.source)} · ${detail.plan.durationWeeks} 周 · 每周 ${detail.plan.frequencyPerWeek} 天` : '计划摘要'}
+      title="计划详情"
     >
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="计划详情暂时无法加载" description={error} /> : null}
@@ -122,7 +129,7 @@ export default function PlanDetailRoute() {
               <View style={styles.summaryText}>
                 <AppText variant="subtitle">{detail.plan.name}</AppText>
                 <AppText tone="muted" variant="bodySmall">
-                  {detail.plan.description ?? '本地训练计划'}
+                  {detail.plan.description ?? '训练计划'}
                 </AppText>
               </View>
               <Tag label="只读详情" tone="neutral" />
@@ -182,6 +189,66 @@ export default function PlanDetailRoute() {
           </View>
         </>
       ) : null}
+
+      <AppModalSheet
+        onClose={() => setActionsVisible(false)}
+        position="center"
+        subtitle={detail ? detail.plan.name : undefined}
+        title="计划操作"
+        visible={isActionsVisible}
+      >
+        <View style={styles.modalActions}>
+          <AppButton
+            icon="create-outline"
+            onPress={() => {
+              if (!detail) {
+                return;
+              }
+              setActionsVisible(false);
+              router.push({ pathname: '/plan/create', params: { editPlanId: detail.plan.id } } as never);
+            }}
+            variant="secondary"
+          >
+            编辑计划
+          </AppButton>
+          <AppButton
+            icon="barbell-outline"
+            onPress={() => {
+              setActionsVisible(false);
+              router.push('/(tabs)/today');
+            }}
+            variant="secondary"
+          >
+            去训练
+          </AppButton>
+          <AppButton
+            icon="information-circle-outline"
+            onPress={() => {
+              setActionsVisible(false);
+              setNotice({
+                title: '计划结构',
+                message: '当前页面已按周和训练日展示完整结构；训练页会读取同一份计划数据。',
+              });
+            }}
+            variant="secondary"
+          >
+            查看计划结构
+          </AppButton>
+          <AppButton onPress={() => setActionsVisible(false)} variant="ghost">
+            取消
+          </AppButton>
+        </View>
+      </AppModalSheet>
+
+      <AppModalSheet
+        onClose={() => setNotice(null)}
+        position="center"
+        subtitle={notice?.message}
+        title={notice?.title ?? '提示'}
+        visible={Boolean(notice)}
+      >
+        <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
+      </AppModalSheet>
     </Screen>
   );
 }
@@ -221,6 +288,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
+  },
+  modalActions: {
+    gap: spacing.sm,
   },
   dayList: {
     gap: spacing.sm,

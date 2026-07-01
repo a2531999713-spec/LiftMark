@@ -21,6 +21,26 @@ type NoticeState = {
   title: string;
 };
 
+type ManualSetDraft = {
+  id: string;
+  reps: string;
+  weight: string;
+};
+
+type ManualExerciseDraft = {
+  exerciseId: string;
+  id: string;
+  sets: ManualSetDraft[];
+};
+
+function createDraftId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createSetDraft(): ManualSetDraft {
+  return { id: createDraftId('set'), reps: '8', weight: '' };
+}
+
 function getLocalDateString(date = new Date()): string {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, '0');
@@ -65,13 +85,10 @@ export default function ManualHistoryRoute() {
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [selectedExerciseId, setSelectedExerciseId] = useState('');
+  const [exerciseDrafts, setExerciseDrafts] = useState<ManualExerciseDraft[]>([]);
   const [isExercisePickerVisible, setExercisePickerVisible] = useState(false);
   const [date, setDate] = useState(params.date ?? getLocalDateString());
   const [title, setTitle] = useState('补录训练');
-  const [setCount, setSetCount] = useState('3');
-  const [weight, setWeight] = useState('');
-  const [reps, setReps] = useState('8');
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -101,7 +118,6 @@ export default function ManualHistoryRoute() {
           setMembers(nextMembers);
           setExercises(nextExercises);
           setSelectedMemberId(nextMembers[0]?.id ?? '');
-          setSelectedExerciseId(nextExercises[0]?.id ?? '');
         }
       } catch (loadError) {
         if (mounted) {
@@ -121,7 +137,72 @@ export default function ManualHistoryRoute() {
     };
   }, [repositories]);
 
-  const selectedExercise = exercises.find((exercise) => exercise.id === selectedExerciseId) ?? null;
+  const exerciseById = useMemo(
+    () => Object.fromEntries(exercises.map((exercise) => [exercise.id, exercise])),
+    [exercises],
+  ) as Record<string, Exercise | undefined>;
+  const selectedExerciseIds = exerciseDrafts.map((draft) => draft.exerciseId);
+
+  const addExerciseDraft = (exercise: Exercise) => {
+    setExerciseDrafts((current) => {
+      if (current.some((draft) => draft.exerciseId === exercise.id)) {
+        setNotice({
+          title: '动作已添加',
+          message: '该动作已经在补录列表中；需要更多训练数据时，直接在该动作下新增组。',
+        });
+        return current;
+      }
+
+      return [
+        ...current,
+        {
+          exerciseId: exercise.id,
+          id: createDraftId('exercise'),
+          sets: [createSetDraft()],
+        },
+      ];
+    });
+  };
+
+  const removeExerciseDraft = (draftId: string) => {
+    setExerciseDrafts((current) => current.filter((draft) => draft.id !== draftId));
+  };
+
+  const addSetDraft = (draftId: string) => {
+    setExerciseDrafts((current) =>
+      current.map((draft) =>
+        draft.id === draftId
+          ? {
+              ...draft,
+              sets: [...draft.sets, createSetDraft()],
+            }
+          : draft,
+      ),
+    );
+  };
+
+  const removeSetDraft = (draftId: string, setId: string) => {
+    setExerciseDrafts((current) =>
+      current.map((draft) =>
+        draft.id === draftId && draft.sets.length > 1
+          ? { ...draft, sets: draft.sets.filter((set) => set.id !== setId) }
+          : draft,
+      ),
+    );
+  };
+
+  const updateSetDraft = (draftId: string, setId: string, patch: Partial<ManualSetDraft>) => {
+    setExerciseDrafts((current) =>
+      current.map((draft) =>
+        draft.id === draftId
+          ? {
+              ...draft,
+              sets: draft.sets.map((set) => (set.id === setId ? { ...set, ...patch } : set)),
+            }
+          : draft,
+      ),
+    );
+  };
 
   const createCustomExercise = async (input: CreateCustomExerciseInput) => {
     if (!guardFeature('manual_history')) {
@@ -130,7 +211,7 @@ export default function ManualHistoryRoute() {
 
     const exercise = await repositories.exerciseRepository.createCustomExercise(input);
     setExercises((current) => [exercise, ...current]);
-    setSelectedExerciseId(exercise.id);
+    addExerciseDraft(exercise);
     return exercise;
   };
 
@@ -139,10 +220,18 @@ export default function ManualHistoryRoute() {
       return;
     }
 
-    if (!group || !selectedMemberId || !selectedExerciseId) {
+    if (!group || !selectedMemberId) {
       setNotice({
         title: '信息不完整',
-        message: '请选择成员和动作后再保存。',
+        message: '请选择成员后再保存。',
+      });
+      return;
+    }
+
+    if (exerciseDrafts.length === 0) {
+      setNotice({
+        title: '还没有动作',
+        message: '至少添加一个动作，并为动作填写组数据后再保存。',
       });
       return;
     }
@@ -151,26 +240,44 @@ export default function ManualHistoryRoute() {
     setError(null);
 
     try {
-      const parsedSetCount = parseOptionalInteger(setCount);
-      const parsedReps = parseOptionalInteger(reps);
-      const parsedWeight = parseOptionalNumber(weight);
+      const parsedExercises = exerciseDrafts.map((draft, exerciseIndex) => {
+        const exercise = exerciseById[draft.exerciseId];
+        if (!exercise) {
+          throw new Error('存在无效动作，请重新选择。');
+        }
 
-      assertOptionalRange('组数', parsedSetCount, 1);
-      assertOptionalRange('次数', parsedReps, 0);
-      assertOptionalRange('重量', parsedWeight, 0);
+        return {
+          exerciseId: draft.exerciseId,
+          priority: exerciseIndex === 0 ? 'A' as const : exerciseIndex <= 2 ? 'B' as const : 'C' as const,
+          sets: draft.sets.map((set, setIndex) => {
+            const parsedReps = parseOptionalInteger(set.reps);
+            const parsedWeight = parseOptionalNumber(set.weight);
+
+            assertOptionalRange(`${exercise.name} 第 ${setIndex + 1} 组次数`, parsedReps, 0);
+            assertOptionalRange(`${exercise.name} 第 ${setIndex + 1} 组重量`, parsedWeight, 0);
+
+            if (parsedReps === undefined && parsedWeight === undefined) {
+              throw new Error(`${exercise.name} 第 ${setIndex + 1} 组请填写重量或次数。`);
+            }
+
+            return {
+              completed: true,
+              reps: parsedReps,
+              weight: parsedWeight,
+            };
+          }),
+        };
+      });
 
       const session = await repositories.workoutRepository.createManualSession({
         completed: true,
         date,
-        exerciseId: selectedExerciseId,
+        exercises: parsedExercises,
         groupId: group.id,
         memberId: selectedMemberId,
         planId: group.activePlanId,
-        reps: parsedReps,
         restSeconds: null,
-        setCount: parsedSetCount ?? 1,
         title,
-        weight: parsedWeight,
       });
 
       setNotice({
@@ -186,7 +293,7 @@ export default function ManualHistoryRoute() {
   };
 
   return (
-    <Screen subtitle="把过去完成的训练保存到本地记录。">
+    <Screen subtitle="把过去完成的训练保存到历史记录。">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="补录训练暂时不可用" description={error} /> : null}
 
@@ -223,54 +330,101 @@ export default function ManualHistoryRoute() {
 
           <AppCard style={styles.card}>
             <SectionHeader
-              actionLabel="选择动作"
+              actionLabel="添加动作"
               onActionPress={() => {
                 if (guardFeature('manual_history')) setExercisePickerVisible(true);
               }}
-              subtitle="可选择系统动作，也可快速新建自定义动作。"
-              title="动作"
+              subtitle="每个动作可以记录独立的组、重量和次数。"
+              title="动作与组"
             />
-            {selectedExercise ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  if (guardFeature('manual_history')) setExercisePickerVisible(true);
-                }}
-                style={styles.selectedExerciseCard}
-              >
-                <View style={styles.exerciseIcon}>
-                  <Ionicons color={colors.primary} name="barbell-outline" size={20} />
-                </View>
-                <View style={styles.exerciseText}>
-                  <AppText variant="bodySmall" weight="900">
-                    {selectedExercise.name}
-                  </AppText>
-                  <AppText tone="muted" variant="caption">
-                    {selectedExercise.targetMuscle} · {formatExerciseEquipment(selectedExercise.equipment)}
-                  </AppText>
-                </View>
-                <Tag label={selectedExercise.source === 'custom' ? '自定义' : '系统'} tone={selectedExercise.source === 'custom' ? 'brand' : 'neutral'} />
-                <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
-              </Pressable>
+            {exerciseDrafts.length > 0 ? (
+              <View style={styles.draftList}>
+                {exerciseDrafts.map((draft, draftIndex) => {
+                  const exercise = exerciseById[draft.exerciseId];
+                  if (!exercise) {
+                    return null;
+                  }
+
+                  return (
+                    <View key={draft.id} style={styles.draftExerciseCard}>
+                      <View style={styles.draftExerciseHeader}>
+                        <View style={styles.exerciseIcon}>
+                          <Ionicons color={colors.primary} name="barbell-outline" size={20} />
+                        </View>
+                        <View style={styles.exerciseText}>
+                          <AppText variant="bodySmall" weight="900">
+                            {exercise.name}
+                          </AppText>
+                          <AppText tone="muted" variant="caption">
+                            {exercise.targetMuscle} · {formatExerciseEquipment(exercise.equipment)}
+                          </AppText>
+                        </View>
+                        <Tag
+                          label={exercise.source === 'custom' ? '自定义' : `动作 ${draftIndex + 1}`}
+                          tone={exercise.source === 'custom' ? 'brand' : 'neutral'}
+                        />
+                        <Pressable
+                          accessibilityLabel={`移除${exercise.name}`}
+                          accessibilityRole="button"
+                          onPress={() => removeExerciseDraft(draft.id)}
+                          style={styles.iconButton}
+                        >
+                          <Ionicons color={colors.danger} name="trash-outline" size={18} />
+                        </Pressable>
+                      </View>
+
+                      <View style={styles.setList}>
+                        {draft.sets.map((set, setIndex) => (
+                          <View key={set.id} style={styles.setCard}>
+                            <View style={styles.setHeader}>
+                              <AppText tone="muted" variant="caption" weight="900">
+                                第 {setIndex + 1} 组
+                              </AppText>
+                              {draft.sets.length > 1 ? (
+                                <Pressable
+                                  accessibilityLabel={`删除第${setIndex + 1}组`}
+                                  accessibilityRole="button"
+                                  onPress={() => removeSetDraft(draft.id, set.id)}
+                                  style={styles.iconButtonSmall}
+                                >
+                                  <Ionicons color={colors.danger} name="remove-circle-outline" size={18} />
+                                </Pressable>
+                              ) : null}
+                            </View>
+                            <View style={styles.fieldGrid}>
+                              <Field
+                                label="重量 kg"
+                                onChangeText={(value) => updateSetDraft(draft.id, set.id, { weight: value })}
+                                placeholder="可留空"
+                                value={set.weight}
+                              />
+                              <Field
+                                label="次数"
+                                onChangeText={(value) => updateSetDraft(draft.id, set.id, { reps: value })}
+                                value={set.reps}
+                              />
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+
+                      <AppButton icon="add-outline" onPress={() => addSetDraft(draft.id)} size="sm" variant="ghost">
+                        新增一组
+                      </AppButton>
+                    </View>
+                  );
+                })}
+              </View>
             ) : (
               <EmptyState
-                actionLabel="选择动作"
-                description="选择一个动作后再保存补录训练。"
+                actionLabel="添加动作"
+                description="添加动作后再填写每组重量和次数。"
                 onActionPress={() => {
                   if (guardFeature('manual_history')) setExercisePickerVisible(true);
                 }}
-                title="还没有选择动作"
+                title="还没有添加动作"
               />
             )}
-          </AppCard>
-
-          <AppCard style={styles.card}>
-            <SectionHeader title="组数据" />
-            <View style={styles.fieldGrid}>
-              <Field label="组数" onChangeText={setSetCount} value={setCount} />
-              <Field label="重量 kg" onChangeText={setWeight} placeholder="可留空" value={weight} />
-              <Field label="次数" onChangeText={setReps} value={reps} />
-            </View>
           </AppCard>
 
           <AppButton disabled={isSaving} icon="save-outline" onPress={() => void saveManualSession()} size="lg">
@@ -284,10 +438,10 @@ export default function ManualHistoryRoute() {
         onClose={() => setExercisePickerVisible(false)}
         onCreateCustomExercise={createCustomExercise}
         onSelect={(exercise) => {
-          setSelectedExerciseId(exercise.id);
+          addExerciseDraft(exercise);
           setExercisePickerVisible(false);
         }}
-        selectedExerciseIds={selectedExerciseId ? [selectedExerciseId] : []}
+        selectedExerciseIds={selectedExerciseIds}
         title="选择补录动作"
         visible={isExercisePickerVisible}
       />
@@ -380,6 +534,22 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
+  draftExerciseCard: {
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  draftExerciseHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  draftList: {
+    gap: spacing.md,
+  },
   exerciseIcon: {
     alignItems: 'center',
     backgroundColor: colors.primarySoft,
@@ -391,6 +561,22 @@ const styles = StyleSheet.create({
   exerciseText: {
     flex: 1,
     gap: 2,
+  },
+  iconButton: {
+    alignItems: 'center',
+    backgroundColor: colors.dangerSoft,
+    borderRadius: radius.md,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  iconButtonSmall: {
+    alignItems: 'center',
+    backgroundColor: colors.dangerSoft,
+    borderRadius: radius.sm,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
   },
   field: {
     backgroundColor: colors.backgroundElevated,
@@ -415,15 +601,20 @@ const styles = StyleSheet.create({
   modalButtons: {
     gap: spacing.sm,
   },
-  selectedExerciseCard: {
-    alignItems: 'center',
-    backgroundColor: colors.backgroundElevated,
+  setCard: {
+    backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
-    minHeight: 74,
+    gap: spacing.sm,
     padding: spacing.md,
+  },
+  setHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  setList: {
+    gap: spacing.sm,
   },
 });

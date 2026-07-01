@@ -1,7 +1,15 @@
 ﻿# Plan 模块实现文档
 
-更新时间：2026-06-30  
+更新时间：2026-07-01
 对应代码目录：`training-partner-app/`
+
+## 2026-07-01 补充：计划首页瘦身、详情操作菜单和用户计划编辑
+
+- `app/(tabs)/plan.tsx` 保留当前计划、执行统计、本周安排和收纳式操作入口，不再在首页重复展示“我的计划”摘要或计划库入口。
+- `app/plan/[planId].tsx` 右上角更多按钮打开操作菜单，包含编辑计划、去训练和计划结构提示。
+- `app/plan/create.tsx` 支持创建多个训练日，并通过 `editPlanId` 编辑用户计划。
+- `PlanRepository.updateUserPlan()` 只允许编辑用户计划，会替换 template、phase、day 和 plan exercise 结构，不触碰训练记录表。
+- `CreateUserPlanDayInput.week` 支持为不同训练日设置独立周次，便于后续扩展多周计划。
 
 ## 1. 当前实现概览
 
@@ -14,9 +22,9 @@
 - 首次登录后的训练信息完善页使用 `recommendPlans()` 基于目标、频率、经验和器械条件推荐方案，并把用户选择复制为当前用户计划。
 - 用户点击“使用此方案”时，Repository 复制系统模板的 phases、days、plan_exercises，生成新的用户计划。
 - 导入 `.liftmark.json` 时，页面通过 `planDocumentService` 选择文件并调用 `PlanRepository.importUserPlan()` 写入 SQLite。
-- 计划页当前为仪表盘结构：当前计划、执行统计、本周安排、我的计划摘要、计划库入口和计划操作弹层；系统方案只在计划库弹层中展开。
+- 计划页当前为精简仪表盘结构：当前计划、执行统计、本周安排和计划操作弹层；系统方案只在计划库弹层中展开。
 - 用户计划可在“管理全部计划”弹层中删除；系统方案、当前计划和最后一个用户计划会被 Repository 阻止删除。
-- 创建计划页接入统一动作选择器，可添加系统动作或快速新建自定义动作。
+- 创建计划页接入统一动作选择器，可添加系统动作或快速新建自定义动作，并支持多训练日创建与用户计划编辑。
 
 ## 2. 主要文件
 
@@ -25,8 +33,8 @@
 | `src/domain/plan/plan.types.ts` | `PlanTemplate.source` 增加 `system_copy`、`blank_created`、`duplicated`，并增加 `originSchemeId`。 |
 | `src/domain/plan/systemSchemes.ts` | 本地系统方案目录和目标/难度中文 label。 |
 | `src/domain/plan/planCopy.ts` | `createUserPlanCopyDraft()` 纯函数，复制系统模板为用户计划草稿。 |
-| `src/data/repositories/planRepository.ts` | `PlanRepository` 支持用户计划列表、复制系统方案、导入和删除用户计划。 |
-| `src/data/local/repositories/planRepository.ts` | SQLite 实现用户计划列表、系统方案复制、导入、删除和今日训练读取。 |
+| `src/data/repositories/planRepository.ts` | `PlanRepository` 支持用户计划列表、复制系统方案、导入、编辑和删除用户计划。 |
+| `src/data/local/repositories/planRepository.ts` | SQLite 实现用户计划列表、系统方案复制、导入、编辑、删除和今日训练读取。 |
 | `src/data/local/migrations.ts` | v2 `plan_system_scheme_origin` 补 `origin_scheme_id` 并迁移旧默认当前计划。 |
 | `src/data/seed/mainstreamPlans.ts` | 主流系统计划 seed 和默认新手全身用户计划复制源。 |
 | `src/data/seed/defaultStrengthPlan.ts` | legacy 四练模板 seed，仅用于兼容历史数据。 |
@@ -76,6 +84,12 @@
 职责：删除用户计划的 template、phases、days 和 plan exercises。  
 边界：系统方案不能删除；当前计划不能删除；最后一个用户计划不能删除；不删除 `workout_sessions`、`workout_exercise_records` 或 `workout_sets`。
 
+### PlanRepository.updateUserPlan
+
+文件：`src/data/local/repositories/planRepository.ts`
+职责：编辑用户计划的名称、说明、周期、训练日和计划动作结构。
+边界：系统方案不能编辑；更新只重建 plan template / phases / days / plan exercises，不删除或改写既有训练记录。
+
 ### 训练页计划切换
 
 文件：`app/(tabs)/today.tsx`  
@@ -85,7 +99,7 @@
 ### PlanRepository.createUserPlan
 
 文件：`src/data/local/repositories/planRepository.ts`  
-职责：从创建计划页面生成用户拥有的 `blank_created` 计划，包含一个基础周期、训练日和计划动作。第一版不做完整拖拽编辑器。
+职责：从创建计划页面生成用户拥有的 `blank_created` 计划，包含基础周期、多个训练日和计划动作。第一版不做完整拖拽编辑器。
 
 ### GroupRepository.updateGroup
 
@@ -125,6 +139,7 @@ app: LiftMark
 - phases、days、plan exercises 指向新的用户计划结构。
 - 导入计划草稿生成 `source: "imported"`、`visibility: "private"`，且不会保留系统方案来源。
 - 用户计划删除不会碰训练记录表。
+- 用户计划编辑不会碰训练记录表，且系统方案编辑会被拒绝。
 - 系统动作库包含 100+ 个无重名系统动作，覆盖 PPL 和补录常用动作。
 
 ## 7. 文档同步记录
@@ -136,3 +151,4 @@ app: LiftMark
 - 2026-06-15：计划页重做为当前计划仪表盘；新增用户计划删除边界；创建计划接入统一动作选择器；导入计划按动作名称复用本机动作。
 - 2026-06-29：计划页本周执行趋势改为折线图；创建、导入、导出和管理全部计划收进计划操作底部弹层，页面不再展示大块计划工具网格。
 - 2026-06-30：系统方案目录切换为主流计划库；新增经典四分化增肌计划；计划页系统方案移入计划库弹层；新增训练信息完善与推荐计划流程；默认当前计划改为新手全身训练计划；旧四练仅作为 legacy 数据兼容保留。
+- 2026-07-01：计划首页瘦身；计划详情改为右上角操作菜单；创建计划支持多训练日；新增用户计划编辑和 `PlanRepository.updateUserPlan()`。

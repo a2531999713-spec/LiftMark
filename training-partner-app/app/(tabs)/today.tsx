@@ -111,7 +111,7 @@ const recoveryOptions: AdviceConfig[] = [
     icon: 'moon-outline',
     message: '不创建训练 session，保留为休息日。',
     mode: 'very_bad',
-    status: '改为休息',
+    status: '今日休息',
     tone: 'danger',
   },
 ];
@@ -312,6 +312,48 @@ function getDaysForWeek(days: PlanDay[], week: number): PlanDay[] {
     .sort((left, right) => left.weekday - right.weekday);
 }
 
+function getPlanDayKey(planId: string, week: number, weekday: Weekday): string {
+  return `${planId}:${week}:${weekday}`;
+}
+
+function getCompletedPlanDayKeys(details: WorkoutSessionDetail[], planId: string): Set<string> {
+  return new Set(
+    details
+      .filter((detail) => detail.session.planId === planId && detail.session.status === 'completed')
+      .map((detail) => getPlanDayKey(planId, detail.session.week, detail.session.weekday)),
+  );
+}
+
+function resolveAutoFollowPlanDay({
+  completedKeys,
+  currentWeek,
+  days,
+  planId,
+  todayWeekday,
+}: {
+  completedKeys: Set<string>;
+  currentWeek: number;
+  days: PlanDay[];
+  planId: string;
+  todayWeekday: Weekday;
+}): PlanDay | null {
+  const orderedDays = days
+    .slice()
+    .sort((left, right) => left.week - right.week || left.weekday - right.weekday);
+  const activeIndex = orderedDays.findIndex(
+    (day) => day.week > currentWeek || (day.week === currentWeek && day.weekday >= todayWeekday),
+  );
+  const searchDays = activeIndex >= 0
+    ? [...orderedDays.slice(activeIndex), ...orderedDays.slice(0, activeIndex)]
+    : orderedDays;
+
+  return (
+    searchDays.find((day) => !completedKeys.has(getPlanDayKey(planId, day.week, day.weekday))) ??
+    searchDays[0] ??
+    null
+  );
+}
+
 function formatDayChoiceTitle(day: PlanDay): string {
   if (day.weekday === 5 || /补|弱/.test(`${day.title}${day.focus}`)) {
     return '补弱';
@@ -419,6 +461,7 @@ export default function TodayRoute() {
   const [isScopeSheetVisible, setScopeSheetVisible] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
   const [selectedWeekday, setSelectedWeekday] = useState<Weekday | null>(null);
+  const [isPlanSelectionManual, setPlanSelectionManual] = useState(false);
   const [recordScope, setRecordScope] = useState<WorkoutRecordScope>('group_local');
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
   const [conflictingSession, setConflictingSession] = useState<WorkoutSession | null>(null);
@@ -493,19 +536,34 @@ export default function TodayRoute() {
 
       if (nextActivePlan) {
         const weekOptions = getPlanWeekOptions(nextPlanDays, nextGroup.currentWeek);
-        nextSelectedWeek =
-          selectedWeek && weekOptions.includes(selectedWeek)
+        const completedPlanDayKeys = getCompletedPlanDayKeys(weekDetails, nextActivePlan.id);
+        const autoFollowDay = resolveAutoFollowPlanDay({
+          completedKeys: completedPlanDayKeys,
+          currentWeek: nextGroup.currentWeek,
+          days: nextPlanDays,
+          planId: nextActivePlan.id,
+          todayWeekday,
+        });
+        const autoWeek = autoFollowDay?.week ??
+          (weekOptions.includes(nextGroup.currentWeek) ? nextGroup.currentWeek : weekOptions[0]);
+        const manualWeek =
+          isPlanSelectionManual && selectedWeek && weekOptions.includes(selectedWeek)
             ? selectedWeek
-            : weekOptions.includes(nextGroup.currentWeek)
-              ? nextGroup.currentWeek
-              : weekOptions[0];
+            : null;
+        nextSelectedWeek = manualWeek ?? autoWeek;
         const daysForSelectedWeek = getDaysForWeek(nextPlanDays, nextSelectedWeek);
-        nextSelectedWeekday =
-          selectedWeekday && daysForSelectedWeek.some((day) => day.weekday === selectedWeekday)
+        const manualWeekday =
+          isPlanSelectionManual &&
+          selectedWeekday &&
+          daysForSelectedWeek.some((day) => day.weekday === selectedWeekday)
             ? selectedWeekday
-            : daysForSelectedWeek.some((day) => day.weekday === todayWeekday)
-              ? todayWeekday
-              : (daysForSelectedWeek[0]?.weekday ?? todayWeekday);
+            : null;
+        nextSelectedWeekday =
+          manualWeekday ??
+          (autoFollowDay?.week === nextSelectedWeek ? autoFollowDay.weekday : null) ??
+          (daysForSelectedWeek.some((day) => day.weekday === todayWeekday)
+            ? todayWeekday
+            : (daysForSelectedWeek[0]?.weekday ?? todayWeekday));
         const phaseForSelectedWeek =
           nextPhases.find(
             (phase) =>
@@ -548,7 +606,7 @@ export default function TodayRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories, recoveryMode, selectedGroupId, selectedWeek, selectedWeekday, setSelectedGroupId, todayWeekday]);
+  }, [isPlanSelectionManual, repositories, recoveryMode, selectedGroupId, selectedWeek, selectedWeekday, setSelectedGroupId, todayWeekday]);
 
   useFocusEffect(
     useCallback(() => {
@@ -880,7 +938,7 @@ export default function TodayRoute() {
             <View style={styles.offlineBanner}>
               <Ionicons color={colors.textStrong} name="phone-portrait-outline" size={18} />
               <AppText variant="bodySmall" weight="800">
-                当前使用本机训练数据
+                当前使用训练记录
               </AppText>
             </View>
           ) : null}
@@ -1018,11 +1076,15 @@ export default function TodayRoute() {
           router.push('/history/manual' as never);
         }}
         onSelectDay={(day) => {
+          setPlanSelectionManual(true);
           setSelectedWeek(day.week);
           setSelectedWeekday(day.weekday);
           setDaySheetVisible(false);
         }}
-        onSelectWeek={(week) => setSelectedWeek(week)}
+        onSelectWeek={(week) => {
+          setPlanSelectionManual(true);
+          setSelectedWeek(week);
+        }}
         selectedWeek={selectedWeekValue}
         selectedWeekday={selectedWeekday}
         visible={isDaySheetVisible}

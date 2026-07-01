@@ -16,7 +16,6 @@ type ExerciseSetRecord = {
   estimatedOneRM: number;
   notes?: string;
   reps: number;
-  rpe?: number;
   sessionId: string;
   volume: number;
   weight: number;
@@ -26,14 +25,12 @@ type ExerciseSessionPoint = {
   date: string;
   estimatedOneRM: number;
   label: string;
-  rpe?: number;
   sessionId: string;
   volume: number;
   weight: number;
 };
 
 type ExerciseHistoryView = {
-  averageRpe?: number;
   bestEstimatedOneRM: number;
   bestWeight: number;
   exercise: Exercise | null;
@@ -91,7 +88,6 @@ function buildExerciseHistoryView({
         estimatedOneRM: estimateOneRM(weight, reps),
         notes: set.notes,
         reps,
-        rpe: set.rpe,
         sessionId: detail.session.id,
         volume: weight * reps,
         weight,
@@ -104,21 +100,17 @@ function buildExerciseHistoryView({
   ).slice(-12);
   const sessionPoints = sessionSlots.map((slot, index) => {
     const sessionRecords = records.filter((record) => record.sessionId === slot.sessionId);
-    const rpeValues = sessionRecords.filter((record) => record.rpe !== undefined).map((record) => record.rpe as number);
     return {
       date: slot.date,
       estimatedOneRM: Math.max(0, ...sessionRecords.map((record) => record.estimatedOneRM)),
       label: `第${index + 1}次`,
-      rpe: rpeValues.length > 0 ? rpeValues.reduce((sum, value) => sum + value, 0) / rpeValues.length : undefined,
       sessionId: slot.sessionId,
       volume: sessionRecords.reduce((sum, record) => sum + record.volume, 0),
       weight: Math.max(0, ...sessionRecords.map((record) => record.weight)),
     };
   });
-  const rpeValues = records.filter((record) => record.rpe !== undefined).map((record) => record.rpe as number);
 
   return {
-    averageRpe: rpeValues.length > 0 ? rpeValues.reduce((sum, value) => sum + value, 0) / rpeValues.length : undefined,
     bestEstimatedOneRM: Math.max(0, ...records.map((record) => record.estimatedOneRM)),
     bestWeight: Math.max(0, ...records.map((record) => record.weight)),
     exercise,
@@ -184,7 +176,6 @@ export default function ExerciseHistoryRoute() {
   const volumeMax = Math.max(1, ...points.map((point) => point.volume));
   const weightMax = Math.max(1, ...points.map((point) => point.weight));
   const oneRmMax = Math.max(1, ...points.map((point) => point.estimatedOneRM));
-  const rpePoints = points.filter((point) => point.rpe !== undefined);
 
   return (
     <Screen contentStyle={styles.screen}>
@@ -218,7 +209,6 @@ export default function ExerciseHistoryRoute() {
             <View style={styles.metricRow}>
               <DarkMetric label="最佳重量" value={view.bestWeight > 0 ? `${view.bestWeight} kg` : '-'} />
               <DarkMetric label="估算 1RM" value={view.bestEstimatedOneRM > 0 ? `${view.bestEstimatedOneRM} kg` : '-'} />
-              <DarkMetric label="平均 RPE" value={view.averageRpe ? view.averageRpe.toFixed(1) : '-'} />
             </View>
           </AppCard>
 
@@ -251,14 +241,6 @@ export default function ExerciseHistoryRoute() {
               title="估算 1RM"
               unit="kg"
             />
-            <TrendBlock
-              data={rpePoints.map((point) => point.rpe ?? 0)}
-              empty="暂无 RPE 趋势"
-              labels={rpePoints.map((point) => point.label)}
-              max={10}
-              title="RPE"
-              unit=""
-            />
           </AppCard>
 
           <AppCard style={styles.card}>
@@ -290,7 +272,7 @@ export default function ExerciseHistoryRoute() {
                       {record.weight}kg x {record.reps}
                     </AppText>
                     <AppText numberOfLines={1} tone="muted" variant="caption">
-                      {formatKg(record.volume)} · 1RM {record.estimatedOneRM || '-'}kg · RPE {record.rpe ?? '-'}
+                      {formatKg(record.volume)} · 1RM {record.estimatedOneRM || '-'}kg
                     </AppText>
                   </View>
                   <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
@@ -351,7 +333,7 @@ function TrendBlock({
         labels={labels}
         minChartHeight={max}
         showValues
-        unitLabel={unit || 'RPE'}
+        unitLabel={unit}
       />
     </View>
   );

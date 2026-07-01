@@ -118,11 +118,11 @@ export default function NewMemberRoute() {
       />
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
 
-      {error ? <EmptyState title="成员表单出错" description={error} /> : null}
+      {error ? <EmptyState title="成员信息需要调整" description={error} /> : null}
 
       {!isLoading && !canCreateMember ? (
         <EmptyState
-          title={`本地小组最多支持 ${MAX_GROUP_MEMBERS} 位训练成员`}
+          title={`小组最多支持 ${MAX_GROUP_MEMBERS} 位训练成员`}
           description="适合一台设备多人轮换记录。多设备小组能力后续版本开放。"
         />
       ) : null}

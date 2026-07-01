@@ -483,11 +483,6 @@ export default function PlanRoute() {
 
   const activePlanWeeks = activePlan?.durationWeeks ?? DEFAULT_CYCLE_WEEK_COUNT;
   const activePlanProgress = Math.min(100, Math.round(((group?.currentWeek ?? 1) / activePlanWeeks) * 100));
-  const activeUserPlan = userPlans.find((plan) => plan.id === group?.activePlanId) ?? activePlan;
-  const previewUserPlans = [
-    ...(activeUserPlan ? [activeUserPlan] : []),
-    ...userPlans.filter((plan) => plan.id !== activeUserPlan?.id),
-  ].slice(0, 3);
   return (
     <Screen
       headerRight={
@@ -553,7 +548,7 @@ export default function PlanRoute() {
               <View>
                 <AppText variant="subtitle">本周执行</AppText>
                 <AppText tone="muted" variant="caption">
-                  当前计划下的本机训练记录
+                  当前计划下的训练记录
                 </AppText>
               </View>
               <Tag label={stats.recentSessionDate ? `最近 ${stats.recentSessionDate}` : '暂无训练'} tone={stats.recentSessionDate ? 'success' : 'neutral'} />
@@ -617,48 +612,6 @@ export default function PlanRoute() {
               ))}
             </View>
           )}
-
-          <SectionHeader actionLabel="管理全部" onActionPress={() => setManageVisible(true)} title="我的计划" />
-          {userPlans.length === 0 ? (
-            <EmptyState
-              actionLabel="选择系统方案"
-              description="你还没有自己的训练计划。可以从系统方案开始，也可以从空白创建。"
-              onActionPress={() => setNotice({ title: '选择系统方案', message: '向下浏览系统方案卡片，点击“使用此方案”即可复制为我的计划。' })}
-              title="你还没有自己的训练计划"
-            />
-          ) : (
-            <View style={styles.list}>
-              {previewUserPlans.map((plan) => (
-                <PlanSummaryCard
-                  active={plan.id === group.activePlanId}
-                  key={plan.id}
-                  onOpen={() => router.push({ pathname: '/plan/[planId]', params: { planId: plan.id } })}
-                  plan={plan}
-                />
-              ))}
-            </View>
-          )}
-
-          <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.slimActionRow}>
-            <View style={styles.slimActionIcon}>
-              <Ionicons color={colors.primary} name="ellipsis-horizontal" size={20} />
-            </View>
-            <View style={styles.planRowText}>
-              <AppText variant="bodySmall" weight="900">
-                计划操作
-              </AppText>
-              <AppText tone="muted" variant="caption">
-                创建、导入、导出和管理
-              </AppText>
-            </View>
-            <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
-          </Pressable>
-
-          <PlanLibraryEntryCard
-            availableCount={availableSchemes.length}
-            onPress={() => setSchemeLibraryVisible(true)}
-            featuredScheme={availableSchemes[0]}
-          />
 
           {isWorking ? (
             <AppText tone="muted" variant="bodySmall">
@@ -995,61 +948,6 @@ function PlanActionRow({
   );
 }
 
-function PlanSummaryCard({
-  active,
-  onOpen,
-  plan,
-}: {
-  active: boolean;
-  onOpen: () => void;
-  plan: PlanTemplate;
-}) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onOpen} style={({ pressed }) => [styles.summaryPlanCard, pressed && styles.pressed]}>
-      <View style={styles.planRowText}>
-        <AppText variant="bodySmall" weight="900">
-          {plan.name}
-        </AppText>
-        <AppText tone="muted" variant="caption">
-          {describePlanSource(plan.source)} · {plan.durationWeeks} 周 · 每周 {plan.frequencyPerWeek} 练
-        </AppText>
-      </View>
-      <Tag label={active ? '使用中' : '我的计划'} tone={active ? 'success' : 'neutral'} />
-      <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
-    </Pressable>
-  );
-}
-
-function PlanLibraryEntryCard({
-  availableCount,
-  featuredScheme,
-  onPress,
-}: {
-  availableCount: number;
-  featuredScheme?: SystemTrainingScheme;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.libraryEntryCard, pressed && styles.pressed]}>
-      <View style={styles.schemeIcon}>
-        <Ionicons color={colors.primary} name="library-outline" size={20} />
-      </View>
-      <View style={styles.planRowText}>
-        <AppText variant="bodySmall" weight="900">
-          计划库
-        </AppText>
-        <AppText tone="muted" variant="caption">
-          {featuredScheme
-            ? `${availableCount} 个可用模板 · 推荐 ${featuredScheme.title}`
-            : `${availableCount} 个可用模板`}
-        </AppText>
-      </View>
-      <Tag label="更多计划" tone="brand" />
-      <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
-    </Pressable>
-  );
-}
-
 function SchemeCard({
   onPreview,
   onUse,
@@ -1161,17 +1059,6 @@ const styles = StyleSheet.create({
   libraryContent: {
     maxHeight: 560,
   },
-  libraryEntryCard: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
-    minHeight: 72,
-    padding: spacing.md,
-  },
   manageContent: {
     maxHeight: 520,
   },
@@ -1265,36 +1152,6 @@ const styles = StyleSheet.create({
   },
   statTileWide: {
     flex: 1.5,
-  },
-  slimActionIcon: {
-    alignItems: 'center',
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.sm,
-    height: 38,
-    justifyContent: 'center',
-    width: 38,
-  },
-  slimActionRow: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
-    minHeight: 62,
-    padding: spacing.md,
-  },
-  summaryPlanCard: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
-    minHeight: 72,
-    padding: spacing.md,
   },
   tagRow: {
     flexDirection: 'row',

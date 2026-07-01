@@ -4,8 +4,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
+import { ExercisePickerSheet, formatExerciseEquipment } from '@/components/exercises/ExercisePickerSheet';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
+import type { CreateCustomExerciseInput } from '@/data/repositories/exerciseRepository';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutExerciseRecord, WorkoutSessionDetail, WorkoutSet } from '@/domain/workout/workout.types';
@@ -35,6 +37,7 @@ export default function HistoryDetailRoute() {
   const [title, setTitle] = useState('');
   const [isEditMode, setEditMode] = useState(false);
   const [isActionsVisible, setActionsVisible] = useState(false);
+  const [isExercisePickerVisible, setExercisePickerVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +47,10 @@ export default function HistoryDetailRoute() {
     [detail, scopedMemberId],
   );
   const isPersonalScope = Boolean(scopedMemberId);
+  const selectedExerciseIds = useMemo(
+    () => detail?.exercises.map((exercise) => exercise.exerciseId) ?? [],
+    [detail],
+  );
 
   const loadDetail = useCallback(async () => {
     if (!sessionId) {
@@ -139,6 +146,107 @@ export default function HistoryDetailRoute() {
       );
     },
     [guardFeature, repositories],
+  );
+
+  const getEditableMemberIds = useCallback(
+    (recordSets?: WorkoutSet[]) => {
+      if (scopedMemberId) {
+        return [scopedMemberId];
+      }
+
+      const sourceSets = recordSets ?? detail?.sets ?? [];
+      const setMemberIds = [...new Set(sourceSets.map((set) => set.memberId))];
+      return setMemberIds.length > 0 ? setMemberIds : Object.keys(members);
+    },
+    [detail, members, scopedMemberId],
+  );
+
+  const createCustomExercise = useCallback(
+    async (input: CreateCustomExerciseInput) => {
+      if (!guardFeature('manual_history')) {
+        throw new Error('请先登录后再创建记录动作。');
+      }
+
+      const exercise = await repositories.exerciseRepository.createCustomExercise(input);
+      setAllExercises((current) => [exercise, ...current]);
+      setExercises((current) => ({ ...current, [exercise.id]: exercise }));
+      return exercise;
+    },
+    [guardFeature, repositories],
+  );
+
+  const addExerciseToDetail = useCallback(
+    async (exercise: Exercise) => {
+      if (!detail || !guardFeature('manual_history')) {
+        return;
+      }
+
+      const memberIds = getEditableMemberIds();
+      if (memberIds.length === 0) {
+        Alert.alert('暂无成员', '请先添加成员后再编辑训练记录。');
+        return;
+      }
+
+      setIsSaving(true);
+      try {
+        const nextDetail = await repositories.workoutRepository.addExerciseToSession({
+          exerciseId: exercise.id,
+          memberId: memberIds[0],
+          memberIds,
+          sessionId: detail.session.id,
+          sets: [{ completed: true }],
+        });
+        setDetail(nextDetail);
+        setExercises((current) => ({ ...current, [exercise.id]: exercise }));
+        setAllExercises((current) => (current.some((item) => item.id === exercise.id) ? current : [exercise, ...current]));
+        setExercisePickerVisible(false);
+        setEditMode(true);
+      } catch (addError) {
+        Alert.alert('新增动作失败', addError instanceof Error ? addError.message : '训练记录暂时无法新增动作。');
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [detail, getEditableMemberIds, guardFeature, repositories],
+  );
+
+  const addSetToRecord = useCallback(
+    async (record: WorkoutExerciseRecord, recordSets: WorkoutSet[]) => {
+      if (!detail || !guardFeature('manual_history')) {
+        return;
+      }
+
+      const memberIds = getEditableMemberIds(recordSets);
+      if (memberIds.length === 0) {
+        Alert.alert('暂无成员', '请先添加成员后再编辑训练记录。');
+        return;
+      }
+
+      setIsSaving(true);
+      try {
+        for (const nextMemberId of memberIds) {
+          const lastSet = [...recordSets]
+            .filter((set) => set.memberId === nextMemberId)
+            .sort((left, right) => right.setNumber - left.setNumber)[0];
+          await repositories.workoutRepository.addSetToExerciseRecord({
+            completed: true,
+            exerciseRecordId: record.id,
+            memberId: nextMemberId,
+            reps: lastSet?.actualReps ?? lastSet?.plannedReps,
+            sessionId: detail.session.id,
+            weight: lastSet?.actualWeight ?? lastSet?.plannedWeight,
+          });
+        }
+
+        const nextDetail = await repositories.workoutRepository.getSessionDetail(detail.session.id);
+        setDetail(nextDetail);
+      } catch (addError) {
+        Alert.alert('新增组失败', addError instanceof Error ? addError.message : '训练记录暂时无法新增组。');
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [detail, getEditableMemberIds, guardFeature, repositories],
   );
 
   const confirmDeleteSet = useCallback(
@@ -269,14 +377,18 @@ export default function HistoryDetailRoute() {
       {!isLoading && detail ? (
         <>
           <View style={styles.topBar}>
-            <View style={styles.topText}>
-              <AppText variant="bodySmall" weight="900">
-                {isPersonalScope ? '我的训练详情' : '小组训练详情'}
-              </AppText>
-              <AppText tone="muted" variant="caption">
-                {isPersonalScope ? '仅显示当前成员记录；小组成员数据不会出现在这里。' : '显示本机小组全部成员记录。'}
-              </AppText>
-            </View>
+            <AppButton
+              icon="create-outline"
+              onPress={() => {
+                if (guardFeature('manual_history')) {
+                  setEditMode(true);
+                }
+              }}
+              size="sm"
+              variant={isEditMode ? 'primary' : 'secondary'}
+            >
+              {isEditMode ? '编辑中' : '编辑'}
+            </AppButton>
             <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.moreButton}>
               <Ionicons color={colors.textStrong} name="ellipsis-horizontal" size={20} />
             </Pressable>
@@ -319,13 +431,23 @@ export default function HistoryDetailRoute() {
             ) : null}
           </AppCard>
 
-          <SectionHeader title="动作与组" />
+          <SectionHeader
+            actionLabel={isEditMode ? '新增动作' : undefined}
+            onActionPress={() => {
+              if (guardFeature('manual_history')) setExercisePickerVisible(true);
+            }}
+            subtitle={isPersonalScope ? '仅编辑当前成员的组数据。' : '新增组会同步到本次参与成员。'}
+            title="动作与组"
+          />
           {detail.exercises.map((record) => {
             const exercise = exercises[record.exerciseId];
             const replacedFromExercise = record.replacedFromExerciseId
               ? exercises[record.replacedFromExerciseId]
               : null;
             const recordSets = visibleSets.filter((set) => set.exerciseRecordId === record.id);
+            const exerciseMeta = exercise
+              ? `${exercise.targetMuscle} · ${formatExerciseEquipment(exercise.equipment)} · ${recordSets.length} 组 · ${record.priority} 动作`
+              : `${recordSets.length} 组 · ${record.priority} 动作`;
             if (isPersonalScope && recordSets.length === 0) {
               return null;
             }
@@ -338,7 +460,7 @@ export default function HistoryDetailRoute() {
                   <View style={styles.exerciseText}>
                     <AppText variant="subtitle">{exercise?.name ?? record.exerciseId}</AppText>
                     <AppText tone="muted" variant="caption">
-                      {recordSets.length} 组 · {record.priority} 动作
+                      {exerciseMeta}
                     </AppText>
                     {record.replacedFromExerciseId ? (
                       <AppText tone="muted" variant="caption">
@@ -352,11 +474,21 @@ export default function HistoryDetailRoute() {
                     </Pressable>
                   ) : null}
                 </View>
-                {isEditMode && !isPersonalScope ? (
+                {isEditMode ? (
                   <View style={styles.inlineActions}>
-                    <AppButton onPress={() => void changeExercise(record)} size="sm" variant="secondary">
-                      更换动作
+                    <AppButton
+                      disabled={isSaving}
+                      onPress={() => void addSetToRecord(record, recordSets)}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      新增组
                     </AppButton>
+                    {!isPersonalScope ? (
+                      <AppButton onPress={() => void changeExercise(record)} size="sm" variant="secondary">
+                        更换动作
+                      </AppButton>
+                    ) : null}
                   </View>
                 ) : null}
                 {recordSets.map((set) =>
@@ -421,6 +553,16 @@ export default function HistoryDetailRoute() {
           </AppModalSheet>
         </>
       ) : null}
+
+      <ExercisePickerSheet
+        exercises={allExercises}
+        onClose={() => setExercisePickerVisible(false)}
+        onCreateCustomExercise={createCustomExercise}
+        onSelect={(exercise) => void addExerciseToDetail(exercise)}
+        selectedExerciseIds={selectedExerciseIds}
+        title="新增记录动作"
+        visible={isExercisePickerVisible}
+      />
 
       <AuthGateSheets {...sheets} />
     </Screen>
@@ -566,10 +708,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.md,
-  },
-  topText: {
-    flex: 1,
-    gap: 2,
+    justifyContent: 'flex-end',
   },
   moreButton: {
     alignItems: 'center',

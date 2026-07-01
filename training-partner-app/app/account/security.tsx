@@ -32,7 +32,7 @@ export default function AccountSecurityRoute() {
       <SecondaryPageHeader
         caption="账号安全"
         icon="lock-closed-outline"
-        meta="本机优先"
+        meta="设备优先"
         subtitle="手机号登录、密码和设备状态会逐步接入，训练数据不在这里清空。"
         title="登录保护"
       />

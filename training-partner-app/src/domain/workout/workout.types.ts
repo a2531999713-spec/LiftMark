@@ -83,12 +83,45 @@ export type CreateManualSessionInput = {
   date: string;
   title: string;
   memberId: ID;
-  exerciseId: ID;
-  setCount: number;
+  exerciseId?: ID;
+  exercises?: ManualWorkoutExerciseInput[];
+  setCount?: number;
   weight?: number;
   reps?: number;
   restSeconds?: number | null;
   completed?: boolean;
+};
+
+export type ManualWorkoutSetInput = {
+  completed?: boolean;
+  notes?: string;
+  reps?: number;
+  weight?: number;
+};
+
+export type ManualWorkoutExerciseInput = {
+  exerciseId: ID;
+  notes?: string;
+  priority?: ExercisePriority;
+  restSeconds?: number | null;
+  sets: ManualWorkoutSetInput[];
+};
+
+export type AddWorkoutExerciseInput = {
+  exerciseId: ID;
+  memberId: ID;
+  memberIds?: ID[];
+  notes?: string;
+  priority?: ExercisePriority;
+  sessionId: ID;
+  sets?: ManualWorkoutSetInput[];
+};
+
+export type AddWorkoutSetInput = ManualWorkoutSetInput & {
+  completed?: boolean;
+  exerciseRecordId: ID;
+  memberId: ID;
+  sessionId: ID;
 };
 
 export type UpdateWorkoutSessionInput = {

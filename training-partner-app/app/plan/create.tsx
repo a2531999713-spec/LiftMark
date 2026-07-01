@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
@@ -19,25 +19,52 @@ type NoticeState = {
   title: string;
 };
 
+type PlanDayDraft = {
+  exerciseIds: string[];
+  focus: string;
+  id: string;
+  reps: string;
+  sets: string;
+  title: string;
+  week: string;
+  weekday: string;
+};
+
 function parseInteger(value: string, fallback: number): number {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function createDraftId() {
+  return `day_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createDefaultDayDraft(index = 0): PlanDayDraft {
+  return {
+    exerciseIds: [],
+    focus: index === 0 ? '全身力量' : '训练重点',
+    id: createDraftId(),
+    reps: '8',
+    sets: '3',
+    title: `Day ${index + 1}`,
+    week: '1',
+    weekday: `${Math.min(7, index + 1)}`,
+  };
+}
+
 export default function CreatePlanRoute() {
+  const params = useLocalSearchParams<{ editPlanId?: string }>();
+  const editPlanId = typeof params.editPlanId === 'string' ? params.editPlanId : undefined;
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
   const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>([]);
+  const [dayDrafts, setDayDrafts] = useState<PlanDayDraft[]>([createDefaultDayDraft()]);
+  const [activeDayId, setActiveDayId] = useState<string | null>(null);
   const [isExercisePickerVisible, setExercisePickerVisible] = useState(false);
   const [name, setName] = useState('我的训练计划');
   const [goal, setGoal] = useState<PlanTemplate['goal']>('strength');
   const [frequency, setFrequency] = useState('4');
   const [durationWeeks, setDurationWeeks] = useState('8');
-  const [dayTitle, setDayTitle] = useState('Day 1');
-  const [dayFocus, setDayFocus] = useState('全身力量');
-  const [sets, setSets] = useState('3');
-  const [reps, setReps] = useState('8');
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [createdPlan, setCreatedPlan] = useState<PlanTemplate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -56,7 +83,43 @@ export default function CreatePlanRoute() {
         const nextExercises = await repositories.exerciseRepository.listExercises();
         if (mounted) {
           setExercises(nextExercises);
-          setSelectedExerciseIds(nextExercises.slice(0, 3).map((exercise) => exercise.id));
+        }
+
+        if (editPlanId) {
+          const plan = await repositories.planRepository.getPlanById(editPlanId);
+          if (!plan) {
+            throw new Error('计划不存在或已被移除。');
+          }
+          if (plan.source === 'system' || plan.visibility === 'system') {
+            throw new Error('系统方案是只读模板，请先复制为我的计划后再编辑。');
+          }
+
+          const days = await repositories.planRepository.listPlanDays(plan.id);
+          const planExercises = await Promise.all(days.map((day) => repositories.planRepository.listPlanExercises(day.id)));
+
+          if (mounted) {
+            setName(plan.name);
+            setGoal(plan.goal);
+            setFrequency(`${plan.frequencyPerWeek}`);
+            setDurationWeeks(`${plan.durationWeeks}`);
+            setDayDrafts(
+              days.length > 0
+                ? days.map((day, index) => ({
+                    exerciseIds: (planExercises[index] ?? []).map((exercise) => exercise.exerciseId),
+                    focus: day.focus,
+                    id: day.id,
+                    reps: `${(planExercises[index] ?? [])[0]?.reps ?? 8}`,
+                    sets: `${(planExercises[index] ?? [])[0]?.sets ?? 3}`,
+                    title: day.title,
+                    week: `${day.week}`,
+                    weekday: `${day.weekday}`,
+                  }))
+                : [createDefaultDayDraft()],
+            );
+          }
+        } else if (mounted) {
+          const draft = createDefaultDayDraft();
+          setDayDrafts([{ ...draft, exerciseIds: nextExercises.slice(0, 3).map((exercise) => exercise.id) }]);
         }
       } catch (loadError) {
         if (mounted) {
@@ -74,24 +137,49 @@ export default function CreatePlanRoute() {
     return () => {
       mounted = false;
     };
-  }, [repositories]);
+  }, [editPlanId, repositories]);
 
-  const selectedExercises = selectedExerciseIds
-    .map((id) => exercises.find((exercise) => exercise.id === id))
-    .filter((exercise): exercise is Exercise => Boolean(exercise));
+  const activeDay = dayDrafts.find((day) => day.id === activeDayId) ?? dayDrafts[0] ?? null;
+  const activeExerciseIds = activeDay?.exerciseIds ?? [];
 
-  const addExercise = (exercise: Exercise) => {
-    setSelectedExerciseIds((current) => {
-      if (current.includes(exercise.id)) {
-        return current;
-      }
+  const getSelectedExercises = (day: PlanDayDraft) =>
+    day.exerciseIds
+      .map((id) => exercises.find((exercise) => exercise.id === id))
+      .filter((exercise): exercise is Exercise => Boolean(exercise));
 
-      return [...current, exercise.id].slice(0, 12);
-    });
+  const updateDayDraft = (dayId: string, patch: Partial<PlanDayDraft>) => {
+    setDayDrafts((current) => current.map((day) => (day.id === dayId ? { ...day, ...patch } : day)));
   };
 
-  const removeExercise = (exerciseId: string) => {
-    setSelectedExerciseIds((current) => current.filter((id) => id !== exerciseId));
+  const addExercise = (exercise: Exercise) => {
+    const targetDayId = activeDay?.id ?? dayDrafts[0]?.id;
+    if (!targetDayId) {
+      return;
+    }
+
+    setDayDrafts((current) =>
+      current.map((day) =>
+        day.id === targetDayId && !day.exerciseIds.includes(exercise.id)
+          ? { ...day, exerciseIds: [...day.exerciseIds, exercise.id].slice(0, 12) }
+          : day,
+      ),
+    );
+  };
+
+  const removeExercise = (dayId: string, exerciseId: string) => {
+    setDayDrafts((current) =>
+      current.map((day) =>
+        day.id === dayId ? { ...day, exerciseIds: day.exerciseIds.filter((id) => id !== exerciseId) } : day,
+      ),
+    );
+  };
+
+  const addDayDraft = () => {
+    setDayDrafts((current) => [...current, createDefaultDayDraft(current.length)]);
+  };
+
+  const removeDayDraft = (dayId: string) => {
+    setDayDrafts((current) => (current.length > 1 ? current.filter((day) => day.id !== dayId) : current));
   };
 
   const createCustomExercise = async (input: CreateCustomExerciseInput) => {
@@ -110,39 +198,42 @@ export default function CreatePlanRoute() {
       return;
     }
 
-    if (selectedExerciseIds.length === 0) {
+    const emptyDay = dayDrafts.find((day) => day.exerciseIds.length === 0);
+    if (emptyDay) {
       setNotice({
         title: '请选择动作',
-        message: '至少添加一个动作后再保存计划。',
+        message: `“${emptyDay.title || '训练日'}”至少添加一个动作后再保存计划。`,
       });
       return;
     }
 
     setIsSaving(true);
     try {
-      const plan = await repositories.planRepository.createUserPlan({
-        days: [
-          {
-            exercises: selectedExerciseIds.map((exerciseId, index) => ({
-              exerciseId,
-              priority: index === 0 ? 'A' : index <= 2 ? 'B' : 'C',
-              reps: parseInteger(reps, 8),
-              sets: parseInteger(sets, 3),
-            })),
-            focus: dayFocus,
-            title: dayTitle,
-            weekday: 1,
-          },
-        ],
+      const input = {
+        days: dayDrafts.map((day) => ({
+          exercises: day.exerciseIds.map((exerciseId, index) => ({
+            exerciseId,
+            priority: index === 0 ? 'A' as const : index <= 2 ? 'B' as const : 'C' as const,
+            reps: parseInteger(day.reps, 8),
+            sets: parseInteger(day.sets, 3),
+          })),
+          focus: day.focus,
+          title: day.title,
+          week: parseInteger(day.week, 1),
+          weekday: Math.min(7, Math.max(1, parseInteger(day.weekday, 1))) as 1 | 2 | 3 | 4 | 5 | 6 | 7,
+        })),
         durationWeeks: parseInteger(durationWeeks, 8),
         frequencyPerWeek: parseInteger(frequency, 4),
         goal,
         name,
-      });
+      };
+      const plan = editPlanId
+        ? await repositories.planRepository.updateUserPlan({ ...input, planId: editPlanId })
+        : await repositories.planRepository.createUserPlan(input);
 
       setCreatedPlan(plan);
       setNotice({
-        title: '已创建计划',
+        title: editPlanId ? '已保存计划' : '已创建计划',
         message: `“${plan.name}”已保存到我的计划。`,
       });
     } catch (saveError) {
@@ -156,7 +247,7 @@ export default function CreatePlanRoute() {
   };
 
   return (
-    <Screen subtitle="从一个可执行训练日开始，后续再逐步完善。">
+    <Screen subtitle={editPlanId ? '编辑计划结构后会影响后续训练读取。' : '从可执行训练日开始，后续再逐步完善。'}>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="创建计划暂时不可用" description={error} /> : null}
 
@@ -168,7 +259,7 @@ export default function CreatePlanRoute() {
             imageSource={liftmarkImages.planHero}
             minHeight={154}
             subtitle="先保存基础训练结构，动作来自系统动作库或你的自定义动作。"
-            title="创建自己的训练计划"
+            title={editPlanId ? '编辑训练计划' : '创建自己的训练计划'}
           />
 
           <AppCard style={styles.card}>
@@ -186,64 +277,111 @@ export default function CreatePlanRoute() {
           </AppCard>
 
           <AppCard style={styles.card}>
-            <SectionHeader title="训练日" />
-            <View style={styles.fieldRow}>
-              <Field label="训练日名称" onChangeText={setDayTitle} value={dayTitle} />
-              <Field label="训练重点" onChangeText={setDayFocus} value={dayFocus} />
-            </View>
-            <View style={styles.fieldRow}>
-              <Field label="组数" onChangeText={setSets} value={sets} />
-              <Field label="次数" onChangeText={setReps} value={reps} />
-            </View>
-          </AppCard>
-
-          <AppCard style={styles.card}>
             <SectionHeader
-              actionLabel="添加动作"
-              onActionPress={() => {
-                if (guardFeature('create_plan')) setExercisePickerVisible(true);
-              }}
-              subtitle="从动作库选择；没有就快速新建自定义动作。"
-              title="训练动作"
+              actionLabel="新增训练日"
+              onActionPress={addDayDraft}
+              subtitle="每个训练日有独立动作、周次、星期、组数和次数。"
+              title="训练日"
             />
-            {selectedExercises.length === 0 ? (
-              <EmptyState
-                actionLabel="添加动作"
-                description="添加动作后，这个训练日就可以保存为我的计划。"
-                onActionPress={() => {
-                  if (guardFeature('create_plan')) setExercisePickerVisible(true);
-                }}
-                title="还没有动作"
-              />
-            ) : (
-              <View style={styles.exerciseList}>
-                {selectedExercises.map((exercise, index) => (
-                  <View key={exercise.id} style={styles.exerciseRow}>
-                    <View style={styles.exerciseOrder}>
-                      <AppText tone="inverse" variant="caption" weight="900">
-                        {index + 1}
-                      </AppText>
+            <View style={styles.dayDraftList}>
+              {dayDrafts.map((day, dayIndex) => {
+                const selectedExercises = getSelectedExercises(day);
+
+                return (
+                  <View key={day.id} style={styles.dayDraftCard}>
+                    <View style={styles.dayDraftHeader}>
+                      <View style={styles.exerciseOrder}>
+                        <AppText tone="inverse" variant="caption" weight="900">
+                          {dayIndex + 1}
+                        </AppText>
+                      </View>
+                      <View style={styles.exerciseText}>
+                        <AppText variant="bodySmall" weight="900">
+                          {day.title || `Day ${dayIndex + 1}`}
+                        </AppText>
+                        <AppText tone="muted" variant="caption">
+                          第 {day.week || 1} 周 · 周 {day.weekday || 1} · {selectedExercises.length} 个动作
+                        </AppText>
+                      </View>
+                      {dayDrafts.length > 1 ? (
+                        <Pressable accessibilityRole="button" onPress={() => removeDayDraft(day.id)} style={styles.removeButton}>
+                          <Ionicons color={colors.danger} name="trash-outline" size={18} />
+                        </Pressable>
+                      ) : null}
                     </View>
-                    <View style={styles.exerciseText}>
-                      <AppText variant="bodySmall" weight="900">
-                        {exercise.name}
-                      </AppText>
-                      <AppText tone="muted" variant="caption">
-                        {exercise.targetMuscle} · {formatExerciseEquipment(exercise.equipment)}
-                      </AppText>
+
+                    <View style={styles.fieldRow}>
+                      <Field label="训练日名称" onChangeText={(value) => updateDayDraft(day.id, { title: value })} value={day.title} />
+                      <Field label="训练重点" onChangeText={(value) => updateDayDraft(day.id, { focus: value })} value={day.focus} />
                     </View>
-                    <Tag label={exercise.source === 'custom' ? '自定义' : '系统'} tone={exercise.source === 'custom' ? 'brand' : 'neutral'} />
-                    <Pressable accessibilityRole="button" onPress={() => removeExercise(exercise.id)} style={styles.removeButton}>
-                      <Ionicons color={colors.danger} name="close-outline" size={18} />
-                    </Pressable>
+                    <View style={styles.fieldRow}>
+                      <Field label="周次" onChangeText={(value) => updateDayDraft(day.id, { week: value })} value={day.week} />
+                      <Field label="星期" onChangeText={(value) => updateDayDraft(day.id, { weekday: value })} value={day.weekday} />
+                      <Field label="组数" onChangeText={(value) => updateDayDraft(day.id, { sets: value })} value={day.sets} />
+                      <Field label="次数" onChangeText={(value) => updateDayDraft(day.id, { reps: value })} value={day.reps} />
+                    </View>
+
+                    <View style={styles.inlineActions}>
+                      <AppButton
+                        icon="add-outline"
+                        onPress={() => {
+                          if (guardFeature('create_plan')) {
+                            setActiveDayId(day.id);
+                            setExercisePickerVisible(true);
+                          }
+                        }}
+                        size="sm"
+                        variant="secondary"
+                      >
+                        添加动作
+                      </AppButton>
+                    </View>
+
+                    {selectedExercises.length === 0 ? (
+                      <EmptyState
+                        actionLabel="添加动作"
+                        description="添加动作后，这个训练日就可以保存。"
+                        onActionPress={() => {
+                          if (guardFeature('create_plan')) {
+                            setActiveDayId(day.id);
+                            setExercisePickerVisible(true);
+                          }
+                        }}
+                        title="还没有动作"
+                      />
+                    ) : (
+                      <View style={styles.exerciseList}>
+                        {selectedExercises.map((exercise, index) => (
+                          <View key={exercise.id} style={styles.exerciseRow}>
+                            <View style={styles.exerciseOrder}>
+                              <AppText tone="inverse" variant="caption" weight="900">
+                                {index + 1}
+                              </AppText>
+                            </View>
+                            <View style={styles.exerciseText}>
+                              <AppText variant="bodySmall" weight="900">
+                                {exercise.name}
+                              </AppText>
+                              <AppText tone="muted" variant="caption">
+                                {exercise.targetMuscle} · {formatExerciseEquipment(exercise.equipment)}
+                              </AppText>
+                            </View>
+                            <Tag label={exercise.source === 'custom' ? '自定义' : '系统'} tone={exercise.source === 'custom' ? 'brand' : 'neutral'} />
+                            <Pressable accessibilityRole="button" onPress={() => removeExercise(day.id, exercise.id)} style={styles.removeButton}>
+                              <Ionicons color={colors.danger} name="close-outline" size={18} />
+                            </Pressable>
+                          </View>
+                        ))}
+                      </View>
+                    )}
                   </View>
-                ))}
-              </View>
-            )}
+                );
+              })}
+            </View>
           </AppCard>
 
           <AppButton disabled={isSaving} icon="save-outline" onPress={() => void savePlan()} size="lg">
-            {isSaving ? '保存中...' : '保存为我的计划'}
+            {isSaving ? '保存中...' : editPlanId ? '保存计划' : '保存为我的计划'}
           </AppButton>
         </>
       ) : null}
@@ -253,7 +391,7 @@ export default function CreatePlanRoute() {
         onClose={() => setExercisePickerVisible(false)}
         onCreateCustomExercise={createCustomExercise}
         onSelect={addExercise}
-        selectedExerciseIds={selectedExerciseIds}
+        selectedExerciseIds={activeExerciseIds}
         title="添加训练动作"
         visible={isExercisePickerVisible}
       />
@@ -270,10 +408,14 @@ export default function CreatePlanRoute() {
             <AppButton
               onPress={() => {
                 setNotice(null);
-                router.replace('/(tabs)/plan');
+                router.replace(
+                  editPlanId
+                    ? ({ pathname: '/plan/[planId]', params: { planId: createdPlan.id } } as never)
+                    : '/(tabs)/plan',
+                );
               }}
             >
-              回到计划页
+              {editPlanId ? '查看计划' : '回到计划页'}
             </AppButton>
           ) : null}
           <AppButton onPress={() => setNotice(null)} variant={createdPlan ? 'secondary' : 'primary'}>
@@ -296,7 +438,13 @@ function Field({
   onChangeText: (value: string) => void;
   value: string;
 }) {
-  const isNumber = label.includes('天数') || label.includes('周数') || label === '组数' || label === '次数';
+  const isNumber =
+    label.includes('天数') ||
+    label.includes('周数') ||
+    label === '周次' ||
+    label === '星期' ||
+    label === '组数' ||
+    label === '次数';
 
   return (
     <View style={styles.field}>
@@ -326,6 +474,22 @@ function GoalChip({ active, label, onPress }: { active: boolean; label: string; 
 
 const styles = StyleSheet.create({
   card: {
+    gap: spacing.md,
+  },
+  dayDraftCard: {
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  dayDraftHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  dayDraftList: {
     gap: spacing.md,
   },
   exerciseList: {
@@ -380,6 +544,11 @@ const styles = StyleSheet.create({
   },
   goalRow: {
     flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  inlineActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   input: {

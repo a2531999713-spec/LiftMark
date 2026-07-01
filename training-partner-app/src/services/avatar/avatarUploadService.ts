@@ -9,7 +9,7 @@ const AVATAR_DIR = `${FileSystem.documentDirectory ?? ''}avatars/`;
 
 async function ensureAvatarDir() {
   if (!FileSystem.documentDirectory) {
-    throw new Error('当前设备暂不支持头像本地缓存。');
+    throw new Error('当前设备暂不支持头像缓存。');
   }
   const info = await FileSystem.getInfoAsync(AVATAR_DIR);
   if (!info.exists) {

@@ -53,7 +53,7 @@ export default function PrivacyPolicyRoute() {
         <AppCard style={styles.card}>
           <AppText variant="bodySmall" weight="900">四、信息存储与保护</AppText>
           <AppText tone="muted" variant="bodySmall">
-            • 本地存储：训练数据优先存储在您的设备本地数据库中{'\n'}
+            • 设备存储：训练数据优先存储在您的当前设备中{'\n'}
             • 账号资料：登录后用于保存账号资料和会员权益{'\n'}
             • 加密保护：所有传输数据使用 TLS 加密，敏感信息使用 AES 加密存储{'\n'}
             • 访问控制：严格的权限管理，仅授权人员可访问用户数据{'\n'}

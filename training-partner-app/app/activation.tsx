@@ -44,7 +44,7 @@ export default function ActivationRoute() {
         caption="会员与激活"
         icon="diamond-outline"
         meta={isLoggedIn ? '已登录' : '需登录'}
-        subtitle="激活码兑换到账户权益中，不影响本机训练记录。"
+        subtitle="激活码兑换到账户权益中，不影响训练记录。"
         title="激活权益"
       />
       <AppCard style={styles.card} tone="dark">
@@ -92,7 +92,7 @@ export default function ActivationRoute() {
               激活码入口已迁移到会员与激活
             </AppText>
             <AppText tone="muted" variant="caption">
-              当前版本不再显示本地试用状态或开发期测试码。权益以后端会员记录为准。
+              当前版本不再显示设备试用状态或开发期测试码。权益以后端会员记录为准。
             </AppText>
           </AppCard>
         </>

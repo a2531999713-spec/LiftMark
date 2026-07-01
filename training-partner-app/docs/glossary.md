@@ -11,7 +11,7 @@
 | 双进阶 | 先把次数推进到上限，再增加重量 | progression |
 | 减量周 | 降低重量和组数用于恢复疲劳的周期 | plan, recovery |
 | A/B/C 优先级 | A 必做，B 建议做，C 状态好/有时间再做 | plan, recovery |
-| 动作筛选 | 今日训练创建 session 前对 A/B/C 动作做本次过滤：完整动作、精简辅助、只做主项或改为休息 | today-training, workout, recovery |
+| 动作筛选 | 今日训练创建 session 前对 A/B/C 动作做本次过滤：完整动作、精简辅助、只做主项或今日休息 | today-training, workout, recovery |
 | 替代动作 | 器械被占或身体不适时保持动作模式的替换动作 | exercise |
 | 替换动作记录 | 本次训练实际执行动作与原计划动作的关系，保存于 `workout_exercise_records.exercise_id` 和 `replaced_from_exercise_id` | workout, history |
 | 当前小组 | 用户当前正在查看和创建训练记录的本地小组，由 `selectedGroupStore` 保存轻量状态 | group, workout, history |

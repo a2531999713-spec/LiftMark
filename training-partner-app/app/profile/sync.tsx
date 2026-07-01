@@ -18,16 +18,16 @@ export default function ProfileSyncRoute() {
         <View style={styles.headerRow}>
           <View style={styles.headerText}>
             <AppText variant="title" weight="900">
-              本机训练数据
+              训练数据
             </AppText>
             <AppText tone="muted" variant="bodySmall">
-              训练计划、成员和训练记录优先写入本机 SQLite。
+              训练计划、成员和训练记录会保留在当前设备。
             </AppText>
           </View>
-          <Tag label="本机保存" tone="success" />
+          <Tag label="已保存" tone="success" />
         </View>
-        <SettingsRow label="训练记录" value="本机 SQLite" />
-        <SettingsRow label="成员档案" value="本机 SQLite" />
+        <SettingsRow label="训练记录" value="当前设备" />
+        <SettingsRow label="成员档案" value="当前设备" />
         <SettingsRow label="计划文件" value="可手动导出" />
       </AppCard>
 
@@ -43,8 +43,8 @@ export default function ProfileSyncRoute() {
       <AppButton
         onPress={() =>
           setNotice({
-            title: '本地数据',
-            message: '当前版本训练记录保存在本机；计划文件可在计划导出页面手动生成。',
+            title: '训练数据',
+            message: '当前版本训练记录会保留在当前设备；计划文件可在计划导出页面手动生成。',
           })
         }
         variant="secondary"

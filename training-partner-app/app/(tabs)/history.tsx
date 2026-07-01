@@ -473,7 +473,7 @@ export default function HistoryRoute() {
       subtitle={
         history.currentMember
           ? `当前成员：${history.currentMember.displayName}`
-          : '默认统计当前本地成员个人数据'
+          : '默认统计当前成员个人数据'
       }
 
     >
@@ -525,7 +525,6 @@ export default function HistoryRoute() {
                 <MiniStat icon="barbell-outline" label="本周训练" value={`${history.weeklySessionCount} 次`} accent={history.weeklySessionCount > 0} />
                 <MiniStat icon="layers-outline" label="完成组数" value={`${history.weeklyCompletedSets} 组`} accent={history.weeklyCompletedSets > 0} />
                 <MiniStat icon="flame-outline" label="本周容量" value={formatKg(history.weeklyVolume)} accent={history.weeklyVolume > 0} />
-                <MiniStat icon="search-outline" label="训练查询" value={`${querySessions.length} 条`} />
               </View>
 
               <ExerciseFilterBar
@@ -579,30 +578,6 @@ export default function HistoryRoute() {
                 </View>
               )}
 
-              <SectionHeader
-                actionLabel="补录"
-                onActionPress={() => {
-                  if (guardFeature('manual_history')) router.push('/history/manual' as never);
-                }}
-                subtitle={`${querySessions.length} 条`}
-                title="训练查询"
-              />
-              {querySessions.length === 0 ? (
-                <EmptyState
-                  actionLabel="去训练"
-                  description="完成一次匹配训练后，这里会显示可查询的训练摘要。"
-                  onActionPress={() => {
-                    if (guardFeature('start_workout')) router.push('/(tabs)/today');
-                  }}
-                  title="没有匹配训练记录"
-                />
-              ) : (
-                <View style={styles.sessionList}>
-                  {querySessions.slice(0, 12).map((summary) => (
-                    <CompactSessionCard key={summary.session.id} memberId={history.currentMember?.id} summary={summary} />
-                  ))}
-                </View>
-              )}
             </>
           ) : (
             <GroupHistoryView analysis={history.groupAnalysis} memberProfilesById={history.memberProfilesById} />
@@ -829,9 +804,9 @@ function ExerciseFilterBar({
     <AppCard style={styles.exerciseFilterCard}>
       <View style={styles.trendHeader}>
         <View style={styles.trendTitleBlock}>
-          <AppText variant="subtitle">动作表现</AppText>
+          <AppText variant="subtitle">训练趋势</AppText>
           <AppText tone="muted" variant="caption">
-            按真实训练动作筛选趋势和记录
+            选择动作后更新趋势和记录
           </AppText>
         </View>
         <Tag label={selectedExerciseId ? '已筛选' : '总览'} tone={selectedExerciseId ? 'brand' : 'neutral'} />
@@ -923,7 +898,7 @@ function SelectorSection({
           <SelectorOption
             active={activeId === option.id}
             key={option.id}
-            meta="动作趋势与训练查询"
+            meta="动作趋势与记录"
             name={option.name}
             onPress={() => onSelect(option.id)}
           />
@@ -1052,7 +1027,7 @@ function GroupHistoryView({
   memberProfilesById: Record<string, MemberProfile | null>;
 }) {
   if (!analysis) {
-    return <EmptyState title="暂无小组训练数据" description="完成一次本地小组训练后，这里会显示小组汇总。" />;
+    return <EmptyState title="暂无小组训练数据" description="完成一次小组训练后，这里会显示小组汇总。" />;
   }
 
   return (
@@ -1079,7 +1054,7 @@ function GroupOverviewCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
             {formatKg(analysis.totalVolume)}
           </AppText>
           <AppText style={styles.overviewLabel} variant="caption">
-            近 {analysis.rangeDays} 天本机小组训练量
+            近 {analysis.rangeDays} 天小组训练量
           </AppText>
         </View>
         <Tag label={`${analysis.activeMemberCount}/${analysis.memberCount} 成员`} tone="dark" />
@@ -1125,7 +1100,7 @@ function GroupContributionCard({
             按近 7 天训练量排序
           </AppText>
         </View>
-        <Tag label="本机数据" tone="neutral" />
+        <Tag label="训练数据" tone="neutral" />
       </View>
 
       <View style={styles.memberAvatarRow}>
@@ -1210,7 +1185,7 @@ function GroupExercisePerformanceCard({
       <AppCard style={styles.groupCard}>
         <View style={styles.trendHeader}>
           <View style={styles.trendTitleBlock}>
-            <AppText variant="subtitle">动作表现</AppText>
+            <AppText variant="subtitle">动作趋势</AppText>
             <AppText tone="muted" variant="caption">
               从真实训练动作中选择后查看多人对比
             </AppText>
@@ -1243,7 +1218,7 @@ function GroupExercisePerformanceCard({
     <AppCard style={styles.groupCard}>
       <View style={styles.trendHeader}>
         <View style={styles.trendTitleBlock}>
-          <AppText variant="subtitle">{primary ? `${primary.exerciseName}训练容量趋势` : '动作表现'}</AppText>
+          <AppText variant="subtitle">{primary ? `${primary.exerciseName}训练容量趋势` : '动作趋势'}</AppText>
           <AppText tone="muted" variant="caption">
             默认保留小组总览，选择动作后查看成员容量趋势
           </AppText>
@@ -1442,7 +1417,7 @@ function GroupRecentSessionsCard({ analysis }: { analysis: GroupHistoryAnalysis 
         <View style={styles.trendTitleBlock}>
           <AppText variant="subtitle">最近小组训练记录</AppText>
           <AppText tone="muted" variant="caption">
-            按本机训练时间排序
+            按训练时间排序
           </AppText>
         </View>
         <Tag label={`${analysis.recentSessions.length} 条`} tone="neutral" />
@@ -1501,7 +1476,7 @@ function GroupInsightsCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
         <View style={styles.trendTitleBlock}>
           <AppText variant="subtitle">小组洞察</AppText>
           <AppText tone="muted" variant="caption">
-            基于本机小组训练记录
+            基于小组训练记录
           </AppText>
         </View>
         <Ionicons color={colors.primary} name="analytics-outline" size={22} />

@@ -155,7 +155,7 @@ export default function SettingsMembersRoute() {
           ) : (
             <AppCard style={styles.limitCard} tone="soft">
               <AppText variant="bodySmall" weight="900">
-                本地小组最多支持 {MAX_GROUP_MEMBERS} 位训练成员
+                小组最多支持 {MAX_GROUP_MEMBERS} 位训练成员
               </AppText>
               <AppText tone="muted" variant="caption">
                 适合一台设备多人轮换记录。多设备小组能力后续版本开放。

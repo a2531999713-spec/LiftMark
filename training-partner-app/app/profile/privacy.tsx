@@ -17,10 +17,10 @@ export default function ProfilePrivacyRoute() {
 
       <AppCard style={styles.card}>
         <AppText variant="bodySmall" weight="900">
-          本机优先
+          数据优先保留
         </AppText>
         <AppText tone="muted" variant="caption">
-          当前版本训练记录先写入本机 SQLite；账号退出不会删除训练记录，会员到期也不会删除计划、小组或历史。
+          当前版本训练记录会保留在当前设备；账号退出不会删除训练记录，会员到期也不会删除计划、小组或历史。
         </AppText>
       </AppCard>
     </Screen>

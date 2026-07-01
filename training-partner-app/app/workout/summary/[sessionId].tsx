@@ -244,8 +244,8 @@ export default function WorkoutSummaryRoute() {
             <GroupWorkoutConsentCard
               onKeepLocal={() =>
                 setNotice({
-                  title: '仅保存在本机',
-                  message: '已按本机记录处理。后续成员确认和云同步接入前，不会自动写入其他成员账号。',
+                  title: '已保存训练记录',
+                  message: '已按当前训练记录处理。成员确认和云同步接入前，不会自动写入其他成员账号。',
                 })
               }
               onRequestConsent={() =>
@@ -352,7 +352,7 @@ function GroupWorkoutConsentCard({
       </View>
       <View style={styles.consentActions}>
         <AppButton onPress={onKeepLocal} style={styles.button} variant="secondary">
-          仅保存在本机
+          已保存训练记录
         </AppButton>
         <AppButton onPress={onRequestConsent} style={styles.button}>
           发送确认

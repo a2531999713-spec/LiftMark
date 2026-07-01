@@ -6,6 +6,9 @@ import { getPlanExerciseInitialReps, getPlanExerciseSetCount } from '@/domain/wo
 import type {
   CreateSessionFromTodayPlanInput,
   CreateManualSessionInput,
+  AddWorkoutExerciseInput,
+  AddWorkoutSetInput,
+  ManualWorkoutExerciseInput,
   ListOpenWorkoutSessionsForDateInput,
   ListSessionsInput,
   SaveWorkoutSetInput,
@@ -37,6 +40,38 @@ import {
 
 export class SQLiteWorkoutRepository implements WorkoutRepository {
   constructor(private readonly getDb: DatabaseProvider) {}
+
+  private normalizeManualExercises(input: CreateManualSessionInput): ManualWorkoutExerciseInput[] {
+    if (input.exercises?.length) {
+      return input.exercises.map((exercise, index) => ({
+        exerciseId: exercise.exerciseId,
+        notes: exercise.notes,
+        priority: exercise.priority ?? (index === 0 ? 'A' : index <= 2 ? 'B' : 'C'),
+        restSeconds: exercise.restSeconds ?? input.restSeconds ?? null,
+        sets: exercise.sets.length > 0
+          ? exercise.sets
+          : [{ completed: input.completed !== false, reps: input.reps, weight: input.weight }],
+      }));
+    }
+
+    if (!input.exerciseId) {
+      throw new Error('请至少选择一个动作。');
+    }
+
+    const setCount = Math.max(1, Math.min(20, Math.round(input.setCount ?? 1)));
+    return [
+      {
+        exerciseId: input.exerciseId,
+        priority: 'A',
+        restSeconds: input.restSeconds ?? null,
+        sets: Array.from({ length: setCount }, () => ({
+          completed: input.completed !== false,
+          reps: input.reps,
+          weight: input.weight,
+        })),
+      },
+    ];
+  }
 
   async createSessionFromTodayPlan(input: CreateSessionFromTodayPlanInput): Promise<WorkoutSession> {
     const db = await this.getDb();
@@ -278,6 +313,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const db = await this.getDb();
     const now = nowIso();
     const weekday = (new Date(`${input.date}T12:00:00`).getDay() || 7) as WorkoutSession['weekday'];
+    const manualExercises = this.normalizeManualExercises(input);
     const session: WorkoutSession = {
       id: createId('session'),
       groupId: input.groupId,
@@ -293,8 +329,6 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       createdAt: now,
       updatedAt: now,
     };
-    const recordId = createId('exercise_record');
-    const setCount = Math.max(1, Math.min(10, Math.round(input.setCount)));
 
     await db.withExclusiveTransactionAsync(async (txn) => {
       await txn.runAsync(
@@ -318,56 +352,60 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         session.updatedAt,
       );
 
-      await txn.runAsync(
-        `INSERT INTO workout_exercise_records (
-          id, session_id, plan_exercise_id, exercise_id, order_index,
-          replaced_from_exercise_id, priority, planned_sets, planned_reps,
-          planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
-          planned_percent_1rm, planned_rest_seconds, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        recordId,
-        session.id,
-        null,
-        input.exerciseId,
-        1,
-        null,
-        'A',
-        setCount,
-        input.reps ?? null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        input.restSeconds ?? null,
-        '历史补录',
-      );
-
-      for (let setNumber = 1; setNumber <= setCount; setNumber += 1) {
+      for (const [exerciseIndex, exercise] of manualExercises.entries()) {
+        const recordId = createId('exercise_record');
+        const plannedReps = exercise.sets[0]?.reps ?? input.reps ?? null;
         await txn.runAsync(
-          `INSERT INTO workout_sets (
-            id, session_id, exercise_record_id, member_id, set_number,
-            planned_weight, actual_weight, planned_reps, actual_reps,
-            rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          createId('set'),
-          session.id,
+          `INSERT INTO workout_exercise_records (
+            id, session_id, plan_exercise_id, exercise_id, order_index,
+            replaced_from_exercise_id, priority, planned_sets, planned_reps,
+            planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
+            planned_percent_1rm, planned_rest_seconds, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           recordId,
-          input.memberId,
-          setNumber,
-          input.weight ?? null,
-          input.weight ?? null,
-          input.reps ?? null,
-          input.reps ?? null,
+          session.id,
+          null,
+          exercise.exerciseId,
+          exerciseIndex + 1,
+          null,
+          exercise.priority ?? 'A',
+          exercise.sets.length,
+          plannedReps,
           null,
           null,
           null,
-          input.completed === false ? 0 : 1,
-          0,
           null,
-          now,
-          now,
+          null,
+          exercise.restSeconds ?? null,
+          exercise.notes ?? '历史补录',
         );
+
+        for (const [setIndex, set] of exercise.sets.entries()) {
+          await txn.runAsync(
+            `INSERT INTO workout_sets (
+              id, session_id, exercise_record_id, member_id, set_number,
+              planned_weight, actual_weight, planned_reps, actual_reps,
+              rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            createId('set'),
+            session.id,
+            recordId,
+            input.memberId,
+            setIndex + 1,
+            set.weight ?? null,
+            set.weight ?? null,
+            set.reps ?? null,
+            set.reps ?? null,
+            null,
+            null,
+            null,
+            set.completed === false ? 0 : 1,
+            0,
+            set.notes ?? null,
+            now,
+            now,
+          );
+        }
       }
     });
 
@@ -444,6 +482,143 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     );
 
     return updated;
+  }
+
+  async addExerciseToSession(input: AddWorkoutExerciseInput): Promise<WorkoutSessionDetail> {
+    const db = await this.getDb();
+    const session = await requireRow(await this.getSession(input.sessionId), `未找到训练：${input.sessionId}`);
+    const now = nowIso();
+    const sets = input.sets?.length ? input.sets : [{ completed: true }];
+    const memberIds = input.memberIds?.length ? input.memberIds : [input.memberId];
+
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      const orderRow = await txn.getFirstAsync<{ max_order: number | null }>(
+        'SELECT MAX(order_index) AS max_order FROM workout_exercise_records WHERE session_id = ?',
+        input.sessionId,
+      );
+      const recordId = createId('exercise_record');
+      const plannedReps = sets[0]?.reps ?? null;
+
+      await txn.runAsync(
+        `INSERT INTO workout_exercise_records (
+          id, session_id, plan_exercise_id, exercise_id, order_index,
+          replaced_from_exercise_id, priority, planned_sets, planned_reps,
+          planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
+          planned_percent_1rm, planned_rest_seconds, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        recordId,
+        session.id,
+        null,
+        input.exerciseId,
+        (orderRow?.max_order ?? 0) + 1,
+        null,
+        input.priority ?? 'B',
+        sets.length,
+        plannedReps,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        input.notes ?? '编辑记录新增动作',
+      );
+
+      for (const memberId of memberIds) {
+        for (const [index, set] of sets.entries()) {
+          await txn.runAsync(
+            `INSERT INTO workout_sets (
+              id, session_id, exercise_record_id, member_id, set_number,
+              planned_weight, actual_weight, planned_reps, actual_reps,
+              rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            createId('set'),
+            session.id,
+            recordId,
+            memberId,
+            index + 1,
+            set.weight ?? null,
+            set.weight ?? null,
+            set.reps ?? null,
+            set.reps ?? null,
+            null,
+            null,
+            null,
+            set.completed === false ? 0 : 1,
+            0,
+            set.notes ?? null,
+            now,
+            now,
+          );
+        }
+      }
+    });
+
+    return this.getSessionDetail(input.sessionId);
+  }
+
+  async addSetToExerciseRecord(input: AddWorkoutSetInput): Promise<WorkoutSet> {
+    const db = await this.getDb();
+    const now = nowIso();
+    const record = await requireRow(
+      await db.getFirstAsync<WorkoutExerciseRecordRow>(
+        'SELECT * FROM workout_exercise_records WHERE id = ? AND session_id = ?',
+        input.exerciseRecordId,
+        input.sessionId,
+      ),
+      `未找到动作记录：${input.exerciseRecordId}`,
+    );
+    const setNumberRow = await db.getFirstAsync<{ max_set_number: number | null }>(
+      'SELECT MAX(set_number) AS max_set_number FROM workout_sets WHERE exercise_record_id = ? AND member_id = ?',
+      input.exerciseRecordId,
+      input.memberId,
+    );
+    const setRow: WorkoutSetRow = {
+      id: createId('set'),
+      session_id: input.sessionId,
+      exercise_record_id: record.id,
+      member_id: input.memberId,
+      set_number: (setNumberRow?.max_set_number ?? 0) + 1,
+      planned_weight: input.weight ?? null,
+      actual_weight: input.weight ?? null,
+      planned_reps: input.reps ?? null,
+      actual_reps: input.reps ?? null,
+      rpe: null,
+      rir: null,
+      actual_rest_seconds: null,
+      completed: input.completed === false ? 0 : 1,
+      skipped: 0,
+      notes: input.notes ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    await db.runAsync(
+      `INSERT INTO workout_sets (
+        id, session_id, exercise_record_id, member_id, set_number,
+        planned_weight, actual_weight, planned_reps, actual_reps,
+        rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      setRow.id,
+      setRow.session_id,
+      setRow.exercise_record_id,
+      setRow.member_id,
+      setRow.set_number,
+      setRow.planned_weight,
+      setRow.actual_weight,
+      setRow.planned_reps,
+      setRow.actual_reps,
+      null,
+      null,
+      null,
+      setRow.completed,
+      0,
+      setRow.notes,
+      now,
+      now,
+    );
+
+    return mapWorkoutSet(setRow);
   }
 
   async updateExerciseRecordExercise(recordId: string, exerciseId: string): Promise<void> {

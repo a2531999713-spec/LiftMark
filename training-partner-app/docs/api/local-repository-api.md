@@ -1,6 +1,15 @@
 ﻿# 本地 Repository API 文档
 
-更新时间：2026-06-30
+更新时间：2026-07-01
+
+## 2026-07-01 契约补充：多动作补录、记录编辑和计划编辑
+
+- `WorkoutRepository.createManualSession()` 支持新的 `exercises?: ManualWorkoutExerciseInput[]` 输入，可一次补录多个动作，每个动作包含独立 set 列表；旧 `exerciseId + setCount + weight + reps` 输入仍保留兼容。
+- 新增 `WorkoutRepository.addExerciseToSession(input)`：用于历史详情编辑时向已存在 session 追加动作记录，可通过 `memberIds` 为本次参与成员批量创建初始组。
+- 新增 `WorkoutRepository.addSetToExerciseRecord(input)`：用于历史详情编辑时向某个动作记录追加成员组，set number 按该动作 + 成员当前最大组号递增。
+- `PlanRepository.createUserPlan()` 的 day 输入支持 `week?: number`，新建多训练日计划时不再强制写入第 1 周。
+- 新增 `PlanRepository.updateUserPlan(input)`：仅允许更新非系统计划；保存时替换该计划的 phases / days / plan_exercises 结构，不触碰训练历史表。
+- 移动端密码登录使用后端 `/auth/password/login`，请求体为 `{ identifier, password }`；旧 `/auth/login` `{ account, password }` 继续兼容。
 
 ## 2026-06-30 补充：Workout set 高级字段与 BodyMetricsRepository
 
@@ -112,6 +121,7 @@ export interface PlanRepository {
   listPlanDays(planId: ID): Promise<PlanDay[]>;
   listPlanExercises(planDayId: ID): Promise<PlanExercise[]>;
   createUserPlan(input: CreateUserPlanInput): Promise<PlanTemplate>;
+  updateUserPlan(input: UpdateUserPlanInput): Promise<PlanTemplate>;
   copySystemSchemeToUserPlan(input: CopySystemSchemeToUserPlanInput): Promise<PlanTemplate>;
   importUserPlan(input: ImportUserPlanInput): Promise<PlanTemplate>;
   deleteUserPlan(planId: ID): Promise<void>;
@@ -145,6 +155,8 @@ export interface WorkoutRepository {
   getSession(sessionId: ID): Promise<WorkoutSession | null>;
   getSessionDetail(sessionId: ID): Promise<WorkoutSessionDetail>;
   updateSession(input: UpdateWorkoutSessionInput): Promise<WorkoutSession>;
+  addExerciseToSession(input: AddWorkoutExerciseInput): Promise<WorkoutSessionDetail>;
+  addSetToExerciseRecord(input: AddWorkoutSetInput): Promise<WorkoutSet>;
   updateExerciseRecordExercise(recordId: ID, exerciseId: ID): Promise<void>;
   saveSet(input: SaveWorkoutSetInput): Promise<WorkoutSet>;
   deleteSet(setId: ID): Promise<void>;

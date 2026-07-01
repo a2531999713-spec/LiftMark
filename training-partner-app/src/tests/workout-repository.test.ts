@@ -263,6 +263,116 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
   });
 });
 
+describe('SQLiteWorkoutRepository.createManualSession', () => {
+  it('writes multiple manual exercises with independent set values', async () => {
+    const exerciseRecordParams: unknown[][] = [];
+    const setParams: unknown[][] = [];
+    const transaction = {
+      runAsync: jest.fn(async (sql: string, ...params: unknown[]) => {
+        if (sql.includes('INSERT INTO workout_exercise_records')) {
+          exerciseRecordParams.push(params);
+        }
+        if (sql.includes('INSERT INTO workout_sets')) {
+          setParams.push(params);
+        }
+      }),
+    };
+    const db = {
+      withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
+        await callback(transaction);
+      }),
+    };
+
+    const session = await new SQLiteWorkoutRepository(async () => db as never).createManualSession({
+      completed: true,
+      date: '2026-06-30',
+      exercises: [
+        {
+          exerciseId: 'exercise_bench',
+          sets: [
+            { reps: 5, weight: 100 },
+            { reps: 4, weight: 105 },
+          ],
+        },
+        {
+          exerciseId: 'exercise_row',
+          sets: [{ reps: 8, weight: 80 }],
+        },
+      ],
+      groupId: 'group_1',
+      memberId: 'member_1',
+      planId: 'plan_current',
+      title: '补录训练',
+    });
+
+    expect(session.status).toBe('completed');
+    expect(exerciseRecordParams).toHaveLength(2);
+    expect(exerciseRecordParams[0][3]).toBe('exercise_bench');
+    expect(exerciseRecordParams[0][7]).toBe(2);
+    expect(exerciseRecordParams[1][3]).toBe('exercise_row');
+    expect(exerciseRecordParams[1][7]).toBe(1);
+    expect(setParams).toHaveLength(3);
+    expect(setParams.map((params) => [params[5], params[7]])).toEqual([
+      [100, 5],
+      [105, 4],
+      [80, 8],
+    ]);
+  });
+});
+
+describe('SQLiteWorkoutRepository.addSetToExerciseRecord', () => {
+  it('appends a set after the member current max set number', async () => {
+    const insertedSetParams: unknown[][] = [];
+    const db = {
+      getFirstAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM workout_exercise_records')) {
+          return {
+            id: 'record_1',
+            session_id: 'session_1',
+            plan_exercise_id: null,
+            exercise_id: 'exercise_bench',
+            order_index: 1,
+            replaced_from_exercise_id: null,
+            priority: 'A',
+            planned_sets: 3,
+            planned_reps: 5,
+            planned_rep_min: null,
+            planned_rep_max: null,
+            planned_rpe: null,
+            planned_rir: null,
+            planned_percent_1rm: null,
+            planned_rest_seconds: null,
+            notes: null,
+          };
+        }
+        if (sql.includes('MAX(set_number)')) {
+          return { max_set_number: 3 };
+        }
+        return null;
+      }),
+      runAsync: jest.fn(async (sql: string, ...params: unknown[]) => {
+        if (sql.includes('INSERT INTO workout_sets')) {
+          insertedSetParams.push(params);
+        }
+      }),
+    };
+
+    const set = await new SQLiteWorkoutRepository(async () => db as never).addSetToExerciseRecord({
+      completed: true,
+      exerciseRecordId: 'record_1',
+      memberId: 'member_1',
+      reps: 6,
+      sessionId: 'session_1',
+      weight: 102.5,
+    });
+
+    expect(set.setNumber).toBe(4);
+    expect(insertedSetParams[0][4]).toBe(4);
+    expect(insertedSetParams[0][5]).toBe(102.5);
+    expect(insertedSetParams[0][7]).toBe(6);
+  });
+});
+
 describe('SQLiteWorkoutRepository.saveSet', () => {
   it('persists optional RPE, notes, and actual rest seconds', async () => {
     const setRow = {

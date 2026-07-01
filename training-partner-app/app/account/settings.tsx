@@ -11,7 +11,7 @@ export default function AccountSettingsRoute() {
   const { isLoading, logout } = useAuthStore();
 
   const confirmLogout = useCallback(() => {
-    Alert.alert('确认退出登录？', '退出后将无法使用账号相关功能，但本机训练记录不会被删除。', [
+    Alert.alert('确认退出登录？', '退出后将无法使用账号相关功能，但训练记录不会被删除。', [
       { text: '取消', style: 'cancel' },
       {
         text: '退出登录',
@@ -28,7 +28,7 @@ export default function AccountSettingsRoute() {
       <SecondaryPageHeader
         caption="账号设置"
         icon="shield-checkmark-outline"
-        subtitle="安全、权益和退出登录集中在这里，本机训练记录独立保留。"
+        subtitle="安全、权益和退出登录集中在这里，训练记录独立保留。"
         tag="账号"
         title="登录与权益状态"
       />
@@ -52,7 +52,7 @@ export default function AccountSettingsRoute() {
             退出当前账号
           </AppText>
           <AppText tone="muted" variant="caption">
-            仅退出账号登录状态，本机训练记录会保留。
+            仅退出账号登录状态，训练记录会保留。
           </AppText>
         </View>
         <LogoutButton disabled={isLoading} onPress={confirmLogout} />

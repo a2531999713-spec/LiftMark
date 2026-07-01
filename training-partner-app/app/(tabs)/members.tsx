@@ -125,7 +125,7 @@ export default function MembersRoute() {
             canAddMember
               ? guardFeature('add_member', { memberCount: members.length }) && router.push('/member/new')
               : setNotice({
-                  title: `本地小组最多支持 ${MAX_GROUP_MEMBERS} 位训练成员`,
+                  title: `小组最多支持 ${MAX_GROUP_MEMBERS} 位训练成员`,
                   message: '适合一台设备多人轮换记录。多设备小组能力后续版本开放。',
                 })
           }
@@ -134,7 +134,7 @@ export default function MembersRoute() {
           <Ionicons color={colors.text} name="person-add-outline" size={20} />
         </Pressable>
       }
-      subtitle="本地训练小组、成员 1RM 与搭子协作入口。"
+      subtitle="训练小组、成员 1RM 与搭子协作入口。"
       title="搭子"
     >
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -144,11 +144,11 @@ export default function MembersRoute() {
       {!isLoading && !error ? (
         <>
           <VisualHeroCard
-            eyebrow="本地训练小组"
+            eyebrow="训练小组"
             icon="people-outline"
             imageSource={liftmarkImages.partnerHero}
             subtitle={`${members.length} 成员 · 多人轮换 · 同动作不同重量`}
-            title={group?.name ?? '本地训练小组'}
+            title={group?.name ?? '训练小组'}
           >
             <View style={styles.heroStats}>
               <View style={styles.heroStatItem}>
@@ -175,12 +175,12 @@ export default function MembersRoute() {
             <View style={styles.localRuleRow}>
               <Ionicons color={colors.primary} name="information-circle-outline" size={20} />
               <AppText tone="muted" variant="bodySmall" style={styles.localRuleText}>
-                当前为本地小组：适合同一台设备多人轮换记录，数据保存在本机。
+                当前小组适合同一台设备多人轮换记录。
               </AppText>
             </View>
             <Pressable accessibilityRole="button" onPress={() => setLocalRuleVisible(true)} style={styles.localRuleLink}>
               <AppText tone="brand" variant="caption">
-                了解本地小组
+                了解小组
               </AppText>
               <Ionicons color={colors.primary} name="chevron-forward" size={16} />
             </Pressable>
@@ -192,9 +192,9 @@ export default function MembersRoute() {
                 <Ionicons color={colors.primary} name="people-outline" size={24} />
               </View>
               <View style={styles.groupText}>
-                <AppText variant="subtitle">{group?.name ?? '本地训练小组'}</AppText>
+                <AppText variant="subtitle">{group?.name ?? '训练小组'}</AppText>
                 <AppText tone="muted" variant="bodySmall">
-                  {members.length} 成员 · 本地数据 · 小组训练
+                  {members.length} 成员 · 训练数据 · 小组训练
                 </AppText>
               </View>
               <Tag label="组长" tone="neutral" />
@@ -245,7 +245,7 @@ export default function MembersRoute() {
           {!canAddMember ? (
             <AppCard style={styles.limitCard} tone="soft">
               <AppText variant="bodySmall" weight="900">
-                本地小组最多支持 {MAX_GROUP_MEMBERS} 位训练成员
+                小组最多支持 {MAX_GROUP_MEMBERS} 位训练成员
               </AppText>
               <AppText tone="muted" variant="caption">
                 适合一台设备多人轮换记录。多设备小组能力后续版本开放。
@@ -266,15 +266,15 @@ export default function MembersRoute() {
             <View style={styles.modalBackdrop}>
               <AppCard style={styles.localRulePanel}>
                 <View style={styles.localRulePanelHeader}>
-                  <AppText variant="subtitle">本地小组规则</AppText>
+                  <AppText variant="subtitle">小组规则</AppText>
                   <Pressable accessibilityRole="button" onPress={() => setLocalRuleVisible(false)} style={styles.modalCloseButton}>
                     <Ionicons color={colors.text} name="close" size={18} />
                   </Pressable>
                 </View>
                 <RuleItem text="当前版本的小组适合同一台设备多人轮换记录。" />
-                <RuleItem text="训练数据保存在本机 SQLite。" />
-                <RuleItem text="当前版本组长可以查看本机保存的所有本地成员训练数据。" />
-                <RuleItem text="成员加入通过本机添加成员完成，多设备小组能力后续版本开放。" />
+                <RuleItem text="训练数据会保留在当前设备。" />
+                <RuleItem text="当前版本组长可以查看当前小组成员训练数据。" />
+                <RuleItem text="成员加入通过当前设备添加完成，多设备小组能力后续版本开放。" />
                 <AppButton onPress={() => setLocalRuleVisible(false)} variant="secondary">
                   我知道了
                 </AppButton>

@@ -3,6 +3,7 @@ import type {
   CreateUserPlanInput,
   ImportUserPlanInput,
   PlanRepository,
+  UpdateUserPlanInput,
 } from '@/data/repositories/planRepository';
 import { createId } from '@/domain/common/ids';
 import { nowIso } from '@/domain/common/time';
@@ -95,7 +96,7 @@ export class SQLitePlanRepository implements PlanRepository {
       goal: input.goal,
       durationWeeks: Math.max(1, Math.round(input.durationWeeks)),
       frequencyPerWeek: Math.max(1, Math.round(input.frequencyPerWeek)),
-      description: '用户创建的本地训练计划',
+      description: '用户创建的训练计划',
       source: 'blank_created',
       version: 1,
       createdAt: now,
@@ -146,7 +147,7 @@ export class SQLitePlanRepository implements PlanRepository {
           planDayId,
           plan.id,
           phaseId,
-          1,
+          Math.max(1, Math.round(day.week ?? 1)),
           day.weekday,
           day.title.trim() || `Day ${dayIndex + 1}`,
           day.focus.trim() || '自定义训练',
@@ -184,6 +185,112 @@ export class SQLitePlanRepository implements PlanRepository {
     });
 
     return plan;
+  }
+
+  async updateUserPlan(input: UpdateUserPlanInput): Promise<PlanTemplate> {
+    const current = await requireRow(await this.getPlanById(input.planId), `未找到计划：${input.planId}`);
+
+    if (current.source === 'system' || current.visibility === 'system') {
+      throw new Error('系统方案是只读模板，不能直接编辑。');
+    }
+
+    const db = await this.getDb();
+    const now = nowIso();
+    const updated: PlanTemplate = {
+      ...current,
+      name: input.name.trim() || current.name,
+      goal: input.goal,
+      durationWeeks: Math.max(1, Math.round(input.durationWeeks)),
+      frequencyPerWeek: Math.max(1, Math.round(input.frequencyPerWeek)),
+      updatedAt: now,
+    };
+    const phaseId = createId('phase');
+
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      const existingDays = await txn.getAllAsync<{ id: string }>(
+        'SELECT id FROM plan_days WHERE plan_id = ?',
+        input.planId,
+      );
+
+      for (const day of existingDays) {
+        await txn.runAsync('DELETE FROM plan_exercises WHERE plan_day_id = ?', day.id);
+      }
+
+      await txn.runAsync('DELETE FROM plan_days WHERE plan_id = ?', input.planId);
+      await txn.runAsync('DELETE FROM plan_phases WHERE plan_id = ?', input.planId);
+
+      await txn.runAsync(
+        `UPDATE plan_templates
+         SET name = ?, goal = ?, duration_weeks = ?, frequency_per_week = ?, updated_at = ?
+         WHERE id = ?`,
+        updated.name,
+        updated.goal,
+        updated.durationWeeks,
+        updated.frequencyPerWeek,
+        updated.updatedAt,
+        updated.id,
+      );
+
+      await txn.runAsync(
+        `INSERT INTO plan_phases (
+          id, plan_id, name, type, start_week, end_week, order_index
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        phaseId,
+        updated.id,
+        '基础周期',
+        updated.goal === 'hypertrophy' ? 'hypertrophy' : updated.goal === 'strength' ? 'strength' : 'custom',
+        1,
+        updated.durationWeeks,
+        1,
+      );
+
+      for (const [dayIndex, day] of input.days.entries()) {
+        const planDayId = createId('day');
+        await txn.runAsync(
+          `INSERT INTO plan_days (
+            id, plan_id, phase_id, week, weekday, title, focus, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          planDayId,
+          updated.id,
+          phaseId,
+          Math.max(1, Math.round(day.week ?? 1)),
+          day.weekday,
+          day.title.trim() || `Day ${dayIndex + 1}`,
+          day.focus.trim() || '自定义训练',
+          '用户编辑的训练日',
+        );
+
+        for (const [exerciseIndex, exercise] of day.exercises.entries()) {
+          await txn.runAsync(
+            `INSERT INTO plan_exercises (
+              id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
+              intensity_type, percent_1rm, rpe_target, rir_target, fixed_weight, reference_lift,
+              rest_seconds, progression_rule_id, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            createId('plan_exercise'),
+            planDayId,
+            exercise.exerciseId,
+            exercise.priority ?? 'A',
+            exerciseIndex + 1,
+            exercise.sets,
+            exercise.reps,
+            null,
+            null,
+            'manual',
+            null,
+            null,
+            null,
+            null,
+            'none',
+            90,
+            null,
+            null,
+          );
+        }
+      }
+    });
+
+    return updated;
   }
 
   async copySystemSchemeToUserPlan(input: CopySystemSchemeToUserPlanInput): Promise<PlanTemplate> {

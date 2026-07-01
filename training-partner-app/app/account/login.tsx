@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -20,6 +21,7 @@ type NoticeState = { message: string; title: string };
 type LoginMode = 'password' | 'sms';
 
 const PHONE_RE = /^1[3-9]\d{9}$/;
+const LIFTMARK_ID_RE = /^LM[A-Z0-9]{6,16}$/i;
 const CODE_RE = /^\d{4,6}$/;
 
 export default function LoginRoute() {
@@ -27,6 +29,7 @@ export default function LoginRoute() {
   const [mode, setMode] = useState<LoginMode>('password');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [agreed, setAgreed] = useState(false);
@@ -86,12 +89,12 @@ export default function LoginRoute() {
     if (!checkAgreed()) return;
     if (mode === 'password') {
       const account = identifier.trim();
-      if (account.length === 0) {
-        alert('账号不能为空', '请输入手机号或练刻 ID。');
+      if (!PHONE_RE.test(account) && !LIFTMARK_ID_RE.test(account)) {
+        alert('账号格式错误', '请输入手机号或练刻 ID。');
         return;
       }
-      if (password.length === 0) {
-        alert('密码不能为空', '请输入账号密码。');
+      if (password.length < 6) {
+        alert('密码格式错误', '请输入至少 6 位密码。');
         return;
       }
 
@@ -134,7 +137,7 @@ export default function LoginRoute() {
                 LiftMark
               </AppText>
               <AppText style={styles.heroSub} tone="muted" variant="bodySmall">
-                使用手机号密码登录；也可以通过短信验证码登录或创建账号。
+                使用手机号 / 练刻 ID 登录；新账号注册或找回密码请使用验证码入口。
               </AppText>
             </View>
           </View>
@@ -145,13 +148,13 @@ export default function LoginRoute() {
                 登录练刻
               </AppText>
               <AppText tone="muted" variant="bodySmall">
-                密码登录支持手机号或练刻 ID；短信验证码适合新账号注册和找回入口。
+                账号、密码和验证码只用于身份验证。
               </AppText>
             </View>
 
             <View style={styles.modeSwitch}>
               <ModeButton active={mode === 'password'} label="密码登录" onPress={() => setMode('password')} />
-              <ModeButton active={mode === 'sms'} label="验证码登录" onPress={() => setMode('sms')} />
+              <ModeButton active={mode === 'sms'} label="验证码注册 / 找回" onPress={() => setMode('sms')} />
             </View>
 
             {mode === 'password' ? (
@@ -168,7 +171,17 @@ export default function LoginRoute() {
                   label="密码"
                   onChangeText={setPassword}
                   placeholder="请输入密码"
-                  secureTextEntry
+                  rightAccessory={
+                    <Pressable
+                      accessibilityLabel={showPassword ? '隐藏密码' : '显示密码'}
+                      accessibilityRole="button"
+                      onPress={() => setShowPassword((current) => !current)}
+                      style={styles.passwordToggle}
+                    >
+                      <Ionicons color={colors.textMuted} name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} />
+                    </Pressable>
+                  }
+                  secureTextEntry={!showPassword}
                   value={password}
                 />
               </>
@@ -221,7 +234,7 @@ export default function LoginRoute() {
               size="lg"
               style={styles.submitButton}
             >
-              {mode === 'password' ? '登录' : '验证码登录 / 注册'}
+              {mode === 'password' ? '登录' : '继续验证'}
             </AppButton>
           </View>
         </ScrollView>
@@ -246,6 +259,7 @@ function Input({
   label,
   onChangeText,
   placeholder,
+  rightAccessory,
   secureTextEntry,
   value,
 }: {
@@ -254,6 +268,7 @@ function Input({
   label: string;
   onChangeText: (value: string) => void;
   placeholder: string;
+  rightAccessory?: ReactNode;
   secureTextEntry?: boolean;
   value: string;
 }) {
@@ -273,6 +288,7 @@ function Input({
           style={styles.fieldInput}
           value={value}
         />
+        {rightAccessory}
       </View>
     </View>
   );
@@ -477,6 +493,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 2,
     padding: 3,
+  },
+  passwordToggle: {
+    alignItems: 'center',
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
   },
   safe: {
     backgroundColor: colors.background,

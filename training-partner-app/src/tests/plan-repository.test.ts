@@ -81,3 +81,53 @@ describe('SQLitePlanRepository.deleteUserPlan', () => {
     expect(executedSql.join('\n')).not.toContain('workout_sets');
   });
 });
+
+describe('SQLitePlanRepository.updateUserPlan', () => {
+  it('rejects system plans and rebuilds only plan structure for editable plans', async () => {
+    const transaction = {
+      getAllAsync: jest.fn(async () => [{ id: 'day_1' }]),
+      runAsync: jest.fn(async () => undefined),
+    };
+    const db = {
+      withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
+        await callback(transaction);
+      }),
+    };
+
+    await expect(
+      new TestPlanRepository(createPlan({ source: 'system', visibility: 'system' }), [createPlan()], db).updateUserPlan({
+        days: [],
+        durationWeeks: 8,
+        frequencyPerWeek: 4,
+        goal: 'strength',
+        name: '系统计划',
+        planId: 'plan_system',
+      }),
+    ).rejects.toThrow('系统方案');
+
+    const updated = await new TestPlanRepository(createPlan(), [createPlan()], db).updateUserPlan({
+      days: [
+        {
+          exercises: [{ exerciseId: 'exercise_bench', reps: 5, sets: 3 }],
+          focus: '卧推',
+          title: 'Day 1',
+          week: 2,
+          weekday: 3,
+        },
+      ],
+      durationWeeks: 10,
+      frequencyPerWeek: 3,
+      goal: 'hypertrophy',
+      name: '更新计划',
+      planId: 'plan_user_1',
+    });
+
+    const sql = (transaction.runAsync.mock.calls as unknown[][]).map((call) => call[0]).join('\n');
+    expect(updated.name).toBe('更新计划');
+    expect(sql).toContain('DELETE FROM plan_exercises');
+    expect(sql).toContain('UPDATE plan_templates');
+    expect(sql).toContain('INSERT INTO plan_days');
+    expect(sql).not.toContain('workout_sessions');
+    expect(sql).not.toContain('workout_sets');
+  });
+});

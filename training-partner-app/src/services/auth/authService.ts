@@ -69,7 +69,7 @@ function messageFromError(error: unknown, scope: 'auth' | 'sms' | 'code_login' |
       return '验证码错误或已过期。';
     }
     if (scope === 'password_login' && (error.status === 400 || error.status === 401 || error.status === 422)) {
-      return '手机号或密码错误。';
+      return '手机号 / 练刻 ID 或密码错误。';
     }
     return error.message;
   }
@@ -114,9 +114,9 @@ class ApiAuthService implements AuthService {
 
   async login(input: LoginInput): Promise<AuthServiceResult> {
     try {
-      const response = await apiRequest<AuthResponse>('/auth/login', {
+      const response = await apiRequest<AuthResponse>('/auth/password/login', {
         body: {
-          account: input.identifier.trim(),
+          identifier: input.identifier.trim(),
           password: input.password,
         },
       });

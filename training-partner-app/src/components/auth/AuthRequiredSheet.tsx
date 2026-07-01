@@ -36,13 +36,13 @@ export function AuthRequiredSheet({
               {title}
             </AppText>
             <AppText style={styles.subtitle} tone="muted" variant="bodySmall">
-              {message ?? '登录用于账号资料和会员权益；训练记录仍会优先保存到本机。'}
+              {message ?? '登录用于账号资料和会员权益；训练记录仍会保留在当前设备。'}
             </AppText>
           </View>
 
           <View style={styles.pillRow}>
             <LoginValuePill icon="bar-chart-outline" label="训练记录" />
-            <LoginValuePill icon="people-outline" label="本地小组" />
+            <LoginValuePill icon="people-outline" label="训练小组" />
             <LoginValuePill icon="diamond-outline" label="会员权益" />
           </View>
 

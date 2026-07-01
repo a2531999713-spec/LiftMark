@@ -15,7 +15,7 @@ const defaultPreferences: SyncPreferences = {
   wifiOnly: true,
 };
 
-export const SYNC_NOT_CONFIGURED_MESSAGE = '云同步已接入本地队列。云端不可用时，训练数据会保存在本机缓存并等待重试。';
+export const SYNC_NOT_CONFIGURED_MESSAGE = '云同步已接入队列。云端不可用时，训练数据会保留在当前设备并等待重试。';
 
 type ServerSyncEntityType = 'exercises' | 'workoutSessions' | 'workoutSets' | 'trainingPlans' | 'planDays' | 'planExercises';
 
@@ -140,7 +140,7 @@ export async function requestImmediateSync(): Promise<{ ok: true; message?: stri
 
     return { ok: true, message: `已推送 ${syncableItems.length} 条待同步数据。` };
   } catch (error) {
-    const message = error instanceof Error ? error.message : '云同步服务连接失败，本地训练不受影响。';
+    const message = error instanceof Error ? error.message : '云同步服务连接失败，训练记录不受影响。';
     await Promise.all(syncableItems.map((item) => markSyncItemFailed(item.id, message)));
     return {
       ok: false,

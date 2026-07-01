@@ -2,7 +2,7 @@ import type { AccessContext, AccessDecision, AuthMode, FeatureKey, MembershipTie
 
 const LOGIN_REQUIRED_TITLE = '登录后开始记录训练';
 const LOGIN_REQUIRED_MESSAGE =
-  '登录用于账号资料和会员权益；训练记录仍会优先保存到本机。';
+  '登录用于账号资料和会员权益；训练记录仍会保留在当前设备。';
 
 const PRO_REQUIRED_TITLE = '开通 Pro，解锁完整训练小组';
 const PRO_REQUIRED_MESSAGE =

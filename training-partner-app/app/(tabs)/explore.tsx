@@ -94,7 +94,7 @@ export default function ExploreRoute() {
   const setCurrentPlan = useCallback(
     async (plan: PlanTemplate) => {
       if (!group) {
-        setNotice({ title: '还没有本地小组', message: '初始化本地小组后，才能设置当前训练计划。' });
+        setNotice({ title: '还没有小组', message: '初始化小组后，才能设置当前训练计划。' });
         return;
       }
 
@@ -230,7 +230,7 @@ export default function ExploreRoute() {
         <View style={styles.partnerText}>
           <AppText variant="subtitle">找搭子，一起更强</AppText>
           <AppText tone="muted" variant="bodySmall">
-            本地小组支持多人同练，同动作不同重量，轮流记录。
+            小组支持多人同练，同动作不同重量，轮流记录。
           </AppText>
         </View>
         <AppButton onPress={() => router.push('/(tabs)/members')} size="sm">

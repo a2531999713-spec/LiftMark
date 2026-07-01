@@ -9,7 +9,7 @@ import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 export function getConsentStatusLabel(status: GroupWorkoutConsentStatus): string {
   if (status === 'current_member_pending_sync') return '可同步';
   if (status === 'pending_member_consent') return '待确认';
-  return '仅本机';
+  return '仅当前设备';
 }
 
 export function getConsentStatusTone(status: GroupWorkoutConsentStatus): 'brand' | 'warning' | 'neutral' {
@@ -35,7 +35,7 @@ export function buildGroupWorkoutConsentSummary(
       status: isCurrent ? 'current_member_pending_sync' : 'pending_member_consent',
       description: isCurrent
         ? '当前设备记录者，可在账号同步开启后上传。'
-        : '需要成员本人确认后，才能写入对方账号数据；确认前仅保存在本机。',
+        : '需要成员本人确认后，才能写入对方账号数据；确认前仅保留在当前设备。',
     };
   });
 
@@ -44,11 +44,11 @@ export function buildGroupWorkoutConsentSummary(
     members: consentMembers,
     primaryMessage:
       detail.session.trainingMode === 'group_local' && consentMembers.length > 1
-        ? '这是小组训练记录。其他成员数据确认前只保存在本机，不会自动写入对方账号。'
-        : '这是个人本机记录，不需要成员确认。',
+        ? '这是小组训练记录。其他成员数据确认前只保留在当前设备，不会自动写入对方账号。'
+        : '这是个人训练记录，不需要成员确认。',
   };
 }
 
 export function requestMemberConsentPlaceholder(): string {
-  return '确认请求已进入预留流程。当前版本先保存在本机，成员确认和服务器同步将在后续版本接入。';
+  return '确认请求已进入预留流程。当前版本先保留在当前设备，成员确认和服务器同步将在后续版本接入。';
 }

@@ -18,6 +18,7 @@ export type CopySystemSchemeToUserPlanInput = {
 export type CreateUserPlanDayInput = {
   title: string;
   focus: string;
+  week?: number;
   weekday: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   exercises: {
     exerciseId: ID;
@@ -33,6 +34,10 @@ export type CreateUserPlanInput = {
   durationWeeks: number;
   frequencyPerWeek: number;
   days: CreateUserPlanDayInput[];
+};
+
+export type UpdateUserPlanInput = CreateUserPlanInput & {
+  planId: ID;
 };
 
 export type ImportUserPlanInput = {
@@ -51,6 +56,7 @@ export interface PlanRepository {
   listPlanDays(planId: ID): Promise<PlanDay[]>;
   listPlanExercises(planDayId: ID): Promise<PlanExercise[]>;
   createUserPlan(input: CreateUserPlanInput): Promise<PlanTemplate>;
+  updateUserPlan(input: UpdateUserPlanInput): Promise<PlanTemplate>;
   copySystemSchemeToUserPlan(input: CopySystemSchemeToUserPlanInput): Promise<PlanTemplate>;
   importUserPlan(input: ImportUserPlanInput): Promise<PlanTemplate>;
   deleteUserPlan(planId: ID): Promise<void>;

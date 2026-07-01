@@ -227,3 +227,18 @@ npm run android:preview
 - 训练执行页中途退出再进入烟测。
 - 五个主 Tab 在不同 Android 尺寸下的视觉回归检查。
 - 图片 Hero 在小屏 Android 上的文字遮罩、裁切和 APK 体积回归检查。
+
+## 2026-07-01 personal-history-plan-auth-records-sprint 交接
+
+- 当前项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`；后端路径：`C:\Users\zhw\Documents\LiftMark\apps\liftmark-api`。
+- 个人历史页已删重复“训练查询”区块；动作筛选仍作为趋势和当天记录的数据源，个人详情入口继续带 `scope=personal&memberId=...`。
+- `app/history/manual.tsx` 已支持多动作、多组独立重量/次数补录；`WorkoutRepository.createManualSession()` 同步支持 `exercises` 输入，旧 `exerciseId + setCount` 兼容保留。
+- `app/history/[sessionId].tsx` 已支持已完成记录右上角编辑、详情内新增动作、新增组、删组和基础信息保存；个人口径只编辑当前成员 sets，小组口径新增组按本次参与成员追加。
+- 动作历史页已移除平均 RPE 和 RPE 趋势图；训练执行仍可保存可选 RPE 作为高级 set 字段。
+- 今日训练页默认自动跟随到当前计划下一个未完成训练日；用户手动选择周/日后保持手动选择。
+- 计划首页只保留当前计划、周进度、安排和操作入口；计划详情右上角为操作菜单；`app/plan/create.tsx` 支持多训练日创建和 `editPlanId` 编辑用户计划。
+- 新增 `PlanRepository.updateUserPlan()`，会替换用户计划的 phase/day/exercise 结构；系统方案仍禁止直接编辑。
+- 移动端密码登录改用后端 `/auth/password/login`；后端 `/auth/login` 继续兼容旧 `account` 请求体。
+- 普通 App 页面已移除“本机 / 本地”技术化文案，保留隐私/同步场景中的“当前设备”表达。
+- 已验证：移动端 `npm run typecheck`、`npm run lint`、`npm test -- --runInBand`；后端 `npm run typecheck`、`npm run build`。
+- 未执行：`npm run android:preview`，本次未构建 Android 预览包。

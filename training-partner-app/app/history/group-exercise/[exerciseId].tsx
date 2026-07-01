@@ -340,7 +340,7 @@ export default function GroupExerciseDetailRoute() {
             <View style={styles.heroHeader}>
               <View style={styles.headerText}>
                 <AppText style={styles.darkMuted} variant="caption">
-                  近 200 条本机小组训练记录
+                  近 200 条小组训练记录
                 </AppText>
                 <AppText tone="inverse" variant="display">
                   {formatKg(view.totalVolume)}

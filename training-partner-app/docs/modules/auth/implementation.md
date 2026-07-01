@@ -5,6 +5,7 @@
 ## 1. API 接入
 
 - `POST /auth/login`
+- `POST /auth/password/login`
 - `POST /auth/login-with-code`
 - `POST /auth/send-code`
 - `POST /auth/register`
@@ -16,10 +17,10 @@ API base URL 来自 `src/config/api.ts` / `EXPO_PUBLIC_API_BASE_URL`，当前公
 
 当前移动端 UI 暴露两种登录路径：
 
-- 密码登录：手机号 / 练刻 ID + 密码，调用 `POST /auth/login`。
+- 密码登录：手机号 / 练刻 ID + 密码，调用 `POST /auth/password/login`，请求体为 `{ identifier, password }`。
 - 短信验证码登录 / 注册：手机号 + 验证码，调用 `POST /auth/send-code` 与 `POST /auth/login-with-code`。
 
-`POST /auth/register` 保留为显式注册接口；`POST /auth/login-with-code` 对新手机号执行自动创建账号。移动端不信任客户端注册时间，后端在创建用户事务中写入注册顺序和活动字段。
+`POST /auth/login` 保留为旧客户端兼容接口，继续接受 `{ account, password }`。`POST /auth/register` 保留为显式注册接口；`POST /auth/login-with-code` 对新手机号执行自动创建账号。移动端不信任客户端注册时间，后端在创建用户事务中写入注册顺序和活动字段。
 
 后端用户注册元数据：
 
@@ -61,3 +62,9 @@ API base URL 来自 `src/config/api.ts` / `EXPO_PUBLIC_API_BASE_URL`，当前公
 - 本机数据绑定到账号尚未实现。
 - 完整自动云同步队列尚未实现。
 - 真实支付尚未实现。
+
+## 5. 2026-07-01 同步记录
+
+- 登录页密码入口改为手机号 / 练刻 ID + 密码，并增加密码显示切换。
+- 短信验证码入口承担注册和找回路径，页面文案改为“验证码注册 / 找回”。
+- 后端新增 `POST /auth/password/login`，旧 `POST /auth/login` 继续兼容。

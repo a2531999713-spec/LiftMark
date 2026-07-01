@@ -11,8 +11,8 @@ export function SyncPromptSheet({ onEnable, onSkip, visible }: SyncPromptSheetPr
     <AppModalSheet
       onClose={onSkip}
       position="center"
-      subtitle="当前版本训练数据以本机保存为准。多设备数据能力正在开发中，后续版本开放。"
-      title="本地数据说明"
+      subtitle="当前版本训练数据以当前设备记录为准。多设备数据能力正在开发中，后续版本开放。"
+      title="训练数据说明"
       visible={visible}
     >
       <AppButton icon="information-circle-outline" onPress={onEnable}>
