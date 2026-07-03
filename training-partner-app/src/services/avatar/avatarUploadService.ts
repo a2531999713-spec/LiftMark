@@ -28,15 +28,20 @@ export async function uploadAvatarToServer(fileUri: string, accessToken: string)
     throw new Error('本地头像文件不存在，无法上传服务器。');
   }
 
-  const formData = new FormData();
   const filename = fileUri.split('/').pop() || 'avatar.jpg';
 
-  // @ts-ignore - React Native 的 FormData 支持文件上传
-  formData.append('file', {
-    uri: fileUri,
-    name: filename,
-    type: 'image/jpeg',
+  // 通过 XMLHttpRequest 将文件读为 Blob，兼容 React Native 0.85+
+  const fileBlob = await new Promise<Blob>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.onload = () => resolve(xhr.response);
+    xhr.onerror = () => reject(new Error('读取本地头像文件失败。'));
+    xhr.open('GET', fileUri);
+    xhr.responseType = 'blob';
+    xhr.send();
   });
+
+  const formData = new FormData();
+  formData.append('file', fileBlob, filename);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
