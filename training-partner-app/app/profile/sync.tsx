@@ -5,6 +5,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { AppButton, AppCard, AppText, EmptyState, Screen, SecondaryPageHeader, SettingsRow, Tag } from '@/components/ui';
 import {
   loadSyncDiagnostics,
+  repairLocalSchema,
   runManualPullSync,
   runManualUploadSync,
   type SyncDiagnostics,
@@ -64,6 +65,19 @@ export default function ProfileSyncRoute() {
     setNotice({ tone: result.ok ? 'success' : 'danger', message: result.message });
     await load();
     setIsWorking(false);
+  };
+
+  const runRepair = async () => {
+    setIsWorking(true);
+    try {
+      const result = await repairLocalSchema();
+      setNotice({ tone: 'success', message: result.message });
+      await load();
+    } catch (error) {
+      setNotice({ tone: 'danger', message: error instanceof Error ? error.message : '修复失败。' });
+    } finally {
+      setIsWorking(false);
+    }
   };
 
   return (
@@ -132,6 +146,33 @@ export default function ProfileSyncRoute() {
           </AppCard>
 
           <AppCard style={styles.card}>
+            <View style={styles.cardHeader}>
+              <AppText variant="subtitle" weight="900">
+                本地数据库结构
+              </AppText>
+              <Tag
+                label={diagnostics.schemaChecks.every((s) => s.missingColumns.length === 0) ? '完整' : '缺失列'}
+                tone={diagnostics.schemaChecks.every((s) => s.missingColumns.length === 0) ? 'success' : 'danger'}
+              />
+            </View>
+            <SettingsRow label="已应用迁移版本" value={diagnostics.migrationVersions.join(', ') || '-'} />
+            {diagnostics.schemaChecks.map((check) => (
+              <SettingsRow
+                key={check.tableName}
+                label={check.tableName}
+                value={check.exists
+                  ? (check.missingColumns.length === 0 ? '完整' : `缺: ${check.missingColumns.join(', ')}`)
+                  : '表不存在'}
+              />
+            ))}
+            {diagnostics.schemaChecks.some((s) => s.missingColumns.length > 0) && (
+              <AppButton disabled={isWorking} icon="build-outline" loading={isWorking} onPress={() => void runRepair()} variant="secondary">
+                一键修复本地数据库结构
+              </AppButton>
+            )}
+          </AppCard>
+
+          <AppCard style={styles.card}>
             <AppText variant="subtitle" weight="900">
               服务器 /sync/status
             </AppText>
@@ -147,6 +188,11 @@ export default function ProfileSyncRoute() {
             <AppButton disabled={isWorking} icon="cloud-download-outline" onPress={() => void runPull()} variant="secondary">
               手动拉取
             </AppButton>
+            {diagnostics.schemaChecks.some((s) => s.missingColumns.length > 0) && (
+              <AppButton disabled={isWorking} icon="build-outline" onPress={() => void runRepair()} variant="secondary">
+                修复数据库结构
+              </AppButton>
+            )}
             <AppButton disabled={isWorking} icon="refresh-outline" onPress={() => void load()} variant="ghost">
               重新检查
             </AppButton>

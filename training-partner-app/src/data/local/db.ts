@@ -3,6 +3,7 @@ import * as SQLite from 'expo-sqlite';
 import { seedDefaultData } from '@/data/seed/seedDefaultData';
 
 import { runMigrations } from './migrations';
+import { ensureLocalSchemaCompatibility } from './schemaRepair';
 
 export const DATABASE_NAME = 'training_partner.db';
 
@@ -18,6 +19,7 @@ export function initializeLocalDatabase(): Promise<SQLite.SQLiteDatabase> {
   initializationPromise ??= (async () => {
     const db = await getDatabase();
     await runMigrations(db);
+    await ensureLocalSchemaCompatibility(db);
     await seedDefaultData(db);
     return db;
   })().catch((error) => {

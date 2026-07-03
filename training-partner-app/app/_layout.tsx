@@ -13,9 +13,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     async function boot() {
-      void initializeLocalDatabase().catch((error) => {
-        console.error('本地数据初始化失败', error);
-      });
+      await initializeLocalDatabase();
       await useAuthStore.getState().loadCurrentUser();
 
       // 登录后同步本地小组到服务器

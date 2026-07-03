@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '@/config/api';
 import { getDatabase, initializeLocalDatabase } from '@/data/local';
+import { getMigrationVersions, getSchemaCheckResults, type SchemaCheckResult } from '@/data/local/schemaRepair';
 import { readStoredSession } from '@/services/auth/tokenStorage';
 import { apiRequest } from '@/services/httpClient';
 import { syncAllLocalGroupsToServer, syncServerDataToLocal } from '@/services/profileSyncService';
@@ -23,8 +24,10 @@ export type SyncDiagnostics = {
   lastSyncError?: string;
   lastSyncedAt?: string;
   localCounts: LocalCounts;
+  migrationVersions: number[];
   pendingCount: number;
   recentAvatarUrl?: string;
+  schemaChecks: SchemaCheckResult[];
   serverHealth: 'ok' | 'failed' | 'unknown';
   serverHealthMessage?: string;
   serverStatus?: unknown;
@@ -94,7 +97,8 @@ export async function checkAvatarUrlAccess(url?: string) {
 export async function loadSyncDiagnostics(): Promise<SyncDiagnostics> {
   await initializeLocalDatabase();
   const session = await readStoredSession();
-  const [pendingCount, lastSyncError, recentAvatarUrl, health, localCounts] = await Promise.all([
+  const db = await getDatabase();
+  const [pendingCount, lastSyncError, recentAvatarUrl, health, localCounts, schemaChecks, migrationVersions] = await Promise.all([
     countPendingSyncItems(),
     getLastSyncError(),
     getRecentAvatarUrl(),
@@ -110,6 +114,8 @@ export async function loadSyncDiagnostics(): Promise<SyncDiagnostics> {
       workoutSessions,
       workoutSets,
     })),
+    getSchemaCheckResults(db),
+    getMigrationVersions(db),
   ]);
 
   let serverStatus: unknown;
@@ -141,8 +147,10 @@ export async function loadSyncDiagnostics(): Promise<SyncDiagnostics> {
     lastSyncError,
     lastSyncedAt,
     localCounts,
+    migrationVersions,
     pendingCount,
     recentAvatarUrl,
+    schemaChecks,
     serverHealth: health.serverHealth,
     serverHealthMessage: health.serverHealthMessage,
     serverStatus,
@@ -161,4 +169,12 @@ export async function runManualUploadSync() {
 export async function runManualPullSync() {
   await syncServerDataToLocal();
   return { ok: true, message: '手动拉取已执行。' };
+}
+
+export async function repairLocalSchema() {
+  const { ensureLocalSchemaCompatibility } = await import('@/data/local/schemaRepair');
+  await initializeLocalDatabase();
+  const db = await getDatabase();
+  await ensureLocalSchemaCompatibility(db);
+  return { ok: true, message: '本地数据库结构修复完成。' };
 }

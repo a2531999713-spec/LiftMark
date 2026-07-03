@@ -1,8 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { ensureLocalSchemaCompatibility } from './schemaRepair';
 import { initialSchemaSql } from './schema';
 
-type MigrationDatabase = Pick<SQLiteDatabase, 'execAsync' | 'runAsync'>;
+type MigrationDatabase = Pick<SQLiteDatabase, 'execAsync' | 'runAsync' | 'getAllAsync'>;
 
 export type Migration = {
   version: number;
@@ -442,6 +443,13 @@ export const migrations: Migration[] = [
 
         CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON group_members(group_id, user_id);
       `);
+    },
+  },
+  {
+    version: 13,
+    name: 'local_schema_repair',
+    async up(db) {
+      await ensureLocalSchemaCompatibility(db);
     },
   },
 ];
