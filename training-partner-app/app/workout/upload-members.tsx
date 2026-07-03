@@ -10,8 +10,7 @@ import {
 } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
-import { Screen, SecondaryPageHeader } from '@/components/ui';
-import { AppButton, AppCard, AppText, EmptyState } from '@/components/ui';
+import { AppButton, AppText, EmptyState, Screen, SecondaryPageHeader } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember } from '@/domain/member/member.types';
 import { uploadPendingTraining } from '@/services/pendingTrainingService';
@@ -24,6 +23,7 @@ export default function UploadMembersRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
 
   const [members, setMembers] = useState<GroupMember[]>([]);
+  const [localOnlyMembers, setLocalOnlyMembers] = useState<GroupMember[]>([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
@@ -40,10 +40,12 @@ export default function UploadMembersRoute() {
         await initializeLocalDatabase();
         const detail = await repositories.workoutRepository.getSessionDetail(sessionId);
         const allMembers = await repositories.memberRepository.listMembers(detail.session.groupId);
-        // 排除当前用户（自己）
-        const otherMembers = allMembers.filter((m) => m.displayName !== user?.displayName);
+        const otherMembers = allMembers.filter((m) => m.userId !== user?.id);
+        const uploadableMembers = otherMembers.filter((m) => m.memberType === 'real' && Boolean(m.userId));
+        const localMembers = otherMembers.filter((m) => m.memberType !== 'real' || !m.userId);
         if (isMounted) {
-          setMembers(otherMembers);
+          setMembers(uploadableMembers);
+          setLocalOnlyMembers(localMembers);
         }
       } catch {
         if (isMounted) {
@@ -79,12 +81,13 @@ export default function UploadMembersRoute() {
 
     try {
       const detail = await repositories.workoutRepository.getSessionDetail(sessionId);
+      const exerciseByRecordId = new Map(detail.exercises.map((exercise) => [exercise.id, exercise]));
       let success = 0;
       let failed = 0;
 
       for (const memberId of selectedMemberIds) {
         const member = members.find((m) => m.id === memberId);
-        if (!member) {
+        if (!member?.userId) {
           failed++;
           continue;
         }
@@ -98,7 +101,7 @@ export default function UploadMembersRoute() {
 
         const result = await uploadPendingTraining({
           groupId: detail.session.groupId,
-          targetUserId: memberId, // 这里需要用真实的 user_id，本地成员暂用 memberId
+          targetUserId: member.userId,
           sessionData: {
             title: detail.session.title,
             date: detail.session.date,
@@ -107,7 +110,8 @@ export default function UploadMembersRoute() {
             status: 'completed',
           },
           setsData: memberSets.map((set) => ({
-            exerciseId: set.exerciseRecordId,
+            exerciseId: exerciseByRecordId.get(set.exerciseRecordId)?.exerciseId ?? set.exerciseRecordId,
+            exerciseClientId: set.exerciseRecordId,
             setNumber: set.setNumber,
             weight: set.actualWeight ?? set.plannedWeight,
             reps: set.actualReps ?? set.plannedReps,
@@ -177,8 +181,12 @@ export default function UploadMembersRoute() {
         <EmptyState title="加载失败" description={error} />
       ) : members.length === 0 ? (
         <EmptyState
-          description="本次训练没有其他组员参与。"
-          title="无其他组员"
+          description={
+            localOnlyMembers.length > 0
+              ? '本次训练中的其他成员是本地成员，不能跨设备发送待确认数据。'
+              : '本次训练没有其他真实组员参与。'
+          }
+          title="没有可上传的真实成员"
         />
       ) : (
         <ScrollView
@@ -202,6 +210,11 @@ export default function UploadMembersRoute() {
                 <AppText variant="body" weight="600" style={styles.memberName}>
                   {member.displayName}
                 </AppText>
+                <View style={styles.realBadge}>
+                  <AppText variant="caption" weight="700" style={styles.realBadgeText}>
+                    真实成员
+                  </AppText>
+                </View>
                 <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
                   {isSelected && (
                     <Ionicons color={colors.background} name="checkmark" size={16} />
@@ -222,6 +235,15 @@ export default function UploadMembersRoute() {
               `上传到 ${selectedMemberIds.size} 位组员`
             )}
           </AppButton>
+
+          {localOnlyMembers.length > 0 ? (
+            <View style={styles.localNotice}>
+              <Ionicons color={colors.darkMuted} name="information-circle-outline" size={16} />
+              <AppText variant="caption" tone="muted" style={styles.localNoticeText}>
+                {localOnlyMembers.length} 位本地成员不会收到跨设备确认请求。
+              </AppText>
+            </View>
+          ) : null}
 
           <AppButton
             onPress={() => router.replace('/(tabs)/today')}
@@ -262,6 +284,15 @@ const styles = StyleSheet.create({
   memberName: {
     flex: 1,
   },
+  realBadge: {
+    backgroundColor: colors.successSoft,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  realBadgeText: {
+    color: colors.textMuted,
+  },
   checkbox: {
     alignItems: 'center',
     borderColor: colors.border,
@@ -277,6 +308,14 @@ const styles = StyleSheet.create({
   },
   uploadButton: {
     marginTop: spacing.md,
+  },
+  localNotice: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  localNoticeText: {
+    flex: 1,
   },
   skipButton: {
     marginTop: spacing.sm,

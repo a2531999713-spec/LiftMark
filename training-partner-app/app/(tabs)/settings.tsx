@@ -31,7 +31,7 @@ export default function SettingsRoute() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const currentMember = members[0] ?? null;
+  const currentMember = members.find((member) => member.userId === user?.id) ?? members[0] ?? null;
   const currentProfile = currentMember ? (profilesByMemberId[currentMember.id] ?? null) : null;
   const avatarDisplay = getAvatarDisplay({
     accountProfile,
@@ -93,20 +93,28 @@ export default function SettingsRoute() {
     const result = await updateAccountAvatarFromPicker(user, 'library');
     if (result.ok) {
       setAccountProfile(result.profile);
-      if (currentMember) {
-        const nextProfile = await repositories.memberRepository.updateProfile(currentMember.id, {
-          avatarLocalUri: result.profile.avatarLocalUri,
-          avatarThumbUrl: result.profile.avatarThumbUrl,
-          avatarUpdatedAt: result.profile.avatarUpdatedAt,
-          avatarUrl: result.profile.avatarUrl,
-        });
+      const groups = await repositories.groupRepository.listGroups();
+      const updatedProfiles: Record<string, MemberProfile> = {};
+      for (const item of groups) {
+        const groupMembers = await repositories.memberRepository.listMembers(item.id);
+        const ownedMembers = groupMembers.filter((member) => member.userId === user.id);
+        for (const member of ownedMembers) {
+          updatedProfiles[member.id] = await repositories.memberRepository.updateProfile(member.id, {
+            avatarLocalUri: result.profile.avatarLocalUri,
+            avatarThumbUrl: result.profile.avatarThumbUrl,
+            avatarUpdatedAt: result.profile.avatarUpdatedAt,
+            avatarUrl: result.profile.avatarUrl,
+          });
+        }
+      }
+      if (Object.keys(updatedProfiles).length > 0) {
         setProfilesByMemberId((current) => ({
           ...current,
-          [currentMember.id]: nextProfile,
+          ...updatedProfiles,
         }));
       }
     }
-  }, [currentMember, repositories, user]);
+  }, [repositories, user]);
 
   return (
     <Screen contentStyle={styles.screen}>

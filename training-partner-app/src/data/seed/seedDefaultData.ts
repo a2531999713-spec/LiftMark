@@ -37,7 +37,26 @@ import {
   defaultStrengthPlanExerciseSeeds,
 } from './defaultStrengthPlan';
 
+const DEFAULT_SEED_VERSION = '2026-07-02-workout-execution';
+
 export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS app_bootstrap_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  const seedState = await db.getFirstAsync<{ value: string }>(
+    'SELECT value FROM app_bootstrap_state WHERE key = ?',
+    'default_seed_version',
+  );
+
+  if (seedState?.value === DEFAULT_SEED_VERSION) {
+    return;
+  }
+
   const now = new Date().toISOString();
   const plan = createDefaultPlanTemplateSeed(now);
   const classicPplPlan = createClassicPplPlanTemplateSeed(now);
@@ -487,6 +506,15 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
       now,
       DEFAULT_PLAN_ID,
       DEFAULT_USER_PLAN_ID,
+    );
+
+    await txn.runAsync(
+      `INSERT INTO app_bootstrap_state (key, value, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      'default_seed_version',
+      DEFAULT_SEED_VERSION,
+      now,
     );
   });
 }

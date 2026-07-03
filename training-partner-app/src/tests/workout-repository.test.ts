@@ -373,6 +373,61 @@ describe('SQLiteWorkoutRepository.addSetToExerciseRecord', () => {
   });
 });
 
+describe('SQLiteWorkoutRepository.addExerciseToSession', () => {
+  it('can insert a temporary exercise before an existing order index', async () => {
+    const runCalls: { params: unknown[]; sql: string }[] = [];
+    const db = {
+      getFirstAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM workout_sessions')) {
+          return {
+            id: 'session_1',
+            group_id: 'group_1',
+            plan_id: 'plan_1',
+            phase_id: null,
+            date: '2026-07-02',
+            week: 1,
+            weekday: 4,
+            title: '训练日',
+            status: 'in_progress',
+            training_mode: 'group_local',
+            started_at: '2026-07-02T00:00:00.000Z',
+            finished_at: null,
+            created_at: '2026-07-02T00:00:00.000Z',
+            updated_at: '2026-07-02T00:00:00.000Z',
+          };
+        }
+        if (sql.includes('MAX(order_index)')) {
+          return { max_order: 4 };
+        }
+        return null;
+      }),
+      getAllAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('workout_exercise_records')) return [];
+        if (sql.includes('workout_sets')) return [];
+        return [];
+      }),
+      runAsync: jest.fn(async (sql: string, ...params: unknown[]) => {
+        runCalls.push({ sql, params });
+      }),
+      withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof db) => Promise<void>) => callback(db)),
+    };
+
+    await new SQLiteWorkoutRepository(async () => db as never).addExerciseToSession({
+      exerciseId: 'exercise_temp',
+      insertOrderIndex: 2,
+      memberId: 'member_1',
+      notes: '临时添加动作',
+      sessionId: 'session_1',
+      sets: [{ completed: false, reps: 10, weight: 20 }],
+    });
+
+    expect(runCalls.some((call) => call.sql.includes('SET order_index = order_index + 1'))).toBe(true);
+    const insertRecordCall = runCalls.find((call) => call.sql.includes('INSERT INTO workout_exercise_records'));
+    expect(insertRecordCall?.params[4]).toBe(2);
+    expect(insertRecordCall?.params[15]).toBe('临时添加动作');
+  });
+});
+
 describe('SQLiteWorkoutRepository.saveSet', () => {
   it('persists optional RPE, notes, and actual rest seconds', async () => {
     const setRow = {
@@ -456,6 +511,26 @@ describe('SQLiteWorkoutRepository.updateExerciseRecordExercise', () => {
     expect(db.runAsync).toHaveBeenCalledWith(
       expect.stringContaining('replaced_from_exercise_id = COALESCE(replaced_from_exercise_id, exercise_id)'),
       'exercise_dumbbell_bench',
+      null,
+      'record_1',
+    );
+  });
+
+  it('stores the replacement reason as workout-only record notes', async () => {
+    const db = {
+      runAsync: jest.fn(async () => undefined),
+    };
+
+    await new SQLiteWorkoutRepository(async () => db as never).updateExerciseRecordExercise(
+      'record_1',
+      'exercise_dumbbell_bench',
+      '本次替换：器械被占',
+    );
+
+    expect(db.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining('notes = COALESCE(?, notes)'),
+      'exercise_dumbbell_bench',
+      '本次替换：器械被占',
       'record_1',
     );
   });

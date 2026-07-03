@@ -498,6 +498,19 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       );
       const recordId = createId('exercise_record');
       const plannedReps = sets[0]?.reps ?? null;
+      const nextOrderIndex = input.insertOrderIndex
+        ? Math.max(1, Math.round(input.insertOrderIndex))
+        : (orderRow?.max_order ?? 0) + 1;
+
+      if (input.insertOrderIndex) {
+        await txn.runAsync(
+          `UPDATE workout_exercise_records
+           SET order_index = order_index + 1
+           WHERE session_id = ? AND order_index >= ?`,
+          input.sessionId,
+          nextOrderIndex,
+        );
+      }
 
       await txn.runAsync(
         `INSERT INTO workout_exercise_records (
@@ -510,7 +523,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         session.id,
         null,
         input.exerciseId,
-        (orderRow?.max_order ?? 0) + 1,
+        nextOrderIndex,
         null,
         input.priority ?? 'B',
         sets.length,
@@ -621,14 +634,16 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     return mapWorkoutSet(setRow);
   }
 
-  async updateExerciseRecordExercise(recordId: string, exerciseId: string): Promise<void> {
+  async updateExerciseRecordExercise(recordId: string, exerciseId: string, notes?: string): Promise<void> {
     const db = await this.getDb();
     await db.runAsync(
       `UPDATE workout_exercise_records
        SET exercise_id = ?,
-           replaced_from_exercise_id = COALESCE(replaced_from_exercise_id, exercise_id)
+            replaced_from_exercise_id = COALESCE(replaced_from_exercise_id, exercise_id),
+            notes = COALESCE(?, notes)
        WHERE id = ?`,
       exerciseId,
+      notes ?? null,
       recordId,
     );
   }

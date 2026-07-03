@@ -33,3 +33,9 @@
 - 服务器不可用时，已存 session 可离线保留并进入本机模式；不会清空 session 或 SQLite。
 - 离线进入时不主动拉取云端完整资料，不做全量同步或云端恢复。
 - 云同步入口可测试，完整自动同步队列后续接入。
+
+## 5. 2026-07-02 启动校验边界
+
+- App 启动时会尝试用 `/auth/me` 校验 stored session。
+- 远程校验超时、网络失败或 5xx 时，已存 session 可进入 `offline_authenticated`，不阻塞训练入口。
+- 明确鉴权失败才清除 session；本地训练记录和 SQLite 不随 auth 校验失败自动删除。

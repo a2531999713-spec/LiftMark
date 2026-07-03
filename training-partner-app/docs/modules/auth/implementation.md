@@ -68,3 +68,9 @@ API base URL 来自 `src/config/api.ts` / `EXPO_PUBLIC_API_BASE_URL`，当前公
 - 登录页密码入口改为手机号 / 练刻 ID + 密码，并增加密码显示切换。
 - 短信验证码入口承担短信登录 / 注册路径，页面文案为“短信登录 / 注册”；新手机号由 `POST /auth/login-with-code` 自动创建账号。
 - 后端新增 `POST /auth/password/login`，旧 `POST /auth/login` 继续兼容。
+
+## 6. 2026-07-02 同步记录
+
+- `authService.getCurrentSession()` 对远程 `/auth/me` 校验增加短超时，超时或网络失败时返回 stored session 并标记离线认证。
+- `app/_layout.tsx` 不再等待完整 SQLite seed 完成后才读取当前用户；数据库初始化错误记录到 console，不阻塞已有 session 进入主流程。
+- `apiClient` 的 404 用户提示改为“当前服务暂时不可用，请稍后再试。”，避免把“接口不存在”暴露给普通用户。

@@ -74,6 +74,17 @@ describe('suggested weight calculation', () => {
     expect(formatWeight(38.75)).toBe('38.75');
   });
 
+  it('uses 2.5kg as the default live workout step without floating artifacts', () => {
+    expect(addWeightStep(60)).toBe(62.5);
+    expect(subtractWeightStep(62.5)).toBe(60);
+    expect(formatWeight(addWeightStep(0.1 + 0.2, 2.5))).toBe('2.5');
+  });
+
+  it('respects 1.25kg custom steps in both directions', () => {
+    expect(addWeightStep(60, 1.25)).toBe(61.25);
+    expect(subtractWeightStep(61.25, 1.25)).toBe(60);
+  });
+
   it('falls back to bodyweight for pull-up total load when reference weight is empty', () => {
     const result = calculateSuggestedWeight({
       referenceLift: 'pullup_total',

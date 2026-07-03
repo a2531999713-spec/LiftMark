@@ -9,12 +9,13 @@ import {
   View,
 } from 'react-native';
 
-import { Screen, SecondaryPageHeader } from '@/components/ui';
-import { AppButton, AppText } from '@/components/ui';
+import { AppButton, AppText, Screen, SecondaryPageHeader } from '@/components/ui';
 import { joinGroupByInvitation } from '@/services/invitationService';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
 export default function JoinGroupRoute() {
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [code, setCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +33,9 @@ export default function JoinGroupRoute() {
     try {
       const result = await joinGroupByInvitation(trimmedCode);
       if (result.ok) {
+        if (result.group?.id) {
+          setSelectedGroupId(result.group.id);
+        }
         Alert.alert(
           '加入成功',
           result.group ? `已加入小组「${result.group.name}」` : '已成功加入小组。',
@@ -50,7 +54,7 @@ export default function JoinGroupRoute() {
     } finally {
       setIsJoining(false);
     }
-  }, [code]);
+  }, [code, setSelectedGroupId]);
 
   return (
     <Screen>

@@ -40,8 +40,12 @@ export type GroupMemberRow = {
   id: string;
   group_id: string;
   display_name: string;
+  user_id?: string | null;
+  member_type?: GroupMember['memberType'] | null;
+  local_member_id?: string | null;
   role: GroupMember['role'];
   avatar_url: string | null;
+  joined_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -51,8 +55,12 @@ export function mapGroupMember(row: GroupMemberRow): GroupMember {
     id: row.id,
     groupId: row.group_id,
     displayName: row.display_name,
+    userId: row.user_id ?? undefined,
+    memberType: row.member_type ?? (row.user_id ? 'real' : 'local'),
+    localMemberId: row.local_member_id ?? undefined,
     role: row.role,
     avatarUrl: row.avatar_url ?? undefined,
+    joinedAt: row.joined_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

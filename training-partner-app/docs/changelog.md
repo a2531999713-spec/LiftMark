@@ -1,5 +1,24 @@
 # 变更记录
 
+## 2026-07-02 - workout-execution-fix-sprint
+
+### 训练执行
+- 顶部右侧固定为“结束训练”，训练中临时操作迁入当前动作卡“本次调整”。
+- 小组训练 cursor 改为稳定执行队列：动作 -> 组号 -> 成员；休息倒计时不再改变下一组目标。
+- 休息面板移除“开始下一组 / 提前开始下一组”，改为正在休息、已恢复和准备下一组状态提示。
+- 支持本次替换、加做组、跳过当前动作、添加临时动作；默认只影响当前 session，不直接修改计划。
+
+### 总结、计划与启动
+- 训练总结页新增本次调整摘要，并询问是否同步到当前用户计划；系统方案仍禁止写回。
+- 默认重量步进统一为 2.5kg，并保留小数重量精度。
+- 本地 seed 增加版本标记，根布局后台初始化数据库；auth session 远程校验超时时保留 stored session 离线进入。
+
+### 验证
+- 已通过：`npm run typecheck -- --pretty false`。
+- 已通过：`npm run lint`。
+- 已通过：`npm test -- --runInBand`。
+- 已验证线上接口：`/api/health` 返回 200，`/auth/password/login`、`/auth/send-code`、`/auth/login-with-code` 路由可达并返回输入校验错误。
+
 ## 2026-07-01 - group-workout-chart-auth-polish-sprint
 
 ### 训练执行
@@ -131,7 +150,7 @@
 ### 身体数据与头像
 - `app/profile/body-metrics.tsx` 重构为快速记录、折叠围度、目标设置、变化摘要、训练关联和趋势图。
 - 新增 `body_metric_goals` 表、Repository 目标接口和目标进度 Domain 计算。
-- 明确头像根因：账号头像缓存和训练成员 profile 分表；账号头像更新/删除会同步当前小组第一位训练成员头像，训练、记录、小组分析统一使用 `Avatar`。
+- 明确头像根因：账号头像缓存和训练成员 profile 分表；账号头像更新/删除会同步当前账号绑定的真实训练成员头像，训练、记录、小组分析统一使用 `Avatar`。
 
 ### 多小组与训练执行
 - `GroupRepository.listGroups()` 接入小组页、今日、成员、记录、设置、头像和身体数据页；支持创建新小组并立即切换。

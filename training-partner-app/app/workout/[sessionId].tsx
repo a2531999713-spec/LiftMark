@@ -18,6 +18,7 @@ import { CompletedSetList } from '@/components/workout/CompletedSetList';
 import { CurrentSetRecorder } from '@/components/workout/CurrentSetRecorder';
 import { ExerciseHeroCard } from '@/components/workout/ExerciseHeroCard';
 import { GroupMemberStrip } from '@/components/workout/GroupMemberStrip';
+import { RestTimerPanel } from '@/components/workout/RestTimerPanel';
 import { RotationOrderCard } from '@/components/workout/RotationOrderCard';
 import { WorkoutProgressStrip } from '@/components/workout/WorkoutProgressStrip';
 import { WorkoutLiveStatsBar } from '@/components/workout/WorkoutLiveStatsBar';
@@ -26,10 +27,16 @@ import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { DEFAULT_BARBELL_INCREMENT, DEFAULT_DUMBBELL_INCREMENT } from '@/domain/weight/weight-calculator';
 import {
+  WORKOUT_EXTRA_SET_NOTE,
+  WORKOUT_REPLACEMENT_NOTE,
+  WORKOUT_SKIPPED_EXERCISE_NOTE,
+  WORKOUT_TEMPORARY_EXERCISE_NOTE,
   checkShortWorkout,
+  getWorkoutCursorFromQueue,
   getNextWorkoutSetForRotation,
   getWorkoutExerciseSetProgress,
   getWorkoutRecordInitialReps,
+  summarizeWorkoutAdjustments,
 } from '@/domain/workout/workout.service';
 import type {
   SaveWorkoutSetInput,
@@ -49,6 +56,23 @@ function formatTimer(seconds: number): string {
 
 function getNowMs(): number {
   return Date.now();
+}
+
+function parseDateMs(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function getElapsedSecondsFromSession(startedAt: string | undefined, finishedAt?: string): number {
+  const startedAtMs = parseDateMs(startedAt);
+  if (!startedAtMs) {
+    return 0;
+  }
+  const endedAtMs = parseDateMs(finishedAt) ?? getNowMs();
+  return Math.max(0, Math.floor((endedAtMs - startedAtMs) / 1000));
 }
 
 function getWeightIncrement(profile: MemberProfile | null, exercise: Exercise | null): number {
@@ -82,12 +106,15 @@ function removeSet(detail: WorkoutSessionDetail | null, setId: string): WorkoutS
 }
 
 type MemberRestTimerState = {
+  endedAt?: number;
   endTime: number;
   isResting: boolean;
   plannedSeconds?: number;
+  readyNotified?: boolean;
   remaining: number;
   sourceSetId?: string;
   startedAt?: number;
+  status: 'ready' | 'resting';
 };
 
 function confirmExceptionalSetInput(weight: number, reps: number): Promise<boolean> {
@@ -130,37 +157,24 @@ export default function WorkoutRoute() {
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFinishing, setIsFinishing] = useState(false);
-  const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
-  const [isReplaceSheetVisible, setReplaceSheetVisible] = useState(false);
+  const [exercisePickerMode, setExercisePickerMode] = useState<'addTemporary' | 'replace' | null>(null);
+  const [restNotice, setRestNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const startedAt = detail?.session.startedAt ? new Date(detail.session.startedAt).getTime() : getNowMs();
-    const timer = setInterval(() => {
-      setElapsedSeconds(Math.max(0, Math.floor((getNowMs() - startedAt) / 1000)));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [detail?.session.startedAt]);
-
-  useEffect(() => {
-    const activeRestMembers = Object.entries(memberRestState).filter(([, state]) => state.isResting);
-    if (activeRestMembers.length === 0) {
+    if (!detail?.session.startedAt) {
       return;
     }
-    const timer = setInterval(() => {
-      setMemberRestState((prev) => {
-        const next = { ...prev };
-        Object.entries(next).forEach(([memberId, state]) => {
-          if (state.isResting && state.remaining > 0) {
-            const remaining = Math.max(0, Math.ceil((state.endTime - getNowMs()) / 1000));
-            next[memberId] = { ...state, remaining };
-          }
-        });
-        return next;
-      });
-    }, 250);
-    return () => clearInterval(timer);
-  }, [memberRestState]);
+    const updateElapsed = () => {
+      setElapsedSeconds(getElapsedSecondsFromSession(detail.session.startedAt, detail.session.finishedAt));
+    };
+    const immediateTimer = setTimeout(updateElapsed, 0);
+    const timer = setInterval(updateElapsed, 1000);
+    return () => {
+      clearTimeout(immediateTimer);
+      clearInterval(timer);
+    };
+  }, [detail?.session.finishedAt, detail?.session.startedAt]);
 
   const loadWorkout = useCallback(async () => {
     if (!sessionId) {
@@ -176,10 +190,9 @@ export default function WorkoutRoute() {
 
       await initializeLocalDatabase();
 
-      // 先从服务器同步成员头像
       const tempDetail = await repositories.workoutRepository.getSessionDetail(sessionId);
       if (tempDetail.session.groupId) {
-        await syncGroupMembersAvatar(tempDetail.session.groupId);
+        void syncGroupMembersAvatar(tempDetail.session.groupId).catch(() => undefined);
       }
 
       const nextDetail = await repositories.workoutRepository.getSessionDetail(sessionId);
@@ -202,9 +215,18 @@ export default function WorkoutRoute() {
       setMembers(nextMembers);
       setProfiles(Object.fromEntries(nextProfiles));
       setExerciseMap(Object.fromEntries(nextExercises.map((exercise) => [exercise.id, exercise])));
-      setActiveExerciseIndex((index) =>
-        nextDetail.exercises.length > 0 ? Math.min(index, nextDetail.exercises.length - 1) : 0,
+      const cursor = getWorkoutCursorFromQueue(
+        nextDetail,
+        nextMembers.map((member) => member.id),
       );
+      setActiveExerciseIndex((index) =>
+        cursor
+          ? cursor.exerciseIndex
+          : nextDetail.exercises.length > 0
+            ? Math.min(index, nextDetail.exercises.length - 1)
+            : 0,
+      );
+      setWorkoutReadyToFinish(!cursor && nextDetail.sets.some((set) => set.completed || set.skipped));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '训练记录加载失败。');
     } finally {
@@ -269,6 +291,69 @@ export default function WorkoutRoute() {
     },
     [guardFeature, repositories],
   );
+
+  useEffect(() => {
+    const hasRestTimers = Object.values(memberRestState).some((state) => state.status === 'resting');
+    if (!hasRestTimers) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      const now = getNowMs();
+      const timersToPersist: { memberId: string; state: MemberRestTimerState }[] = [];
+      let changed = false;
+      const nextState = { ...memberRestState };
+
+      Object.entries(memberRestState).forEach(([memberId, state]) => {
+        if (state.status !== 'resting') {
+          return;
+        }
+
+        const remaining = Math.max(0, Math.ceil((state.endTime - now) / 1000));
+        if (remaining <= 0) {
+          changed = true;
+          timersToPersist.push({ memberId, state });
+          nextState[memberId] = {
+            ...state,
+            endedAt: now,
+            isResting: false,
+            readyNotified: true,
+            remaining: 0,
+            status: 'ready',
+          };
+          return;
+        }
+
+        if (remaining !== state.remaining) {
+          changed = true;
+          nextState[memberId] = { ...state, remaining };
+        }
+      });
+
+      if (changed) {
+        setMemberRestState(nextState);
+      }
+
+      timersToPersist.forEach(({ memberId, state }) => {
+        const memberName = members.find((member) => member.id === memberId)?.displayName ?? '成员';
+        setRestNotice(`${memberName}休息结束，可以准备下一组`);
+
+        if (!state.sourceSetId || !state.startedAt) {
+          return;
+        }
+
+        const sourceSet = detail?.sets.find((set) => set.id === state.sourceSetId);
+        if (!sourceSet) {
+          return;
+        }
+
+        const actualRestSeconds = Math.max(0, Math.round((now - state.startedAt) / 1000));
+        void saveSetPatch(sourceSet, { actualRestSeconds });
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [detail?.sets, memberRestState, members, saveSetPatch]);
 
   const discardWorkout = useCallback(async () => {
     if (!sessionId) {
@@ -431,6 +516,10 @@ export default function WorkoutRoute() {
       .map((set) => set.rpe as number) ?? [];
     return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
   }, [detail]);
+  const adjustmentSummary = useMemo(
+    () => (detail ? summarizeWorkoutAdjustments(detail) : null),
+    [detail],
+  );
 
   const exerciseProgressItems = useMemo(() => {
     if (!detail) return [];
@@ -441,22 +530,8 @@ export default function WorkoutRoute() {
     }));
   }, [detail, exerciseMap, activeExerciseIndex]);
 
-  const fallbackDisplaySet =
-    (activeMemberId
-      ? sortedActiveSets.filter((set) => set.memberId === activeMemberId).at(-1)
-      : sortedActiveSets.at(-1)) ??
-    sortedActiveSets.at(-1) ??
-    null;
-  const focusedRestState = activeMemberId ? memberRestState[activeMemberId] : null;
-  const focusedRestSourceSet =
-    activeRecord && focusedRestState?.isResting && focusedRestState.sourceSetId
-      ? activeSets.find(
-          (set) =>
-            set.id === focusedRestState.sourceSetId &&
-            set.exerciseRecordId === activeRecord.id,
-        ) ?? null
-      : null;
-  const currentDisplaySet = focusedRestSourceSet ?? pendingRotationSet ?? fallbackDisplaySet;
+  const fallbackDisplaySet = sortedActiveSets.find((set) => !set.completed && !set.skipped) ?? sortedActiveSets.at(-1) ?? null;
+  const currentDisplaySet = pendingRotationSet ?? fallbackDisplaySet;
   const currentProfile = currentDisplaySet ? profiles[currentDisplaySet.memberId] ?? null : null;
   const currentIncrement = getWeightIncrement(currentProfile, activeExercise);
   const currentMemberId = currentDisplaySet?.memberId ?? members[0]?.id ?? '';
@@ -490,46 +565,19 @@ export default function WorkoutRoute() {
       : undefined;
   function goNextExercise() {
     if (!detail) return;
-    setMemberRestState({});
     setWorkoutReadyToFinish(false);
     setActiveExerciseIndex((index) => Math.min(detail.exercises.length - 1, index + 1));
   }
 
-  async function completeMemberRest(memberId: string) {
-    const restState = memberRestState[memberId];
-    setMemberRestState((prev) => ({
-      ...prev,
-      [memberId]: { remaining: 0, endTime: 0, isResting: false },
-    }));
-
-    if (!restState?.sourceSetId || !restState.startedAt) {
-      return;
-    }
-
-    const sourceSet = detail?.sets.find((set) => set.id === restState.sourceSetId);
-    if (!sourceSet) {
-      return;
-    }
-
-    const actualRestSeconds = Math.max(0, Math.round((getNowMs() - restState.startedAt) / 1000));
-    await saveSetPatch(sourceSet, { actualRestSeconds });
-    const nextPendingSet = activeRecord
-      ? getNextWorkoutSetForRotation(activeSets, memberOrder, activeRecord.id)
-      : null;
-    setActiveMemberId(nextPendingSet?.memberId ?? null);
-  }
-
   const currentMemberRest = memberRestState[currentMemberId];
-  const isCurrentMemberResting =
-    Boolean(currentMemberRest?.isResting) &&
-    (!currentMemberRest?.sourceSetId || currentMemberRest.sourceSetId === currentDisplaySet?.id);
+  const isCurrentMemberResting = false;
   const currentMemberRestSeconds = currentMemberRest?.remaining ?? 0;
   const currentRestElapsedSeconds = currentMemberRest?.plannedSeconds
     ? Math.max(0, currentMemberRest.plannedSeconds - currentMemberRestSeconds)
     : 0;
-  const otherRestingMembers = members.filter(
-    (member) => member.id !== currentMemberId && memberRestState[member.id]?.isResting,
-  );
+  const restStatusMembers = members.filter((member) => Boolean(memberRestState[member.id]));
+  const selfMemberId = members[0]?.id;
+  const selfRestState = selfMemberId ? memberRestState[selfMemberId] : undefined;
   const nextSetForCurrentMember = activeSets
     .filter((set) => set.memberId === currentMemberId && set.setNumber > (currentDisplaySet?.setNumber ?? 0) && !set.skipped)
     .sort((left, right) => left.setNumber - right.setNumber)[0];
@@ -542,14 +590,6 @@ export default function WorkoutRoute() {
   async function completeCurrentRound() {
     if (isWorkoutReadyToFinish) {
       await finishWorkout();
-      return;
-    }
-    const currentRestState = memberRestState[currentMemberId];
-    if (
-      currentRestState?.isResting &&
-      (!currentRestState.sourceSetId || currentRestState.sourceSetId === currentDisplaySet?.id)
-    ) {
-      await completeMemberRest(currentMemberId);
       return;
     }
     const targetSet = currentDisplaySet && !currentDisplaySet.completed && !currentDisplaySet.skipped
@@ -613,23 +653,20 @@ export default function WorkoutRoute() {
       setMemberRestState((prev) => ({
         ...prev,
         [savedSet.memberId]: {
-          remaining: restSeconds,
           endTime: startedAt + restSeconds * 1000,
           isResting: true,
           plannedSeconds: restSeconds,
+          readyNotified: false,
+          remaining: restSeconds,
           sourceSetId: savedSet.id,
           startedAt,
+          status: 'resting',
         },
       }));
     }
 
     if (nextPendingSet) {
       setWorkoutReadyToFinish(false);
-      setActiveMemberId(
-        restSeconds > 0 && nextPendingSet.setNumber > savedSet.setNumber
-          ? savedSet.memberId
-          : nextPendingSet.memberId,
-      );
       return;
     }
 
@@ -717,7 +754,7 @@ export default function WorkoutRoute() {
             completed: false,
             exerciseRecordId: activeRecord.id,
             memberId,
-            notes: '加做组',
+            notes: WORKOUT_EXTRA_SET_NOTE,
             reps: defaults.reps,
             sessionId: detail.session.id,
             weight: defaults.weight,
@@ -734,7 +771,6 @@ export default function WorkoutRoute() {
           : current,
       );
       setWorkoutReadyToFinish(false);
-      setActiveMemberId(addedSets[0]?.memberId ?? null);
       setLastSavedAt(new Date().toISOString());
 
       void Promise.all(
@@ -793,17 +829,94 @@ export default function WorkoutRoute() {
     ]);
   }
 
-  function handleMoreOptions() {
-    Alert.alert('训练选项', '', [
-      { text: '取消', style: 'cancel' },
-      { text: '添加加做组', onPress: confirmAddExtraSet },
-      { text: '跳过当前动作', onPress: () => {
-        if (activeExerciseIndex < (detail?.exercises.length ?? 1) - 1) {
-          setActiveExerciseIndex((prev) => prev + 1);
-        }
-      }},
-      { text: '结束训练', style: 'destructive', onPress: () => void finishWorkout() },
+  function confirmFinishWorkout() {
+    Alert.alert('结束本次训练？', '已记录的数据会保存，未完成组不会计入完成组。', [
+      { text: '继续训练', style: 'cancel' },
+      { text: '保存并结束', style: 'destructive', onPress: () => void finishWorkout({ force: true }) },
     ]);
+  }
+
+  function openWorkoutAdjustmentMenu() {
+    Alert.alert('本次训练调整', '这些调整只影响本次训练，不会直接修改原计划。', [
+      { text: '取消', style: 'cancel' },
+      { text: '替换当前动作', onPress: () => void openReplaceSheet() },
+      { text: '加做一组', onPress: confirmAddExtraSet },
+      { text: '本次跳过动作', onPress: confirmSkipCurrentExercise },
+      { text: '添加临时动作', onPress: () => void openTemporaryExerciseSheet() },
+    ]);
+  }
+
+  async function refreshDetailCursor() {
+    if (!detail) {
+      return;
+    }
+    const nextDetail = await repositories.workoutRepository.getSessionDetail(detail.session.id);
+    const cursor = getWorkoutCursorFromQueue(nextDetail, memberOrder);
+    setDetail(nextDetail);
+    if (cursor) {
+      setActiveExerciseIndex(cursor.exerciseIndex);
+      setWorkoutReadyToFinish(false);
+      return;
+    }
+    setWorkoutReadyToFinish(nextDetail.sets.some((set) => set.completed || set.skipped));
+  }
+
+  function confirmSkipCurrentExercise() {
+    if (!activeRecord || !detail) {
+      return;
+    }
+
+    if (members.length <= 1) {
+      Alert.alert('本次跳过动作？', '该动作本次不会计入完成组，但不会从计划中删除。', [
+        { text: '取消', style: 'cancel' },
+        { text: '本次跳过', style: 'destructive', onPress: () => void skipCurrentExercise('all') },
+      ]);
+      return;
+    }
+
+    Alert.alert('本次跳过动作？', '该动作本次不会计入完成组，但不会从计划中删除。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: `仅 ${membersById.get(currentMemberId)?.displayName ?? '当前成员'}`,
+        onPress: () => void skipCurrentExercise('member'),
+      },
+      { text: '全小组本次跳过', style: 'destructive', onPress: () => void skipCurrentExercise('all') },
+    ]);
+  }
+
+  async function skipCurrentExercise(scope: 'all' | 'member') {
+    if (!activeRecord || !detail) {
+      return;
+    }
+    if (!guardFeature('save_workout')) {
+      return;
+    }
+
+    const targetSets = activeSets.filter(
+      (set) =>
+        !set.completed &&
+        !set.skipped &&
+        (scope === 'all' || set.memberId === currentMemberId),
+    );
+    if (targetSets.length === 0) {
+      Alert.alert('无需跳过', '当前范围没有待记录的组。');
+      return;
+    }
+
+    try {
+      await Promise.all(
+        targetSets.map((set) =>
+          saveSetPatch(set, {
+            completed: false,
+            notes: set.notes ? `${set.notes}；${WORKOUT_SKIPPED_EXERCISE_NOTE}` : WORKOUT_SKIPPED_EXERCISE_NOTE,
+            skipped: true,
+          }),
+        ),
+      );
+      await refreshDetailCursor();
+    } catch (skipError) {
+      setError(skipError instanceof Error ? skipError.message : '本次跳过动作失败。');
+    }
   }
 
   async function openReplaceSheet() {
@@ -834,26 +947,122 @@ export default function WorkoutRoute() {
             left.name.localeCompare(right.name),
         ),
     );
-    setReplaceSheetVisible(true);
+    setExercisePickerMode('replace');
   }
 
-  async function replaceCurrentExercise(exercise: Exercise) {
+  async function openTemporaryExerciseSheet() {
+    const exercises = await repositories.exerciseRepository.listExercises();
+    setReplacementExercises(exercises.slice().sort((left, right) => left.name.localeCompare(right.name)));
+    setExercisePickerMode('addTemporary');
+  }
+
+  function handleExercisePickerSelect(exercise: Exercise) {
+    if (exercisePickerMode === 'replace') {
+      confirmReplaceCurrentExercise(exercise);
+      return;
+    }
+    if (exercisePickerMode === 'addTemporary') {
+      confirmTemporaryExercisePlacement(exercise);
+    }
+  }
+
+  function confirmReplaceCurrentExercise(exercise: Exercise) {
+    Alert.alert('替换原因', '替换只影响本次训练，已完成组会保留为原动作。', [
+      { text: '取消', style: 'cancel' },
+      { text: '器械被占', onPress: () => void replaceCurrentExercise(exercise, '器械被占') },
+      { text: '状态不好', onPress: () => void replaceCurrentExercise(exercise, '状态不好') },
+      { text: '动作不适', onPress: () => void replaceCurrentExercise(exercise, '动作不适') },
+      { text: '临时调整', onPress: () => void replaceCurrentExercise(exercise, '临时调整') },
+    ]);
+  }
+
+  async function replaceCurrentExercise(exercise: Exercise, reason: string) {
     if (!activeRecord || !detail) return;
     try {
-      await repositories.workoutRepository.updateExerciseRecordExercise(activeRecord.id, exercise.id);
+      const note = `${WORKOUT_REPLACEMENT_NOTE}：${reason}`;
+      await repositories.workoutRepository.updateExerciseRecordExercise(activeRecord.id, exercise.id, note);
       const nextExercises = { ...exerciseMap, [exercise.id]: exercise };
       setExerciseMap(nextExercises);
       setDetail({
         ...detail,
         exercises: detail.exercises.map((record) =>
           record.id === activeRecord.id
-            ? { ...record, exerciseId: exercise.id, replacedFromExerciseId: record.replacedFromExerciseId ?? record.exerciseId }
+            ? {
+                ...record,
+                exerciseId: exercise.id,
+                notes: note,
+                replacedFromExerciseId: record.replacedFromExerciseId ?? record.exerciseId,
+              }
             : record,
         ),
       });
-      setReplaceSheetVisible(false);
+      setExercisePickerMode(null);
     } catch (replaceError) {
       setError(replaceError instanceof Error ? replaceError.message : '动作替换失败。');
+    }
+  }
+
+  function confirmTemporaryExercisePlacement(exercise: Exercise) {
+    if (!activeRecord) {
+      return;
+    }
+
+    Alert.alert('添加临时动作', '默认只加入本次训练，不会写回原计划。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '添加到当前位置',
+        onPress: () => void addTemporaryExercise(exercise, activeRecord.orderIndex),
+      },
+      {
+        text: '添加到当前动作之后',
+        onPress: () => void addTemporaryExercise(exercise, activeRecord.orderIndex + 1),
+      },
+      {
+        text: '添加到训练末尾',
+        onPress: () => void addTemporaryExercise(exercise),
+      },
+    ]);
+  }
+
+  async function addTemporaryExercise(exercise: Exercise, insertOrderIndex?: number) {
+    if (!detail || !guardFeature('save_workout')) {
+      return;
+    }
+
+    const beforeRecordIds = new Set(detail.exercises.map((record) => record.id));
+    const defaultSetCount = Math.max(1, activeRecord?.plannedSets ?? 3);
+    const defaultReps = currentDisplaySet?.actualReps ?? currentDisplaySet?.plannedReps ?? activeRecord?.plannedReps ?? 10;
+    const defaultWeight = currentDisplaySet?.actualWeight ?? currentDisplaySet?.plannedWeight;
+
+    try {
+      const nextDetail = await repositories.workoutRepository.addExerciseToSession({
+        exerciseId: exercise.id,
+        insertOrderIndex,
+        memberId: memberOrder[0] ?? currentMemberId,
+        memberIds: memberOrder.length > 0 ? memberOrder : [currentMemberId],
+        notes: WORKOUT_TEMPORARY_EXERCISE_NOTE,
+        sessionId: detail.session.id,
+        sets: Array.from({ length: defaultSetCount }, () => ({
+          completed: false,
+          notes: WORKOUT_TEMPORARY_EXERCISE_NOTE,
+          reps: defaultReps,
+          weight: defaultWeight,
+        })),
+      });
+      const nextRecord = nextDetail.exercises.find((record) => !beforeRecordIds.has(record.id));
+      const nextRecordIndex = nextRecord
+        ? nextDetail.exercises.findIndex((record) => record.id === nextRecord.id)
+        : -1;
+
+      setExerciseMap((current) => ({ ...current, [exercise.id]: exercise }));
+      setDetail(nextDetail);
+      setExercisePickerMode(null);
+      setWorkoutReadyToFinish(false);
+      if (nextRecordIndex >= 0) {
+        setActiveExerciseIndex(nextRecordIndex);
+      }
+    } catch (addError) {
+      setError(addError instanceof Error ? addError.message : '添加临时动作失败。');
     }
   }
 
@@ -872,7 +1081,7 @@ export default function WorkoutRoute() {
               {sessionSubtitle}
             </AppText>
           </View>
-          <Pressable accessibilityRole="button" onPress={handleMoreOptions}>
+          <Pressable accessibilityRole="button" onPress={confirmFinishWorkout}>
             <AppText tone="danger" variant="body" weight="700">
               结束训练
             </AppText>
@@ -926,15 +1135,25 @@ export default function WorkoutRoute() {
               <ExerciseHeroCard
                 currentSetIndex={exerciseSetProgress.currentSetNumber}
                 exercise={activeExercise}
+                onOpenAdjustments={openWorkoutAdjustmentMenu}
                 record={activeRecord}
                 totalSets={exerciseSetProgress.totalPlannedSets}
               />
+
+              {adjustmentSummary?.hasAdjustments ? (
+                <View style={styles.adjustmentHint}>
+                  <Ionicons color={colors.primary} name="options-outline" size={16} />
+                  <AppText tone="muted" variant="caption" weight="800">
+                    本次已调整：替换 {adjustmentSummary.replacementCount} · 加做 {adjustmentSummary.extraSetCount} · 跳过 {adjustmentSummary.skippedExerciseCount} · 临时 {adjustmentSummary.temporaryExerciseCount}
+                  </AppText>
+                </View>
+              ) : null}
 
               {members.length > 1 ? (
                 <GroupMemberStrip
                   currentMemberId={currentMemberId}
                   members={members}
-                  onSelectMember={(id) => setActiveMemberId(id)}
+                  onSelectMember={() => undefined}
                   profiles={profiles}
                 />
               ) : null}
@@ -950,7 +1169,6 @@ export default function WorkoutRoute() {
                   onNotesChange={(v) => void saveSetPatch(currentDisplaySet, { notes: v })}
                   onRepsChange={(v) => void saveSetPatch(currentDisplaySet, { actualReps: v })}
                   onRpeChange={(v) => void saveSetPatch(currentDisplaySet, { rpe: v })}
-                  onSkipRest={() => void completeMemberRest(currentMemberId)}
                   onWeightChange={(v) => void saveSetPatch(currentDisplaySet, { actualWeight: v })}
                   notes={currentDisplaySet.notes}
                   plannedRestSeconds={currentMemberRest?.plannedSeconds ?? activeRecord.plannedRestSeconds}
@@ -968,15 +1186,43 @@ export default function WorkoutRoute() {
                 />
               ) : null}
 
-              {members.length > 1 && otherRestingMembers.length > 0 ? (
+              {restNotice ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setRestNotice(null)}
+                  style={styles.restNotice}
+                >
+                  <Ionicons color={colors.success} name="checkmark-circle-outline" size={18} />
+                  <AppText variant="bodySmall" weight="900" style={styles.restNoticeText}>
+                    {restNotice}
+                  </AppText>
+                </Pressable>
+              ) : null}
+
+              {selfRestState ? (
+                <RestTimerPanel
+                  currentMemberName="你的休息"
+                  currentSetLabel="刚完成组"
+                  elapsedSeconds={selfRestState.plannedSeconds ? Math.max(0, selfRestState.plannedSeconds - selfRestState.remaining) : 0}
+                  nextMemberName={membersById.get(currentMemberId)?.displayName}
+                  nextSetLabel={nextSetLabel}
+                  plannedSeconds={selfRestState.plannedSeconds}
+                  remainingSeconds={selfRestState.remaining}
+                  status={selfRestState.status}
+                />
+              ) : null}
+
+              {members.length > 1 && restStatusMembers.length > 0 ? (
                 <View style={styles.otherMembersRestSection}>
-                  <AppText variant="caption" weight="700" style={styles.otherMembersTitle}>其他成员休息中</AppText>
+                  <AppText variant="caption" weight="700" style={styles.otherMembersTitle}>休息状态</AppText>
                   <View style={styles.otherMembersGrid}>
-                    {otherRestingMembers.map((member) => (
+                    {restStatusMembers.map((member) => (
                       <View key={member.id} style={styles.otherMemberCard}>
                         <AppText variant="caption" weight="800">{member.displayName}</AppText>
                         <AppText variant="caption" weight="900" style={styles.otherMemberTime}>
-                          {formatTimer(memberRestState[member.id]?.remaining ?? 0)}
+                          {memberRestState[member.id]?.status === 'ready'
+                            ? '已恢复'
+                            : formatTimer(memberRestState[member.id]?.remaining ?? 0)}
                         </AppText>
                       </View>
                     ))}
@@ -1026,55 +1272,17 @@ export default function WorkoutRoute() {
               </View>
             </View>
 
-            <View style={styles.auxRow}>
-              <Pressable
-                disabled={activeExerciseIndex === 0}
-                onPress={() => {
-                  setMemberRestState({});
-                  setWorkoutReadyToFinish(false);
-                  setActiveExerciseIndex((index) => Math.max(0, index - 1));
-                }}
-                style={[styles.auxButton, activeExerciseIndex === 0 && styles.auxButtonDisabled]}
-              >
-                <Ionicons color={activeExerciseIndex > 0 ? colors.darkMuted : colors.darkCard} name="arrow-back-outline" size={16} />
-                <AppText tone="muted" variant="caption">
-                  上一个动作
-                </AppText>
-              </Pressable>
-              <View style={styles.auxDivider} />
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void openReplaceSheet()}
-                style={styles.auxButton}
-              >
-                <Ionicons color={colors.darkMuted} name="swap-horizontal-outline" size={16} />
-                <AppText tone="muted" variant="caption">
-                  替换动作
-                </AppText>
-              </Pressable>
-              <View style={styles.auxDivider} />
-              <Pressable
-                disabled={!hasNextExercise}
-                onPress={goNextExercise}
-                style={[styles.auxButton, !hasNextExercise && styles.auxButtonDisabled]}
-              >
-                <Ionicons color={hasNextExercise ? colors.darkMuted : colors.darkCard} name="arrow-forward-outline" size={16} />
-                <AppText tone={hasNextExercise ? 'muted' : 'muted'} variant="caption">
-                  下一个动作
-                </AppText>
-              </Pressable>
-            </View>
           </View>
         ) : null}
       </View>
       <ExercisePickerSheet
         exercises={replacementExercises}
-        onClose={() => setReplaceSheetVisible(false)}
+        onClose={() => setExercisePickerMode(null)}
         onCreateCustomExercise={(input) => repositories.exerciseRepository.createCustomExercise(input)}
-        onSelect={(exercise) => void replaceCurrentExercise(exercise)}
-        selectedExerciseIds={activeRecord ? [activeRecord.exerciseId] : []}
-        title="替换当前动作"
-        visible={isReplaceSheetVisible}
+        onSelect={handleExercisePickerSelect}
+        selectedExerciseIds={exercisePickerMode === 'replace' && activeRecord ? [activeRecord.exerciseId] : []}
+        title={exercisePickerMode === 'addTemporary' ? '添加临时动作' : '替换当前动作'}
+        visible={Boolean(exercisePickerMode)}
       />
       <AuthGateSheets {...sheets} />
     </SafeAreaView>
@@ -1161,6 +1369,30 @@ const styles = StyleSheet.create({
   },
   otherMemberTime: {
     color: colors.primary,
+  },
+  adjustmentHint: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  restNotice: {
+    alignItems: 'center',
+    backgroundColor: colors.successSoft,
+    borderColor: colors.success,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  restNoticeText: {
+    color: colors.textStrong,
+    flex: 1,
   },
   restHeader: {
     alignItems: 'center',

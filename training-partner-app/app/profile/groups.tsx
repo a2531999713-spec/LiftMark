@@ -9,6 +9,7 @@ import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, GroupMemberRole } from '@/domain/member/member.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { syncGroupsToServer } from '@/services/profileSyncService';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, spacing } from '@/theme';
 
@@ -90,6 +91,14 @@ export default function ProfileGroupsRoute() {
         fridayStrategy: group.fridayStrategy,
         name,
       });
+
+      // 同步到服务器
+      void syncGroupsToServer([{
+        id: created.id,
+        name: created.name,
+        createdAt: created.createdAt,
+      }]).catch(() => {});
+
       setNewGroupName('');
       setCreateVisible(false);
       setSelectedGroupId(created.id);

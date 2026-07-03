@@ -1,16 +1,22 @@
 import { getDatabase, initializeLocalDatabase } from '@/data/local';
 import { apiRequest } from '@/services/httpClient';
 import { readStoredSession } from '@/services/auth/tokenStorage';
+import { resolveAvatarUrl } from '@/utils/avatarUrl';
 
 type ServerMember = {
   id: string;
-  group_id: string;
-  user_id: string;
+  group_id?: string;
+  groupId?: string;
+  user_id?: string;
+  userId?: string;
   role: string;
   status: string;
-  nickname: string;
-  avatar_url: string | null;
-  joined_at: string;
+  displayName?: string;
+  nickname?: string;
+  avatar_url?: string | null;
+  avatarUrl?: string | null;
+  joined_at?: string;
+  joinedAt?: string;
 };
 
 /**
@@ -32,25 +38,38 @@ export async function syncGroupMembersAvatar(groupId: string): Promise<void> {
     const db = await getDatabase();
 
     for (const serverMember of response.members) {
+      const userId = serverMember.userId ?? serverMember.user_id;
+      if (!userId) continue;
+      const avatarUrl = resolveAvatarUrl(serverMember.avatarUrl ?? serverMember.avatar_url) ?? null;
+      const displayName = serverMember.displayName ?? serverMember.nickname;
+
       // 更新 group_members 表中的 avatar_url
       await db.runAsync(
-        `UPDATE group_members SET avatar_url = ?, updated_at = ? WHERE id = ? OR (group_id = ? AND user_id = ?)`,
-        serverMember.avatar_url,
+        `UPDATE group_members
+         SET display_name = COALESCE(?, display_name),
+             user_id = ?,
+             member_type = 'real',
+             avatar_url = ?,
+             updated_at = ?
+         WHERE id = ? OR (group_id = ? AND user_id = ?)`,
+        displayName ?? null,
+        userId,
+        avatarUrl,
         new Date().toISOString(),
         serverMember.id,
         groupId,
-        serverMember.user_id
+        userId
       );
 
       // 更新 member_profiles 表中的头像
       await db.runAsync(
         `UPDATE member_profiles SET avatar_url = ?, avatar_updated_at = ?, updated_at = ?
          WHERE member_id IN (SELECT id FROM group_members WHERE group_id = ? AND user_id = ?)`,
-        serverMember.avatar_url,
+        avatarUrl,
         new Date().toISOString(),
         new Date().toISOString(),
         groupId,
-        serverMember.user_id
+        userId
       );
     }
   } catch {

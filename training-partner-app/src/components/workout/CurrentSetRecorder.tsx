@@ -156,7 +156,6 @@ type CurrentSetRecorderProps = {
   onCompleteSet: () => void;
   onNotesChange?: (value: string | undefined) => void;
   onRpeChange?: (value: number | undefined) => void;
-  onSkipRest: () => void;
   onWeightChange: (value: number) => void;
   onRepsChange: (value: number) => void;
   notes?: string;
@@ -181,7 +180,6 @@ export function CurrentSetRecorder({
   onCompleteSet,
   onNotesChange,
   onRpeChange,
-  onSkipRest,
   onWeightChange,
   onRepsChange,
   notes,
@@ -262,7 +260,6 @@ export function CurrentSetRecorder({
             elapsedSeconds={restElapsedSeconds}
             nextMemberName={nextMemberName}
             nextSetLabel={nextSetLabel}
-            onStartNextSet={onSkipRest}
             plannedSeconds={plannedRestSeconds}
             remainingSeconds={restSeconds ?? 0}
           />

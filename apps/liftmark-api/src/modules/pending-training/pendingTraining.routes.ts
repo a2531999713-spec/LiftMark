@@ -14,6 +14,10 @@ export async function registerPendingTrainingRoutes(app: FastifyInstance) {
     const pendingItems = await db('pending_training_data')
       .join('groups', 'pending_training_data.group_id', 'groups.id')
       .join('users as uploader', 'pending_training_data.uploader_user_id', 'uploader.id')
+      .leftJoin('member_profiles as uploader_profile', function() {
+        this.on('uploader_profile.user_id', '=', 'uploader.id')
+          .andOn('uploader_profile.group_id', '=', 'pending_training_data.group_id');
+      })
       .where('pending_training_data.target_user_id', authUser.id)
       .where('pending_training_data.status', 'pending')
       .select(
@@ -22,7 +26,8 @@ export async function registerPendingTrainingRoutes(app: FastifyInstance) {
         'groups.name as group_name',
         'pending_training_data.uploader_user_id',
         'uploader.nickname as uploader_nickname',
-        'uploader.avatar_url as uploader_avatar_url',
+        'uploader.avatar_url as uploader_user_avatar_url',
+        'uploader_profile.avatar_url as uploader_profile_avatar_url',
         'pending_training_data.session_data',
         'pending_training_data.sets_data',
         'pending_training_data.uploaded_at'
@@ -37,7 +42,7 @@ export async function registerPendingTrainingRoutes(app: FastifyInstance) {
         uploader: {
           userId: item.uploader_user_id,
           nickname: item.uploader_nickname,
-          avatarUrl: item.uploader_avatar_url,
+          avatarUrl: item.uploader_profile_avatar_url ?? item.uploader_user_avatar_url,
         },
         sessionData: item.session_data,
         setsData: item.sets_data,
@@ -126,9 +131,9 @@ export async function registerPendingTrainingRoutes(app: FastifyInstance) {
     const sessionId = createId('ws');
     const sessionData = pendingItem.session_data as any;
     const setsData = pendingItem.sets_data as any[];
+    const now = new Date();
 
     await db.transaction(async (trx) => {
-      // 插入训练会话
       await trx('workout_sessions').insert({
         id: sessionId,
         user_id: authUser.id,
@@ -136,46 +141,39 @@ export async function registerPendingTrainingRoutes(app: FastifyInstance) {
         client_id: `pending_${pendingItem.id}`,
         title: sessionData.title || '组员上传的训练',
         status: sessionData.status || 'completed',
-        client_updated_at: new Date(),
+        client_updated_at: now,
         sync_version: 1,
-        payload: sessionData,
-        created_at: new Date(),
-        updated_at: new Date(),
+        payload: {
+          ...sessionData,
+          source: 'pending_training',
+          pendingId: pendingItem.id,
+          uploaderUserId: pendingItem.uploader_user_id,
+        },
+        created_at: now,
+        updated_at: now,
       });
 
-      // 插入训练组
-      for (const setData of setsData) {
-        const exerciseRecordId = createId('wer');
-        await trx('workout_exercise_records').insert({
-          id: exerciseRecordId,
-          session_id: sessionId,
-          exercise_id: setData.exerciseId,
-          exercise_client_id: setData.exerciseClientId || setData.exerciseId,
-          order_index: setData.setNumber,
-          planned_rest_seconds: 90,
-          created_at: new Date(),
-          updated_at: new Date(),
-        });
-
+      for (const [index, setData] of setsData.entries()) {
         await trx('workout_sets').insert({
           id: createId('wset'),
           user_id: authUser.id,
           group_id: pendingItem.group_id,
-          client_id: `pending_set_${pendingItem.id}_${setData.setNumber}`,
-          exercise_record_id: exerciseRecordId,
-          set_number: setData.setNumber,
-          planned_weight: setData.weight,
-          planned_reps: setData.reps,
+          client_id: `pending_set_${pendingItem.id}_${index + 1}_${setData.setNumber}`,
+          parent_server_id: sessionId,
+          member_client_id: authUser.id,
+          exercise_client_id: setData.exerciseClientId || setData.exerciseId,
           actual_weight: setData.completed ? setData.weight : null,
           actual_reps: setData.completed ? setData.reps : null,
-          completed: setData.completed ?? true,
-          skipped: setData.skipped ?? false,
-          rpe: setData.rpe,
-          notes: setData.notes,
+          status: setData.skipped ? 'skipped' : (setData.completed ?? true) ? 'completed' : 'pending',
+          client_updated_at: now,
           sync_version: 1,
-          payload: setData,
-          created_at: new Date(),
-          updated_at: new Date(),
+          payload: {
+            ...setData,
+            pendingId: pendingItem.id,
+            sessionServerId: sessionId,
+          },
+          created_at: now,
+          updated_at: now,
         });
       }
 
@@ -184,12 +182,12 @@ export async function registerPendingTrainingRoutes(app: FastifyInstance) {
         .where({ id: params.id })
         .update({
           status: 'accepted',
-          responded_at: new Date(),
-          updated_at: new Date(),
+          responded_at: now,
+          updated_at: now,
         });
     });
 
-    return { ok: true, sessionId };
+    return { ok: true, sessionId, sessionData, setsData };
   });
 
   // 拒绝数据
@@ -219,12 +217,17 @@ export async function registerPendingTrainingRoutes(app: FastifyInstance) {
 
     const uploadedItems = await db('pending_training_data')
       .join('users as target', 'pending_training_data.target_user_id', 'target.id')
+      .leftJoin('member_profiles as target_profile', function() {
+        this.on('target_profile.user_id', '=', 'target.id')
+          .andOn('target_profile.group_id', '=', 'pending_training_data.group_id');
+      })
       .where('pending_training_data.uploader_user_id', authUser.id)
       .select(
         'pending_training_data.id',
         'pending_training_data.target_user_id',
         'target.nickname as target_nickname',
-        'target.avatar_url as target_avatar_url',
+        'target.avatar_url as target_user_avatar_url',
+        'target_profile.avatar_url as target_profile_avatar_url',
         'pending_training_data.status',
         'pending_training_data.uploaded_at',
         'pending_training_data.responded_at'
@@ -237,7 +240,7 @@ export async function registerPendingTrainingRoutes(app: FastifyInstance) {
         targetUser: {
           userId: item.target_user_id,
           nickname: item.target_nickname,
-          avatarUrl: item.target_avatar_url,
+          avatarUrl: item.target_profile_avatar_url ?? item.target_user_avatar_url,
         },
         status: item.status,
         uploadedAt: item.uploaded_at,

@@ -41,22 +41,32 @@ export class SQLiteMemberRepository implements MemberRepository {
       id: input.id ?? createId('member'),
       groupId: input.groupId,
       displayName: input.displayName,
+      userId: input.userId,
+      memberType: input.memberType ?? (input.userId ? 'real' : 'local'),
+      localMemberId: input.localMemberId ?? (input.userId ? undefined : input.id),
       role: input.role ?? 'member',
       avatarUrl: input.avatarUrl,
+      joinedAt: now,
       createdAt: now,
       updatedAt: now,
     };
+    member.localMemberId = member.localMemberId ?? (member.memberType === 'local' ? member.id : undefined);
 
     await db.withExclusiveTransactionAsync(async (txn) => {
       await txn.runAsync(
         `INSERT INTO group_members (
-          id, group_id, display_name, role, avatar_url, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          id, group_id, display_name, user_id, member_type, local_member_id, role,
+          avatar_url, joined_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         member.id,
         member.groupId,
         member.displayName,
+        member.userId ?? null,
+        member.memberType,
+        member.localMemberId ?? null,
         member.role,
         member.avatarUrl ?? null,
+        member.joinedAt ?? null,
         member.createdAt,
         member.updatedAt,
       );
@@ -102,17 +112,27 @@ export class SQLiteMemberRepository implements MemberRepository {
       ...patch,
       id,
       groupId: current.group_id,
+      userId: patch.userId ?? current.user_id ?? undefined,
+      memberType: patch.memberType ?? current.member_type ?? (current.user_id ? 'real' : 'local'),
+      localMemberId: patch.localMemberId ?? current.local_member_id ?? undefined,
       createdAt: current.created_at,
+      joinedAt: patch.joinedAt ?? current.joined_at ?? undefined,
       updatedAt: nowIso(),
     };
+    updated.localMemberId = updated.localMemberId ?? (updated.memberType === 'local' ? id : undefined);
 
     await db.runAsync(
       `UPDATE group_members
-       SET display_name = ?, role = ?, avatar_url = ?, updated_at = ?
+       SET display_name = ?, user_id = ?, member_type = ?, local_member_id = ?,
+           role = ?, avatar_url = ?, joined_at = ?, updated_at = ?
        WHERE id = ?`,
       updated.displayName,
+      updated.userId ?? null,
+      updated.memberType,
+      updated.localMemberId ?? null,
       updated.role,
       updated.avatarUrl ?? null,
+      updated.joinedAt ?? null,
       updated.updatedAt,
       id,
     );
@@ -161,6 +181,16 @@ export class SQLiteMemberRepository implements MemberRepository {
       updated.updatedAt,
       memberId,
     );
+
+    // 同步更新 group_members 表的 avatar_url，确保首页能正确显示头像
+    if (patch.avatarUrl !== undefined) {
+      await db.runAsync(
+        `UPDATE group_members SET avatar_url = ?, updated_at = ? WHERE id = ?`,
+        patch.avatarUrl ?? null,
+        updated.updatedAt,
+        memberId,
+      );
+    }
 
     return updated;
   }

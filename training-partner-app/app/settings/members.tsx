@@ -133,7 +133,10 @@ export default function SettingsMembersRoute() {
                       {formatProfileSummary(profile)}
                     </AppText>
                   </View>
-                  <Tag label={member.role === 'owner' ? '组长' : '成员'} tone={member.role === 'owner' ? 'brand' : 'neutral'} />
+                  <View style={styles.memberTags}>
+                    <Tag label={member.role === 'owner' ? '组长' : '成员'} tone={member.role === 'owner' ? 'brand' : 'neutral'} />
+                    <Tag label={member.memberType === 'real' ? '真实成员' : '本地成员'} tone={member.memberType === 'real' ? 'success' : 'neutral'} />
+                  </View>
                   <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
                 </Pressable>
               ))}
@@ -188,6 +191,10 @@ const styles = StyleSheet.create({
   memberText: {
     flex: 1,
     gap: 2,
+  },
+  memberTags: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
   },
   limitCard: {
     gap: spacing.xs,

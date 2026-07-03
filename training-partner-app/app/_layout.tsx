@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { initializeLocalDatabase } from '@/data/local';
+import { syncAllLocalGroupsToServer } from '@/services/profileSyncService';
 import { useAuthStore } from '@/store/authStore';
 import { colors, spacing } from '@/theme';
 
@@ -12,8 +13,16 @@ export default function RootLayout() {
 
   useEffect(() => {
     async function boot() {
-      await initializeLocalDatabase();
+      void initializeLocalDatabase().catch((error) => {
+        console.error('本地数据初始化失败', error);
+      });
       await useAuthStore.getState().loadCurrentUser();
+
+      // 登录后同步本地小组到服务器
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser) {
+        void syncAllLocalGroupsToServer().catch(() => {});
+      }
     }
     void boot().catch((error) => {
       console.error('启动初始化失败', error);

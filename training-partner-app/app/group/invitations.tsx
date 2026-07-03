@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
+import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,8 +12,7 @@ import {
   View,
 } from 'react-native';
 
-import { Screen, SecondaryPageHeader } from '@/components/ui';
-import { AppButton, AppCard, AppText, EmptyState } from '@/components/ui';
+import { AppButton, AppCard, AppText, EmptyState, Screen, SecondaryPageHeader } from '@/components/ui';
 import {
   createInvitation,
   disableInvitation,
@@ -47,7 +47,11 @@ export default function InvitationsRoute() {
   }, [effectiveGroupId]);
 
   useEffect(() => {
-    void loadInvitations();
+    const timer = setTimeout(() => {
+      void loadInvitations();
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [loadInvitations]);
 
   const handleCreate = useCallback(async () => {
@@ -76,6 +80,11 @@ export default function InvitationsRoute() {
     } catch {
       // 用户取消分享
     }
+  }, []);
+
+  const handleCopy = useCallback(async (code: string) => {
+    await Clipboard.setStringAsync(code);
+    Alert.alert('已复制', '邀请码已复制到剪贴板。');
   }, []);
 
   const handleDisable = useCallback(
@@ -141,6 +150,15 @@ export default function InvitationsRoute() {
         </View>
 
         <View style={styles.cardActions}>
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => void handleCopy(invitation.code)}
+          >
+            <Ionicons color={colors.primary} name="copy-outline" size={18} />
+            <AppText variant="caption" weight="700" style={styles.actionText}>
+              复制
+            </AppText>
+          </Pressable>
           <Pressable
             style={styles.actionButton}
             onPress={() => void handleShare(invitation.code)}

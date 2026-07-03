@@ -1,5 +1,42 @@
 import type { PlanExercise } from '../plan/plan.types';
-import type { WorkoutExerciseRecord, WorkoutSet, WorkoutSummary } from './workout.types';
+import type {
+  WorkoutExerciseRecord,
+  WorkoutSessionDetail,
+  WorkoutSet,
+  WorkoutSummary,
+} from './workout.types';
+
+export type WorkoutCursor = {
+  exerciseIndex: number;
+  setIndex: number;
+  memberIndex: number;
+};
+
+export type WorkoutExecutionQueueItem = {
+  id: string;
+  exerciseRecordId: string;
+  exerciseId: string;
+  plannedExerciseId?: string;
+  setIndex: number;
+  memberId: string;
+  status: 'pending' | 'completed' | 'skipped';
+  isExtraSet?: boolean;
+  isTemporaryExercise?: boolean;
+  replacedFromExerciseId?: string;
+};
+
+export type WorkoutAdjustmentSummary = {
+  extraSetCount: number;
+  hasAdjustments: boolean;
+  replacementCount: number;
+  skippedExerciseCount: number;
+  temporaryExerciseCount: number;
+};
+
+export const WORKOUT_EXTRA_SET_NOTE = '加做组';
+export const WORKOUT_TEMPORARY_EXERCISE_NOTE = '临时添加动作';
+export const WORKOUT_SKIPPED_EXERCISE_NOTE = '本次跳过动作';
+export const WORKOUT_REPLACEMENT_NOTE = '本次替换';
 
 export function getPlanExerciseSetCount(exercise: PlanExercise): number {
   return Math.max(1, exercise.sets ?? 1);
@@ -39,6 +76,24 @@ function compareWorkoutSetsByRotation(
   );
 }
 
+function compareWorkoutRecords(left: WorkoutExerciseRecord, right: WorkoutExerciseRecord): number {
+  return left.orderIndex - right.orderIndex || left.id.localeCompare(right.id);
+}
+
+function includesNote(note: string | undefined, keyword: string): boolean {
+  return Boolean(note?.includes(keyword));
+}
+
+export function isTemporaryWorkoutExercise(record: WorkoutExerciseRecord): boolean {
+  return !record.planExerciseId && includesNote(record.notes, WORKOUT_TEMPORARY_EXERCISE_NOTE);
+}
+
+export function isExtraWorkoutSet(set: WorkoutSet, record?: WorkoutExerciseRecord): boolean {
+  return includesNote(set.notes, WORKOUT_EXTRA_SET_NOTE) || (
+    record?.plannedSets !== undefined && set.setNumber > record.plannedSets
+  );
+}
+
 export function getNextWorkoutSetForRotation(
   sets: WorkoutSet[],
   memberOrder: string[],
@@ -58,6 +113,123 @@ export function getNextWorkoutSetForRotation(
   }
 
   return pendingSets[0];
+}
+
+export function buildWorkoutExecutionQueue(
+  detail: WorkoutSessionDetail,
+  memberOrder: string[],
+): WorkoutExecutionQueueItem[] {
+  const recordIndex = new Map<string, WorkoutExerciseRecord>();
+  detail.exercises.forEach((record) => recordIndex.set(record.id, record));
+
+  const recordOrder = [...detail.exercises].sort(compareWorkoutRecords);
+  const recordOrderIndex = new Map(recordOrder.map((record, index) => [record.id, index]));
+
+  return [...detail.sets]
+    .sort((left, right) => {
+      const leftRecordIndex = recordOrderIndex.get(left.exerciseRecordId) ?? Number.MAX_SAFE_INTEGER;
+      const rightRecordIndex = recordOrderIndex.get(right.exerciseRecordId) ?? Number.MAX_SAFE_INTEGER;
+      return (
+        leftRecordIndex - rightRecordIndex ||
+        compareWorkoutSetsByRotation(memberOrder, left, right)
+      );
+    })
+    .map((set) => {
+      const record = recordIndex.get(set.exerciseRecordId);
+      return {
+        id: set.id,
+        exerciseRecordId: set.exerciseRecordId,
+        exerciseId: record?.exerciseId ?? set.exerciseRecordId,
+        plannedExerciseId: record?.replacedFromExerciseId ?? record?.exerciseId,
+        setIndex: Math.max(0, set.setNumber - 1),
+        memberId: set.memberId,
+        status: set.skipped ? 'skipped' : set.completed ? 'completed' : 'pending',
+        isExtraSet: isExtraWorkoutSet(set, record) || undefined,
+        isTemporaryExercise: record ? isTemporaryWorkoutExercise(record) || undefined : undefined,
+        replacedFromExerciseId: record?.replacedFromExerciseId,
+      };
+    });
+}
+
+export function getWorkoutCursorFromQueue(
+  detail: WorkoutSessionDetail,
+  memberOrder: string[],
+): WorkoutCursor | null {
+  const records = [...detail.exercises].sort(compareWorkoutRecords);
+  for (const [exerciseIndex, record] of records.entries()) {
+    const nextSet = getNextWorkoutSetForRotation(detail.sets, memberOrder, record.id);
+    if (!nextSet) {
+      continue;
+    }
+
+    return {
+      exerciseIndex,
+      setIndex: Math.max(0, nextSet.setNumber - 1),
+      memberIndex: Math.max(0, memberOrder.indexOf(nextSet.memberId)),
+    };
+  }
+
+  return null;
+}
+
+export function advanceWorkoutCursor(
+  detail: WorkoutSessionDetail,
+  memberOrder: string[],
+): WorkoutCursor | null {
+  return getWorkoutCursorFromQueue(detail, memberOrder);
+}
+
+export function getWorkoutSetByCursor(
+  detail: WorkoutSessionDetail,
+  memberOrder: string[],
+  cursor: WorkoutCursor,
+): WorkoutSet | null {
+  const record = [...detail.exercises].sort(compareWorkoutRecords)[cursor.exerciseIndex];
+  if (!record) {
+    return null;
+  }
+  const memberId = memberOrder[cursor.memberIndex];
+  if (!memberId) {
+    return null;
+  }
+
+  return detail.sets.find(
+    (set) =>
+      set.exerciseRecordId === record.id &&
+      set.setNumber === cursor.setIndex + 1 &&
+      set.memberId === memberId,
+  ) ?? null;
+}
+
+export function summarizeWorkoutAdjustments(detail: WorkoutSessionDetail): WorkoutAdjustmentSummary {
+  const replacementCount = detail.exercises.filter((record) => record.replacedFromExerciseId).length;
+  const temporaryExerciseIds = new Set(
+    detail.exercises.filter(isTemporaryWorkoutExercise).map((record) => record.id),
+  );
+  const skippedExerciseCount = detail.exercises.filter((record) => {
+    const recordSets = detail.sets.filter((set) => set.exerciseRecordId === record.id);
+    return recordSets.length > 0 && recordSets.every((set) => set.skipped);
+  }).length;
+  const extraSetCount = detail.sets.filter((set) => {
+    const record = detail.exercises.find((item) => item.id === set.exerciseRecordId);
+    return isExtraWorkoutSet(set, record);
+  }).length;
+
+  const summary = {
+    extraSetCount,
+    replacementCount,
+    skippedExerciseCount,
+    temporaryExerciseCount: temporaryExerciseIds.size,
+  };
+
+  return {
+    ...summary,
+    hasAdjustments:
+      summary.replacementCount > 0 ||
+      summary.extraSetCount > 0 ||
+      summary.skippedExerciseCount > 0 ||
+      summary.temporaryExerciseCount > 0,
+  };
 }
 
 export type WorkoutExerciseSetProgress = {

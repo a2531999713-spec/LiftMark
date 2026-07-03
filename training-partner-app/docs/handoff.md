@@ -18,7 +18,7 @@
 - 当前项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`。
 - 图表：`MiniLineChart` / `MultiLineTrendChart` 已修复绘图区 padding、Y 轴比例、同值/全 0 安全范围、单位和空状态；周趋势使用日期或周起始日期。
 - 身体数据：`app/profile/body-metrics.tsx` 已重构为快速记录、折叠围度、目标设置、变化摘要、训练关联和趋势图；新增 `body_metric_goals` 和 migration v9。
-- 头像：根因是账号头像缓存与训练成员 profile 分表；账号头像更新/删除时同步当前小组第一位训练成员，训练、记录、小组分析统一使用 `Avatar`。
+- 头像：根因是账号头像缓存与训练成员 profile 分表；账号头像更新/删除时同步当前账号绑定的真实训练成员，训练、记录、小组分析统一使用 `Avatar`。
 - 多小组：`GroupRepository.listGroups()` 已接入小组页、今日、成员、记录、设置、头像和身体数据页；新建小组后可立即切换，旧训练记录保留原 `group_id`。
 - 小组记录：默认展示总览，动作表现选择器列出真实练过的 `exerciseId`，详情页按当前小组和真实动作 ID 过滤。
 - 训练执行：RPE 是可选折叠横向选择器；休息面板显示倒计时、建议休息、已休息、下一组和下一位，并保存实际休息秒数；训练中替换动作保留 `replaced_from_exercise_id`，不改原计划。
@@ -242,3 +242,15 @@ npm run android:preview
 - 普通 App 页面已移除“本机 / 本地”技术化文案，保留隐私/同步场景中的“当前设备”表达。
 - 已验证：移动端 `npm run typecheck`、`npm run lint`、`npm test -- --runInBand`；后端 `npm run typecheck`、`npm run build`。
 - 未执行：`npm run android:preview`，本次未构建 Android 预览包。
+
+## 2026-07-02 workout-execution-fix 交接
+
+- 当前项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`；后端路径：`C:\Users\zhw\Documents\LiftMark\apps\liftmark-api`。
+- 训练执行页当前组由 `buildWorkoutExecutionQueue()` / `getWorkoutCursorFromQueue()` 派生，顺序为动作 -> 组号 -> 成员；休息状态不再推进 cursor。
+- `RestTimerPanel` 不再提供“开始下一组 / 提前开始下一组”，只展示休息中、已恢复和准备下一组状态，并在倒计时结束后写入实际休息秒数。
+- 顶部右侧保持“结束训练”；替换当前动作、加做一组、跳过当前动作、添加临时动作迁入当前动作卡的“本次调整”。
+- 本次调整只写当前 session：替换保留 `replaced_from_exercise_id`，加做组和临时动作使用 notes 标记，跳过动作仅跳过当前 session 未完成 sets。
+- 训练总结页显示本次调整摘要，并允许同步到当前用户计划；系统方案不可直接写回。
+- 启动性能调整：根布局后台启动本地 DB 初始化，seed 增加版本标记跳过重复全量 seed；auth session 远程校验超时后保留 stored session 离线进入。
+- 已验证：移动端 `npm run typecheck -- --pretty false`、`npm run lint`、`npm test -- --runInBand`；线上 `/api/health` 返回 200，认证相关 POST 空请求返回 400 校验错误而非网络错误。
+- 未执行：`npm run android:preview` 真机安装回归；后续应重点验证训练中退出再进、休息结束提示、总结同步计划后再次开始训练。

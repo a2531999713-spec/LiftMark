@@ -10,6 +10,7 @@ import type { Group } from '@/domain/group/group.types';
 import type { MemberFormValues } from '@/domain/member/member.validation';
 import { canAddGroupMember, MAX_GROUP_MEMBERS } from '@/domain/member/member.validation';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { syncMembersToServer } from '@/services/profileSyncService';
 import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors } from '@/theme/colors';
@@ -82,10 +83,9 @@ export default function NewMemberRoute() {
       setError(null);
 
       try {
-        await repositories.memberRepository.createMember({
+        const created = await repositories.memberRepository.createMember({
           groupId: group.id,
           displayName: values.displayName.trim(),
-          avatarUrl: user?.avatarUrl,
           profile: {
             bodyweight: values.bodyweight,
             bench1RM: values.bench1RM,
@@ -97,6 +97,24 @@ export default function NewMemberRoute() {
             dumbbellIncrement: values.dumbbellIncrement,
           },
         });
+
+        // 同步到服务器
+        void syncMembersToServer(group.id, [{
+          id: created.id,
+          displayName: created.displayName,
+          role: created.role,
+          avatarUrl: user?.avatarUrl,
+          profile: {
+            bodyweight: values.bodyweight,
+            bench1RM: values.bench1RM,
+            squat1RM: values.squat1RM,
+            deadlift1RM: values.deadlift1RM,
+            overheadPress1RM: values.overheadPress1RM,
+            pullupReferenceWeight: values.pullupReferenceWeight,
+            barbellIncrement: values.barbellIncrement,
+            dumbbellIncrement: values.dumbbellIncrement,
+          },
+        }]).catch(() => {});
 
         router.replace(returnTo === 'settings' ? '/settings/members' : '/(tabs)/members');
       } catch (saveError) {

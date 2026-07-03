@@ -1,27 +1,29 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
-import { Screen, SecondaryPageHeader } from '@/components/ui';
-import { AppButton, AppCard, AppText, EmptyState } from '@/components/ui';
+import { AppButton, AppCard, AppText, EmptyState, Screen, SecondaryPageHeader } from '@/components/ui';
+import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import {
   acceptPendingTraining,
   getPendingTrainingItems,
   rejectPendingTraining,
   type PendingTrainingItem,
 } from '@/services/pendingTrainingService';
-import { colors, radius, spacing } from '@/theme';
+import { syncServerDataToLocal } from '@/services/profileSyncService';
+import { useAuthStore } from '@/store/authStore';
+import { colors, spacing } from '@/theme';
 
 export default function PendingTrainingRoute() {
+  const repositories = useMemo(() => createLocalRepositories(), []);
+  const user = useAuthStore((state) => state.user);
   const [items, setItems] = useState<PendingTrainingItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,8 +43,57 @@ export default function PendingTrainingRoute() {
   }, []);
 
   useEffect(() => {
-    void loadItems();
+    const timer = setTimeout(() => {
+      void loadItems();
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [loadItems]);
+
+  const saveAcceptedItemToLocal = useCallback(
+    async (
+      item: PendingTrainingItem,
+      accepted: { sessionData?: PendingTrainingItem['sessionData']; setsData?: PendingTrainingItem['setsData'] },
+    ) => {
+      await syncServerDataToLocal();
+      await initializeLocalDatabase();
+      const groups = await repositories.groupRepository.listGroups();
+      const group = groups.find((candidate) => candidate.id === item.groupId) ?? null;
+      const members = await repositories.memberRepository.listMembers(item.groupId);
+      const currentMember = members.find((member) => member.userId === user?.id);
+      if (!group || !currentMember) {
+        throw new Error('本地小组成员尚未同步完成。');
+      }
+
+      const setsByExerciseId = new Map<string, PendingTrainingItem['setsData']>();
+      for (const set of accepted.setsData ?? item.setsData) {
+        const list = setsByExerciseId.get(set.exerciseId) ?? [];
+        list.push(set);
+        setsByExerciseId.set(set.exerciseId, list);
+      }
+
+      await repositories.workoutRepository.createManualSession({
+        groupId: item.groupId,
+        planId: group.activePlanId,
+        date: accepted.sessionData?.date ?? item.sessionData.date,
+        title: accepted.sessionData?.title ?? item.sessionData.title ?? '组员上传的训练',
+        memberId: currentMember.id,
+        completed: true,
+        exercises: Array.from(setsByExerciseId.entries()).map(([exerciseId, sets], exerciseIndex) => ({
+          exerciseId,
+          notes: '待确认数据接受',
+          priority: exerciseIndex === 0 ? 'A' : exerciseIndex <= 2 ? 'B' : 'C',
+          sets: sets.map((set) => ({
+            completed: set.completed !== false && !set.skipped,
+            notes: set.notes,
+            reps: set.reps,
+            weight: set.weight,
+          })),
+        })),
+      });
+    },
+    [repositories, user?.id],
+  );
 
   const handleAccept = useCallback(async (item: PendingTrainingItem) => {
     Alert.alert(
@@ -57,8 +108,20 @@ export default function PendingTrainingRoute() {
             try {
               const result = await acceptPendingTraining(item.id);
               if (result.ok) {
+                let localSaved = true;
+                try {
+                  await saveAcceptedItemToLocal(item, {
+                    sessionData: result.sessionData,
+                    setsData: result.setsData,
+                  });
+                } catch {
+                  localSaved = false;
+                }
                 setItems((prev) => prev.filter((i) => i.id !== item.id));
-                Alert.alert('已接受', '训练数据已添加到你的记录中。');
+                Alert.alert(
+                  '已接受',
+                  localSaved ? '训练数据已添加到你的记录中。' : '云端已接受，本机记录将在下次同步后显示。',
+                );
               } else {
                 Alert.alert('操作失败', result.message || '请稍后重试。');
               }
@@ -71,7 +134,7 @@ export default function PendingTrainingRoute() {
         },
       ]
     );
-  }, []);
+  }, [saveAcceptedItemToLocal]);
 
   const handleReject = useCallback(async (item: PendingTrainingItem) => {
     Alert.alert(

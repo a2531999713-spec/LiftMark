@@ -8,6 +8,7 @@ import { badRequest, conflict, unauthorized } from '../../utils/errors';
 import { createId, createLiftmarkId } from '../../utils/ids';
 import { addDays, hashPassword, hashValue, verifyPassword } from '../../utils/security';
 import { signAccessToken, signRefreshToken, verifyRefreshToken, type TokenUser } from '../../utils/tokens';
+import { syncUserAvatarToMemberProfiles } from '../sync/avatarSync';
 import { sendSmsCode, verifySmsCode } from './sms.service';
 import { saveAvatarFile, deleteAvatarFile, getAllowedExtension } from './avatar.service';
 
@@ -351,7 +352,10 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       }
     }
 
-    await db('users').where({ id: authUser.id }).update({ avatar_url: body.avatar_url, updated_at: new Date() });
+    await db.transaction(async (trx) => {
+      await trx('users').where({ id: authUser.id }).update({ avatar_url: body.avatar_url, updated_at: new Date() });
+      await syncUserAvatarToMemberProfiles(trx, authUser.id, body.avatar_url);
+    });
     return { ok: true, avatar_url: body.avatar_url };
   });
 
@@ -397,10 +401,12 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         await deleteAvatarFile(oldAvatarUrl);
       }
 
-      // 更新数据库
-      await db('users').where({ id: authUser.id }).update({
-        avatar_url: avatarUrl,
-        updated_at: new Date(),
+      await db.transaction(async (trx) => {
+        await trx('users').where({ id: authUser.id }).update({
+          avatar_url: avatarUrl,
+          updated_at: new Date(),
+        });
+        await syncUserAvatarToMemberProfiles(trx, authUser.id, avatarUrl);
       });
 
       return { ok: true, avatar_url: avatarUrl };

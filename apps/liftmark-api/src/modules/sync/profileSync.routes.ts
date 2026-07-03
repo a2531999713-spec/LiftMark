@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../../db/connection';
 import { getAuthUser, requireAuth } from '../../middlewares/auth';
 import { createId } from '../../utils/ids';
+import { syncUserAvatarToMemberProfiles } from './avatarSync';
 
 /**
  * 同步用户头像到服务器
@@ -16,12 +17,15 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
       avatarUrl: z.string().nullable(),
     }).parse(request.body);
 
-    await db('users').where({ id: authUser.id }).update({
-      avatar_url: body.avatarUrl,
-      updated_at: new Date(),
+    await db.transaction(async (trx) => {
+      await trx('users').where({ id: authUser.id }).update({
+        avatar_url: body.avatarUrl,
+        updated_at: new Date(),
+      });
+      await syncUserAvatarToMemberProfiles(trx, authUser.id, body.avatarUrl);
     });
 
-    return { ok: true };
+    return { ok: true, avatarUrl: body.avatarUrl };
   });
 
   // 同步小组到服务器
@@ -81,6 +85,9 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
       members: z.array(z.object({
         id: z.string(),
         displayName: z.string(),
+        userId: z.string().optional(),
+        memberType: z.enum(['local', 'real']).optional(),
+        avatarUrl: z.string().nullable().optional(),
         role: z.string().optional(),
         profile: z.object({
           bodyweight: z.number().optional(),
@@ -97,6 +104,11 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
 
     const results = [];
     for (const member of body.members) {
+      if (member.memberType === 'local' || member.userId !== authUser.id) {
+        results.push({ id: member.id, synced: false, skipped: true, reason: 'local_or_other_user' });
+        continue;
+      }
+
       // 检查成员是否已存在
       const existing = await db('group_members')
         .where({ group_id: body.groupId, user_id: authUser.id })
@@ -126,6 +138,9 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
           await db('member_profiles')
             .where({ id: existingProfile.id })
             .update({
+              avatar_url: member.avatarUrl ?? null,
+              avatar_thumb_url: member.avatarUrl ?? null,
+              avatar_updated_at: member.avatarUrl ? new Date() : null,
               bodyweight: member.profile.bodyweight,
               bench_1rm: member.profile.bench1RM,
               squat_1rm: member.profile.squat1RM,
@@ -141,6 +156,9 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
             id: createId('mprof'),
             user_id: authUser.id,
             group_id: body.groupId,
+            avatar_url: member.avatarUrl ?? null,
+            avatar_thumb_url: member.avatarUrl ?? null,
+            avatar_updated_at: member.avatarUrl ? new Date() : null,
             bodyweight: member.profile.bodyweight,
             bench_1rm: member.profile.bench1RM,
             squat_1rm: member.profile.squat1RM,
@@ -190,8 +208,11 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
           'group_members.id as member_id',
           'users.id as user_id',
           'users.nickname',
-          'users.avatar_url',
+          'users.avatar_url as user_avatar_url',
           'group_members.role',
+          'member_profiles.avatar_url as profile_avatar_url',
+          'member_profiles.avatar_thumb_url as profile_avatar_thumb_url',
+          'member_profiles.avatar_updated_at',
           'member_profiles.bodyweight',
           'member_profiles.bench_1rm',
           'member_profiles.squat_1rm',
@@ -210,7 +231,11 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
           id: m.member_id,
           userId: m.user_id,
           nickname: m.nickname,
-          avatarUrl: m.avatar_url,
+          displayName: m.nickname,
+          avatarUrl: m.profile_avatar_url ?? m.user_avatar_url,
+          avatarThumbUrl: m.profile_avatar_thumb_url ?? m.profile_avatar_url ?? m.user_avatar_url,
+          avatarUpdatedAt: m.avatar_updated_at,
+          memberType: 'real',
           role: m.role,
           profile: {
             bodyweight: m.bodyweight,

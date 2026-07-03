@@ -1,5 +1,15 @@
 # 小组成员系统重构设计文档
 
+更新时间：2026-07-03
+
+## 2026-07-03 实施同步
+
+- 本地 `group_members` 已增加 `user_id`、`member_type`、`local_member_id`、`joined_at`，真实成员和本地成员在 UI 与数据层均可区分。
+- `/api/groups/:id/members`、`/api/sync/groups-pull` 已返回成员头像，优先使用 `member_profiles.avatar_url`，再回退 `users.avatar_url`。
+- `/api/sync/avatar`、`/auth/avatar`、`/auth/avatar/upload` 会同步账号头像到该账号的云端成员 profile；移动端头像显示统一解析相对 URL。
+- 训练结束上传页只允许选择真实成员，使用 `GroupMember.userId` 作为 `targetUserId`；本地成员会提示跳过。
+- 接受待确认训练数据后，服务端写入云端 workout 同步表，移动端立即写入本地 SQLite 历史。
+
 ## 1. 背景与目标
 
 ### 1.1 当前问题
@@ -183,7 +193,7 @@ POST /api/pending-training/:id/accept
 | `/api/groups/:id/members` | GET | 获取小组成员（含头像） |
 | `/api/sync/avatar` | POST | 同步用户头像 |
 
-已有接口，无需修改。`GET /groups/:id/members` 已通过 JOIN `users` 表返回头像。
+`GET /groups/:id/members` 已通过 JOIN `users` 和 `member_profiles` 返回头像，成员 profile 头像优先于账号头像。`/sync/avatar` 会同步 `users.avatar_url` 与当前账号在各小组中的 `member_profiles.avatar_url`。
 
 ---
 
@@ -311,7 +321,7 @@ POST /api/pending-training/:id/accept
 1. 邀请码 UI（创建/显示/分享/输入） ✅
 2. 训练结束上传流程（选择上传对象） ✅
 3. 待确认数据提示和确认流程 ✅
-4. 成员列表显示真实成员和本地成员 ⏳ 待优化
+4. 成员列表显示真实成员和本地成员 ✅
 
 ### 第三阶段：清理 ⏳ 待实施
 
@@ -342,6 +352,7 @@ POST /api/pending-training/:id/accept
 | `training-partner-app/app/group/join.tsx` | 输入邀请码加入小组 |
 | `training-partner-app/app/pending-training/index.tsx` | 待确认数据通知界面 |
 | `training-partner-app/app/workout/upload-members.tsx` | 训练结束选择上传组员 |
+| `training-partner-app/src/utils/avatarUrl.ts` | 头像 URL 归一化 |
 
 ---
 

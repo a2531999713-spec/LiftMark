@@ -56,7 +56,7 @@ export default function AvatarRoute() {
         setSelectedGroupId(group.id);
       }
       const members = group ? await repositories.memberRepository.listMembers(group.id) : [];
-      const member = members[0] ?? null;
+      const member = members.find((item) => item.userId === latestUser?.id) ?? members[0] ?? null;
       setCurrentMember(member);
       setCurrentProfile(member ? await repositories.memberRepository.getMemberProfile(member.id) : null);
       setAccountProfile(latestUser ? await getAccountProfileCache(latestUser.id) : null);
@@ -83,15 +83,24 @@ export default function AvatarRoute() {
       return;
     }
     setAccountProfile(result.profile);
-    if (currentMember) {
-      const nextProfile = await repositories.memberRepository.updateProfile(currentMember.id, {
-        avatarLocalUri: result.profile.avatarLocalUri,
-        avatarThumbUrl: result.profile.avatarThumbUrl,
-        avatarUpdatedAt: result.profile.avatarUpdatedAt,
-        avatarUrl: result.profile.avatarUrl,
-      });
-      setCurrentProfile(nextProfile);
+    const groups = await repositories.groupRepository.listGroups();
+    let nextProfile: MemberProfile | null = null;
+    for (const group of groups) {
+      const members = await repositories.memberRepository.listMembers(group.id);
+      const ownedMembers = members.filter((member) => member.userId === user.id);
+      for (const member of ownedMembers) {
+        const updatedProfile = await repositories.memberRepository.updateProfile(member.id, {
+          avatarLocalUri: result.profile.avatarLocalUri,
+          avatarThumbUrl: result.profile.avatarThumbUrl,
+          avatarUpdatedAt: result.profile.avatarUpdatedAt,
+          avatarUrl: result.profile.avatarUrl,
+        });
+        if (member.id === currentMember?.id) {
+          nextProfile = updatedProfile;
+        }
+      }
     }
+    if (nextProfile) setCurrentProfile(nextProfile);
     setNotice({ title: '头像已更新', message: '头像已保存并上传。' });
   };
 
@@ -101,15 +110,24 @@ export default function AvatarRoute() {
     const profile = await deleteAccountAvatar(user);
     setIsWorking(false);
     setAccountProfile(profile);
-    if (currentMember) {
-      const nextProfile = await repositories.memberRepository.updateProfile(currentMember.id, {
-        avatarLocalUri: undefined,
-        avatarThumbUrl: undefined,
-        avatarUpdatedAt: profile.avatarUpdatedAt,
-        avatarUrl: undefined,
-      });
-      setCurrentProfile(nextProfile);
+    const groups = await repositories.groupRepository.listGroups();
+    let nextProfile: MemberProfile | null = null;
+    for (const group of groups) {
+      const members = await repositories.memberRepository.listMembers(group.id);
+      const ownedMembers = members.filter((member) => member.userId === user.id);
+      for (const member of ownedMembers) {
+        const updatedProfile = await repositories.memberRepository.updateProfile(member.id, {
+          avatarLocalUri: undefined,
+          avatarThumbUrl: undefined,
+          avatarUpdatedAt: profile.avatarUpdatedAt,
+          avatarUrl: undefined,
+        });
+        if (member.id === currentMember?.id) {
+          nextProfile = updatedProfile;
+        }
+      }
     }
+    if (nextProfile) setCurrentProfile(nextProfile);
     setNotice({ title: '头像已删除', message: '账号头像已清空。' });
   };
 

@@ -1,7 +1,15 @@
 ﻿# Member 模块实现文档
 
-更新时间：2026-06-30  
-对应代码目录：`training-partner-app/`；已实现成员列表、新增成员、编辑成员、MemberProfile 表单、1RM 输入、加重单位设置和成员头像展示。
+更新时间：2026-07-03  
+对应代码目录：`training-partner-app/`；已实现成员列表、新增成员、编辑成员、MemberProfile 表单、1RM 输入、加重单位设置、真实成员 / 本地成员区分和成员头像展示。
+
+## 2026-07-03 补充：成员身份和头像同步
+
+- `GroupMember` 已增加 `userId`、`memberType`、`localMemberId` 和 `joinedAt`，SQLite migration v12 负责旧库兼容。
+- `src/services/profileSyncService.ts` 从云端拉取小组成员时写入 `memberType='real'` 和 `user_id`。
+- `src/services/memberSyncService.ts` 只做轻量头像刷新，兼容后端 `avatarUrl` / `avatar_url` 返回。
+- `src/utils/avatarUrl.ts` 统一解析相对头像 URL，`Avatar` 组件全局使用该逻辑。
+- 账号头像上传、删除和 `/sync/avatar` 会同步当前账号在所有小组中的真实成员 profile；本地成员不会自动继承账号头像。
 
 ## 2026-06-30 补充：成员表单保存状态
 
@@ -23,6 +31,7 @@
 | `src/config/appLimits.ts` | 本地小组成员上限等集中配置。 |
 | `src/domain/member/member.validation.ts` | 成员表单 schema、默认值和成员数量限制。 |
 | `src/data/local/repositories/memberRepository.ts` | 成员和档案的 SQLite Repository。 |
+| `src/utils/avatarUrl.ts` | 头像 URL 解析，支持服务端相对路径。 |
 | `src/components/members/MemberForm.tsx` | 成员编辑表单。 |
 | `src/components/members/MemberCard.tsx` | 成员列表卡片。 |
 | `src/components/workout/RotationOrderCard.tsx` | 训练执行轮换顺序卡，读取 profile 头像并展示成员真实头像。 |
@@ -111,12 +120,12 @@
 
 - GroupMember
 - MemberProfile
-- member_profiles
 - group_members
+- member_profiles
 
 `MemberProfile` 中的头像字段只代表训练成员头像。账号头像由 `src/services/avatar/*` 和 `account_profile_cache` 维护。
 
-头像根因说明：我的页账号头像展示优先读 `account_profile_cache`，但训练执行、训练首页、记录和小组分析按成员读取 `member_profiles`。因此只更新账号缓存不会让训练相关页面自动变化；当前实现会在账号头像更新/删除时同步当前小组第一位训练成员的 profile 头像字段，UI 层统一使用 `Avatar` 组件解析本地路径、缩略图 URL、远程 URL 和成员兜底头像。
+头像根因说明：我的页账号头像展示优先读 `account_profile_cache`，但训练执行、训练首页、记录和小组分析按成员读取 `member_profiles`。因此只更新账号缓存不会让训练相关页面自动变化；当前实现会在账号头像更新/删除时同步当前账号绑定的真实成员 profile 头像字段，UI 层统一使用 `Avatar` 组件解析本地路径、缩略图 URL、远程 URL 和成员兜底头像。
 
 ## 5. 调用关系
 
@@ -153,3 +162,4 @@
 - 2026-06-28：成员档案增加头像 URL、缩略图、本地缓存路径和更新时间字段；账号头像与成员头像分离，SQLite 不保存图片二进制或 Base64。
 - 2026-06-30：训练执行轮换顺序卡接入成员 profile 头像；训练现场不再只依赖 `GroupMember.avatarUrl` 或姓名首字。
 - 2026-06-30：成员列表、新增成员、成员编辑、加重单位、训练档案和身体数据入口改为跟随 `selectedGroupStore` 当前小组。
+- 2026-07-03：成员系统增加真实成员 / 本地成员区分；头像同步改为全局真实成员同步；本地成员不再默认继承账号头像。

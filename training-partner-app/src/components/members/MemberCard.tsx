@@ -30,7 +30,12 @@ export function MemberCard({ member, profile, onPress }: MemberCardProps) {
           size={44}
         />
         <View style={styles.main}>
-          <Text style={styles.name}>{member.displayName}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.name}>{member.displayName}</Text>
+            <View style={[styles.badge, member.memberType === 'real' ? styles.badgeReal : styles.badgeLocal]}>
+              <Text style={styles.badgeText}>{member.memberType === 'real' ? '真实成员' : '本地成员'}</Text>
+            </View>
+          </View>
           <Text style={styles.meta}>
             {describeOneRmStatus(profile)}
             {profile?.bodyweight ? ` · 体重 ${profile.bodyweight}kg` : ''}
@@ -64,8 +69,31 @@ const styles = StyleSheet.create({
   },
   name: {
     color: colors.text,
+    flexShrink: 1,
     fontSize: typography.sizes.subtitle,
     fontWeight: '800',
+  },
+  nameRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  badge: {
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  badgeLocal: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  badgeReal: {
+    backgroundColor: colors.successSoft,
+  },
+  badgeText: {
+    color: colors.textMuted,
+    fontSize: typography.sizes.caption,
+    fontWeight: '700',
   },
   meta: {
     color: colors.textMuted,

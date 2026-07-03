@@ -179,7 +179,7 @@ export default function MembersRoute() {
             <View style={styles.localRuleRow}>
               <Ionicons color={colors.primary} name="information-circle-outline" size={20} />
               <AppText tone="muted" variant="bodySmall" style={styles.localRuleText}>
-                当前小组适合同一台设备多人轮换记录。
+                真实成员通过邀请码加入；本地成员只保存在当前设备。
               </AppText>
             </View>
             <Pressable accessibilityRole="button" onPress={() => setLocalRuleVisible(true)} style={styles.localRuleLink}>
@@ -189,6 +189,24 @@ export default function MembersRoute() {
               <Ionicons color={colors.primary} name="chevron-forward" size={16} />
             </Pressable>
           </AppCard>
+
+          <View style={styles.groupActions}>
+            <AppButton icon="enter-outline" onPress={() => router.push('/group/join' as never)} style={styles.groupActionButton} variant="secondary">
+              加入小组
+            </AppButton>
+            <AppButton
+              icon="share-social-outline"
+              onPress={() =>
+                group
+                  ? router.push({ pathname: '/group/invitations', params: { groupId: group.id } } as never)
+                  : setNotice({ title: '小组未就绪', message: '请稍后再试。' })
+              }
+              style={styles.groupActionButton}
+              variant="secondary"
+            >
+              邀请成员
+            </AppButton>
+          </View>
 
           <AppCard style={styles.groupCard}>
             <View style={styles.groupHeader}>
@@ -275,10 +293,11 @@ export default function MembersRoute() {
                     <Ionicons color={colors.text} name="close" size={18} />
                   </Pressable>
                 </View>
-                <RuleItem text="当前版本的小组适合同一台设备多人轮换记录。" />
+                <RuleItem text="真实成员需要登录账号，并通过邀请码加入小组。" />
+                <RuleItem text="本地成员只保存在当前设备，可继续用于现场轮换记录。" />
                 <RuleItem text="训练数据会保留在当前设备。" />
                 <RuleItem text="当前版本组长可以查看当前小组成员训练数据。" />
-                <RuleItem text="成员加入通过当前设备添加完成，多设备小组能力后续版本开放。" />
+                <RuleItem text="给真实成员上传训练数据后，对方需要在待确认数据中接受。" />
                 <AppButton onPress={() => setLocalRuleVisible(false)} variant="secondary">
                   我知道了
                 </AppButton>
@@ -322,7 +341,10 @@ function PartnerMemberCard({ member, onPress, profile }: PartnerMemberCardProps)
       <View style={styles.memberMain}>
         <View style={styles.memberTop}>
           <AppText variant="subtitle">{member.displayName}</AppText>
-          <Tag label={member.role === 'owner' ? '组长' : '成员'} tone="neutral" />
+          <View style={styles.memberTags}>
+            <Tag label={member.role === 'owner' ? '组长' : '成员'} tone="neutral" />
+            <Tag label={member.memberType === 'real' ? '真实成员' : '本地成员'} tone={member.memberType === 'real' ? 'success' : 'neutral'} />
+          </View>
         </View>
         <AppText tone="muted" variant="caption">
           {profile?.bodyweight ? `${profile.bodyweight} kg` : '体重未设置'}
@@ -372,6 +394,13 @@ const styles = StyleSheet.create({
   },
   groupCard: {
     gap: spacing.lg,
+  },
+  groupActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  groupActionButton: {
+    flex: 1,
   },
   localRuleCard: {
     gap: spacing.sm,
@@ -454,6 +483,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     justifyContent: 'space-between',
+  },
+  memberTags: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexShrink: 0,
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    justifyContent: 'flex-end',
   },
   liftRow: {
     flexDirection: 'row',

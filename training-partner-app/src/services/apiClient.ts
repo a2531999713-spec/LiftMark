@@ -27,7 +27,7 @@ function getStatusMessage(status: number, serverMessage?: string) {
   if (status === 400 || status === 422) return '请求参数有误，请检查后重试。';
   if (status === 401) return '登录状态已过期，请重新登录。';
   if (status === 403) return '当前账号没有权限执行该操作。';
-  if (status === 404) return '接口不存在，请检查服务配置。';
+  if (status === 404) return '当前服务暂时不可用，请稍后再试。';
   if (status === 429) return '操作过于频繁，请稍后再试。';
   if (status >= 500) return '服务器暂时不可用，请稍后重试。';
   return serverMessage || '服务器请求失败，请稍后重试。';

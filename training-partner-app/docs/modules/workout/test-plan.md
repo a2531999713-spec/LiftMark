@@ -60,3 +60,10 @@
 
 - `src/tests/workout.test.ts`：set 数量、初始 reps、完成度统计、训练输入边界。
 - `src/tests/workout-repository.test.ts`：session 创建参数、开放 session 复用、RPE/备注/实际休息保存、替换动作保留原计划动作。
+
+## 8. 2026-07-02 回归补充
+
+- `src/tests/workout.test.ts` 覆盖稳定执行队列、cursor 推进、休息倒计时不推进 cursor、本次调整摘要。
+- `src/tests/workout-repository.test.ts` 覆盖临时动作插入顺序、替换备注和 `insertOrderIndex` 写入。
+- `src/tests/weight.test.ts` 覆盖默认 2.5kg 步进、62.5kg 等小数重量和自定义 1.25kg 步进。
+- 手工回归应覆盖：小组训练最后一名完成后回到第一名下一组、休息结束只提示已恢复、结束训练能进入总结、总结页选择仅保存本次或同步到用户计划。

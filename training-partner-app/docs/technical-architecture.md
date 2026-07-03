@@ -8,6 +8,13 @@
 - 训练中替换动作只更新 `workout_exercise_records.exercise_id`，并保留 `replaced_from_exercise_id`；计划表不被修改。
 - RPE 和实际休息秒数走 `WorkoutRepository.saveSet()`，RIR 仅保留旧字段兼容，不作为新 UI 能力。
 
+## 2026-07-03 小组真实成员与头像同步架构补充
+
+- 云端 `group_members.user_id` 是真实成员唯一账号绑定；移动端 `group_members.member_type` 区分 `real` 和 `local`。
+- 邀请码加入后移动端通过 `/sync/groups-pull` 拉取小组和成员，写入本地 SQLite 缓存。
+- 账号头像上传、删除和 `/sync/avatar` 同步 `users.avatar_url` 与该用户的 `member_profiles.avatar_url`；移动端统一用 `src/utils/avatarUrl.ts` 解析相对头像路径。
+- 待确认训练数据接受后，云端写入通用 workout 同步表，移动端立即写入本地 SQLite 历史，保持弱网缓存模型不变。
+
 ## 2026-06-30 本地计划推荐与训练选择补充
 
 - 本次未新增 SQLite schema 或 migration；主流系统计划通过 seed 数据写入现有 `plan_templates`、`plan_phases`、`plan_days` 和 `plan_exercises`。
@@ -300,3 +307,18 @@ Excel 训练计划的 seed 设计映射：
 - SQLite migration v11 adds `group_members.avatar_url` for old local databases; new installs already have the column in initial schema.
 - API migration `002_user_registration_metadata` adds server-side registration sequence and campaign fields to `users`.
 - Account creation and SMS-code auto-registration use server time and PostgreSQL sequence values, not client time, for early-user eligibility.
+
+## 2026-07-02 workout execution cursor, temporary edits, and startup
+
+- Workout execution cursor is derived from domain helpers in `src/domain/workout/workout.service.ts`; UI rest state is not a source of truth for the next set.
+- Temporary execution edits are persisted in the workout snapshot tables, not in plan templates: replacement uses `replaced_from_exercise_id`, extra sets and temporary exercises use notes markers, and skipped exercises mark current session sets.
+- Summary can optionally project those session-level adjustments back into a user plan through `PlanRepository.updateUserPlan()`. System plans remain read-only.
+- `app/_layout.tsx` no longer blocks initial route rendering on full local seed completion. The seed path writes a bootstrap version marker so repeated launches skip full default data work.
+- `authService.getCurrentSession()` races remote `/auth/me` validation with a short stored-session fallback, preserving offline entry when the API is slow or temporarily unreachable.
+
+## 2026-07-03 member identity and avatar sync
+
+- SQLite migration v12 adds `group_members.user_id`, `member_type`, `local_member_id`, and `joined_at`.
+- API migration `006_member_profile_avatar_fields` adds cloud member profile avatar fields for account-avatar propagation.
+- `/groups/:id/members` and `/sync/groups-pull` return member avatars with member profile avatar preferred over account avatar.
+- Pending-training accept writes cloud sync tables and returns session/sets for immediate local SQLite history insertion.

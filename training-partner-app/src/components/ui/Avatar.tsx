@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { colors } from '@/theme';
+import { pickAvatarUri } from '@/utils/avatarUrl';
 
 import { AppText } from './AppText';
 
@@ -33,7 +34,7 @@ export function Avatar({
 }: AvatarProps) {
   const [failedUri, setFailedUri] = useState<string | null>(null);
   const imageUri = useMemo(
-    () => uri ?? avatarLocalUri ?? avatarThumbUrl ?? avatarUrl ?? null,
+    () => pickAvatarUri({ avatarLocalUri, avatarThumbUrl, avatarUrl, uri }),
     [avatarLocalUri, avatarThumbUrl, avatarUrl, uri],
   );
 

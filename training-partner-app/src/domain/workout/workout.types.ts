@@ -109,6 +109,7 @@ export type ManualWorkoutExerciseInput = {
 
 export type AddWorkoutExerciseInput = {
   exerciseId: ID;
+  insertOrderIndex?: number;
   memberId: ID;
   memberIds?: ID[];
   notes?: string;

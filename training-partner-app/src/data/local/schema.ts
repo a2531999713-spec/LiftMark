@@ -25,8 +25,12 @@ CREATE TABLE IF NOT EXISTS group_members (
   remote_id TEXT,
   group_id TEXT NOT NULL,
   display_name TEXT NOT NULL,
+  user_id TEXT,
+  member_type TEXT NOT NULL DEFAULT 'local',
+  local_member_id TEXT,
   role TEXT NOT NULL DEFAULT 'member',
   avatar_url TEXT,
+  joined_at TEXT,
   sync_status TEXT NOT NULL DEFAULT 'local_only',
   sync_error TEXT,
   version INTEGER NOT NULL DEFAULT 0,
@@ -317,6 +321,7 @@ CREATE TABLE IF NOT EXISTS account_profile_cache (
 );
 
 CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON group_members(group_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_member_profiles_member_id ON member_profiles(member_id);
 CREATE INDEX IF NOT EXISTS idx_exercises_source_name ON exercises(source, name);
 CREATE INDEX IF NOT EXISTS idx_plan_phases_plan_id ON plan_phases(plan_id);

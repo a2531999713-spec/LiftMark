@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { ImageBackground, StyleSheet, View } from 'react-native';
+import { ImageBackground, Pressable, StyleSheet, View } from 'react-native';
 
 import { liftmarkImages } from '@/assets/images';
 import { AppText } from '@/components/ui';
@@ -11,6 +11,7 @@ type ExerciseHeroCardProps = {
   exercise: Exercise | null;
   record: WorkoutExerciseRecord;
   currentSetIndex: number;
+  onOpenAdjustments?: () => void;
   totalSets: number;
 };
 
@@ -46,7 +47,13 @@ function formatRestLabel(seconds: number | undefined): string {
   return `${seconds} 秒`;
 }
 
-export function ExerciseHeroCard({ exercise, record, currentSetIndex, totalSets }: ExerciseHeroCardProps) {
+export function ExerciseHeroCard({
+  exercise,
+  record,
+  currentSetIndex,
+  onOpenAdjustments,
+  totalSets,
+}: ExerciseHeroCardProps) {
   const muscleLabel = exercise ? (categoryLabels[exercise.category] ?? exercise.targetMuscle) : '';
   const patternLabel = exercise ? (movementLabels[exercise.movementPattern] ?? '') : '';
 
@@ -72,6 +79,18 @@ export function ExerciseHeroCard({ exercise, record, currentSetIndex, totalSets 
               第 {currentSetIndex} / {totalSets} 组
             </AppText>
           </View>
+          {onOpenAdjustments ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={onOpenAdjustments}
+              style={({ pressed }) => [styles.adjustButton, pressed && styles.adjustButtonPressed]}
+            >
+              <Ionicons color="#FFFFFF" name="options-outline" size={15} />
+              <AppText style={styles.adjustText} tone="inverse" variant="caption" weight="900">
+                本次调整
+              </AppText>
+            </Pressable>
+          ) : null}
         </View>
         <View style={styles.mainInfo}>
           <AppText style={styles.exerciseTitle} tone="inverse" variant="headline" weight="900">
@@ -149,6 +168,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 64,
     paddingHorizontal: spacing.md,
+  },
+  adjustButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+    borderColor: 'rgba(255, 255, 255, 0.24)',
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginLeft: 'auto',
+    minHeight: 38,
+    paddingHorizontal: spacing.sm,
+  },
+  adjustButtonPressed: {
+    opacity: 0.72,
+  },
+  adjustText: {
+    lineHeight: 16,
   },
   progressText: {
     lineHeight: 18,

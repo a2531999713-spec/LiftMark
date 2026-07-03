@@ -15,6 +15,7 @@ import { clearStoredSession, readStoredSession, saveStoredSession } from './toke
 
 export const AUTH_NOT_CONFIGURED_MESSAGE = '登录接口待接入，请配置服务器地址和认证接口。';
 export const AUTH_SERVER_UNAVAILABLE_MESSAGE = '服务器连接失败，请检查网络或稍后再试。';
+const STARTUP_AUTH_CHECK_TIMEOUT_MS = 1200;
 
 type ApiUser = {
   avatar_url?: string | null;
@@ -84,32 +85,45 @@ function isTransientNetworkError(error: unknown) {
   );
 }
 
+function timeout<T>(ms: number, value: T): Promise<T> {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(value), ms);
+  });
+}
+
 class ApiAuthService implements AuthService {
   async getCurrentSession() {
     const stored = await readStoredSession();
     if (!stored) return null;
 
-    try {
-      const response = await apiRequest<MeResponse>('/auth/me', {
-        accessToken: stored.accessToken,
-      });
-      const session = { ...stored, user: toAuthUser(response.user), isOffline: false };
-      await saveStoredSession(session);
-      return session;
-    } catch (error) {
-      if (error instanceof ApiClientError && error.status === 401) {
-        const refreshed = await this.refreshToken(stored.refreshToken);
-        if (refreshed.ok) return refreshed.session;
+    const remoteCheck = (async () => {
+      try {
+        const response = await apiRequest<MeResponse>('/auth/me', {
+          accessToken: stored.accessToken,
+        });
+        const session = { ...stored, user: toAuthUser(response.user), isOffline: false };
+        await saveStoredSession(session);
+        return session;
+      } catch (error) {
+        if (error instanceof ApiClientError && error.status === 401) {
+          const refreshed = await this.refreshToken(stored.refreshToken);
+          if (refreshed.ok) return refreshed.session;
 
-        const preserved = await readStoredSession();
-        return preserved ? { ...preserved, isOffline: true } : null;
+          const preserved = await readStoredSession();
+          return preserved ? { ...preserved, isOffline: true } : null;
+        }
+
+        return {
+          ...stored,
+          isOffline: true,
+        };
       }
+    })();
 
-      return {
-        ...stored,
-        isOffline: true,
-      };
-    }
+    return Promise.race([
+      remoteCheck,
+      timeout<AuthSession>(STARTUP_AUTH_CHECK_TIMEOUT_MS, { ...stored, isOffline: true }),
+    ]);
   }
 
   async login(input: LoginInput): Promise<AuthServiceResult> {

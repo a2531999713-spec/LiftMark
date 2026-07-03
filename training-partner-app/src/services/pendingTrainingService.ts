@@ -1,5 +1,6 @@
 import { apiRequest } from '@/services/httpClient';
 import { readStoredSession } from '@/services/auth/tokenStorage';
+import { resolveAvatarUrl } from '@/utils/avatarUrl';
 
 export type PendingTrainingItem = {
   id: string;
@@ -17,15 +18,17 @@ export type PendingTrainingItem = {
     weekday?: number;
     status?: string;
   };
-  setsData: Array<{
+  setsData: {
     exerciseId: string;
+    exerciseClientId?: string;
     setNumber: number;
     weight?: number;
     reps?: number;
     completed?: boolean;
+    skipped?: boolean;
     rpe?: number;
     notes?: string;
-  }>;
+  }[];
   uploadedAt: string;
 };
 
@@ -53,7 +56,13 @@ export async function getPendingTrainingItems(): Promise<PendingTrainingItem[]> 
       '/pending-training',
       { accessToken: session.accessToken }
     );
-    return result.pendingItems ?? [];
+    return (result.pendingItems ?? []).map((item) => ({
+      ...item,
+      uploader: {
+        ...item.uploader,
+        avatarUrl: resolveAvatarUrl(item.uploader.avatarUrl) ?? null,
+      },
+    }));
   } catch {
     return [];
   }
@@ -72,7 +81,7 @@ export async function uploadPendingTraining(data: {
     weekday?: number;
     status?: string;
   };
-  setsData: Array<{
+  setsData: {
     exerciseId: string;
     exerciseClientId?: string;
     setNumber: number;
@@ -82,7 +91,7 @@ export async function uploadPendingTraining(data: {
     skipped?: boolean;
     rpe?: number;
     notes?: string;
-  }>;
+  }[];
 }): Promise<{ ok: boolean; pendingId?: string; message?: string }> {
   const session = await readStoredSession();
   if (!session?.accessToken) {
@@ -112,21 +121,37 @@ export async function uploadPendingTraining(data: {
  */
 export async function acceptPendingTraining(
   pendingId: string
-): Promise<{ ok: boolean; sessionId?: string; message?: string }> {
+): Promise<{
+  ok: boolean;
+  sessionData?: PendingTrainingItem['sessionData'];
+  sessionId?: string;
+  setsData?: PendingTrainingItem['setsData'];
+  message?: string;
+}> {
   const session = await readStoredSession();
   if (!session?.accessToken) {
     return { ok: false, message: '请先登录。' };
   }
 
   try {
-    const result = await apiRequest<{ ok: boolean; sessionId: string }>(
+    const result = await apiRequest<{
+      ok: boolean;
+      sessionData?: PendingTrainingItem['sessionData'];
+      sessionId: string;
+      setsData?: PendingTrainingItem['setsData'];
+    }>(
       `/pending-training/${pendingId}/accept`,
       {
         method: 'POST',
         accessToken: session.accessToken,
       }
     );
-    return { ok: result.ok, sessionId: result.sessionId };
+    return {
+      ok: result.ok,
+      sessionData: result.sessionData,
+      sessionId: result.sessionId,
+      setsData: result.setsData,
+    };
   } catch (error) {
     return {
       ok: false,
@@ -172,7 +197,13 @@ export async function getUploadedItems(): Promise<UploadedItem[]> {
       '/pending-training/uploaded',
       { accessToken: session.accessToken }
     );
-    return result.uploadedItems ?? [];
+    return (result.uploadedItems ?? []).map((item) => ({
+      ...item,
+      targetUser: {
+        ...item.targetUser,
+        avatarUrl: resolveAvatarUrl(item.targetUser.avatarUrl) ?? null,
+      },
+    }));
   } catch {
     return [];
   }

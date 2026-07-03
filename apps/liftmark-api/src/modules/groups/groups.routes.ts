@@ -50,15 +50,23 @@ function toGroupDto(group: any) {
 }
 
 function toGroupMemberDto(member: any) {
+  const avatarUrl = member.profile_avatar_url ?? member.user_avatar_url ?? member.avatar_url ?? null;
   return {
     id: member.id,
     groupId: member.group_id,
+    group_id: member.group_id,
     userId: member.user_id,
+    user_id: member.user_id,
+    displayName: member.nickname,
+    memberType: 'real',
     role: member.role,
     status: member.status,
     nickname: member.nickname,
-    avatarUrl: member.avatar_url,
+    avatarUrl,
+    avatar_url: avatarUrl,
+    isCurrentUser: Boolean(member.is_current_user),
     joinedAt: member.joined_at,
+    joined_at: member.joined_at,
     leftAt: member.left_at,
   };
 }
@@ -189,7 +197,17 @@ export async function registerGroupRoutes(app: FastifyInstance) {
     await requireGroupMember(params.id, authUser.id);
     const members = await db('group_members')
       .join('users', 'group_members.user_id', 'users.id')
-      .select('group_members.*', 'users.nickname', 'users.avatar_url')
+      .leftJoin('member_profiles', function() {
+        this.on('member_profiles.user_id', '=', 'users.id')
+          .andOn('member_profiles.group_id', '=', 'group_members.group_id');
+      })
+      .select(
+        'group_members.*',
+        'users.nickname',
+        'users.avatar_url as user_avatar_url',
+        'member_profiles.avatar_url as profile_avatar_url',
+        db.raw('CASE WHEN users.id = ? THEN true ELSE false END as is_current_user', [authUser.id]),
+      )
       .where('group_members.group_id', params.id)
       .where('group_members.status', 'active')
       .whereNull('group_members.left_at')
@@ -201,4 +219,3 @@ export async function registerGroupRoutes(app: FastifyInstance) {
 export async function assertGroupMember(groupId: string, userId: string) {
   return requireGroupMember(groupId, userId);
 }
-

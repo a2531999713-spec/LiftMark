@@ -1,6 +1,12 @@
 ﻿# SQLite 数据库结构
 
-更新时间：2026-07-01
+更新时间：2026-07-03
+
+## 2026-07-03 补充：真实成员绑定与本地成员区分
+
+- migration v12 为 `group_members` 增加 `user_id`、`member_type`、`local_member_id`、`joined_at` 和索引 `idx_group_members_user_id`。
+- `member_type='real'` 表示通过账号和邀请码加入的小组成员，必须有 `user_id`；`member_type='local'` 表示当前设备手动创建的本地成员，不参与跨设备待确认训练上传。
+- 旧库迁移时，没有 `user_id` 的成员保留为本地成员，并用自身 `id` 回填 `local_member_id`。
 
 ## 2026-07-01 补充：成员默认步进
 
@@ -108,12 +114,18 @@ CREATE TABLE IF NOT EXISTS group_members (
   id TEXT PRIMARY KEY,
   group_id TEXT NOT NULL,
   display_name TEXT NOT NULL,
+  user_id TEXT,
+  member_type TEXT NOT NULL DEFAULT 'local',
+  local_member_id TEXT,
   role TEXT NOT NULL DEFAULT 'member',
   avatar_url TEXT,
+  joined_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 ```
+
+`real` 成员来自云端小组和邀请码加入流程，`user_id` 绑定账号；`local` 成员只代表本机训练搭子，不能冒充真实账号成员。
 
 ### member_profiles
 
@@ -467,6 +479,9 @@ Sprint 1 已落地 `schema_migrations` 版本表：
 - 当前 v7 为 `workout_session_training_mode`，为 `workout_sessions` 增加 `training_mode`。
 - 当前 v8 为 `workout_set_rest_and_body_metrics`，为 `workout_sets` 增加 `actual_rest_seconds`，并创建 `body_metrics` 与 `idx_body_metrics_member_date`。
 - 当前 v9 为 `body_metric_goals`，创建身体目标表与 `idx_body_metric_goals_member`。
+- 当前 v10 为 `cloud_sync_metadata_and_queue`，为可同步实体补云同步元数据并创建 `local_sync_queue`。
+- 当前 v11 为 `group_member_avatar_url_compat`，为旧库补 `group_members.avatar_url`。
+- 当前 v12 为 `group_member_identity_fields`，为 `group_members` 补真实账号绑定和本地成员区分字段。
 - 后续不能直接改旧 migration 语义，应追加新 migration。
 
 ## 7. 需要人工确认的问题

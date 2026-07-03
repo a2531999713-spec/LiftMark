@@ -4,6 +4,8 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { getDatabase, initializeLocalDatabase } from '@/data/local';
 import type { AuthUser } from '@/services/auth/authTypes';
+import { syncAvatarToServer } from '@/services/profileSyncService';
+import { resolveAvatarUrl } from '@/utils/avatarUrl';
 
 import {
   AVATAR_LIMITS,
@@ -34,9 +36,9 @@ function maskPhone(phone?: string) {
 function mapAccountProfile(row: AccountProfileRow): AccountProfileCache {
   return {
     avatarLocalUri: row.avatar_local_uri ?? undefined,
-    avatarThumbUrl: row.avatar_thumb_url ?? undefined,
+    avatarThumbUrl: resolveAvatarUrl(row.avatar_thumb_url),
     avatarUpdatedAt: row.avatar_updated_at ?? undefined,
-    avatarUrl: row.avatar_url ?? undefined,
+    avatarUrl: resolveAvatarUrl(row.avatar_url),
     displayName: row.display_name ?? undefined,
     liftmarkId: row.liftmark_id ?? undefined,
     phoneMasked: row.phone_masked ?? undefined,
@@ -250,6 +252,7 @@ export async function updateAccountAvatarFromPicker(
 
     const processed = await processAvatar(result.assets[0]);
     const upload = await uploadAccountAvatar({ fileUri: processed.uri, userId: user.id });
+    await syncAvatarToServer(upload.serverAvatarUrl ?? upload.avatarUrl);
     const profile = await upsertAccountProfileCache({
       avatarLocalUri: upload.avatarLocalUri,
       avatarThumbUrl: upload.avatarThumbUrl,
@@ -268,6 +271,7 @@ export async function updateAccountAvatarFromPicker(
 }
 
 export async function deleteAccountAvatar(user: AuthUser): Promise<AccountProfileCache> {
+  await syncAvatarToServer(null);
   return upsertAccountProfileCache({
     avatarLocalUri: undefined,
     avatarThumbUrl: undefined,
@@ -286,7 +290,7 @@ export function getAvatarDisplay(input: {
 }) {
   return {
     avatarLocalUri: input.accountProfile?.avatarLocalUri ?? input.fallbackLocalUri,
-    avatarThumbUrl: input.accountProfile?.avatarThumbUrl ?? input.user?.avatarUrl ?? input.fallbackThumbUrl,
-    avatarUrl: input.accountProfile?.avatarUrl ?? input.user?.avatarUrl ?? input.fallbackUrl,
+    avatarThumbUrl: resolveAvatarUrl(input.accountProfile?.avatarThumbUrl ?? input.user?.avatarUrl ?? input.fallbackThumbUrl),
+    avatarUrl: resolveAvatarUrl(input.accountProfile?.avatarUrl ?? input.user?.avatarUrl ?? input.fallbackUrl),
   };
 }

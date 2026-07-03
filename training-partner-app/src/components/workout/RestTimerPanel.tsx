@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui';
 import { colors, radius, spacing } from '@/theme';
@@ -10,9 +10,9 @@ type RestTimerPanelProps = {
   elapsedSeconds?: number;
   nextMemberName?: string;
   nextSetLabel?: string;
-  onStartNextSet: () => void;
   plannedSeconds?: number;
   remainingSeconds: number;
+  status?: 'ready' | 'resting';
 };
 
 function formatTimer(seconds: number): string {
@@ -27,37 +27,38 @@ export function RestTimerPanel({
   elapsedSeconds = 0,
   nextMemberName,
   nextSetLabel,
-  onStartNextSet,
   plannedSeconds,
   remainingSeconds,
+  status = remainingSeconds > 0 ? 'resting' : 'ready',
 }: RestTimerPanelProps) {
-  const actionLabel = remainingSeconds > 0 ? '提前开始下一组' : '开始下一组';
   const nextLabel = nextMemberName
     ? `${nextMemberName} · ${nextSetLabel ?? '下一组'}`
     : nextSetLabel ?? '下一组';
+  const isReady = status === 'ready' || remainingSeconds <= 0;
 
   return (
-    <View style={styles.panel}>
+    <View style={[styles.panel, isReady && styles.panelReady]}>
       <View style={styles.timerBlock}>
         <AppText tone="muted" variant="caption">
-          {currentMemberName ? `${currentMemberName} 休息中` : '休息倒计时'}
+          {currentMemberName ? `${currentMemberName}${isReady ? ' 已恢复' : ' 正在休息'}` : isReady ? '休息结束' : '休息倒计时'}
         </AppText>
-        <AppText tone="brand" variant="subtitle" weight="900">
-          {formatTimer(remainingSeconds)}
+        <AppText tone={isReady ? 'success' : 'brand'} variant="subtitle" weight="900">
+          {isReady ? '可以准备下一组' : formatTimer(remainingSeconds)}
         </AppText>
         <AppText tone="muted" variant="caption">
           已休 {formatTimer(elapsedSeconds)} · 建议 {plannedSeconds ? formatTimer(plannedSeconds) : '未设置'}
         </AppText>
         <AppText numberOfLines={1} tone="muted" variant="caption">
-          {currentSetLabel ?? '当前组'} → {nextLabel}
+          {currentSetLabel ?? '当前组'} · 下一目标 {nextLabel}
         </AppText>
       </View>
-      <Pressable accessibilityRole="button" onPress={onStartNextSet} style={styles.startButton}>
-        <Ionicons color={colors.surface} name={remainingSeconds > 0 ? 'play-forward' : 'play'} size={17} />
-        <AppText tone="inverse" variant="caption" weight="900">
-          {actionLabel}
-        </AppText>
-      </Pressable>
+      <View style={[styles.statusBadge, isReady && styles.statusBadgeReady]}>
+        <Ionicons
+          color={isReady ? colors.success : colors.primary}
+          name={isReady ? 'checkmark-circle-outline' : 'timer-outline'}
+          size={17}
+        />
+      </View>
     </View>
   );
 }
@@ -76,16 +77,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  startButton: {
+  panelReady: {
+    backgroundColor: colors.successSoft,
+    borderColor: colors.success,
+  },
+  statusBadge: {
     alignItems: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    flexDirection: 'row',
-    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    height: 40,
     justifyContent: 'center',
-    minHeight: 44,
-    paddingHorizontal: spacing.md,
-    width: 132,
+    width: 40,
+  },
+  statusBadgeReady: {
+    backgroundColor: colors.surface,
   },
   timerBlock: {
     flex: 1,

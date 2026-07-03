@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MetricCard, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
@@ -10,8 +10,9 @@ import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import { estimateOneRM } from '@/domain/history/history-analysis';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
+import type { PlanDay, PlanExercise, PlanTemplate } from '@/domain/plan/plan.types';
 import type { GroupWorkoutConsentSummary } from '@/domain/sync/workoutSync.types';
-import { summarizeWorkoutSets } from '@/domain/workout/workout.service';
+import { WORKOUT_TEMPORARY_EXERCISE_NOTE, summarizeWorkoutAdjustments, summarizeWorkoutSets } from '@/domain/workout/workout.service';
 import type { WorkoutSessionDetail, WorkoutSummary } from '@/domain/workout/workout.types';
 import {
   buildGroupWorkoutConsentSummary,
@@ -32,6 +33,12 @@ type SummaryView = {
 type NoticeState = {
   message: string;
   title: string;
+};
+
+type PlanDetailState = {
+  days: PlanDay[];
+  exercisesByDayId: Record<string, PlanExercise[]>;
+  plan: PlanTemplate;
 };
 
 function formatPercent(value: number): string {
@@ -100,6 +107,7 @@ export default function WorkoutSummaryRoute() {
   const [detail, setDetail] = useState<WorkoutSessionDetail | null>(null);
   const [summary, setSummary] = useState<WorkoutSummary | null>(null);
   const [view, setView] = useState<SummaryView | null>(null);
+  const [planDetail, setPlanDetail] = useState<PlanDetailState | null>(null);
   const [profilesByMemberId, setProfilesByMemberId] = useState<Record<string, MemberProfile | null>>({});
   const [consentSummary, setConsentSummary] = useState<GroupWorkoutConsentSummary | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -133,6 +141,20 @@ export default function WorkoutSummaryRoute() {
         nextDetail.exercises.map((exercise) => exercise.exerciseId),
       );
       const exerciseMap = Object.fromEntries(exercises.map((exercise) => [exercise.id, exercise]));
+      const plan = await repositories.planRepository.getPlanById(nextDetail.session.planId);
+      if (plan) {
+        const days = await repositories.planRepository.listPlanDays(plan.id);
+        const exerciseEntries = await Promise.all(
+          days.map(async (day) => [day.id, await repositories.planRepository.listPlanExercises(day.id)] as const),
+        );
+        setPlanDetail({
+          days,
+          exercisesByDayId: Object.fromEntries(exerciseEntries),
+          plan,
+        });
+      } else {
+        setPlanDetail(null);
+      }
 
       setDetail(nextDetail);
       setSummary(summarizeWorkoutSets(sessionId, nextDetail.sets));
@@ -153,6 +175,146 @@ export default function WorkoutSummaryRoute() {
   );
 
   const completionRate = summary && summary.totalSets > 0 ? summary.completedSets / summary.totalSets : 0;
+  const adjustmentSummary = useMemo(
+    () => (detail ? summarizeWorkoutAdjustments(detail) : null),
+    [detail],
+  );
+  const adjustmentRows = useMemo(() => {
+    if (!adjustmentSummary?.hasAdjustments) return [];
+    return [
+      { label: '替换动作', value: adjustmentSummary.replacementCount },
+      { label: '加做组', value: adjustmentSummary.extraSetCount },
+      { label: '本次跳过动作', value: adjustmentSummary.skippedExerciseCount },
+      { label: '临时添加动作', value: adjustmentSummary.temporaryExerciseCount },
+    ].filter((item) => item.value > 0);
+  }, [adjustmentSummary]);
+
+  const syncAdjustmentsToPlan = useCallback(async () => {
+    if (!detail || !planDetail || !adjustmentSummary?.hasAdjustments) {
+      setNotice({
+        title: '没有可同步的调整',
+        message: '本次训练没有临时调整，训练记录已保存。',
+      });
+      return;
+    }
+
+    if (planDetail.plan.source === 'system' || planDetail.plan.visibility === 'system') {
+      setNotice({
+        title: '系统方案受保护',
+        message: '系统方案不能直接修改。请先复制为“我的计划”，再应用本次训练调整。',
+      });
+      return;
+    }
+
+    const targetDay = planDetail.days.find(
+      (day) => day.week === detail.session.week && day.weekday === detail.session.weekday,
+    );
+    if (!targetDay) {
+      setNotice({
+        title: '未找到训练日',
+        message: '当前计划中没有匹配本次训练的周次和星期，无法自动同步。',
+      });
+      return;
+    }
+
+    try {
+      const nextDays = planDetail.days.map((day) => {
+        const sourceExercises = planDetail.exercisesByDayId[day.id] ?? [];
+        if (day.id !== targetDay.id) {
+          return {
+            title: day.title,
+            focus: day.focus,
+            week: day.week,
+            weekday: day.weekday,
+            exercises: sourceExercises.map((exercise) => ({
+              exerciseId: exercise.exerciseId,
+              priority: exercise.priority,
+              reps: getPlanExerciseReps(exercise),
+              sets: getPlanExerciseSets(exercise),
+            })),
+          };
+        }
+
+        const recordByPlanExerciseId = new Map(
+          detail.exercises
+            .filter((record) => record.planExerciseId)
+            .map((record) => [record.planExerciseId as string, record]),
+        );
+        const skippedRecordIds = new Set(
+          detail.exercises
+            .filter((record) => {
+              const sets = detail.sets.filter((set) => set.exerciseRecordId === record.id);
+              return sets.length > 0 && sets.every((set) => set.skipped);
+            })
+            .map((record) => record.id),
+        );
+
+        const exercises = sourceExercises
+          .filter((exercise) => {
+            const record = recordByPlanExerciseId.get(exercise.id);
+            return !record || !skippedRecordIds.has(record.id);
+          })
+          .map((exercise) => {
+            const record = recordByPlanExerciseId.get(exercise.id);
+            const recordSets = record ? detail.sets.filter((set) => set.exerciseRecordId === record.id) : [];
+            const maxSetNumber = Math.max(getPlanExerciseSets(exercise), ...recordSets.map((set) => set.setNumber));
+
+            return {
+              exerciseId: record?.exerciseId ?? exercise.exerciseId,
+              priority: exercise.priority,
+              reps: getPlanExerciseReps(exercise),
+              sets: maxSetNumber,
+            };
+          });
+
+        detail.exercises
+          .filter((record) => !record.planExerciseId && record.notes?.includes(WORKOUT_TEMPORARY_EXERCISE_NOTE))
+          .forEach((record) => {
+            const recordSets = detail.sets.filter((set) => set.exerciseRecordId === record.id);
+            exercises.push({
+              exerciseId: record.exerciseId,
+              priority: record.priority,
+              reps: record.plannedReps ?? record.plannedRepMin ?? 10,
+              sets: Math.max(1, ...recordSets.map((set) => set.setNumber)),
+            });
+          });
+
+        return {
+          title: day.title,
+          focus: day.focus,
+          week: day.week,
+          weekday: day.weekday,
+          exercises,
+        };
+      });
+
+      await repositories.planRepository.updateUserPlan({
+        planId: planDetail.plan.id,
+        name: planDetail.plan.name,
+        goal: planDetail.plan.goal,
+        durationWeeks: planDetail.plan.durationWeeks,
+        frequencyPerWeek: planDetail.plan.frequencyPerWeek,
+        days: nextDays,
+      });
+
+      setNotice({
+        title: '已同步到我的计划',
+        message: '本次替换、加做、跳过和临时动作已应用到当前用户计划，系统方案未被修改。',
+      });
+    } catch (syncError) {
+      setNotice({
+        title: '同步失败',
+        message: syncError instanceof Error ? syncError.message : '本次调整暂时无法同步到计划。',
+      });
+    }
+  }, [adjustmentSummary, detail, planDetail, repositories]);
+
+  const confirmSyncAdjustmentsToPlan = useCallback(() => {
+    Alert.alert('同步到我的计划？', '这会修改当前“我的计划”，不会修改系统方案。', [
+      { text: '取消', style: 'cancel' },
+      { text: '确认同步', onPress: () => void syncAdjustmentsToPlan() },
+    ]);
+  }, [syncAdjustmentsToPlan]);
 
   return (
     <Screen
@@ -219,6 +381,50 @@ export default function WorkoutSummaryRoute() {
             />
             <MetricCard label="总训练时长" value={`${view.durationMinutes} min`} />
           </View>
+
+          {adjustmentSummary?.hasAdjustments ? (
+            <AppCard style={styles.adjustmentCard}>
+              <SectionHeader title="本次训练有调整" />
+              <View style={styles.adjustmentList}>
+                {adjustmentRows.map((row) => (
+                  <View key={row.label} style={styles.adjustmentRow}>
+                    <AppText tone="muted" variant="bodySmall">
+                      {row.label}
+                    </AppText>
+                    <Tag label={`${row.value}`} tone="brand" />
+                  </View>
+                ))}
+              </View>
+              <View style={styles.adjustmentActions}>
+                <AppButton
+                  onPress={() =>
+                    setNotice({
+                      title: '已保存本次记录',
+                      message: '本次调整仅保留在训练记录中，当前计划未修改。',
+                    })
+                  }
+                  style={styles.button}
+                  variant="secondary"
+                >
+                  仅保存本次记录
+                </AppButton>
+                <AppButton onPress={confirmSyncAdjustmentsToPlan} style={styles.button}>
+                  同步到我的计划
+                </AppButton>
+              </View>
+              <AppButton
+                onPress={() =>
+                  setNotice({
+                    title: '稍后处理',
+                    message: '你可以稍后在训练记录中查看本次调整。',
+                  })
+                }
+                variant="ghost"
+              >
+                稍后再说
+              </AppButton>
+            </AppCard>
+          ) : null}
 
           <SectionHeader title="成员表现" />
           <View style={styles.memberList}>
@@ -312,6 +518,14 @@ export default function WorkoutSummaryRoute() {
   );
 }
 
+function getPlanExerciseReps(exercise: PlanExercise): number {
+  return exercise.reps ?? exercise.repMin ?? exercise.repMax ?? 8;
+}
+
+function getPlanExerciseSets(exercise: PlanExercise): number {
+  return Math.max(1, exercise.sets ?? 1);
+}
+
 function GroupWorkoutConsentCard({
   onKeepLocal,
   onRequestConsent,
@@ -394,6 +608,25 @@ const styles = StyleSheet.create({
   metricGrid: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  adjustmentActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  adjustmentCard: {
+    gap: spacing.md,
+  },
+  adjustmentList: {
+    gap: spacing.sm,
+  },
+  adjustmentRow: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   memberList: {
     gap: spacing.sm,

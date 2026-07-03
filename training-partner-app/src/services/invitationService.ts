@@ -1,5 +1,6 @@
 import { apiRequest } from '@/services/httpClient';
 import { readStoredSession } from '@/services/auth/tokenStorage';
+import { syncServerDataToLocal } from '@/services/profileSyncService';
 
 export type Invitation = {
   id: string;
@@ -90,6 +91,9 @@ export async function joinGroupByInvitation(
         accessToken: session.accessToken,
       }
     );
+    if (result.ok) {
+      await syncServerDataToLocal();
+    }
     return result;
   } catch (error) {
     return {

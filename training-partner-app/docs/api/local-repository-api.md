@@ -1,11 +1,17 @@
 ﻿# 本地 Repository API 文档
 
-更新时间：2026-07-01
+更新时间：2026-07-03
+
+## 2026-07-03 契约补充：成员身份字段
+
+- `GroupMember` 新增 `userId?: ID`、`memberType: 'local' | 'real'`、`localMemberId?: ID`、`joinedAt?: string`。
+- `MemberRepository.createMember()` 默认创建 `memberType='local'` 的本地成员；只有云端小组拉取或明确传入 `userId` 时才创建真实成员。
+- 训练结束给组员上传待确认数据时，只能选择 `memberType='real'` 且有 `userId` 的成员；本地成员继续用于本机训练轮换，但不作为跨设备上传目标。
 
 ## 2026-07-01 契约补充：多动作补录、记录编辑和计划编辑
 
 - `WorkoutRepository.createManualSession()` 支持新的 `exercises?: ManualWorkoutExerciseInput[]` 输入，可一次补录多个动作，每个动作包含独立 set 列表；旧 `exerciseId + setCount + weight + reps` 输入仍保留兼容。
-- 新增 `WorkoutRepository.addExerciseToSession(input)`：用于历史详情编辑时向已存在 session 追加动作记录，可通过 `memberIds` 为本次参与成员批量创建初始组。
+- `WorkoutRepository.addExerciseToSession(input)`：用于历史详情编辑或训练中临时添加动作，可通过 `memberIds` 为本次参与成员批量创建初始组；`insertOrderIndex` 可把临时动作插入到当前动作之后，并顺延后续 `order_index`。
 - 新增 `WorkoutRepository.addSetToExerciseRecord(input)`：用于历史详情编辑时向某个动作记录追加成员组，set number 按该动作 + 成员当前最大组号递增。
 - `PlanRepository.createUserPlan()` 的 day 输入支持 `week?: number`，新建多训练日计划时不再强制写入第 1 周。
 - 新增 `PlanRepository.updateUserPlan(input)`：仅允许更新非系统计划；保存时替换该计划的 phases / days / plan_exercises 结构，不触碰训练历史表。
@@ -89,6 +95,7 @@ export interface MemberRepository {
 - 今日训练建议重量计算。
 - 训练记录按成员归属。
 - `MemberProfile` 可保存成员头像 URL、缩略图 URL、本地缓存路径和更新时间；头像文件本体不进入 SQLite。
+- `GroupMember.userId` 是云端真实账号绑定；本地成员不得用本机 `memberId` 冒充 `userId`。
 
 ## 4. ExerciseRepository
 
@@ -157,7 +164,7 @@ export interface WorkoutRepository {
   updateSession(input: UpdateWorkoutSessionInput): Promise<WorkoutSession>;
   addExerciseToSession(input: AddWorkoutExerciseInput): Promise<WorkoutSessionDetail>;
   addSetToExerciseRecord(input: AddWorkoutSetInput): Promise<WorkoutSet>;
-  updateExerciseRecordExercise(recordId: ID, exerciseId: ID): Promise<void>;
+  updateExerciseRecordExercise(recordId: ID, exerciseId: ID, notes?: string): Promise<void>;
   saveSet(input: SaveWorkoutSetInput): Promise<WorkoutSet>;
   deleteSet(setId: ID): Promise<void>;
   deleteExerciseRecord(recordId: ID): Promise<void>;
@@ -175,7 +182,7 @@ export interface WorkoutRepository {
 - 历史详情页可编辑日期、标题、动作、组数据，并可二次确认删除 set、动作或整次训练。
 - 完成训练并生成总结。
 - 历史页按日期、月份和成员条件读取训练。
-- `updateExerciseRecordExercise(recordId, exerciseId)` 仅改当前训练动作快照的实际 `exercise_id`，并用 `COALESCE(replaced_from_exercise_id, exercise_id)` 保留首次原计划动作，不回写 `plan_exercises`。
+- `updateExerciseRecordExercise(recordId, exerciseId, notes?)` 仅改当前训练动作快照的实际 `exercise_id`，并用 `COALESCE(replaced_from_exercise_id, exercise_id)` 保留首次原计划动作，不回写 `plan_exercises`。训练中替换可通过 `notes` 保存 `本次替换：原因`。
 
 `CreateSessionFromTodayPlanInput` 当前包含 `planExerciseIds?: ID[]`、`participantMemberIds?: ID[]` 和 `trainingMode?: 'solo_local' | 'group_local'`。今日训练页传入动作筛选后的动作列表和本次参与成员，Repository 只为参与成员生成 `workout_sets`。未完成的同计划、同周次、同训练日、同记录模式 session 会优先复用，避免中途退出后重复创建 set。
 
@@ -184,6 +191,8 @@ export interface WorkoutRepository {
 - 单人：动作 A 第 1 组 -> 动作 A 第 2 组 -> 动作 A 完成后进入下一个动作。
 - 小组：动作 A 张三第 1 组 -> 李四第 1 组 -> 张三第 2 组 -> 李四第 2 组 -> 下一个动作。
 - `getNextWorkoutSetForRotation()` 和 `getWorkoutExerciseSetProgress()` 位于 `src/domain/workout/workout.service.ts`，页面不得重新手写组轮换算法。
+- `buildWorkoutExecutionQueue()`、`getWorkoutCursorFromQueue()` 和 `advanceWorkoutCursor()` 是 2026-07-02 后训练执行页的 cursor 来源；休息倒计时、成员条点击和本地 UI state 不得覆盖 cursor。
+- 训练中临时调整使用当前 session 数据表达：替换写 `replaced_from_exercise_id` 和备注；加做组通过 `addSetToExerciseRecord()` 写 `notes: "加做组"`；跳过动作把未完成 set 标记为 skipped；临时动作通过 `addExerciseToSession()` 写 `notes: "临时添加动作"`。
 - 保存失败时页面必须停留在当前组，并显示“本组数据未保存，请重试”。
 
 ## 6.1 SyncQueue / SyncService

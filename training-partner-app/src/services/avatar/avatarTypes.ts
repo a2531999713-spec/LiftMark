@@ -20,6 +20,7 @@ export type AvatarUploadResult = {
   avatarUrl: string;
   byteSize: number;
   isMock: boolean;
+  serverAvatarUrl?: string;
 };
 
 export type AvatarPickSource = 'camera' | 'library';

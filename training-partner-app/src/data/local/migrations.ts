@@ -404,6 +404,46 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 12,
+    name: 'group_member_identity_fields',
+    async up(db) {
+      const memberColumns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(group_members)',
+      );
+      const columnNames = new Set(memberColumns.map((column) => column.name));
+
+      const columnDefinitions = [
+        'user_id TEXT',
+        "member_type TEXT NOT NULL DEFAULT 'local'",
+        'local_member_id TEXT',
+        'joined_at TEXT',
+      ];
+
+      for (const definition of columnDefinitions) {
+        const columnName = definition.split(' ')[0];
+        if (!columnNames.has(columnName)) {
+          await db.execAsync(`ALTER TABLE group_members ADD COLUMN ${definition};`);
+        }
+      }
+
+      await db.execAsync(`
+        UPDATE group_members
+        SET member_type = CASE
+              WHEN user_id IS NOT NULL AND user_id != '' THEN 'real'
+              ELSE 'local'
+            END,
+            local_member_id = CASE
+              WHEN user_id IS NULL OR user_id = '' THEN COALESCE(local_member_id, id)
+              ELSE local_member_id
+            END,
+            joined_at = COALESCE(joined_at, created_at)
+        WHERE member_type IS NULL OR local_member_id IS NULL OR joined_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON group_members(group_id, user_id);
+      `);
+    },
+  },
 ];
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {

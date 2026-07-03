@@ -2,15 +2,19 @@ import { describe, expect, it } from '@jest/globals';
 
 import type { PlanExercise } from '@/domain/plan/plan.types';
 import {
+  buildWorkoutExecutionQueue,
   checkShortWorkout,
+  getWorkoutCursorFromQueue,
   getNextWorkoutSetForRotation,
   getPlanExerciseInitialReps,
   getPlanExerciseSetCount,
+  getWorkoutSetByCursor,
   getWorkoutExerciseSetProgress,
   getWorkoutRecordInitialReps,
+  summarizeWorkoutAdjustments,
   summarizeWorkoutSets,
 } from '@/domain/workout/workout.service';
-import type { WorkoutExerciseRecord, WorkoutSet } from '@/domain/workout/workout.types';
+import type { WorkoutExerciseRecord, WorkoutSessionDetail, WorkoutSet } from '@/domain/workout/workout.types';
 import { validateWorkoutSetInput } from '@/domain/workout/workout.validation';
 
 function createPlanExercise(patch: Partial<PlanExercise> = {}): PlanExercise {
@@ -52,6 +56,28 @@ function createSet(patch: Partial<WorkoutSet> = {}): WorkoutSet {
     completed: false,
     createdAt: '2026-06-09T00:00:00.000Z',
     updatedAt: '2026-06-09T00:00:00.000Z',
+    ...patch,
+  };
+}
+
+function createSessionDetail(patch: Partial<WorkoutSessionDetail> = {}): WorkoutSessionDetail {
+  return {
+    session: {
+      id: 'session_1',
+      groupId: 'group_1',
+      planId: 'plan_1',
+      date: '2026-07-02',
+      week: 1,
+      weekday: 4,
+      title: '训练日',
+      status: 'in_progress',
+      trainingMode: 'group_local',
+      startedAt: '2026-07-02T10:00:00.000Z',
+      createdAt: '2026-07-02T10:00:00.000Z',
+      updatedAt: '2026-07-02T10:00:00.000Z',
+    },
+    exercises: [createWorkoutRecord()],
+    sets: [],
     ...patch,
   };
 }
@@ -128,6 +154,86 @@ describe('workout domain rules', () => {
 
     const afterC = afterB.map((set) => (set.id === 'c_4' ? { ...set, completed: true } : set));
     expect(getNextWorkoutSetForRotation(afterC, memberOrder, 'record_1')).toBeNull();
+  });
+
+  it('builds a stable execution queue and cursor from exercise, set, and member order', () => {
+    const detail = createSessionDetail({
+      exercises: [
+        createWorkoutRecord({ id: 'record_bench', exerciseId: 'bench', orderIndex: 1 }),
+        createWorkoutRecord({ id: 'record_row', exerciseId: 'row', orderIndex: 2 }),
+      ],
+      sets: [
+        createSet({ id: 'b_1', exerciseRecordId: 'record_bench', memberId: 'b', setNumber: 1 }),
+        createSet({ id: 'a_1', exerciseRecordId: 'record_bench', memberId: 'a', setNumber: 1, completed: true }),
+        createSet({ id: 'a_2', exerciseRecordId: 'record_bench', memberId: 'a', setNumber: 2 }),
+        createSet({ id: 'b_2', exerciseRecordId: 'record_bench', memberId: 'b', setNumber: 2 }),
+        createSet({ id: 'a_row_1', exerciseRecordId: 'record_row', memberId: 'a', setNumber: 1 }),
+      ],
+    });
+    const memberOrder = ['a', 'b'];
+
+    const queue = buildWorkoutExecutionQueue(detail, memberOrder);
+    expect(queue.map((item) => item.id)).toEqual(['a_1', 'b_1', 'a_2', 'b_2', 'a_row_1']);
+    expect(getWorkoutCursorFromQueue(detail, memberOrder)).toEqual({
+      exerciseIndex: 0,
+      setIndex: 0,
+      memberIndex: 1,
+    });
+    expect(getWorkoutSetByCursor(detail, memberOrder, { exerciseIndex: 0, setIndex: 0, memberIndex: 1 })?.id).toBe('b_1');
+  });
+
+  it('does not let completed rest timers advance the cursor', () => {
+    const detail = createSessionDetail({
+      sets: [
+        createSet({ id: 'a_1', memberId: 'a', setNumber: 1, completed: true, actualRestSeconds: 120 }),
+        createSet({ id: 'b_1', memberId: 'b', setNumber: 1 }),
+        createSet({ id: 'a_2', memberId: 'a', setNumber: 2 }),
+        createSet({ id: 'b_2', memberId: 'b', setNumber: 2 }),
+      ],
+    });
+
+    expect(getWorkoutCursorFromQueue(detail, ['a', 'b'])).toEqual({
+      exerciseIndex: 0,
+      setIndex: 0,
+      memberIndex: 1,
+    });
+  });
+
+  it('summarizes temporary workout adjustments without plan mutations', () => {
+    const detail = createSessionDetail({
+      exercises: [
+        createWorkoutRecord({
+          id: 'record_replaced',
+          exerciseId: 'dumbbell_bench',
+          replacedFromExerciseId: 'barbell_bench',
+        }),
+        createWorkoutRecord({
+          id: 'record_temp',
+          exerciseId: 'lateral_raise',
+          planExerciseId: undefined,
+          notes: '临时添加动作',
+          orderIndex: 2,
+        }),
+        createWorkoutRecord({
+          id: 'record_skip',
+          exerciseId: 'squat',
+          orderIndex: 3,
+        }),
+      ],
+      sets: [
+        createSet({ id: 'set_1', exerciseRecordId: 'record_replaced', notes: '加做组', setNumber: 4 }),
+        createSet({ id: 'set_2', exerciseRecordId: 'record_temp' }),
+        createSet({ id: 'set_3', exerciseRecordId: 'record_skip', skipped: true }),
+      ],
+    });
+
+    expect(summarizeWorkoutAdjustments(detail)).toEqual({
+      extraSetCount: 1,
+      hasAdjustments: true,
+      replacementCount: 1,
+      skippedExerciseCount: 1,
+      temporaryExerciseCount: 1,
+    });
   });
 
   it('reports current planned set separately from total participant sets', () => {

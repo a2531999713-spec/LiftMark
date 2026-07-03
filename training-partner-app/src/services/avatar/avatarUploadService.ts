@@ -2,6 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 import { API_BASE_URL } from '@/services/apiClient';
 import { readStoredSession } from '@/services/auth/tokenStorage';
+import { resolveAvatarUrl } from '@/utils/avatarUrl';
 
 import type { AvatarUploadResult } from './avatarTypes';
 
@@ -19,45 +20,47 @@ async function ensureAvatarDir() {
 
 /**
  * 上传头像到服务器（文件方式）
+ * 使用已复制到稳定路径的本地文件，避免临时 URI 在 fetch 中不可用
  */
 async function uploadAvatarToServer(fileUri: string, accessToken: string): Promise<string | null> {
   try {
-    // 读取文件信息
     const fileInfo = await FileSystem.getInfoAsync(fileUri);
     if (!fileInfo.exists) {
-      throw new Error('头像文件不存在。');
+      return null;
     }
 
-    // 创建 FormData 并上传文件
     const formData = new FormData();
     const filename = fileUri.split('/').pop() || 'avatar.jpg';
-    const mimeType = 'image/jpeg';
 
     // @ts-ignore - React Native 的 FormData 支持文件上传
     formData.append('file', {
       uri: fileUri,
       name: filename,
-      type: mimeType,
+      type: 'image/jpeg',
     });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
     const response = await fetch(`${API_BASE_URL}/auth/avatar/upload`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'multipart/form-data',
       },
       body: formData,
+      signal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     const result = await response.json();
 
     if (!response.ok) {
-      throw new Error(result.message || '上传失败');
+      return null;
     }
 
-    return result.avatar_url;
-  } catch (error) {
-    console.error('头像上传到服务器失败:', error);
+    return result.avatarUrl ?? result.avatar_url ?? null;
+  } catch {
     return null;
   }
 }
@@ -71,20 +74,21 @@ export async function uploadAccountAvatar(input: {
   const safeUserId = input.userId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const avatarLocalUri = `${AVATAR_DIR}${safeUserId}_${Date.now()}.jpg`;
 
-  // 本地保存头像
+  // 先复制到稳定路径
   await FileSystem.copyAsync({ from: input.fileUri, to: avatarLocalUri });
 
-  // 获取文件大小
-  const fileInfo = await FileSystem.getInfoAsync(input.fileUri);
+  const fileInfo = await FileSystem.getInfoAsync(avatarLocalUri);
   const byteSize = fileInfo.exists ? fileInfo.size : 0;
 
-  // 上传到服务器
-  let avatarUrl = avatarLocalUri; // 默认使用本地路径
+  // 用稳定路径上传（不用临时的 input.fileUri）
+  let avatarUrl = avatarLocalUri;
+  let serverAvatarUrl: string | undefined;
   const session = await readStoredSession();
   if (session?.accessToken) {
-    const serverUrl = await uploadAvatarToServer(input.fileUri, session.accessToken);
+    const serverUrl = await uploadAvatarToServer(avatarLocalUri, session.accessToken);
     if (serverUrl) {
-      avatarUrl = serverUrl;
+      serverAvatarUrl = serverUrl;
+      avatarUrl = resolveAvatarUrl(serverUrl) ?? serverUrl;
     }
   }
 
@@ -96,5 +100,6 @@ export async function uploadAccountAvatar(input: {
     avatarUrl,
     byteSize,
     isMock: false,
+    serverAvatarUrl,
   };
 }

@@ -170,6 +170,9 @@ async function createInitialSchema(trx: Knex.Transaction) {
       table.string('id').primary();
       table.string('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
       table.string('group_id').notNullable().references('id').inTable('groups').onDelete('CASCADE');
+      table.string('avatar_url');
+      table.string('avatar_thumb_url');
+      table.timestamp('avatar_updated_at', { useTz: true });
       table.decimal('bodyweight', 10, 2);
       table.decimal('bench_1rm', 10, 2);
       table.decimal('squat_1rm', 10, 2);
@@ -403,6 +406,9 @@ async function createMemberProfiles(trx: Knex.Transaction) {
       table.string('id').primary();
       table.string('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
       table.string('group_id').notNullable().references('id').inTable('groups').onDelete('CASCADE');
+      table.string('avatar_url');
+      table.string('avatar_thumb_url');
+      table.timestamp('avatar_updated_at', { useTz: true });
       table.decimal('bodyweight', 10, 2);
       table.decimal('bench_1rm', 10, 2);
       table.decimal('squat_1rm', 10, 2);
@@ -452,6 +458,24 @@ async function createGroupInvitations(trx: Knex.Transaction) {
   }
 }
 
+async function addMemberProfileAvatarFields(trx: Knex.Transaction) {
+  if (!(await trx.schema.hasTable('member_profiles'))) {
+    await createMemberProfiles(trx);
+  }
+
+  const columnDefinitions: Array<[string, (table: Knex.AlterTableBuilder) => void]> = [
+    ['avatar_url', (table) => table.string('avatar_url')],
+    ['avatar_thumb_url', (table) => table.string('avatar_thumb_url')],
+    ['avatar_updated_at', (table) => table.timestamp('avatar_updated_at', { useTz: true })],
+  ];
+
+  for (const [columnName, addColumn] of columnDefinitions) {
+    if (!(await trx.schema.hasColumn('member_profiles', columnName))) {
+      await trx.schema.alterTable('member_profiles', addColumn);
+    }
+  }
+}
+
 export async function migrate() {
   await ensureMigrationsTable();
   await runMigration('001_initial_cloud_schema', createInitialSchema);
@@ -459,6 +483,7 @@ export async function migrate() {
   await runMigration('003_member_profiles', createMemberProfiles);
   await runMigration('004_pending_training_data', createPendingTrainingData);
   await runMigration('005_group_invitations', createGroupInvitations);
+  await runMigration('006_member_profile_avatar_fields', addMemberProfileAvatarFields);
 }
 
 if (require.main === module) {
