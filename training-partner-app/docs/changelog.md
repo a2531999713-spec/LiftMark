@@ -1,5 +1,24 @@
 # 变更记录
 
+## 2026-07-03 - v2.3.1-avatar-sync-fix
+
+### 头像同步修复
+- 修复首页头像不显示问题：用户上传头像后，现在会同时更新 `group_members` 和 `member_profiles` 两个表的 `avatar_url` 字段。
+- 新增 `avatarSync.ts` 模块，提供头像同步相关的辅助函数。
+- 优化 `memberRepository.updateProfile` 方法，确保头像更新时两个表保持同步。
+
+### 训练执行优化
+- 优化训练执行页面的交互体验，改进休息计时器和当前组记录器的显示逻辑。
+- 更新训练动作卡片的样式和交互。
+
+### 文档更新
+- 更新各模块文档，补充头像同步相关的实现说明。
+- 更新技术架构文档，添加头像同步流程说明。
+
+### 验证
+- 已通过：`npm run typecheck`。
+- 已通过：`npm run lint`。
+
 ## 2026-07-02 - workout-execution-fix-sprint
 
 ### 训练执行
