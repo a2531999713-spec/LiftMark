@@ -4,6 +4,33 @@
 
 ---
 
+## v2.3.2 — 2026-07-04 `2dd7d3c`
+
+### 🎯 核心修复
+
+#### 本地数据库兼容升级
+- 新增 `ensureLocalSchemaCompatibility()` 函数，自动检查并补齐 8 张核心表缺失的列
+- 修复旧数据库升级后 `no such column: avatar_url` 崩溃问题
+- 启动顺序修复：数据库迁移完成后才加载页面，避免查询时迁移未执行
+- 新增迁移版本 13 (`local_schema_repair`)，调用全面 schema 修复
+
+#### 头像上传全链路修复
+- 修复 React Native 0.85 的 `Unsupported FormDataPart implementation` 错误
+- 头像文件改用 XMLHttpRequest + Blob 方式上传，兼容新版 React Native
+- 修复服务器端 uploads 目录权限问题
+
+#### 同步诊断增强
+- 新增本地数据库结构检查模块，显示每张表的头像字段是否存在
+- 提供一键修复数据库结构按钮，无需卸载重装
+- 显示已应用迁移版本号
+
+### 📦 变更文件
+- 新增 `schemaRepair.ts` — 可复用的 schema 兼容修复函数
+- 新增 `syncDiagnosticsService.ts` — 同步诊断服务
+- 修改 29 个文件，新增 1258 行，删除 265 行
+
+---
+
 ## v2.2.1 — 2026-07-01 `869910b`
 
 ### 🎯 核心更新

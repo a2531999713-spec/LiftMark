@@ -2,6 +2,30 @@
 
 ---
 
+## v2.3.2 — 2026-07-04
+
+**本地数据库 schema 兼容修复 + 头像上传全链路修复**
+
+### 修复
+- **SQLite schema 兼容性**：新增 `ensureLocalSchemaCompatibility()` 函数，对 8 张核心表做 PRAGMA 检查 + ALTER TABLE 补列，解决旧数据库升级后 `no such column: avatar_url` 报错
+- **头像上传兼容性**：React Native 0.85 的 FormData 不支持 `{ uri, name, type }` 对象格式，改用 XMLHttpRequest + Blob 方式上传，修复 `Unsupported FormDataPart implementation` 错误
+- **启动顺序修复**：`_layout.tsx` 改为 await 数据库初始化完成后再加载页面，避免页面查询时迁移未执行
+- **uploads 目录权限**：`.gitignore` 新增 `uploads/` 忽略规则
+
+### 新增功能
+- **同步诊断页数据库结构检查**：显示 group_members、member_profiles、account_profile_cache 等表的头像字段是否存在
+- **一键修复数据库结构按钮**：缺失列时可点击修复，无需卸载重装
+- **已应用迁移版本显示**：同步诊断页展示本地数据库已执行的迁移版本号
+
+### 新增文件
+- `training-partner-app/src/data/local/schemaRepair.ts` — 可复用的 schema 兼容修复函数
+- `training-partner-app/src/services/syncDiagnosticsService.ts` — 同步诊断服务
+
+### 迁移
+- **Version 13**: `local_schema_repair` — 调用 `ensureLocalSchemaCompatibility()` 做全面 schema 修复
+
+---
+
 ## v2.3.0 — 2026-07-02
 
 **小组成员系统重构 + 邀请码 + 训练数据同步**
