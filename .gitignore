@@ -93,3 +93,6 @@ expo-*.err.log
 
 # archives
 *.zip
+
+# uploads
+uploads/
