@@ -1,6 +1,8 @@
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
+import path from 'path';
 import { ZodError } from 'zod';
 
 import { db } from './db/connection';
@@ -34,6 +36,11 @@ export async function buildApp() {
     limits: {
       fileSize: 5 * 1024 * 1024, // 5MB limit for avatar uploads
     },
+  });
+
+  await app.register(fastifyStatic, {
+    prefix: '/uploads/',
+    root: process.env.UPLOAD_ROOT ?? path.resolve('/home/deploy/liftmark/uploads'),
   });
 
   app.setErrorHandler((error, _request, reply) => {

@@ -2,7 +2,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { manipulateAsync, SaveFormat, type Action } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 
-import { getDatabase, initializeLocalDatabase } from '@/data/local';
+import { createLocalRepositories, getDatabase, initializeLocalDatabase } from '@/data/local';
+import type { MemberProfile } from '@/domain/member/member.types';
 import type { AuthUser } from '@/services/auth/authTypes';
 import { syncAvatarToServer } from '@/services/profileSyncService';
 import { resolveAvatarUrl } from '@/utils/avatarUrl';
@@ -252,7 +253,9 @@ export async function updateAccountAvatarFromPicker(
 
     const processed = await processAvatar(result.assets[0]);
     const upload = await uploadAccountAvatar({ fileUri: processed.uri, userId: user.id });
-    await syncAvatarToServer(upload.serverAvatarUrl ?? upload.avatarUrl);
+    const syncResult = upload.serverAvatarUrl
+      ? await syncAvatarToServer(upload.serverAvatarUrl)
+      : { ok: false as const, message: upload.serverUploadError ?? '头像只保存在本机，上传服务器失败。' };
     const profile = await upsertAccountProfileCache({
       avatarLocalUri: upload.avatarLocalUri,
       avatarThumbUrl: upload.avatarThumbUrl,
@@ -261,7 +264,14 @@ export async function updateAccountAvatarFromPicker(
       user,
     });
 
-    return { ok: true, profile, upload: { ...upload, byteSize: processed.byteSize } };
+    const warning =
+      upload.serverUploadError
+        ? `头像只保存在本机，上传服务器失败。${upload.serverUploadError}`
+        : !syncResult.ok
+          ? `头像文件已上传，但资料同步失败：${syncResult.message}`
+          : undefined;
+
+    return { ok: true, message: warning, profile, upload: { ...upload, byteSize: processed.byteSize } };
   } catch (error) {
     return {
       ok: false,
@@ -271,7 +281,10 @@ export async function updateAccountAvatarFromPicker(
 }
 
 export async function deleteAccountAvatar(user: AuthUser): Promise<AccountProfileCache> {
-  await syncAvatarToServer(null);
+  const result = await syncAvatarToServer(null);
+  if (!result.ok) {
+    console.warn('[avatar] deleteAccountAvatar server sync failed', result.message);
+  }
   return upsertAccountProfileCache({
     avatarLocalUri: undefined,
     avatarThumbUrl: undefined,
@@ -279,6 +292,50 @@ export async function deleteAccountAvatar(user: AuthUser): Promise<AccountProfil
     avatarUrl: undefined,
     user,
   });
+}
+
+export async function syncAccountAvatarToLocalMemberProfiles(input: {
+  avatarLocalUri?: string;
+  avatarThumbUrl?: string;
+  avatarUpdatedAt?: string;
+  avatarUrl?: string;
+  fallbackMemberId?: string;
+  userId: string;
+}): Promise<{ profilesByMemberId: Record<string, MemberProfile>; updatedMemberIds: string[] }> {
+  await initializeLocalDatabase();
+  const repositories = createLocalRepositories();
+  const groups = await repositories.groupRepository.listGroups();
+  const profilesByMemberId: Record<string, MemberProfile> = {};
+  const updatedMemberIds: string[] = [];
+
+  for (const group of groups) {
+    const members = await repositories.memberRepository.listMembers(group.id);
+    let targetMembers = members.filter((member) => member.userId === input.userId);
+    if (targetMembers.length === 0 && input.fallbackMemberId) {
+      const fallback = members.find((member) => member.id === input.fallbackMemberId);
+      if (fallback) {
+        const bound = await repositories.memberRepository.updateMember(fallback.id, {
+          localMemberId: fallback.localMemberId ?? fallback.id,
+          memberType: 'real',
+          userId: input.userId,
+        });
+        targetMembers = [bound];
+      }
+    }
+
+    for (const member of targetMembers) {
+      const updatedProfile = await repositories.memberRepository.updateProfile(member.id, {
+        avatarLocalUri: input.avatarLocalUri,
+        avatarThumbUrl: input.avatarThumbUrl,
+        avatarUpdatedAt: input.avatarUpdatedAt,
+        avatarUrl: input.avatarUrl,
+      });
+      profilesByMemberId[member.id] = updatedProfile;
+      updatedMemberIds.push(member.id);
+    }
+  }
+
+  return { profilesByMemberId, updatedMemberIds };
 }
 
 export function getAvatarDisplay(input: {

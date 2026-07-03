@@ -1,7 +1,8 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-const AVATAR_DIR = '/home/deploy/liftmark/uploads/avatars';
+const UPLOAD_ROOT = process.env.UPLOAD_ROOT ?? '/home/deploy/liftmark/uploads';
+const AVATAR_DIR = path.join(UPLOAD_ROOT, 'avatars');
 
 /**
  * 确保头像目录存在

@@ -32,10 +32,10 @@ export function pickAvatarUri(input: {
   uri?: string | null;
 }): string | null {
   return (
-    resolveAvatarUrl(input.uri) ??
     input.avatarLocalUri ??
     resolveAvatarUrl(input.avatarThumbUrl) ??
     resolveAvatarUrl(input.avatarUrl) ??
+    resolveAvatarUrl(input.uri) ??
     null
   );
 }

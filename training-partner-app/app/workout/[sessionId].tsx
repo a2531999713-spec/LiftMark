@@ -996,6 +996,30 @@ export default function WorkoutRoute() {
             : record,
         ),
       });
+      void enqueueSyncCandidate({
+        entityType: 'workoutExerciseRecords',
+        localId: activeRecord.id,
+        operation: 'update',
+        payload: {
+          exerciseId: exercise.id,
+          groupId: detail.session.groupId,
+          notes: note,
+          orderIndex: activeRecord.orderIndex,
+          parentServerId: detail.session.id,
+          planExerciseId: activeRecord.planExerciseId,
+          plannedPercent1RM: activeRecord.plannedPercent1RM,
+          plannedRepMax: activeRecord.plannedRepMax,
+          plannedRepMin: activeRecord.plannedRepMin,
+          plannedReps: activeRecord.plannedReps,
+          plannedRestSeconds: activeRecord.plannedRestSeconds,
+          plannedSets: activeRecord.plannedSets,
+          priority: activeRecord.priority,
+          replacedFromExerciseId: activeRecord.replacedFromExerciseId ?? activeRecord.exerciseId,
+          sessionId: activeRecord.sessionId,
+        },
+        status: 'pending_update',
+        updatedAt: new Date().toISOString(),
+      }).catch(() => undefined);
       setExercisePickerMode(null);
     } catch (replaceError) {
       setError(replaceError instanceof Error ? replaceError.message : '动作替换失败。');
@@ -1060,6 +1084,61 @@ export default function WorkoutRoute() {
       setWorkoutReadyToFinish(false);
       if (nextRecordIndex >= 0) {
         setActiveExerciseIndex(nextRecordIndex);
+      }
+      if (nextRecord) {
+        const now = new Date().toISOString();
+        void enqueueSyncCandidate({
+          entityType: 'workoutExerciseRecords',
+          localId: nextRecord.id,
+          operation: 'create',
+          payload: {
+            exerciseId: nextRecord.exerciseId,
+            groupId: detail.session.groupId,
+            notes: nextRecord.notes,
+            orderIndex: nextRecord.orderIndex,
+            parentServerId: detail.session.id,
+            planExerciseId: nextRecord.planExerciseId,
+            plannedPercent1RM: nextRecord.plannedPercent1RM,
+            plannedRepMax: nextRecord.plannedRepMax,
+            plannedRepMin: nextRecord.plannedRepMin,
+            plannedReps: nextRecord.plannedReps,
+            plannedRestSeconds: nextRecord.plannedRestSeconds,
+            plannedSets: nextRecord.plannedSets,
+            priority: nextRecord.priority,
+            replacedFromExerciseId: nextRecord.replacedFromExerciseId,
+            sessionId: nextRecord.sessionId,
+          },
+          status: 'pending_create',
+          updatedAt: now,
+        }).catch(() => undefined);
+        void Promise.all(
+          nextDetail.sets
+            .filter((set) => set.exerciseRecordId === nextRecord.id)
+            .map((set) =>
+              enqueueSyncCandidate({
+                entityType: 'workoutSets',
+                localId: set.id,
+                operation: 'create',
+                payload: {
+                  actualReps: set.actualReps,
+                  actualRestSeconds: set.actualRestSeconds,
+                  actualWeight: set.actualWeight,
+                  completed: set.completed,
+                  exerciseRecordId: set.exerciseRecordId,
+                  memberId: set.memberId,
+                  notes: set.notes,
+                  plannedReps: set.plannedReps,
+                  plannedWeight: set.plannedWeight,
+                  rpe: set.rpe,
+                  sessionId: set.sessionId,
+                  setNumber: set.setNumber,
+                  skipped: set.skipped,
+                },
+                status: 'pending_create',
+                updatedAt: set.updatedAt,
+              }),
+            ),
+        ).catch(() => undefined);
       }
     } catch (addError) {
       setError(addError instanceof Error ? addError.message : '添加临时动作失败。');

@@ -51,6 +51,7 @@ function toGroupDto(group: any) {
 
 function toGroupMemberDto(member: any) {
   const avatarUrl = member.profile_avatar_url ?? member.user_avatar_url ?? member.avatar_url ?? null;
+  const avatarThumbUrl = member.profile_avatar_thumb_url ?? avatarUrl;
   return {
     id: member.id,
     groupId: member.group_id,
@@ -64,6 +65,14 @@ function toGroupMemberDto(member: any) {
     nickname: member.nickname,
     avatarUrl,
     avatar_url: avatarUrl,
+    avatarThumbUrl,
+    avatar_thumb_url: avatarThumbUrl,
+    userAvatarUrl: member.user_avatar_url ?? null,
+    user_avatar_url: member.user_avatar_url ?? null,
+    profileAvatarUrl: member.profile_avatar_url ?? null,
+    profile_avatar_url: member.profile_avatar_url ?? null,
+    profileAvatarThumbUrl: member.profile_avatar_thumb_url ?? null,
+    profile_avatar_thumb_url: member.profile_avatar_thumb_url ?? null,
     isCurrentUser: Boolean(member.is_current_user),
     joinedAt: member.joined_at,
     joined_at: member.joined_at,
@@ -206,6 +215,7 @@ export async function registerGroupRoutes(app: FastifyInstance) {
         'users.nickname',
         'users.avatar_url as user_avatar_url',
         'member_profiles.avatar_url as profile_avatar_url',
+        'member_profiles.avatar_thumb_url as profile_avatar_thumb_url',
         db.raw('CASE WHEN users.id = ? THEN true ELSE false END as is_current_user', [authUser.id]),
       )
       .where('group_members.group_id', params.id)

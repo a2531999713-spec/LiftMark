@@ -9,6 +9,27 @@ function timestamps(table: Table, knex: Knex | Knex.Transaction) {
   table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
 }
 
+function syncEntityColumns(table: Table, knex: Knex | Knex.Transaction) {
+  table.string('id').primary();
+  table.string('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+  table.string('group_id').references('id').inTable('groups').onDelete('SET NULL');
+  table.string('client_id').notNullable();
+  table.string('parent_server_id');
+  table.string('name');
+  table.string('title');
+  table.string('status');
+  table.string('member_client_id');
+  table.string('exercise_client_id');
+  table.decimal('actual_weight', 10, 2);
+  table.integer('actual_reps');
+  table.integer('sync_version').notNullable().defaultTo(1);
+  table.timestamp('client_updated_at', { useTz: true });
+  table.timestamp('deleted_at', { useTz: true });
+  table.specificType('payload', 'jsonb').notNullable().defaultTo('{}');
+  timestamps(table, knex);
+  table.unique(['user_id', 'client_id']);
+}
+
 async function ensureMigrationsTable() {
   const exists = await db.schema.hasTable('schema_migrations');
   if (!exists) {
@@ -180,7 +201,7 @@ async function createInitialSchema(trx: Knex.Transaction) {
       table.decimal('overhead_press_1rm', 10, 2);
       table.decimal('pullup_reference_weight', 10, 2);
       table.decimal('barbell_increment', 10, 2).defaultTo(2.5);
-      table.decimal('dumbbell_increment', 10, 2).defaultTo(2);
+      table.decimal('dumbbell_increment', 10, 2).defaultTo(2.5);
       timestamps(table, trx);
       table.unique(['user_id', 'group_id']);
     });
@@ -243,30 +264,21 @@ async function addRegistrationMetadata(trx: Knex.Transaction) {
 }
 
 async function createSyncTables(trx: Knex.Transaction) {
-  const entityTables = ['exercises', 'workout_sessions', 'workout_sets', 'training_plans', 'plan_days', 'plan_exercises'];
+  const entityTables = [
+    'exercises',
+    'workout_sessions',
+    'workout_exercise_records',
+    'workout_sets',
+    'training_plans',
+    'plan_days',
+    'plan_exercises',
+    'body_metrics',
+    'settings',
+  ];
 
   for (const tableName of entityTables) {
     if (await trx.schema.hasTable(tableName)) continue;
-    await trx.schema.createTable(tableName, (table) => {
-      table.string('id').primary();
-      table.string('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
-      table.string('group_id').references('id').inTable('groups').onDelete('SET NULL');
-      table.string('client_id').notNullable();
-      table.string('parent_server_id');
-      table.string('name');
-      table.string('title');
-      table.string('status');
-      table.string('member_client_id');
-      table.string('exercise_client_id');
-      table.decimal('actual_weight', 10, 2);
-      table.integer('actual_reps');
-      table.integer('sync_version').notNullable().defaultTo(1);
-      table.timestamp('client_updated_at', { useTz: true });
-      table.timestamp('deleted_at', { useTz: true });
-      table.specificType('payload', 'jsonb').notNullable().defaultTo('{}');
-      timestamps(table, trx);
-      table.unique(['user_id', 'client_id']);
-    });
+    await trx.schema.createTable(tableName, (table) => syncEntityColumns(table, trx));
   }
 
   if (!(await trx.schema.hasTable('sync_mappings'))) {
@@ -416,7 +428,7 @@ async function createMemberProfiles(trx: Knex.Transaction) {
       table.decimal('overhead_press_1rm', 10, 2);
       table.decimal('pullup_reference_weight', 10, 2);
       table.decimal('barbell_increment', 10, 2).defaultTo(2.5);
-      table.decimal('dumbbell_increment', 10, 2).defaultTo(2);
+      table.decimal('dumbbell_increment', 10, 2).defaultTo(2.5);
       timestamps(table, trx);
       table.unique(['user_id', 'group_id']);
     });
@@ -476,6 +488,54 @@ async function addMemberProfileAvatarFields(trx: Knex.Transaction) {
   }
 }
 
+async function ensureSyncEntityTable(trx: Knex.Transaction, tableName: string) {
+  if (!(await trx.schema.hasTable(tableName))) {
+    await trx.schema.createTable(tableName, (table) => syncEntityColumns(table, trx));
+    return;
+  }
+
+  const columnDefinitions: Array<[string, (table: Knex.AlterTableBuilder) => void]> = [
+    ['group_id', (table) => table.string('group_id').references('id').inTable('groups').onDelete('SET NULL')],
+    ['client_id', (table) => table.string('client_id')],
+    ['parent_server_id', (table) => table.string('parent_server_id')],
+    ['name', (table) => table.string('name')],
+    ['title', (table) => table.string('title')],
+    ['status', (table) => table.string('status')],
+    ['member_client_id', (table) => table.string('member_client_id')],
+    ['exercise_client_id', (table) => table.string('exercise_client_id')],
+    ['actual_weight', (table) => table.decimal('actual_weight', 10, 2)],
+    ['actual_reps', (table) => table.integer('actual_reps')],
+    ['sync_version', (table) => table.integer('sync_version').notNullable().defaultTo(1)],
+    ['client_updated_at', (table) => table.timestamp('client_updated_at', { useTz: true })],
+    ['deleted_at', (table) => table.timestamp('deleted_at', { useTz: true })],
+    ['payload', (table) => table.specificType('payload', 'jsonb').notNullable().defaultTo('{}')],
+    ['created_at', (table) => table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(trx.fn.now())],
+    ['updated_at', (table) => table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(trx.fn.now())],
+  ];
+
+  for (const [columnName, addColumn] of columnDefinitions) {
+    if (!(await trx.schema.hasColumn(tableName, columnName))) {
+      await trx.schema.alterTable(tableName, addColumn);
+    }
+  }
+}
+
+async function ensureCloudSyncCompleteness(trx: Knex.Transaction) {
+  await addMemberProfileAvatarFields(trx);
+
+  for (const tableName of [
+    'workout_exercise_records',
+    'body_metrics',
+    'settings',
+  ]) {
+    await ensureSyncEntityTable(trx, tableName);
+  }
+
+  await trx.raw('CREATE INDEX IF NOT EXISTS idx_workout_exercise_records_user_updated ON workout_exercise_records(user_id, updated_at DESC)');
+  await trx.raw('CREATE INDEX IF NOT EXISTS idx_body_metrics_user_updated ON body_metrics(user_id, updated_at DESC)');
+  await trx.raw('CREATE INDEX IF NOT EXISTS idx_settings_user_updated ON settings(user_id, updated_at DESC)');
+}
+
 export async function migrate() {
   await ensureMigrationsTable();
   await runMigration('001_initial_cloud_schema', createInitialSchema);
@@ -484,6 +544,7 @@ export async function migrate() {
   await runMigration('004_pending_training_data', createPendingTrainingData);
   await runMigration('005_group_invitations', createGroupInvitations);
   await runMigration('006_member_profile_avatar_fields', addMemberProfileAvatarFields);
+  await runMigration('007_cloud_sync_completeness', ensureCloudSyncCompleteness);
 }
 
 if (require.main === module) {

@@ -15,18 +15,20 @@ export type AccountProfileCache = {
 export type AvatarUploadResult = {
   avatarFileKey: string;
   avatarLocalUri: string;
-  avatarThumbUrl: string;
+  avatarThumbUrl?: string;
   avatarUpdatedAt: string;
-  avatarUrl: string;
+  avatarUrl?: string;
   byteSize: number;
   isMock: boolean;
   serverAvatarUrl?: string;
+  serverUploadError?: string;
+  serverUploaded: boolean;
 };
 
 export type AvatarPickSource = 'camera' | 'library';
 
 export type AvatarServiceResult =
-  | { ok: true; profile: AccountProfileCache; upload: AvatarUploadResult }
+  | { ok: true; message?: string; profile: AccountProfileCache; upload: AvatarUploadResult }
   | { ok: false; message: string };
 
 export const AVATAR_LIMITS = {

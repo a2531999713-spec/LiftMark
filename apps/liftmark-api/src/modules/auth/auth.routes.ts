@@ -71,6 +71,7 @@ function toPublicUser(user: UserRow) {
     email: user.email,
     nickname: user.nickname,
     avatar_url: user.avatar_url,
+    avatarUrl: user.avatar_url,
     campaignCode: user.campaign_code,
     earlyUserTier: user.early_user_tier,
     liftmarkId: user.liftmark_id,
@@ -356,7 +357,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       await trx('users').where({ id: authUser.id }).update({ avatar_url: body.avatar_url, updated_at: new Date() });
       await syncUserAvatarToMemberProfiles(trx, authUser.id, body.avatar_url);
     });
-    return { ok: true, avatar_url: body.avatar_url };
+    return { ok: true, avatar_url: body.avatar_url, avatarUrl: body.avatar_url };
   });
 
   // 文件上传接口
@@ -409,7 +410,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         await syncUserAvatarToMemberProfiles(trx, authUser.id, avatarUrl);
       });
 
-      return { ok: true, avatar_url: avatarUrl };
+      return { ok: true, avatar_url: avatarUrl, avatarUrl };
     } catch (error) {
       request.log.error(error);
       return reply.status(500).send({ error: 'UPLOAD_FAILED', message: '头像上传失败，请稍后重试。' });

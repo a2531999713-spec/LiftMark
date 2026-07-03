@@ -4,36 +4,40 @@ import { apiRequest } from '@/services/httpClient';
 import { readStoredSession } from '@/services/auth/tokenStorage';
 import { resolveAvatarUrl } from '@/utils/avatarUrl';
 
+export type SyncOperationResult = { ok: true; message?: string } | { ok: false; message: string };
+
 /**
  * 同步用户头像到服务器
  */
-export async function syncAvatarToServer(avatarUrl: string | null): Promise<string | null> {
+export async function syncAvatarToServer(avatarUrl: string | null): Promise<SyncOperationResult & { avatarUrl?: string | null }> {
   const session = await readStoredSession();
-  if (!session?.accessToken) return null;
+  if (!session?.accessToken) return { ok: false, message: '请先登录后再同步头像。' };
 
   // 只同步服务器 URL 或 null，不同步本地路径
   if (avatarUrl && (avatarUrl.startsWith('file://') || avatarUrl.startsWith('content://'))) {
-    return null;
+    return { ok: false, message: '头像只保存在本机，上传服务器失败。', avatarUrl };
   }
 
   try {
-    const result = await apiRequest<{ avatarUrl?: string | null }>('/sync/avatar', {
+    const result = await apiRequest<{ avatarUrl?: string | null; avatar_url?: string | null }>('/sync/avatar', {
       method: 'POST',
       accessToken: session.accessToken,
       body: { avatarUrl },
     });
-    return result.avatarUrl ?? avatarUrl;
-  } catch {
-    return null;
+    return { ok: true, avatarUrl: result.avatarUrl ?? result.avatar_url ?? avatarUrl };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '头像同步服务器失败。';
+    console.warn('[sync] syncAvatarToServer failed', message);
+    return { ok: false, message, avatarUrl };
   }
 }
 
 /**
  * 同步小组到服务器
  */
-export async function syncGroupsToServer(groups: { id: string; name: string; createdAt: string }[]): Promise<void> {
+export async function syncGroupsToServer(groups: { id: string; name: string; createdAt: string }[]): Promise<SyncOperationResult> {
   const session = await readStoredSession();
-  if (!session?.accessToken) return;
+  if (!session?.accessToken) return { ok: false, message: '请先登录后再同步小组。' };
 
   try {
     await apiRequest('/sync/groups', {
@@ -41,28 +45,33 @@ export async function syncGroupsToServer(groups: { id: string; name: string; cre
       accessToken: session.accessToken,
       body: { groups },
     });
-  } catch {
-    // 静默失败
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '小组同步服务器失败。';
+    console.warn('[sync] syncGroupsToServer failed', message);
+    return { ok: false, message };
   }
 }
 
 /**
  * 同步所有本地小组到服务器
  */
-export async function syncAllLocalGroupsToServer(): Promise<void> {
+export async function syncAllLocalGroupsToServer(): Promise<SyncOperationResult> {
   const session = await readStoredSession();
-  if (!session?.accessToken) return;
+  if (!session?.accessToken) return { ok: false, message: '请先登录后再同步本地小组。' };
 
   try {
     await initializeLocalDatabase();
     const db = await getDatabase();
+    const now = new Date().toISOString();
+    const currentUserId = session.user.id;
 
     // 获取所有本地小组
     const localGroups = await db.getAllAsync<{ id: string; name: string; created_at: string }>(
       'SELECT id, name, created_at FROM groups ORDER BY created_at ASC'
     );
 
-    if (localGroups.length === 0) return;
+    if (localGroups.length === 0) return { ok: true, message: '没有本地小组需要同步。' };
 
     // 同步到服务器
     await apiRequest('/sync/groups', {
@@ -79,18 +88,60 @@ export async function syncAllLocalGroupsToServer(): Promise<void> {
 
     // 同步每个小组的成员
     for (const group of localGroups) {
+      const ownedMember = await db.getFirstAsync<{ id: string }>(
+        'SELECT id FROM group_members WHERE group_id = ? AND user_id = ? LIMIT 1',
+        group.id,
+        currentUserId,
+      );
+      if (!ownedMember) {
+        const fallbackMember = await db.getFirstAsync<{ id: string }>(
+          `SELECT id FROM group_members
+           WHERE group_id = ?
+           ORDER BY CASE WHEN display_name = ? THEN 0 ELSE 1 END, created_at ASC
+           LIMIT 1`,
+          group.id,
+          session.user.displayName,
+        );
+        if (fallbackMember) {
+          await db.runAsync(
+            `UPDATE group_members
+             SET user_id = ?, member_type = 'real', local_member_id = COALESCE(local_member_id, id), updated_at = ?
+             WHERE id = ?`,
+            currentUserId,
+            now,
+            fallbackMember.id,
+          );
+        }
+      }
+
       const localMembers = await db.getAllAsync<{
         id: string;
         display_name: string;
+        user_id: string | null;
+        member_type: 'local' | 'real' | null;
         role: string;
         avatar_url: string | null;
+        bodyweight: number | null;
+        bench_1rm: number | null;
+        squat_1rm: number | null;
+        deadlift_1rm: number | null;
+        overhead_press_1rm: number | null;
+        pullup_reference_weight: number | null;
+        barbell_increment: number | null;
+        dumbbell_increment: number | null;
       }>(
-        'SELECT id, display_name, role, avatar_url FROM group_members WHERE group_id = ?',
+        `SELECT gm.id, gm.display_name, gm.user_id, gm.member_type, gm.role, gm.avatar_url,
+                mp.bodyweight, mp.bench_1rm, mp.squat_1rm, mp.deadlift_1rm,
+                mp.overhead_press_1rm, mp.pullup_reference_weight,
+                mp.barbell_increment, mp.dumbbell_increment
+         FROM group_members gm
+         LEFT JOIN member_profiles mp ON mp.member_id = gm.id
+         WHERE gm.group_id = ?`,
         group.id
       );
 
       if (localMembers.length > 0) {
-        await apiRequest('/sync/members', {
+        const memberResult = await apiRequest<{ results?: Array<{ id: string; reason?: string; skipped?: boolean; synced?: boolean }> }>('/sync/members', {
           method: 'POST',
           accessToken: session.accessToken,
           body: {
@@ -98,15 +149,34 @@ export async function syncAllLocalGroupsToServer(): Promise<void> {
             members: localMembers.map(m => ({
               id: m.id,
               displayName: m.display_name,
+              userId: m.user_id ?? undefined,
+              memberType: m.member_type ?? (m.user_id ? 'real' : 'local'),
               role: m.role,
               avatarUrl: m.avatar_url ?? undefined,
+              profile: {
+                bodyweight: m.bodyweight ?? undefined,
+                bench1RM: m.bench_1rm ?? undefined,
+                squat1RM: m.squat_1rm ?? undefined,
+                deadlift1RM: m.deadlift_1rm ?? undefined,
+                overheadPress1RM: m.overhead_press_1rm ?? undefined,
+                pullupReferenceWeight: m.pullup_reference_weight ?? undefined,
+                barbellIncrement: m.barbell_increment ?? 2.5,
+                dumbbellIncrement: m.dumbbell_increment ?? 2.5,
+              },
             })),
           },
         });
+        const skipped = memberResult.results?.filter((item) => item.skipped) ?? [];
+        if (skipped.length > 0) {
+          console.warn('[sync] local members skipped by server', skipped);
+        }
       }
     }
-  } catch {
-    // 静默失败
+    return { ok: true, message: '本地小组和当前账号成员已同步。' };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '本地小组同步服务器失败。';
+    console.warn('[sync] syncAllLocalGroupsToServer failed', message);
+    return { ok: false, message };
   }
 }
 
@@ -133,18 +203,21 @@ export async function syncMembersToServer(
       dumbbellIncrement?: number;
     };
   }[]
-): Promise<void> {
+): Promise<SyncOperationResult & { results?: Array<{ id: string; reason?: string; skipped?: boolean; synced?: boolean }> }> {
   const session = await readStoredSession();
-  if (!session?.accessToken) return;
+  if (!session?.accessToken) return { ok: false, message: '请先登录后再同步成员。' };
 
   try {
-    await apiRequest('/sync/members', {
+    const result = await apiRequest<{ results?: Array<{ id: string; reason?: string; skipped?: boolean; synced?: boolean }> }>('/sync/members', {
       method: 'POST',
       accessToken: session.accessToken,
       body: { groupId, members },
     });
-  } catch {
-    // 静默失败
+    return { ok: true, results: result.results };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '成员同步服务器失败。';
+    console.warn('[sync] syncMembersToServer failed', message);
+    return { ok: false, message };
   }
 }
 
@@ -187,7 +260,8 @@ export async function pullGroupsAndMembers(): Promise<{
       accessToken: session.accessToken,
     });
     return result;
-  } catch {
+  } catch (error) {
+    console.warn('[sync] pullGroupsAndMembers failed', error instanceof Error ? error.message : error);
     return { groups: [] };
   }
 }

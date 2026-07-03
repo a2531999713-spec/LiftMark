@@ -25,7 +25,7 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
       await syncUserAvatarToMemberProfiles(trx, authUser.id, body.avatarUrl);
     });
 
-    return { ok: true, avatarUrl: body.avatarUrl };
+    return { ok: true, avatarUrl: body.avatarUrl, avatar_url: body.avatarUrl };
   });
 
   // 同步小组到服务器
@@ -104,8 +104,13 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
 
     const results = [];
     for (const member of body.members) {
-      if (member.memberType === 'local' || member.userId !== authUser.id) {
-        results.push({ id: member.id, synced: false, skipped: true, reason: 'local_or_other_user' });
+      if (!member.userId) {
+        results.push({ id: member.id, synced: false, skipped: true, reason: 'local_member_without_user_id' });
+        continue;
+      }
+
+      if (member.userId !== authUser.id) {
+        results.push({ id: member.id, synced: false, skipped: true, reason: 'other_user_member' });
         continue;
       }
 
@@ -129,48 +134,37 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
       }
 
       // 同步成员资料
-      if (member.profile) {
-        const existingProfile = await db('member_profiles')
-          .where({ user_id: authUser.id, group_id: body.groupId })
-          .first();
+      const existingProfile = await db('member_profiles')
+        .where({ user_id: authUser.id, group_id: body.groupId })
+        .first();
 
-        if (existingProfile) {
-          await db('member_profiles')
-            .where({ id: existingProfile.id })
-            .update({
-              avatar_url: member.avatarUrl ?? null,
-              avatar_thumb_url: member.avatarUrl ?? null,
-              avatar_updated_at: member.avatarUrl ? new Date() : null,
-              bodyweight: member.profile.bodyweight,
-              bench_1rm: member.profile.bench1RM,
-              squat_1rm: member.profile.squat1RM,
-              deadlift_1rm: member.profile.deadlift1RM,
-              overhead_press_1rm: member.profile.overheadPress1RM,
-              pullup_reference_weight: member.profile.pullupReferenceWeight,
-              barbell_increment: member.profile.barbellIncrement,
-              dumbbell_increment: member.profile.dumbbellIncrement,
-              updated_at: new Date(),
-            });
-        } else {
-          await db('member_profiles').insert({
-            id: createId('mprof'),
-            user_id: authUser.id,
-            group_id: body.groupId,
-            avatar_url: member.avatarUrl ?? null,
-            avatar_thumb_url: member.avatarUrl ?? null,
-            avatar_updated_at: member.avatarUrl ? new Date() : null,
-            bodyweight: member.profile.bodyweight,
-            bench_1rm: member.profile.bench1RM,
-            squat_1rm: member.profile.squat1RM,
-            deadlift_1rm: member.profile.deadlift1RM,
-            overhead_press_1rm: member.profile.overheadPress1RM,
-            pullup_reference_weight: member.profile.pullupReferenceWeight,
-            barbell_increment: member.profile.barbellIncrement,
-            dumbbell_increment: member.profile.dumbbellIncrement,
-            created_at: new Date(),
-            updated_at: new Date(),
-          });
-        }
+      const profilePatch = {
+        avatar_url: member.avatarUrl ?? null,
+        avatar_thumb_url: member.avatarUrl ?? null,
+        avatar_updated_at: member.avatarUrl ? new Date() : null,
+        bodyweight: member.profile?.bodyweight ?? null,
+        bench_1rm: member.profile?.bench1RM ?? null,
+        squat_1rm: member.profile?.squat1RM ?? null,
+        deadlift_1rm: member.profile?.deadlift1RM ?? null,
+        overhead_press_1rm: member.profile?.overheadPress1RM ?? null,
+        pullup_reference_weight: member.profile?.pullupReferenceWeight ?? null,
+        barbell_increment: member.profile?.barbellIncrement ?? 2.5,
+        dumbbell_increment: member.profile?.dumbbellIncrement ?? 2.5,
+        updated_at: new Date(),
+      };
+
+      if (existingProfile) {
+        await db('member_profiles')
+          .where({ id: existingProfile.id })
+          .update(profilePatch);
+      } else {
+        await db('member_profiles').insert({
+          id: createId('mprof'),
+          user_id: authUser.id,
+          group_id: body.groupId,
+          ...profilePatch,
+          created_at: new Date(),
+        });
       }
 
       results.push({ id: member.id, synced: true });

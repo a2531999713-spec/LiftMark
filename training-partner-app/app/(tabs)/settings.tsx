@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 
 import { EmptyState, Screen } from '@/components/ui';
 import { ProfileHeroCard, ProfileMenuItem } from '@/components/profile';
@@ -11,6 +11,7 @@ import type { PlanTemplate } from '@/domain/plan/plan.types';
 import {
   getAccountProfileCache,
   getAvatarDisplay,
+  syncAccountAvatarToLocalMemberProfiles,
   updateAccountAvatarFromPicker,
   type AccountProfileCache,
 } from '@/services/avatar';
@@ -93,28 +94,27 @@ export default function SettingsRoute() {
     const result = await updateAccountAvatarFromPicker(user, 'library');
     if (result.ok) {
       setAccountProfile(result.profile);
-      const groups = await repositories.groupRepository.listGroups();
-      const updatedProfiles: Record<string, MemberProfile> = {};
-      for (const item of groups) {
-        const groupMembers = await repositories.memberRepository.listMembers(item.id);
-        const ownedMembers = groupMembers.filter((member) => member.userId === user.id);
-        for (const member of ownedMembers) {
-          updatedProfiles[member.id] = await repositories.memberRepository.updateProfile(member.id, {
-            avatarLocalUri: result.profile.avatarLocalUri,
-            avatarThumbUrl: result.profile.avatarThumbUrl,
-            avatarUpdatedAt: result.profile.avatarUpdatedAt,
-            avatarUrl: result.profile.avatarUrl,
-          });
-        }
-      }
-      if (Object.keys(updatedProfiles).length > 0) {
+      const { profilesByMemberId } = await syncAccountAvatarToLocalMemberProfiles({
+        avatarLocalUri: result.profile.avatarLocalUri,
+        avatarThumbUrl: result.profile.avatarThumbUrl,
+        avatarUpdatedAt: result.profile.avatarUpdatedAt,
+        avatarUrl: result.profile.avatarUrl,
+        fallbackMemberId: currentMember?.id,
+        userId: user.id,
+      });
+      if (Object.keys(profilesByMemberId).length > 0) {
         setProfilesByMemberId((current) => ({
           ...current,
-          ...updatedProfiles,
+          ...profilesByMemberId,
         }));
       }
+      if (result.message) {
+        Alert.alert('头像未完全同步', result.message);
+      }
+    } else {
+      Alert.alert('头像未更新', result.message);
     }
-  }, [repositories, user]);
+  }, [currentMember?.id, user]);
 
   return (
     <Screen contentStyle={styles.screen}>
@@ -180,6 +180,12 @@ export default function SettingsRoute() {
               icon="shield-checkmark-outline"
               label="账号设置"
               onPress={() => router.push('/account/settings' as never)}
+            />
+            <ProfileMenuItem
+              description="上传、拉取、队列和头像 URL"
+              icon="cloud-upload-outline"
+              label="同步诊断"
+              onPress={() => router.push('/profile/sync' as never)}
             />
           </View>
 

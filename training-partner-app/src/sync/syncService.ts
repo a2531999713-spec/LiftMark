@@ -17,7 +17,16 @@ const defaultPreferences: SyncPreferences = {
 
 export const SYNC_NOT_CONFIGURED_MESSAGE = '云同步已接入队列。云端不可用时，训练数据会保留在当前设备并等待重试。';
 
-type ServerSyncEntityType = 'exercises' | 'workoutSessions' | 'workoutSets' | 'trainingPlans' | 'planDays' | 'planExercises';
+type ServerSyncEntityType =
+  | 'exercises'
+  | 'workoutSessions'
+  | 'workoutExerciseRecords'
+  | 'workoutSets'
+  | 'trainingPlans'
+  | 'planDays'
+  | 'planExercises'
+  | 'bodyMetrics'
+  | 'settings';
 
 type SyncPushResponse = {
   mappings?: {
@@ -33,10 +42,13 @@ type SyncPushResponse = {
 const serverSyncEntityTypes = new Set<SyncEntityType>([
   'exercises',
   'workoutSessions',
+  'workoutExerciseRecords',
   'workoutSets',
   'trainingPlans',
   'planDays',
   'planExercises',
+  'bodyMetrics',
+  'settings',
 ]);
 
 function buildServerEntity(item: SyncQueueItem) {
@@ -45,6 +57,12 @@ function buildServerEntity(item: SyncQueueItem) {
     clientId: item.localId,
     serverId: item.remoteId,
     groupId: typeof payload.groupId === 'string' ? payload.groupId : undefined,
+    parentServerId:
+      typeof payload.parentServerId === 'string'
+        ? payload.parentServerId
+        : typeof payload.sessionId === 'string'
+          ? payload.sessionId
+          : undefined,
     name: typeof payload.name === 'string' ? payload.name : undefined,
     title: typeof payload.title === 'string' ? payload.title : undefined,
     status: typeof payload.status === 'string' ? payload.status : undefined,
@@ -54,7 +72,7 @@ function buildServerEntity(item: SyncQueueItem) {
   };
 }
 
-export async function getSyncSnapshot(): Promise<SyncSnapshot> {
+export async function getSyncSnapshot(): Promise<SyncSnapshot & { lastError?: string; serverStatus?: unknown }> {
   const session = await readStoredSession();
   const pendingCount = await countPendingSyncItems();
   if (!session) {
@@ -74,11 +92,13 @@ export async function getSyncSnapshot(): Promise<SyncSnapshot> {
       lastSyncedAt: status.serverTime,
       pendingCount,
       preferences: defaultPreferences,
+      serverStatus: status,
       status: 'idle',
     };
-  } catch {
+  } catch (error) {
     return {
       lastSyncedAt: undefined,
+      lastError: error instanceof Error ? error.message : '同步状态加载失败。',
       pendingCount,
       preferences: defaultPreferences,
       status: 'failed',
@@ -115,10 +135,13 @@ export async function requestImmediateSync(): Promise<{ ok: true; message?: stri
     const changes: Record<ServerSyncEntityType, ReturnType<typeof buildServerEntity>[]> = {
       exercises: [],
       workoutSessions: [],
+      workoutExerciseRecords: [],
       workoutSets: [],
       trainingPlans: [],
       planDays: [],
       planExercises: [],
+      bodyMetrics: [],
+      settings: [],
     };
 
     for (const item of syncableItems) {
@@ -138,7 +161,9 @@ export async function requestImmediateSync(): Promise<{ ok: true; message?: stri
       syncableItems.map((item) => markSyncItemSynced(item.id, mappings.get(item.localId)?.serverId)),
     );
 
-    return { ok: true, message: `已推送 ${syncableItems.length} 条待同步数据。` };
+    const unsupportedCount = pendingItems.length - syncableItems.length;
+    const suffix = unsupportedCount > 0 ? `，另有 ${unsupportedCount} 条成员/小组类数据需使用专用同步。` : '';
+    return { ok: true, message: `已推送 ${syncableItems.length} 条待同步数据${suffix}` };
   } catch (error) {
     const message = error instanceof Error ? error.message : '云同步服务连接失败，训练记录不受影响。';
     await Promise.all(syncableItems.map((item) => markSyncItemFailed(item.id, message)));

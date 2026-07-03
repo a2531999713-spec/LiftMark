@@ -10,6 +10,7 @@ import {
   deleteAccountAvatar,
   getAccountProfileCache,
   getAvatarDisplay,
+  syncAccountAvatarToLocalMemberProfiles,
   updateAccountAvatarFromPicker,
   type AccountProfileCache,
 } from '@/services/avatar';
@@ -83,25 +84,21 @@ export default function AvatarRoute() {
       return;
     }
     setAccountProfile(result.profile);
-    const groups = await repositories.groupRepository.listGroups();
-    let nextProfile: MemberProfile | null = null;
-    for (const group of groups) {
-      const members = await repositories.memberRepository.listMembers(group.id);
-      const ownedMembers = members.filter((member) => member.userId === user.id);
-      for (const member of ownedMembers) {
-        const updatedProfile = await repositories.memberRepository.updateProfile(member.id, {
-          avatarLocalUri: result.profile.avatarLocalUri,
-          avatarThumbUrl: result.profile.avatarThumbUrl,
-          avatarUpdatedAt: result.profile.avatarUpdatedAt,
-          avatarUrl: result.profile.avatarUrl,
-        });
-        if (member.id === currentMember?.id) {
-          nextProfile = updatedProfile;
-        }
-      }
+    const { profilesByMemberId } = await syncAccountAvatarToLocalMemberProfiles({
+      avatarLocalUri: result.profile.avatarLocalUri,
+      avatarThumbUrl: result.profile.avatarThumbUrl,
+      avatarUpdatedAt: result.profile.avatarUpdatedAt,
+      avatarUrl: result.profile.avatarUrl,
+      fallbackMemberId: currentMember?.id,
+      userId: user.id,
+    });
+    if (currentMember?.id && profilesByMemberId[currentMember.id]) {
+      setCurrentProfile(profilesByMemberId[currentMember.id]);
     }
-    if (nextProfile) setCurrentProfile(nextProfile);
-    setNotice({ title: '头像已更新', message: '头像已保存并上传。' });
+    setNotice({
+      title: result.message ? '头像仅本机可见' : '头像已更新',
+      message: result.message ?? '头像已保存并上传。',
+    });
   };
 
   const removeAvatar = async () => {
@@ -110,24 +107,14 @@ export default function AvatarRoute() {
     const profile = await deleteAccountAvatar(user);
     setIsWorking(false);
     setAccountProfile(profile);
-    const groups = await repositories.groupRepository.listGroups();
-    let nextProfile: MemberProfile | null = null;
-    for (const group of groups) {
-      const members = await repositories.memberRepository.listMembers(group.id);
-      const ownedMembers = members.filter((member) => member.userId === user.id);
-      for (const member of ownedMembers) {
-        const updatedProfile = await repositories.memberRepository.updateProfile(member.id, {
-          avatarLocalUri: undefined,
-          avatarThumbUrl: undefined,
-          avatarUpdatedAt: profile.avatarUpdatedAt,
-          avatarUrl: undefined,
-        });
-        if (member.id === currentMember?.id) {
-          nextProfile = updatedProfile;
-        }
-      }
+    const { profilesByMemberId } = await syncAccountAvatarToLocalMemberProfiles({
+      avatarUpdatedAt: profile.avatarUpdatedAt,
+      fallbackMemberId: currentMember?.id,
+      userId: user.id,
+    });
+    if (currentMember?.id && profilesByMemberId[currentMember.id]) {
+      setCurrentProfile(profilesByMemberId[currentMember.id]);
     }
-    if (nextProfile) setCurrentProfile(nextProfile);
     setNotice({ title: '头像已删除', message: '账号头像已清空。' });
   };
 

@@ -9,10 +9,13 @@ import { createId } from '../../utils/ids';
 const entityTableByType = {
   exercises: 'exercises',
   workoutSessions: 'workout_sessions',
+  workoutExerciseRecords: 'workout_exercise_records',
   workoutSets: 'workout_sets',
   trainingPlans: 'training_plans',
   planDays: 'plan_days',
   planExercises: 'plan_exercises',
+  bodyMetrics: 'body_metrics',
+  settings: 'settings',
 } as const;
 
 type EntityType = keyof typeof entityTableByType;
@@ -32,14 +35,17 @@ const syncEntitySchema = z.object({
 
 const pushSchema = z.object({
   deviceId: z.string().min(1).optional(),
-  changes: z.object({
-    exercises: z.array(syncEntitySchema).optional(),
-    workoutSessions: z.array(syncEntitySchema).optional(),
-    workoutSets: z.array(syncEntitySchema).optional(),
-    trainingPlans: z.array(syncEntitySchema).optional(),
-    planDays: z.array(syncEntitySchema).optional(),
-    planExercises: z.array(syncEntitySchema).optional(),
-  }),
+    changes: z.object({
+      exercises: z.array(syncEntitySchema).optional(),
+      workoutSessions: z.array(syncEntitySchema).optional(),
+      workoutExerciseRecords: z.array(syncEntitySchema).optional(),
+      workoutSets: z.array(syncEntitySchema).optional(),
+      trainingPlans: z.array(syncEntitySchema).optional(),
+      planDays: z.array(syncEntitySchema).optional(),
+      planExercises: z.array(syncEntitySchema).optional(),
+      bodyMetrics: z.array(syncEntitySchema).optional(),
+      settings: z.array(syncEntitySchema).optional(),
+    }),
 });
 
 function getPayloadNumber(payload: Record<string, unknown>, keys: string[]) {
@@ -127,10 +133,13 @@ async function listChanges(userId: string, since?: string) {
   const result: Record<EntityType, unknown[]> = {
     exercises: [],
     workoutSessions: [],
+    workoutExerciseRecords: [],
     workoutSets: [],
     trainingPlans: [],
     planDays: [],
     planExercises: [],
+    bodyMetrics: [],
+    settings: [],
   };
 
   for (const [entityType, tableName] of Object.entries(entityTableByType) as [EntityType, string][]) {
@@ -219,13 +228,20 @@ export async function registerSyncRoutes(app: FastifyInstance) {
   app.get('/sync/status', { preHandler: requireAuth }, async (request) => {
     const authUser = getAuthUser(request);
     const states = await db('sync_state').where({ user_id: authUser.id }).orderBy('updated_at', 'desc');
-    const sessions = await db('workout_sessions').where({ user_id: authUser.id }).count<{ count: string }[]>({ count: '*' });
+    const [sessions, exerciseRecords, sets, mappings] = await Promise.all([
+      db('workout_sessions').where({ user_id: authUser.id }).count<{ count: string }[]>({ count: '*' }),
+      db('workout_exercise_records').where({ user_id: authUser.id }).count<{ count: string }[]>({ count: '*' }),
+      db('workout_sets').where({ user_id: authUser.id }).count<{ count: string }[]>({ count: '*' }),
+      db('sync_mappings').where({ user_id: authUser.id }).count<{ count: string }[]>({ count: '*' }),
+    ]);
     return {
       status: 'idle',
       serverTime: new Date().toISOString(),
       syncedWorkoutSessions: Number(sessions[0]?.count ?? 0),
+      syncedWorkoutExerciseRecords: Number(exerciseRecords[0]?.count ?? 0),
+      syncedWorkoutSets: Number(sets[0]?.count ?? 0),
+      syncMappings: Number(mappings[0]?.count ?? 0),
       devices: states,
     };
   });
 }
-

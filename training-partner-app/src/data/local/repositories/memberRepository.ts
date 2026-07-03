@@ -183,7 +183,7 @@ export class SQLiteMemberRepository implements MemberRepository {
     );
 
     // 同步更新 group_members 表的 avatar_url，确保首页能正确显示头像
-    if (patch.avatarUrl !== undefined) {
+    if (Object.prototype.hasOwnProperty.call(patch, 'avatarUrl')) {
       await db.runAsync(
         `UPDATE group_members SET avatar_url = ?, updated_at = ? WHERE id = ?`,
         patch.avatarUrl ?? null,

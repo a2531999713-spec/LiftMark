@@ -153,13 +153,18 @@ export default function TrainingProfileOnboardingRoute() {
       if (currentMember) {
         await repositories.memberRepository.updateMember(currentMember.id, {
           displayName,
+          localMemberId: currentMember.localMemberId ?? currentMember.id,
+          memberType: user?.id ? 'real' : currentMember.memberType,
+          userId: user?.id ?? currentMember.userId,
         });
         await repositories.memberRepository.updateProfile(currentMember.id, profilePatch);
       } else {
         await repositories.memberRepository.createMember({
           displayName,
           groupId: group.id,
+          memberType: user?.id ? 'real' : 'local',
           role: 'owner',
+          userId: user?.id,
           profile: profilePatch,
         });
       }

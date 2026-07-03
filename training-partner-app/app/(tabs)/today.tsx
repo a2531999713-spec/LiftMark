@@ -743,6 +743,35 @@ export default function TodayRoute() {
         status: 'pending_create',
         updatedAt: session.updatedAt,
       }).catch(() => undefined);
+      const detail = await repositories.workoutRepository.getSessionDetail(session.id);
+      void Promise.all(
+        detail.exercises.map((record) =>
+          enqueueSyncCandidate({
+            entityType: 'workoutExerciseRecords',
+            localId: record.id,
+            operation: 'create',
+            payload: {
+              exerciseId: record.exerciseId,
+              groupId: session.groupId,
+              notes: record.notes,
+              orderIndex: record.orderIndex,
+              parentServerId: session.id,
+              planExerciseId: record.planExerciseId,
+              plannedPercent1RM: record.plannedPercent1RM,
+              plannedRepMax: record.plannedRepMax,
+              plannedRepMin: record.plannedRepMin,
+              plannedReps: record.plannedReps,
+              plannedRestSeconds: record.plannedRestSeconds,
+              plannedSets: record.plannedSets,
+              priority: record.priority,
+              replacedFromExerciseId: record.replacedFromExerciseId,
+              sessionId: record.sessionId,
+            },
+            status: 'pending_create',
+            updatedAt: session.updatedAt,
+          }),
+        ),
+      ).catch(() => undefined);
       setScopeSheetVisible(false);
       setConflictingSession(null);
       setPendingWorkoutStart(null);

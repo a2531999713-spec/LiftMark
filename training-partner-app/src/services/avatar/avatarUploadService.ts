@@ -22,26 +22,26 @@ async function ensureAvatarDir() {
  * 上传头像到服务器（文件方式）
  * 使用已复制到稳定路径的本地文件，避免临时 URI 在 fetch 中不可用
  */
-async function uploadAvatarToServer(fileUri: string, accessToken: string): Promise<string | null> {
+export async function uploadAvatarToServer(fileUri: string, accessToken: string): Promise<string> {
+  const fileInfo = await FileSystem.getInfoAsync(fileUri);
+  if (!fileInfo.exists) {
+    throw new Error('本地头像文件不存在，无法上传服务器。');
+  }
+
+  const formData = new FormData();
+  const filename = fileUri.split('/').pop() || 'avatar.jpg';
+
+  // @ts-ignore - React Native 的 FormData 支持文件上传
+  formData.append('file', {
+    uri: fileUri,
+    name: filename,
+    type: 'image/jpeg',
+  });
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
   try {
-    const fileInfo = await FileSystem.getInfoAsync(fileUri);
-    if (!fileInfo.exists) {
-      return null;
-    }
-
-    const formData = new FormData();
-    const filename = fileUri.split('/').pop() || 'avatar.jpg';
-
-    // @ts-ignore - React Native 的 FormData 支持文件上传
-    formData.append('file', {
-      uri: fileUri,
-      name: filename,
-      type: 'image/jpeg',
-    });
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
     const response = await fetch(`${API_BASE_URL}/auth/avatar/upload`, {
       method: 'POST',
       headers: {
@@ -51,17 +51,24 @@ async function uploadAvatarToServer(fileUri: string, accessToken: string): Promi
       signal: controller.signal,
     });
 
-    clearTimeout(timeout);
-
-    const result = await response.json();
+    const text = await response.text();
+    const result = text ? JSON.parse(text) : {};
 
     if (!response.ok) {
-      return null;
+      throw new Error(result.message ?? '头像上传服务器失败。');
     }
 
-    return result.avatarUrl ?? result.avatar_url ?? null;
-  } catch {
-    return null;
+    const avatarUrl = result.avatarUrl ?? result.avatar_url;
+    if (!avatarUrl) {
+      throw new Error('服务器未返回头像地址。');
+    }
+    return avatarUrl;
+  } catch (error) {
+    console.warn('[avatar] uploadAvatarToServer failed', error instanceof Error ? error.message : error);
+    if (error instanceof Error) throw error;
+    throw new Error('头像上传服务器失败。');
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -81,15 +88,20 @@ export async function uploadAccountAvatar(input: {
   const byteSize = fileInfo.exists ? fileInfo.size : 0;
 
   // 用稳定路径上传（不用临时的 input.fileUri）
-  let avatarUrl = avatarLocalUri;
+  let avatarUrl: string | undefined;
   let serverAvatarUrl: string | undefined;
+  let serverUploadError: string | undefined;
   const session = await readStoredSession();
   if (session?.accessToken) {
-    const serverUrl = await uploadAvatarToServer(avatarLocalUri, session.accessToken);
-    if (serverUrl) {
+    try {
+      const serverUrl = await uploadAvatarToServer(avatarLocalUri, session.accessToken);
       serverAvatarUrl = serverUrl;
       avatarUrl = resolveAvatarUrl(serverUrl) ?? serverUrl;
+    } catch (error) {
+      serverUploadError = error instanceof Error ? error.message : '头像上传服务器失败。';
     }
+  } else {
+    serverUploadError = '请先登录后再上传头像到服务器。';
   }
 
   return {
@@ -101,5 +113,7 @@ export async function uploadAccountAvatar(input: {
     byteSize,
     isMock: false,
     serverAvatarUrl,
+    serverUploaded: Boolean(serverAvatarUrl),
+    serverUploadError,
   };
 }

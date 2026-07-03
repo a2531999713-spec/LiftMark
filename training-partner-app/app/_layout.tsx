@@ -21,7 +21,11 @@ export default function RootLayout() {
       // 登录后同步本地小组到服务器
       const currentUser = useAuthStore.getState().user;
       if (currentUser) {
-        void syncAllLocalGroupsToServer().catch(() => {});
+        void syncAllLocalGroupsToServer().then((result) => {
+          if (!result.ok) {
+            console.warn('本地小组同步失败', result.message);
+          }
+        });
       }
     }
     void boot().catch((error) => {

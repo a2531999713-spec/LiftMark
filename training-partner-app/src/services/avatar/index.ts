@@ -2,6 +2,7 @@ export {
   deleteAccountAvatar,
   getAccountProfileCache,
   getAvatarDisplay,
+  syncAccountAvatarToLocalMemberProfiles,
   updateAccountAvatarFromPicker,
   upsertAccountProfileCache,
 } from './avatarService';
