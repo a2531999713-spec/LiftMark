@@ -22,6 +22,7 @@ import { colors, radius, spacing } from '@/theme';
 
 type DataScope = 'personal' | 'group';
 type RangeKey = '7d' | '30d' | 'month' | 'custom';
+type TrendMetricMode = 'volume' | 'sets' | 'bestWeight';
 
 type DateRange = {
   fromDate: string;
@@ -1144,19 +1145,48 @@ function TrainingTrendCard({
 }) {
   const [selectedPoint, setSelectedPoint] = useState<SelectedTrendPoint>(null);
   const [selectedBar, setSelectedBar] = useState<HistoryBarPoint | null>(null);
-  const values = trend.map((point) => point.value);
-  const volumes = trend.map((point) => point.volume);
-  const activeValues = values.filter((value) => value > 0);
-  const totalVolume = volumes.reduce((sum, value) => sum + value, 0);
-  const latestVolume = activeValues.at(-1) ?? 0;
-  const maxVolume = Math.max(0, ...values);
-  const keyPointIndexes = getKeyPointIndexes(values, selectedPoint?.index);
+  const [metricMode, setMetricMode] = useState<TrendMetricMode>('volume');
   const isBarMode =
     chartMode === 'single_day_exercise_breakdown' ||
     chartMode === 'single_day_set_breakdown' ||
     chartMode === 'group_single_day_contribution';
   const chartCopy = getChartCopy(chartMode, dataScope, selectedExerciseName);
   const completedEntries = entries.filter((entry) => entry.completed);
+  const bestWeightByDate = useMemo(() => {
+    const byDate = new Map<string, number>();
+    completedEntries.forEach((entry) => {
+      const weight = entry.weight ?? 0;
+      if (weight > 0) {
+        byDate.set(entry.date, Math.max(byDate.get(entry.date) ?? 0, weight));
+      }
+    });
+    return byDate;
+  }, [completedEntries]);
+  const lineTrend = trend.map((point) => ({
+    ...point,
+    value:
+      metricMode === 'sets'
+        ? point.setCount
+        : metricMode === 'bestWeight'
+          ? bestWeightByDate.get(point.date ?? '') ?? 0
+          : point.volume,
+    metricLabel:
+      metricMode === 'sets'
+        ? '完成组数'
+        : metricMode === 'bestWeight'
+          ? '最高重量'
+          : '训练量',
+  }));
+  const values = lineTrend.map((point) => point.value);
+  const totalVolume = completedEntries.reduce((sum, entry) => sum + getSetVolume(entry), 0);
+  const maxWeight = Math.max(0, ...completedEntries.map((entry) => entry.weight ?? 0));
+  const keyPointIndexes = getKeyPointIndexes(values, selectedPoint?.index);
+  const formatLineMetricValue =
+    metricMode === 'sets'
+      ? (value: number) => `${Math.round(value)}组`
+      : metricMode === 'bestWeight'
+        ? (value: number) => (value > 0 ? `${Math.round(value)}kg` : '0kg')
+        : formatCompactKg;
   const barTotal =
     chartMode === 'single_day_set_breakdown'
       ? completedEntries.reduce((sum, entry) => sum + getSetVolume(entry), 0)
@@ -1177,28 +1207,41 @@ function TrainingTrendCard({
     : null;
 
   return (
-    <AppCard style={styles.trendCard} tone="brand">
+    <AppCard style={styles.trendCard}>
       <View style={styles.trendHeader}>
         <View style={styles.trendTitleBlock}>
-          <AppText variant="subtitle">{chartCopy.title}</AppText>
+          <AppText variant="subtitle">{isBarMode ? chartCopy.title : '训练分析'}</AppText>
           <AppText tone="muted" variant="caption">
-            {rangeLabel} · {chartCopy.subtitle}
+            {dataScope === 'personal' ? '我的记录' : '小组记录'} · {rangeLabel} · {selectedExerciseName ?? '全部动作'}
           </AppText>
         </View>
-        <Tag label={selectedExerciseName ?? '全部动作'} tone={selectedExerciseId ? 'brand' : 'neutral'} />
       </View>
+
+      {!isBarMode ? (
+        <View style={styles.metricModeRow}>
+          <MetricModeChip active={metricMode === 'volume'} label="训练量" onPress={() => setMetricMode('volume')} />
+          <MetricModeChip active={metricMode === 'sets'} label="组数" onPress={() => setMetricMode('sets')} />
+          <MetricModeChip active={metricMode === 'bestWeight'} label="最高重量" onPress={() => setMetricMode('bestWeight')} />
+        </View>
+      ) : null}
 
       <View style={styles.trendHeroMetric}>
         <AppText tone="muted" variant="caption" weight="900">
-          {isBarMode ? chartCopy.primaryMetricLabel : selectedExerciseId ? '最新表现' : '范围总训练量'}
+          {isBarMode ? chartCopy.primaryMetricLabel : metricMode === 'sets' ? '完成组数' : metricMode === 'bestWeight' ? '最高重量' : '总训练量'}
         </AppText>
         <AppText variant="title" weight="900">
-          {isBarMode ? formatKg(barTotal) : formatKg(totalVolume)}
+          {isBarMode
+            ? formatKg(barTotal)
+            : metricMode === 'sets'
+              ? `${completedSetCount} 组`
+              : metricMode === 'bestWeight'
+                ? (maxWeight > 0 ? `${maxWeight} kg` : '暂无')
+                : formatKg(totalVolume)}
         </AppText>
         <AppText tone="muted" variant="caption">
           {isBarMode
             ? chartCopy.insight
-            : `${getTrendLabel(values)} · ${completedSetCount || trend.reduce((sum, point) => sum + point.setCount, 0)} 组`}
+            : `${getTrendLabel(values)} · 本周期完成 ${completedSetCount} 组`}
         </AppText>
       </View>
 
@@ -1219,11 +1262,11 @@ function TrainingTrendCard({
         <View style={styles.chartPanel}>
           <HistoryLineChart
             emptyMessage="当前范围还没有训练量"
-            formatValue={formatCompactKg}
+            formatValue={formatLineMetricValue}
             highlightIndex={selectedPoint?.index}
             keyPointIndexes={keyPointIndexes}
             onPointPress={(point, index) => {
-              const trendPoint = trend[index];
+              const trendPoint = lineTrend[index];
               setSelectedPoint({
                 changeLabel: getChangeLabel(values, index),
                 date: trendPoint?.date,
@@ -1235,7 +1278,7 @@ function TrainingTrendCard({
               });
               setSelectedBar(null);
             }}
-            points={trend.map((point): HistoryLinePoint => ({
+            points={lineTrend.map((point): HistoryLinePoint => ({
               date: point.date,
               label: point.label,
               meta: point.metricLabel,
@@ -1248,7 +1291,7 @@ function TrainingTrendCard({
       {selectedPoint ? (
         <ChartTooltip
           metrics={[
-            { label: trend[selectedPoint.index]?.metricLabel ?? '指标', value: formatKg(selectedPoint.value) },
+            { label: lineTrend[selectedPoint.index]?.metricLabel ?? '指标', value: metricMode === 'sets' ? `${Math.round(selectedPoint.value)} 组` : `${Math.round(selectedPoint.value).toLocaleString('zh-CN')} kg` },
             { label: '组数', value: `${selectedPoint.setCount} 组` },
             { label: '动作', value: `${selectedPoint.exerciseCount} 个` },
           ]}
@@ -1276,12 +1319,19 @@ function TrainingTrendCard({
           </>
         ) : (
           <>
-            <TrendMetric label="范围总量" value={formatKg(totalVolume)} />
-            <TrendMetric label={selectedExerciseId ? '最新指标' : '最新一次'} value={latestVolume > 0 ? formatKg(latestVolume) : '暂无'} />
-            <TrendMetric label="最高点" value={maxVolume > 0 ? formatKg(maxVolume) : '暂无'} />
+            <TrendMetric label="训练量" value={formatKg(totalVolume)} />
+            <TrendMetric label="完成组数" value={`${completedSetCount} 组`} />
+            <TrendMetric label="最高重量" value={maxWeight > 0 ? `${maxWeight} kg` : '暂无'} />
             <TrendMetric label="趋势" value={getTrendLabel(values)} />
           </>
         )}
+      </View>
+
+      <View style={styles.trendInsight}>
+        <Ionicons color={colors.primary} name="sparkles-outline" size={16} />
+        <AppText tone="muted" variant="caption" style={styles.trendInsightText}>
+          {isBarMode ? chartCopy.insight : totalVolume > 0 ? chartCopy.insight : '当前范围还没有足够数据，完成训练后这里会生成分析。'}
+        </AppText>
       </View>
 
       {selectedExerciseId ? (
@@ -1362,6 +1412,24 @@ function getChartCopy(mode: HistoryChartMode, scope: DataScope, selectedExercise
   };
 }
 
+function MetricModeChip({
+  active,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.metricModeChip, active && styles.metricModeChipActive]}>
+      <AppText tone={active ? 'inverse' : 'muted'} variant="caption" weight="900">
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
 function TrendMetric({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.trendMetric}>
@@ -1436,36 +1504,58 @@ function HistoryRecordCard({
   onPress: () => void;
   summary: SessionSummary;
 }) {
+  const statusTag = getSessionStatusTag(summary, dataScope);
+  const visibleExercises = summary.mainExerciseNames.slice(0, 3);
+  const overflowExerciseCount = Math.max(0, summary.mainExerciseNames.length - visibleExercises.length);
+
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.recordCard, pressed && styles.pressed]}>
-      <View style={styles.recordDateBox}>
-        <AppText variant="caption" weight="900">
-          {formatShortDate(summary.date)}
-        </AppText>
-        <View style={[styles.recordDot, summary.session.status === 'completed' ? styles.recordDotDone : styles.recordDotOpen]} />
-      </View>
-      <View style={styles.recordMain}>
-        <View style={styles.recordTitleRow}>
-          <AppText numberOfLines={1} style={styles.recordTitle} variant="bodySmall" weight="900">
+      <View style={styles.recordTopRow}>
+        <View style={styles.recordTitleBlock}>
+          <AppText tone="muted" variant="caption" weight="900">
+            {summary.date}
+          </AppText>
+          <AppText numberOfLines={1} variant="bodySmall" weight="900">
             {summary.title}
           </AppText>
-          <Pressable accessibilityRole="button" onPress={onOpenActions} style={styles.moreButton}>
-            <Ionicons color={colors.textMuted} name="ellipsis-horizontal" size={18} />
-          </Pressable>
         </View>
-        <AppText numberOfLines={1} tone="muted" variant="caption">
-          {summary.mainExerciseNames.slice(0, 2).join('、') || '训练记录'}
-        </AppText>
-        <View style={styles.recordMetaGrid}>
-          <RecordMeta label="时长" value={summary.durationMinutes ? `${summary.durationMinutes} 分钟` : '已完成'} />
-          <RecordMeta label="动作" value={`${summary.exerciseCount} 个`} />
-          <RecordMeta label="组数" value={`${summary.setCount} 组`} />
-          <RecordMeta label="训练量" value={formatKg(summary.volume)} />
-          {dataScope === 'group' ? <RecordMeta label="成员" value={`${summary.participantCount ?? 0} 人`} /> : null}
-        </View>
+        <Tag label={statusTag.label} tone={statusTag.tone} />
+        <Pressable accessibilityRole="button" onPress={onOpenActions} style={styles.moreButton}>
+          <Ionicons color={colors.textMuted} name="ellipsis-horizontal" size={18} />
+        </Pressable>
+      </View>
+
+      <View style={styles.recordMetaGrid}>
+        <RecordMeta label="训练量" value={formatKg(summary.volume)} />
+        <RecordMeta label="完成组数" value={`${summary.setCount} 组`} />
+        <RecordMeta label="动作数" value={`${summary.exerciseCount} 个`} />
+        <RecordMeta label="时长" value={summary.durationMinutes ? `${summary.durationMinutes} 分钟` : '已完成'} />
+      </View>
+
+      <View style={styles.recordChipRow}>
+        {visibleExercises.length > 0 ? (
+          visibleExercises.map((name) => <RecordChip key={name} label={name} />)
+        ) : (
+          <RecordChip label="训练记录" />
+        )}
+        {overflowExerciseCount > 0 ? <RecordChip label={`+${overflowExerciseCount}`} /> : null}
+        {dataScope === 'group' ? <RecordChip icon="people-outline" label={`${summary.participantCount ?? 0} 人`} /> : null}
       </View>
     </Pressable>
   );
+}
+
+function getSessionStatusTag(summary: SessionSummary, dataScope: DataScope): { label: string; tone: 'neutral' | 'brand' | 'success' | 'warning' } {
+  if (dataScope === 'group' || summary.session.trainingMode === 'group_local') {
+    return { label: '小组', tone: 'brand' };
+  }
+  if (summary.title.includes('补录')) {
+    return { label: '补录', tone: 'warning' };
+  }
+  if (summary.durationMinutes !== undefined && summary.durationMinutes < 20) {
+    return { label: '短训练', tone: 'neutral' };
+  }
+  return { label: '正常', tone: 'success' };
 }
 
 function RecordMeta({ label, value }: { label: string; value: string }) {
@@ -1475,6 +1565,17 @@ function RecordMeta({ label, value }: { label: string; value: string }) {
         {value}
       </AppText>
       <AppText numberOfLines={1} tone="muted" variant="caption">
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
+function RecordChip({ icon, label }: { icon?: keyof typeof Ionicons.glyphMap; label: string }) {
+  return (
+    <View style={styles.recordChip}>
+      {icon ? <Ionicons color={colors.textMuted} name={icon} size={13} /> : null}
+      <AppText numberOfLines={1} tone="muted" variant="caption" weight="800">
         {label}
       </AppText>
     </View>
@@ -1781,10 +1882,9 @@ function RecordActionSheet({
           onPress={() => {
             onClose();
             router.push({
-              pathname: '/history/[sessionId]',
+              pathname: '/history/edit/[sessionId]',
               params: {
                 ...(isPersonal && currentMemberId ? { memberId: currentMemberId } : {}),
-                edit: '1',
                 scope,
                 sessionId: summary.id,
               },
@@ -1882,7 +1982,7 @@ const styles = StyleSheet.create({
     width: 36,
   },
   chartPanel: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.backgroundElevated,
     borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -1902,12 +2002,31 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   trendHeroMetric: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.primarySoft,
     borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
     gap: spacing.xs,
     padding: spacing.md,
+  },
+  metricModeChip: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    minHeight: 34,
+    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+  },
+  metricModeChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  metricModeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
   exerciseButton: {
     alignItems: 'center',
@@ -1942,6 +2061,17 @@ const styles = StyleSheet.create({
     minWidth: '47%',
     gap: 2,
     padding: spacing.md,
+  },
+  trendInsight: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  trendInsightText: {
+    flex: 1,
   },
   selectorSearch: {
     alignItems: 'center',
@@ -1999,45 +2129,39 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   recordCard: {
-    alignItems: 'flex-start',
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
-    flexDirection: 'row',
     gap: spacing.md,
     padding: spacing.md,
   },
-  recordDateBox: {
+  recordChip: {
     alignItems: 'center',
     backgroundColor: colors.backgroundElevated,
-    borderRadius: radius.md,
-    gap: spacing.xs,
-    minWidth: 56,
-    padding: spacing.sm,
-  },
-  recordDot: {
+    borderColor: colors.border,
     borderRadius: radius.pill,
-    height: 7,
-    width: 7,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    maxWidth: '100%',
+    minHeight: 30,
+    paddingHorizontal: spacing.sm,
   },
-  recordDotDone: {
-    backgroundColor: colors.success,
-  },
-  recordDotOpen: {
-    backgroundColor: colors.warning,
-  },
-  recordMain: {
-    flex: 1,
+  recordChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.xs,
   },
-  recordTitleRow: {
+  recordTopRow: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  recordTitle: {
+  recordTitleBlock: {
     flex: 1,
+    gap: 2,
+    minWidth: 0,
   },
   moreButton: {
     alignItems: 'center',
@@ -2050,14 +2174,15 @@ const styles = StyleSheet.create({
   recordMetaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   recordMetaItem: {
     backgroundColor: colors.backgroundElevated,
-    borderRadius: radius.sm,
-    minWidth: 70,
+    borderRadius: radius.md,
+    flexBasis: '47%',
+    flexGrow: 1,
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.sm,
   },
   modalHeader: {
     alignItems: 'center',

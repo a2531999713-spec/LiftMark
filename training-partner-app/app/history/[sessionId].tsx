@@ -21,6 +21,23 @@ function formatVolume(sets: WorkoutSet[]) {
   return `${Math.round(volume).toLocaleString('zh-CN')} kg`;
 }
 
+function formatBestSet(sets: WorkoutSet[]) {
+  const best = sets
+    .filter((set) => set.completed)
+    .slice()
+    .sort(
+      (left, right) =>
+        (right.actualWeight ?? right.plannedWeight ?? 0) * (right.actualReps ?? right.plannedReps ?? 0) -
+        (left.actualWeight ?? left.plannedWeight ?? 0) * (left.actualReps ?? left.plannedReps ?? 0),
+    )[0];
+
+  if (!best) {
+    return '暂无';
+  }
+
+  return `${best.actualWeight ?? best.plannedWeight ?? 0}kg × ${best.actualReps ?? best.plannedReps ?? 0}`;
+}
+
 export default function HistoryDetailRoute() {
   const { edit, memberId, scope, sessionId } = useLocalSearchParams<{
     edit?: string;
@@ -39,6 +56,7 @@ export default function HistoryDetailRoute() {
   const [isEditMode, setEditMode] = useState(false);
   const [isActionsVisible, setActionsVisible] = useState(false);
   const [isExercisePickerVisible, setExercisePickerVisible] = useState(false);
+  const [expandedRecordIds, setExpandedRecordIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +70,11 @@ export default function HistoryDetailRoute() {
     () => detail?.exercises.map((exercise) => exercise.exerciseId) ?? [],
     [detail],
   );
+  const toggleRecordExpanded = useCallback((recordId: string) => {
+    setExpandedRecordIds((current) =>
+      current.includes(recordId) ? current.filter((id) => id !== recordId) : [...current, recordId],
+    );
+  }, []);
 
   const loadDetail = useCallback(async () => {
     if (!sessionId) {
@@ -81,6 +104,7 @@ export default function HistoryDetailRoute() {
       setDate(nextDetail.session.date);
       setTitle(nextDetail.session.title);
       setEditMode(edit === '1');
+      setExpandedRecordIds([]);
       setMembers(Object.fromEntries(nextMembers.map((member) => [member.id, member])));
       setExercises(Object.fromEntries(nextExercises.map((exercise) => [exercise.id, exercise])));
       setAllExercises(nextAllExercises);
@@ -114,14 +138,25 @@ export default function HistoryDetailRoute() {
         title,
       });
       setDetail({ ...detail, session });
-      setEditMode(false);
-      Alert.alert('已保存', '训练日期和标题已更新。');
+      if (edit === '1') {
+        router.replace({
+          pathname: '/history/[sessionId]',
+          params: {
+            ...(scope === 'personal' && scopedMemberId ? { memberId: scopedMemberId } : {}),
+            scope,
+            sessionId: detail.session.id,
+          },
+        } as never);
+      } else {
+        setEditMode(false);
+        Alert.alert('已保存', '训练日期和标题已更新。');
+      }
     } catch (saveError) {
       Alert.alert('保存失败', saveError instanceof Error ? saveError.message : '训练详情保存失败。');
     } finally {
       setIsSaving(false);
     }
-  }, [date, detail, guardFeature, repositories, title]);
+  }, [date, detail, edit, guardFeature, repositories, scope, scopedMemberId, title]);
 
   const saveSetPatch = useCallback(
     async (set: WorkoutSet, patch: Partial<WorkoutSet>) => {
@@ -396,8 +431,12 @@ export default function HistoryDetailRoute() {
   return (
     <Screen
       safeTop={false}
-      subtitle={isPersonalScope ? '只显示并编辑当前成员的数据' : '管理本次训练中所有成员的数据'}
-      title={isPersonalScope ? '我的训练记录' : '小组训练记录'}
+      subtitle={
+        isEditMode
+          ? (isPersonalScope ? '直接修改我的本次训练数据' : '直接修改整次小组训练数据')
+          : (isPersonalScope ? '只读训练报告，仅展示当前成员数据' : '只读训练报告，展示本次小组训练')
+      }
+      title={isEditMode ? '编辑记录' : isPersonalScope ? '我的训练报告' : '小组训练报告'}
     >
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="训练详情暂时无法加载" description={error} /> : null}
@@ -413,23 +452,13 @@ export default function HistoryDetailRoute() {
 
       {!isLoading && detail ? (
         <>
-          <View style={styles.topBar}>
-            <AppButton
-              icon="create-outline"
-              onPress={() => {
-                if (guardFeature('manual_history')) {
-                  setEditMode(true);
-                }
-              }}
-              size="sm"
-              variant={isEditMode ? 'primary' : 'secondary'}
-            >
-              {isEditMode ? '编辑中' : '编辑'}
-            </AppButton>
-            <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.moreButton}>
-              <Ionicons color={colors.textStrong} name="ellipsis-horizontal" size={20} />
-            </Pressable>
-          </View>
+          {!isEditMode ? (
+            <View style={styles.topBar}>
+              <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.moreButton}>
+                <Ionicons color={colors.textStrong} name="ellipsis-horizontal" size={20} />
+              </Pressable>
+            </View>
+          ) : null}
 
           <AppCard style={styles.card}>
             <SectionHeader title="基础信息" />
@@ -456,9 +485,22 @@ export default function HistoryDetailRoute() {
                 </AppButton>
                 <AppButton
                   onPress={() => {
-                    setDate(detail.session.date);
-                    setTitle(detail.session.title);
-                    setEditMode(false);
+                    Alert.alert('放弃修改？', '未保存的基础信息修改会被丢弃。', [
+                      { text: '继续编辑', style: 'cancel' },
+                      {
+                        text: '放弃',
+                        style: 'destructive',
+                        onPress: () => {
+                          setDate(detail.session.date);
+                          setTitle(detail.session.title);
+                          if (edit === '1') {
+                            router.back();
+                          } else {
+                            setEditMode(false);
+                          }
+                        },
+                      },
+                    ]);
                   }}
                   variant="ghost"
                 >
@@ -488,9 +530,10 @@ export default function HistoryDetailRoute() {
             if (isPersonalScope && recordSets.length === 0) {
               return null;
             }
+            const isExpanded = expandedRecordIds.includes(record.id);
             return (
               <AppCard key={record.id} style={styles.card}>
-                <View style={styles.exerciseHeader}>
+                <Pressable accessibilityRole="button" onPress={() => toggleRecordExpanded(record.id)} style={styles.exerciseHeader}>
                   <View style={styles.exerciseIcon}>
                     <Ionicons color={colors.primary} name="barbell-outline" size={20} />
                   </View>
@@ -509,10 +552,20 @@ export default function HistoryDetailRoute() {
                     <Pressable accessibilityRole="button" onPress={() => confirmDeleteExercise(record)}>
                       <Ionicons color={colors.danger} name="trash-outline" size={20} />
                     </Pressable>
-                  ) : null}
+                  ) : (
+                    <Ionicons color={colors.textSubtle} name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} />
+                  )}
+                </Pressable>
+                <View style={styles.exerciseSummaryGrid}>
+                  <ReadonlyInfo label="训练量" value={formatVolume(recordSets)} />
+                  <ReadonlyInfo label="完成组数" value={`${recordSets.filter((set) => set.completed).length} 组`} />
+                  <ReadonlyInfo label="最佳组" value={formatBestSet(recordSets)} />
                 </View>
                 {isEditMode ? (
                   <View style={styles.inlineActions}>
+                    <AppButton onPress={() => toggleRecordExpanded(record.id)} size="sm" variant="secondary">
+                      {isExpanded ? '收起组数据' : '编辑组数据'}
+                    </AppButton>
                     <AppButton
                       disabled={isSaving}
                       onPress={() => void addSetToRecord(record, recordSets)}
@@ -528,19 +581,26 @@ export default function HistoryDetailRoute() {
                     ) : null}
                   </View>
                 ) : null}
-                {recordSets.map((set) =>
-                  isEditMode ? (
-                    <SetEditor
-                      key={set.id}
-                      memberName={members[set.memberId]?.displayName ?? '成员'}
-                      onDelete={() => confirmDeleteSet(set)}
-                      onPatch={(patch) => void saveSetPatch(set, patch)}
-                      set={set}
-                    />
-                  ) : (
-                    <SetReadonly key={set.id} memberName={members[set.memberId]?.displayName ?? '成员'} set={set} />
-                  ),
-                )}
+                {!isEditMode ? (
+                  <AppButton onPress={() => toggleRecordExpanded(record.id)} size="sm" variant="secondary">
+                    {isExpanded ? '收起组明细' : '展开组明细'}
+                  </AppButton>
+                ) : null}
+                {isExpanded
+                  ? recordSets.map((set) =>
+                      isEditMode ? (
+                        <SetEditor
+                          key={set.id}
+                          memberName={members[set.memberId]?.displayName ?? '成员'}
+                          onDelete={() => confirmDeleteSet(set)}
+                          onPatch={(patch) => void saveSetPatch(set, patch)}
+                          set={set}
+                        />
+                      ) : (
+                        <SetReadonly key={set.id} memberName={members[set.memberId]?.displayName ?? '成员'} set={set} />
+                      ),
+                    )
+                  : null}
               </AppCard>
             );
           })}
@@ -567,7 +627,14 @@ export default function HistoryDetailRoute() {
                 icon="create-outline"
                 onPress={() => {
                   setActionsVisible(false);
-                  setEditMode(true);
+                  router.push({
+                    pathname: '/history/edit/[sessionId]',
+                    params: {
+                      ...(isPersonalScope && scopedMemberId ? { memberId: scopedMemberId } : {}),
+                      scope: isPersonalScope ? 'personal' : 'group',
+                      sessionId: detail.session.id,
+                    },
+                  } as never);
                 }}
               >
                 {isPersonalScope ? '编辑我的记录' : '编辑小组记录'}
@@ -816,6 +883,11 @@ const styles = StyleSheet.create({
   exerciseText: {
     flex: 1,
     gap: 2,
+  },
+  exerciseSummaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
   setCard: {
     backgroundColor: colors.backgroundElevated,

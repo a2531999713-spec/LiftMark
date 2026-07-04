@@ -105,6 +105,9 @@ export function MiniLineChart({
       : effectiveLabelStrategy === 'keyPoints'
         ? new Set(keyPointIndexes ?? getDefaultKeyPointIndexes(sanitizedData, highlightIndex))
         : new Set<number>();
+  const renderedLabelIndexes = [...new Set([...visibleXAxisIndexes, ...valueLabelIndexes])]
+    .filter((index) => index >= 0 && index < pointCount)
+    .sort((left, right) => left - right);
 
   if (!hasData) {
     return (
@@ -152,11 +155,23 @@ export function MiniLineChart({
       <View style={styles.labelFrame}>
         <View style={styles.axisSpacer} />
         <View style={styles.labelRow}>
-        {labels.map((label, index) => {
+        {renderedLabelIndexes.map((index) => {
+          const label = labels[index] ?? '';
           const isAxisLabelVisible = visibleXAxisIndexes.has(index);
           const isValueVisible = valueLabelIndexes.has(index);
+          const labelPosition =
+            pointCount <= 1
+              ? styles.labelColumnSingle
+              : index === 0
+                ? styles.labelColumnStart
+                : index === pointCount - 1
+                  ? styles.labelColumnEnd
+                  : {
+                      left: `${(index / Math.max(1, pointCount - 1)) * 100}%` as DimensionValue,
+                      marginLeft: -32,
+                    };
           return (
-          <View key={`${label}-${index}`} style={[styles.labelColumn, pointCount === 1 && styles.labelColumnSingle]}>
+          <View key={`${label}-${index}`} style={[styles.labelColumn, labelPosition]}>
             {isValueVisible && sanitizedData[index] > 0 ? (
               <AppText
                 numberOfLines={1}
@@ -354,7 +369,8 @@ const styles = StyleSheet.create({
   },
   labelRow: {
     flex: 1,
-    flexDirection: 'row',
+    minHeight: 34,
+    position: 'relative',
   },
   labelFrame: {
     flexDirection: 'row',
@@ -362,11 +378,22 @@ const styles = StyleSheet.create({
   },
   labelColumn: {
     alignItems: 'center',
-    flex: 1,
     gap: 2,
+    position: 'absolute',
+    top: 0,
+    width: 64,
+  },
+  labelColumnEnd: {
+    alignItems: 'flex-end',
+    right: 0,
   },
   labelColumnSingle: {
+    left: '50%',
+    marginLeft: -32,
+  },
+  labelColumnStart: {
     alignItems: 'flex-start',
+    left: 0,
   },
   valuePlaceholder: {
     height: 12,

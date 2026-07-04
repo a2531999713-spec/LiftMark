@@ -28,7 +28,6 @@ import type {
   Weekday,
 } from '@/domain/plan/plan.types';
 import type { RecoveryMode } from '@/domain/plan/plan.service';
-import { calculateSuggestedWeight } from '@/domain/weight/weight-calculator';
 import type {
   CreateSessionFromTodayPlanInput,
   WorkoutSession,
@@ -44,11 +43,6 @@ import { colors, radius, shadows, spacing } from '@/theme';
 type NoticeState = {
   message: string;
   title: string;
-};
-
-type SuggestedWeightDisplay = {
-  hint: string;
-  value: string;
 };
 
 type WeeklyOverview = {
@@ -248,57 +242,6 @@ function formatPhaseLabel(phase: PlanPhase | null, phaseType?: PhaseType): strin
   };
 
   return labels[phaseType ?? 'custom'];
-}
-
-function getDaysUntilNextDeload(currentWeek: number, phases: PlanPhase[]): number | null {
-  const nextDeload = phases
-    .filter((phase) => phase.type === 'deload' && phase.startWeek > currentWeek)
-    .sort((left, right) => left.startWeek - right.startWeek)[0];
-
-  if (!nextDeload) {
-    return null;
-  }
-
-  return Math.max(1, (nextDeload.startWeek - currentWeek) * 7);
-}
-
-function formatSuggestedWeight(
-  planExercise: PlanExercise | null,
-  exercise: Exercise | null,
-  profile: MemberProfile | null,
-): SuggestedWeightDisplay {
-  if (!profile) {
-    return { value: '未设置资料', hint: '补充 1RM 后自动计算' };
-  }
-
-  if (!planExercise) {
-    return { value: '参考上次重量', hint: '训练时可手动调整' };
-  }
-
-  const result = calculateSuggestedWeight({
-    referenceLift: planExercise.referenceLift,
-    percent1RM: planExercise.percent1RM,
-    repMax: planExercise.repMax,
-    repMin: planExercise.repMin,
-    reps: planExercise.reps,
-    equipment: exercise?.equipment ?? 'other',
-    profile,
-  });
-
-  if (result.status === 'ready') {
-    return {
-      value: `${result.weight} kg`,
-      hint: result.percent1RM
-        ? `按 ${Math.round(result.percent1RM * 100)}% 估算`
-        : '按计划次数估算',
-    };
-  }
-
-  if (result.status === 'missing_1rm') {
-    return { value: '缺少 1RM', hint: '去成员资料补充参考主项' };
-  }
-
-  return { value: '参考上次重量', hint: '孤立或器械动作按历史调整' };
 }
 
 function getPlanWeekOptions(days: PlanDay[], fallbackWeek: number): number[] {
@@ -683,7 +626,7 @@ export default function TodayRoute() {
     }
 
     if (members.length === 0) {
-      setNotice({ title: '还没有训练成员', message: '添加成员后可计算建议重量并记录训练。' });
+      setNotice({ title: '还没有训练成员', message: '添加成员后就能选择本次参与者并记录训练。' });
       return;
     }
 
@@ -937,17 +880,12 @@ export default function TodayRoute() {
   );
 
   const currentMember = members[0] ?? null;
-  const currentProfile = currentMember ? (profiles[currentMember.id] ?? null) : null;
   const planExercises = useMemo(() => todayPlan?.exercises ?? [], [todayPlan]);
   const focusExercises = useMemo(
     () => getFocusExercises(planExercises, exerciseMap),
     [exerciseMap, planExercises],
   );
   const mainFocus = focusExercises[0]?.exercise?.name ?? todayPlan?.day?.focus ?? null;
-  const firstPlanExercise = focusExercises[0]?.planExercise ?? null;
-  const firstExercise = focusExercises[0]?.exercise ?? null;
-  const suggestedWeight = formatSuggestedWeight(firstPlanExercise, firstExercise, currentProfile);
-  const activePlanWeeks = activePlan?.durationWeeks ?? 0;
   const weeklyTarget = activePlan?.frequencyPerWeek ?? 0;
   const weeklyProgressPercent =
     weeklyTarget > 0
@@ -958,7 +896,6 @@ export default function TodayRoute() {
       ? `${Math.min(weeklyOverview.sessionCount, weeklyTarget)} / ${weeklyTarget}`
       : `${weeklyOverview.sessionCount} / -`;
   const selectedWeekValue = selectedWeek ?? group?.currentWeek ?? 1;
-  const nextDeloadDays = group ? getDaysUntilNextDeload(selectedWeekValue, planPhases) : null;
   const phaseLabel = formatPhaseLabel(todayPlan?.phase ?? null, group?.currentPhaseType);
   const selectedPlanDay = todayPlan?.day ?? null;
   const dayLabel = selectedPlanDay
@@ -1039,7 +976,7 @@ export default function TodayRoute() {
           {!error && activePlan && members.length === 0 ? (
             <HomeEmptyState
               actionLabel="添加成员"
-              description="添加成员后可计算建议重量并记录训练"
+              description="添加成员后就能选择本次参与者并记录训练"
               icon="person-add-outline"
               onActionPress={() => {
                 if (guardFeature('add_member', { memberCount: members.length })) {
@@ -1080,15 +1017,17 @@ export default function TodayRoute() {
 
               {!isRestState ? (
                 <TodaySummaryCard
-                  activePlanWeeks={activePlanWeeks}
                   actionFilter={recoveryOptions.find((option) => option.mode === recoveryMode) ?? recoveryOptions[0]}
                   dayTitle={selectedPlanDay?.title ?? '今日训练'}
+                  currentMemberId={currentMember?.id}
+                  group={group}
                   mainFocus={mainFocus ?? '暂无动作'}
-                  nextDeloadDays={nextDeloadDays}
+                  members={members}
+                  onManageGroup={() => router.push('/settings/members' as never)}
                   onFilterPress={() => setAdviceSheetVisible(true)}
                   phaseLabel={phaseLabel}
-                  selectedWeek={selectedWeekValue}
-                  suggestedWeight={suggestedWeight}
+                  profiles={profiles}
+                  recordScope={recordScope}
                 />
               ) : null}
 
@@ -1106,16 +1045,6 @@ export default function TodayRoute() {
                   onOpenAll={() => router.push('/(tabs)/plan')}
                 />
               ) : null}
-
-              <PartnerStrip
-                currentMemberId={currentMember?.id}
-                members={members}
-                onMemberPress={(member) =>
-                  router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } })
-                }
-                onOpenAll={() => router.push('/settings/members' as never)}
-                profiles={profiles}
-              />
 
               <WeeklyOverviewGrid overview={weeklyOverview} />
 
@@ -1347,25 +1276,29 @@ function PlanQuickSwitchCard({
 }
 
 function TodaySummaryCard({
-  activePlanWeeks,
   actionFilter,
+  currentMemberId,
   dayTitle,
+  group,
   mainFocus,
-  nextDeloadDays,
+  members,
+  onManageGroup,
   onFilterPress,
   phaseLabel,
-  selectedWeek,
-  suggestedWeight,
+  profiles,
+  recordScope,
 }: {
-  activePlanWeeks: number;
   actionFilter: AdviceConfig;
+  currentMemberId?: string;
   dayTitle: string;
+  group: Group | null;
   mainFocus: string;
-  nextDeloadDays: number | null;
+  members: GroupMember[];
+  onManageGroup: () => void;
   onFilterPress: () => void;
   phaseLabel: string;
-  selectedWeek: number;
-  suggestedWeight: SuggestedWeightDisplay;
+  profiles: Record<string, MemberProfile | null>;
+  recordScope: WorkoutRecordScope;
 }) {
   return (
     <View style={styles.todaySummary}>
@@ -1400,13 +1333,14 @@ function TodaySummaryCard({
           </AppText>
         </View>
       </ImageBackground>
-      <View style={styles.metricRow}>
-        <SmallMetricCard helper={suggestedWeight.hint} label="建议重量" value={suggestedWeight.value} />
-        <SmallMetricCard
-          label={nextDeloadDays ? '距离下次减载' : '当前周数'}
-          value={nextDeloadDays ? `${nextDeloadDays} 天` : `第 ${selectedWeek} / ${activePlanWeeks || '-'} 周`}
-        />
-      </View>
+      <CurrentGroupCard
+        currentMemberId={currentMemberId}
+        group={group}
+        members={members}
+        onManageGroup={onManageGroup}
+        profiles={profiles}
+        recordScope={recordScope}
+      />
     </View>
   );
 }
@@ -1434,32 +1368,6 @@ function StartWorkoutCard({
         选择成员并开始
       </AppButton>
     </View>
-  );
-}
-
-function SmallMetricCard({
-  helper,
-  label,
-  value,
-}: {
-  helper?: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <AppCard style={styles.metricCard}>
-      <AppText tone="muted" variant="caption">
-        {label}
-      </AppText>
-      <AppText numberOfLines={1} variant="title" weight="900">
-        {value}
-      </AppText>
-      {helper ? (
-        <AppText numberOfLines={1} tone="subtle" variant="caption">
-          {helper}
-        </AppText>
-      ) : null}
-    </AppCard>
   );
 }
 
@@ -1542,75 +1450,80 @@ function LegendItem({ priority, text }: { priority: ExercisePriority; text: stri
   );
 }
 
-function PartnerStrip({
+function CurrentGroupCard({
   currentMemberId,
+  group,
   members,
-  onMemberPress,
-  onOpenAll,
+  onManageGroup,
   profiles,
+  recordScope,
 }: {
   currentMemberId?: string;
+  group: Group | null;
   members: GroupMember[];
-  onMemberPress: (member: GroupMember) => void;
-  onOpenAll: () => void;
+  onManageGroup: () => void;
   profiles: Record<string, MemberProfile | null>;
+  recordScope: WorkoutRecordScope;
 }) {
   const visibleMembers = members.slice(0, 4);
   const overflowCount = Math.max(0, members.length - visibleMembers.length);
+  const memberSummary = members.map((member) => member.displayName).slice(0, 3).join('、');
 
   return (
-    <View style={styles.partnerSection}>
-      <SectionTop
-        actionLabel="查看全部"
-        onActionPress={onOpenAll}
-        title={`当前搭子（${members.length}）`}
-      />
-      <View style={styles.partnerRow}>
-        {visibleMembers.map((member) => {
-          const active = member.id === currentMemberId;
-          return (
-            <Pressable
-              accessibilityRole="button"
-              key={member.id}
-              onPress={() => onMemberPress(member)}
-              style={({ pressed }) => [styles.partnerItem, pressed && styles.pressed]}
-            >
-              <View style={active && styles.avatarActiveWrap}>
+    <AppCard style={styles.currentGroupCard}>
+      <View style={styles.currentGroupText}>
+        <View style={styles.currentGroupTitleRow}>
+          <AppText variant="bodySmall" weight="900">
+            当前小组
+          </AppText>
+          <Tag label={recordScope === 'solo_local' ? '单人' : '小组'} tone={recordScope === 'solo_local' ? 'neutral' : 'brand'} />
+        </View>
+        <AppText numberOfLines={1} variant="subtitle" weight="900">
+          {group?.name ?? '默认训练小组'}
+        </AppText>
+        <AppText numberOfLines={1} tone="muted" variant="caption">
+          {members.length} 位成员 · {memberSummary || '暂无成员'}
+        </AppText>
+      </View>
+      <View style={styles.currentGroupRight}>
+        <View style={styles.currentGroupAvatars}>
+          {visibleMembers.map((member, index) => {
+            const active = member.id === currentMemberId;
+            return (
+              <View
+                key={member.id}
+                style={[
+                  styles.currentGroupAvatar,
+                  { marginLeft: index === 0 ? 0 : -10 },
+                  active && styles.currentGroupAvatarActive,
+                ]}
+              >
                 <Avatar
                   avatarLocalUri={profiles[member.id]?.avatarLocalUri}
                   avatarThumbUrl={profiles[member.id]?.avatarThumbUrl}
                   avatarUrl={profiles[member.id]?.avatarUrl ?? member.avatarUrl}
                   name={member.displayName}
-                  size={52}
+                  size={34}
                 />
               </View>
-              <AppText
-                numberOfLines={1}
-                style={active && styles.currentMemberName}
-                variant="caption"
-                weight="900"
-              >
-                {active ? '当前' : member.displayName}
-              </AppText>
-            </Pressable>
-          );
-        })}
-
-        {overflowCount > 0 ? (
-          <Pressable accessibilityRole="button" onPress={onOpenAll} style={styles.partnerItem}>
-            <View style={styles.avatarOverflow}>
-              <AppText variant="bodySmall" weight="900">
+            );
+          })}
+          {overflowCount > 0 ? (
+            <View style={[styles.currentGroupAvatar, styles.currentGroupOverflow, { marginLeft: -10 }]}>
+              <AppText variant="caption" weight="900">
                 +{overflowCount}
               </AppText>
             </View>
-            <AppText tone="muted" variant="caption">
-              更多
-            </AppText>
-          </Pressable>
-        ) : null}
-
+          ) : null}
+        </View>
+        <Pressable accessibilityRole="button" onPress={onManageGroup} style={styles.currentGroupAction}>
+          <AppText tone="brand" variant="caption" weight="900">
+            管理成员
+          </AppText>
+          <Ionicons color={colors.primary} name="chevron-forward" size={14} />
+        </Pressable>
       </View>
-    </View>
+    </AppCard>
   );
 }
 
@@ -2041,27 +1954,57 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     borderWidth: 3,
   },
-  avatarActiveWrap: {
-    borderColor: colors.primary,
-    borderRadius: radius.pill,
-    borderWidth: 2,
-  },
   avatarImage: {
     height: '100%',
     width: '100%',
   },
-  avatarOverflow: {
+  currentGroupAction: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 2,
+  },
+  currentGroupAvatar: {
+    backgroundColor: colors.surface,
+    borderColor: colors.surface,
+    borderRadius: radius.pill,
+    borderWidth: 2,
+    overflow: 'hidden',
+  },
+  currentGroupAvatarActive: {
+    borderColor: colors.primary,
+  },
+  currentGroupAvatars: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    minHeight: 38,
+  },
+  currentGroupCard: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  currentGroupOverflow: {
     alignItems: 'center',
     backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 52,
+    height: 38,
     justifyContent: 'center',
-    width: 52,
+    width: 38,
   },
-  currentMemberName: {
-    color: colors.primary,
+  currentGroupRight: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+  },
+  currentGroupText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  currentGroupTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
   dayChoice: {
     alignItems: 'center',
@@ -2290,16 +2233,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     ...shadows.card,
   },
-  metricCard: {
-    flex: 1,
-    gap: spacing.xs,
-    minHeight: 82,
-    padding: spacing.md,
-  },
-  metricRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
   memberSelectAvatar: {
     alignItems: 'center',
     backgroundColor: colors.dark,
@@ -2357,20 +2290,6 @@ const styles = StyleSheet.create({
     right: 9,
     top: 9,
     width: 12,
-  },
-  partnerItem: {
-    alignItems: 'center',
-    flex: 1,
-    gap: spacing.xs,
-    minWidth: 58,
-  },
-  partnerRow: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  partnerSection: {
-    gap: spacing.md,
   },
   phaseBadge: {
     alignItems: 'center',

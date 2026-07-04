@@ -32,38 +32,18 @@ export function HistoryFilterBar({
   selectedExerciseName,
   timeFilterActive,
 }: HistoryFilterBarProps) {
-  const scopeLabel = scope === 'personal' ? '我的记录' : '小组记录';
-  const scopeMeta = scope === 'personal' ? memberName : groupName;
+  const scopeChipLabel = scope === 'personal' ? `我的 · ${memberName}` : `小组 · ${groupName}`;
   const nextScope = scope === 'personal' ? 'group' : 'personal';
-  const summary = `${scopeLabel} · ${rangeLabel} · ${selectedExerciseName ?? '全部动作'}`;
-
   return (
     <AppCard style={styles.container}>
-      <View style={styles.topRow}>
-        <View style={styles.titleBlock}>
-          <AppText variant="subtitle">训练分析</AppText>
-          <AppText numberOfLines={1} tone="muted" variant="caption">
-            {summary}
-          </AppText>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => onScopeChange(nextScope)}
-          style={styles.scopeSelector}
-        >
-          <View style={styles.scopeSelectorText}>
-            <AppText numberOfLines={1} variant="caption" weight="900">
-              {scopeLabel}
-            </AppText>
-            <AppText numberOfLines={1} tone="muted" variant="caption">
-              {scopeMeta}
-            </AppText>
-          </View>
-          <Ionicons color={colors.textMuted} name="swap-horizontal-outline" size={16} />
-        </Pressable>
-      </View>
-
       <View style={styles.compactBar}>
+        <FilterChip
+          active
+          icon={scope === 'personal' ? 'person-outline' : 'people-outline'}
+          label={scopeChipLabel}
+          onPress={() => onScopeChange(nextScope)}
+          trailing="swap-horizontal-outline"
+        />
         <FilterChip
           active={timeFilterActive}
           icon="calendar-outline"
@@ -121,7 +101,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   container: {
-    gap: spacing.md,
+    padding: spacing.sm,
   },
   filterChip: {
     alignItems: 'center',
@@ -129,7 +109,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.pill,
     borderWidth: 1,
-    flex: 1,
     flexDirection: 'row',
     gap: spacing.xs,
     minHeight: 38,
@@ -139,31 +118,5 @@ const styles = StyleSheet.create({
   filterChipActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
-  },
-  scopeSelector: {
-    alignItems: 'center',
-    backgroundColor: colors.backgroundElevated,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    maxWidth: 148,
-    minHeight: 42,
-    paddingHorizontal: spacing.md,
-  },
-  scopeSelectorText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  titleBlock: {
-    flex: 1,
-    gap: 2,
-  },
-  topRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'space-between',
   },
 });

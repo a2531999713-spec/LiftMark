@@ -1,9 +1,10 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
-import { EmptyState, Screen } from '@/components/ui';
-import { ProfileHeroCard, ProfileMenuItem } from '@/components/profile';
+import { AppText, EmptyState, Screen } from '@/components/ui';
+import { ProfileHeroCard, ProfileMenuItem, ProfileSection } from '@/components/profile';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
@@ -11,17 +12,15 @@ import type { PlanTemplate } from '@/domain/plan/plan.types';
 import {
   getAccountProfileCache,
   getAvatarDisplay,
-  syncAccountAvatarToLocalMemberProfiles,
-  updateAccountAvatarFromPicker,
   type AccountProfileCache,
 } from '@/services/avatar';
 import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
-import { colors, spacing } from '@/theme';
+import { colors, radius, spacing } from '@/theme';
 
 export default function SettingsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
-  const { isLoading: isAuthLoading, loadCurrentUser, user } = useAuthStore();
+  const { authStatus, isLoading: isAuthLoading, loadCurrentUser, membershipTier, user } = useAuthStore();
   const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
@@ -89,33 +88,6 @@ export default function SettingsRoute() {
     }, [loadProfile]),
   );
 
-  const pickAvatar = useCallback(async () => {
-    if (!user) return;
-    const result = await updateAccountAvatarFromPicker(user, 'library');
-    if (result.ok) {
-      setAccountProfile(result.profile);
-      const { profilesByMemberId } = await syncAccountAvatarToLocalMemberProfiles({
-        avatarLocalUri: result.profile.avatarLocalUri,
-        avatarThumbUrl: result.profile.avatarThumbUrl,
-        avatarUpdatedAt: result.profile.avatarUpdatedAt,
-        avatarUrl: result.profile.avatarUrl,
-        fallbackMemberId: currentMember?.id,
-        userId: user.id,
-      });
-      if (Object.keys(profilesByMemberId).length > 0) {
-        setProfilesByMemberId((current) => ({
-          ...current,
-          ...profilesByMemberId,
-        }));
-      }
-      if (result.message) {
-        Alert.alert('头像未完全同步', result.message);
-      }
-    } else {
-      Alert.alert('头像未更新', result.message);
-    }
-  }, [currentMember?.id, user]);
-
   return (
     <Screen contentStyle={styles.screen}>
       {isLoading || isAuthLoading ? (
@@ -142,26 +114,47 @@ export default function SettingsRoute() {
             currentPlanName={activePlan?.name}
             group={group}
             memberCount={members.length}
-            onAvatarPress={() => void pickAvatar()}
+            onAvatarPress={() => router.push('/profile' as never)}
             onGroupPress={() => router.push('/profile/groups' as never)}
             onPlanPress={() => router.push('/(tabs)/plan' as never)}
-            onPress={() => router.push('/profile/edit' as never)}
+            onPress={() => router.push('/profile' as never)}
             phoneMasked={accountProfile?.phoneMasked}
             user={user}
           />
 
-          <View style={styles.menuGroup}>
+          <View style={styles.quickGrid}>
+            <QuickActionTile
+              icon="cloud-upload-outline"
+              label="云同步"
+              meta={authStatus === 'offline_authenticated' ? '离线可用' : '查看状态'}
+              onPress={() => router.push('/profile/sync' as never)}
+            />
+            <QuickActionTile
+              icon="sparkles-outline"
+              label="会员 / 激活码"
+              meta={membershipTier === 'free' ? 'Free' : membershipTier.toUpperCase()}
+              onPress={() => router.push('/profile/membership' as never)}
+            />
+            <QuickActionTile
+              icon="archive-outline"
+              label="数据备份"
+              meta="本地与云端"
+              onPress={() => router.push('/profile/data' as never)}
+            />
+            <QuickActionTile
+              icon="options-outline"
+              label="训练偏好"
+              meta="单位和计时"
+              onPress={() => router.push('/profile/preferences' as never)}
+            />
+          </View>
+
+          <ProfileSection icon="barbell-outline" title="训练设置">
             <ProfileMenuItem
               description="体重、力量记录、加重单位"
               icon="person-outline"
               label="训练档案"
               onPress={() => router.push('/profile/training-identity' as never)}
-            />
-            <ProfileMenuItem
-              description="体重、体脂和围度趋势"
-              icon="body-outline"
-              label="身体数据"
-              onPress={() => router.push('/profile/body-metrics' as never)}
             />
             <ProfileMenuItem
               description="管理训练成员和角色"
@@ -175,11 +168,14 @@ export default function SettingsRoute() {
               label="偏好设置"
               onPress={() => router.push('/profile/preferences' as never)}
             />
+          </ProfileSection>
+
+          <ProfileSection icon="shield-checkmark-outline" title="数据与隐私">
             <ProfileMenuItem
-              description="安全、会员"
-              icon="shield-checkmark-outline"
-              label="账号设置"
-              onPress={() => router.push('/account/settings' as never)}
+              description="体重、体脂和围度趋势"
+              icon="body-outline"
+              label="身体数据"
+              onPress={() => router.push('/profile/body-metrics' as never)}
             />
             <ProfileMenuItem
               description="上传、拉取、队列和头像 URL"
@@ -187,16 +183,34 @@ export default function SettingsRoute() {
               label="同步诊断"
               onPress={() => router.push('/profile/sync' as never)}
             />
-          </View>
+            <ProfileMenuItem
+              description="导出、备份和本地数据管理"
+              icon="archive-outline"
+              label="本地数据备份"
+              onPress={() => router.push('/profile/data' as never)}
+            />
+            <ProfileMenuItem
+              description="隐私协议、用户协议"
+              icon="lock-closed-outline"
+              label="隐私与协议"
+              onPress={() => router.push('/profile/privacy' as never)}
+            />
+          </ProfileSection>
 
-          <View style={styles.singleGroup}>
+          <ProfileSection icon="information-circle-outline" title="关于">
+            <ProfileMenuItem
+              description="安全、登录和退出"
+              icon="shield-checkmark-outline"
+              label="账号设置"
+              onPress={() => router.push('/account/settings' as never)}
+            />
             <ProfileMenuItem
               description="关于练刻、意见反馈、协议"
               icon="information-circle-outline"
               label="关于练刻"
               onPress={() => router.push('/about' as never)}
             />
-          </View>
+          </ProfileSection>
 
         </>
       ) : null}
@@ -205,27 +219,76 @@ export default function SettingsRoute() {
   );
 }
 
+function QuickActionTile({
+  icon,
+  label,
+  meta,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  meta: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.quickTile, pressed && styles.pressed]}>
+      <View style={styles.quickIcon}>
+        <Ionicons color={colors.primary} name={icon} size={20} />
+      </View>
+      <View style={styles.quickText}>
+        <AppText numberOfLines={1} variant="bodySmall" weight="900">
+          {label}
+        </AppText>
+        <AppText numberOfLines={1} tone="muted" variant="caption">
+          {meta}
+        </AppText>
+      </View>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   loadingContainer: {
     alignItems: 'center',
     paddingVertical: spacing.xl,
   },
-  menuGroup: {
+  pressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.99 }],
+  },
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  quickIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  quickText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  quickTile: {
+    alignItems: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 20,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    overflow: 'hidden',
+    flexBasis: '47%',
+    flexDirection: 'row',
+    flexGrow: 1,
+    gap: spacing.sm,
+    minHeight: 76,
+    padding: spacing.md,
   },
   screen: {
     gap: spacing.lg,
     paddingBottom: spacing.xxxxl,
-  },
-  singleGroup: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 20,
-    borderWidth: 1,
-    overflow: 'hidden',
   },
 });
