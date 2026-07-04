@@ -205,7 +205,7 @@ export default function PlanDetailRoute() {
                 return;
               }
               setActionsVisible(false);
-              router.push({ pathname: '/plan/create', params: { editPlanId: detail.plan.id } } as never);
+              router.push({ pathname: '/plan/edit/[planId]', params: { planId: detail.plan.id } } as never);
             }}
             variant="secondary"
           >

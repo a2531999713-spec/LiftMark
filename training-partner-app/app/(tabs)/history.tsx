@@ -1,12 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MiniLineChart, Screen, SectionHeader, Tag } from '@/components/ui';
+import { ChartTooltip } from '@/components/history/ChartTooltip';
+import { ExerciseTrendFilterSheet, type ExerciseTrendOption } from '@/components/history/ExerciseTrendFilterSheet';
+import { HistoryBarChart, type HistoryBarPoint } from '@/components/history/HistoryBarChart';
+import { HistoryFilterBar } from '@/components/history/HistoryFilterBar';
+import { HistoryLineChart, type HistoryLinePoint } from '@/components/history/HistoryLineChart';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
-import type { Exercise } from '@/domain/exercise/exercise.types';
+import type { Equipment, Exercise, ExerciseCategory } from '@/domain/exercise/exercise.types';
+import { getHistoryChartMode, type HistoryChartMode } from '@/domain/history/history-chart-mode';
 import { estimateOneRM, type HistorySetEntry } from '@/domain/history/history-analysis';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutSession, WorkoutSessionDetail } from '@/domain/workout/workout.types';
@@ -19,14 +25,12 @@ type RangeKey = '7d' | '30d' | 'month';
 
 type DateRange = {
   fromDate: string;
+  isSingleDay: boolean;
   label: string;
   toDate: string;
 };
 
-type ExerciseFilterOption = {
-  id: string;
-  name: string;
-};
+type ExerciseFilterOption = ExerciseTrendOption;
 
 type SessionSummary = {
   date: string;
@@ -46,8 +50,11 @@ type TrendPoint = {
   date?: string;
   exerciseCount: number;
   label: string;
+  metricLabel?: string;
   setCount: number;
   sessionId?: string;
+  topSetLabel?: string;
+  value: number;
   volume: number;
 };
 
@@ -55,6 +62,7 @@ type HistoryState = {
   currentMember: GroupMember | null;
   exerciseOptions: ExerciseFilterOption[];
   groupName: string;
+  membersById: Record<string, GroupMember>;
   groupEntries: HistorySetEntry[];
   groupSessions: SessionSummary[];
   monthlyTrainingDates: Set<string>;
@@ -77,11 +85,27 @@ type SelectedTrendPoint = {
   value: number;
 } | null;
 
-const rangeOptions: { key: RangeKey; label: string }[] = [
-  { key: '7d', label: '近 7 天' },
-  { key: '30d', label: '近 30 天' },
-  { key: 'month', label: '本月' },
-];
+const exerciseCategoryLabels: Record<ExerciseCategory | 'other', string> = {
+  arms: '手臂',
+  back: '背',
+  calves: '小腿',
+  chest: '胸',
+  core: '核心',
+  full_body: '全身',
+  legs: '腿',
+  other: '其他',
+  shoulder: '肩',
+};
+
+const equipmentLabels: Record<Equipment | 'other', string> = {
+  barbell: '杠铃',
+  bodyweight: '自重',
+  cable: '绳索',
+  dumbbell: '哑铃',
+  machine: '固定器械',
+  other: '其他',
+  smith: '史密斯',
+};
 
 function createEmptyHistory(currentMember: GroupMember | null = null): HistoryState {
   return {
@@ -90,6 +114,7 @@ function createEmptyHistory(currentMember: GroupMember | null = null): HistorySt
     groupEntries: [],
     groupName: '默认训练小组',
     groupSessions: [],
+    membersById: {},
     monthlyTrainingDates: new Set<string>(),
     personalEntries: [],
     personalSessions: [],
@@ -139,6 +164,7 @@ function getDateRange(rangeKey: RangeKey, selectedDate: string | null): DateRang
   if (selectedDate) {
     return {
       fromDate: selectedDate,
+      isSingleDay: true,
       label: formatShortDate(selectedDate),
       toDate: selectedDate,
     };
@@ -150,6 +176,7 @@ function getDateRange(rangeKey: RangeKey, selectedDate: string | null): DateRang
     const end = new Date(today.getFullYear(), today.getMonth() + 1, 0, 12);
     return {
       fromDate: getLocalDateString(start),
+      isSingleDay: false,
       label: '本月',
       toDate: getLocalDateString(end),
     };
@@ -158,6 +185,7 @@ function getDateRange(rangeKey: RangeKey, selectedDate: string | null): DateRang
   const dayCount = rangeKey === '7d' ? 7 : 30;
   return {
     fromDate: getLocalDateString(addDays(today, -(dayCount - 1))),
+    isSingleDay: false,
     label: `近 ${dayCount} 天`,
     toDate: getLocalDateString(today),
   };
@@ -187,6 +215,47 @@ function getExerciseNameMap(exercises: Exercise[]): Record<string, string> {
   return Object.fromEntries(exercises.map((exercise) => [exercise.id, exercise.name]));
 }
 
+function buildExerciseOptions(exercises: Exercise[], entries: HistorySetEntry[]): ExerciseFilterOption[] {
+  const statsByExercise = new Map<string, { lastTrainingDate?: string; recordCount: number }>();
+
+  entries
+    .filter((entry) => entry.completed)
+    .forEach((entry) => {
+      const current = statsByExercise.get(entry.exerciseId) ?? { recordCount: 0 };
+      current.recordCount += 1;
+      current.lastTrainingDate =
+        !current.lastTrainingDate || entry.date > current.lastTrainingDate ? entry.date : current.lastTrainingDate;
+      statsByExercise.set(entry.exerciseId, current);
+    });
+
+  const recentCutoff = [...statsByExercise.values()]
+    .map((stats) => stats.lastTrainingDate)
+    .filter((date): date is string => Boolean(date))
+    .sort()
+    .at(-5);
+
+  return exercises
+    .map((exercise) => {
+      const stats = statsByExercise.get(exercise.id) ?? { recordCount: 0 };
+      return {
+        category: exercise.category,
+        equipment: exercise.equipment,
+        equipmentLabel: equipmentLabels[exercise.equipment],
+        id: exercise.id,
+        isRecent: Boolean(stats.lastTrainingDate && (!recentCutoff || stats.lastTrainingDate >= recentCutoff)),
+        lastTrainingDate: stats.lastTrainingDate,
+        name: exercise.name,
+        recordCount: stats.recordCount,
+        targetMuscle: exercise.targetMuscle || exerciseCategoryLabels[exercise.category],
+      };
+    })
+    .filter((option) => option.recordCount > 0)
+    .sort((left, right) => {
+      if (left.isRecent !== right.isRecent) return left.isRecent ? -1 : 1;
+      return right.recordCount - left.recordCount || left.name.localeCompare(right.name);
+    });
+}
+
 function getMemberEntries(detail: WorkoutSessionDetail, memberId: string): HistorySetEntry[] {
   return detail.sets
     .filter((set) => set.memberId === memberId)
@@ -199,6 +268,8 @@ function getMemberEntries(detail: WorkoutSessionDetail, memberId: string): Histo
         exerciseId: record?.exerciseId ?? set.exerciseRecordId,
         memberId: set.memberId,
         reps: set.actualReps,
+        setId: set.id,
+        setNumber: set.setNumber,
         sessionId: detail.session.id,
         weight: set.actualWeight,
       };
@@ -214,6 +285,8 @@ function getGroupEntries(detail: WorkoutSessionDetail): HistorySetEntry[] {
       exerciseId: record?.exerciseId ?? set.exerciseRecordId,
       memberId: set.memberId,
       reps: set.actualReps,
+      setId: set.id,
+      setNumber: set.setNumber,
       sessionId: detail.session.id,
       weight: set.actualWeight,
     };
@@ -274,27 +347,55 @@ function buildSessionTrend(summaries: SessionSummary[]): TrendPoint[] {
       date: summary.date,
       exerciseCount: summary.exerciseCount,
       label: formatShortDate(summary.date),
+      metricLabel: '训练量',
       sessionId: summary.id,
       setCount: summary.setCount,
+      value: summary.volume,
       volume: summary.volume,
     }));
 }
 
 function buildExerciseTrend(entries: HistorySetEntry[]): TrendPoint[] {
-  const bySession = new Map<string, TrendPoint>();
+  const bySession = new Map<
+    string,
+    TrendPoint & {
+      bestEstimatedOneRM: number;
+      bestWeight: number;
+    }
+  >();
   entries
     .filter((entry) => entry.completed && (entry.weight ?? 0) > 0 && (entry.reps ?? 0) > 0)
     .forEach((entry) => {
       const current = bySession.get(entry.sessionId) ?? {
+        bestEstimatedOneRM: 0,
+        bestWeight: 0,
         date: entry.date,
         exerciseCount: 1,
         label: formatShortDate(entry.date),
+        metricLabel: '训练量',
         sessionId: entry.sessionId,
         setCount: 0,
+        value: 0,
         volume: 0,
       };
+      const weight = entry.weight ?? 0;
+      const reps = entry.reps ?? 0;
+      const previousBestWeight = current.bestWeight;
       current.setCount += 1;
-      current.volume += (entry.weight ?? 0) * (entry.reps ?? 0);
+      current.volume += weight * reps;
+      current.bestWeight = Math.max(current.bestWeight, weight);
+      current.bestEstimatedOneRM = Math.max(current.bestEstimatedOneRM, estimateOneRM(weight, reps));
+      if (current.bestEstimatedOneRM > 0) {
+        current.value = current.bestEstimatedOneRM;
+        current.metricLabel = '估算 1RM';
+      } else if (current.bestWeight > 0) {
+        current.value = current.bestWeight;
+        current.metricLabel = '最高重量';
+      } else {
+        current.value = current.volume;
+        current.metricLabel = '训练量';
+      }
+      current.topSetLabel = !current.topSetLabel || weight >= previousBestWeight ? `${weight}kg x ${reps}` : current.topSetLabel;
       bySession.set(entry.sessionId, current);
     });
 
@@ -376,6 +477,81 @@ function getChangeLabel(values: number[], index: number): string {
   return `${change > 0 ? '+' : ''}${change}%`;
 }
 
+function buildExerciseBreakdownBars(entries: HistorySetEntry[], exerciseOptions: ExerciseFilterOption[]): HistoryBarPoint[] {
+  const namesById = new Map(exerciseOptions.map((option) => [option.id, option.name]));
+  const stats = new Map<string, { setCount: number; value: number }>();
+
+  entries
+    .filter((entry) => entry.completed)
+    .forEach((entry) => {
+      const current = stats.get(entry.exerciseId) ?? { setCount: 0, value: 0 };
+      current.setCount += 1;
+      current.value += (entry.weight ?? 0) * (entry.reps ?? 0);
+      stats.set(entry.exerciseId, current);
+    });
+
+  const sorted = [...stats.entries()]
+    .map(([exerciseId, stat]) => ({
+      id: exerciseId,
+      label: namesById.get(exerciseId) ?? '训练动作',
+      meta: `${stat.setCount} 组`,
+      value: stat.value,
+    }))
+    .sort((left, right) => right.value - left.value);
+
+  if (sorted.length <= 6) {
+    return sorted;
+  }
+
+  const top = sorted.slice(0, 6);
+  const rest = sorted.slice(6);
+  return [
+    ...top,
+    {
+      id: 'other',
+      label: '其他',
+      meta: `${rest.length} 个动作`,
+      value: rest.reduce((sum, item) => sum + item.value, 0),
+    },
+  ];
+}
+
+function buildSetBreakdownBars(entries: HistorySetEntry[]): HistoryBarPoint[] {
+  return entries
+    .filter((entry) => entry.completed)
+    .slice()
+    .sort((left, right) => (left.setNumber ?? 0) - (right.setNumber ?? 0))
+    .map((entry, index) => ({
+      id: entry.setId ?? `${entry.sessionId}-${index}`,
+      label: `第 ${entry.setNumber ?? index + 1} 组`,
+      meta: `${entry.weight ?? 0} kg x ${entry.reps ?? 0}`,
+      value: entry.weight ?? 0,
+    }));
+}
+
+function buildMemberContributionBars(entries: HistorySetEntry[], membersById: Record<string, GroupMember>): HistoryBarPoint[] {
+  const stats = new Map<string, { sessionIds: Set<string>; setCount: number; value: number }>();
+
+  entries
+    .filter((entry) => entry.completed)
+    .forEach((entry) => {
+      const current = stats.get(entry.memberId) ?? { sessionIds: new Set<string>(), setCount: 0, value: 0 };
+      current.sessionIds.add(entry.sessionId);
+      current.setCount += 1;
+      current.value += (entry.weight ?? 0) * (entry.reps ?? 0);
+      stats.set(entry.memberId, current);
+    });
+
+  return [...stats.entries()]
+    .map(([memberId, stat]) => ({
+      id: memberId,
+      label: membersById[memberId]?.displayName ?? '成员',
+      meta: `${stat.setCount} 组 · ${stat.sessionIds.size} 次`,
+      value: stat.value,
+    }))
+    .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label));
+}
+
 export default function HistoryRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { authMode, guardFeature, sheets } = useAuthGate();
@@ -386,6 +562,7 @@ export default function HistoryRoute() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [monthCursor, setMonthCursor] = useState(new Date());
   const [isDateSheetVisible, setDateSheetVisible] = useState(false);
+  const [isExerciseFilterVisible, setExerciseFilterVisible] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const [recordAction, setRecordAction] = useState<SelectedRecordAction>(null);
   const [history, setHistory] = useState<HistoryState>(createEmptyHistory());
@@ -461,10 +638,7 @@ export default function HistoryRoute() {
       const exerciseNamesById = getExerciseNameMap(exercises);
       const personalEntries = personalDetails.flatMap((detail) => getMemberEntries(detail, currentMember.id));
       const groupEntries = groupDetails.flatMap(getGroupEntries);
-      const exerciseOptions = Array.from(new Set([...personalEntries, ...groupEntries].map((entry) => entry.exerciseId))).map((exerciseId) => ({
-        id: exerciseId,
-        name: exerciseNamesById[exerciseId] ?? '训练动作',
-      }));
+      const exerciseOptions = buildExerciseOptions(exercises, [...personalEntries, ...groupEntries]);
 
       setHistory({
         currentMember,
@@ -474,6 +648,7 @@ export default function HistoryRoute() {
         groupSessions: groupDetails
           .map((detail) => summarizeSession(detail, exerciseNamesById))
           .filter((summary) => summary.setCount > 0),
+        membersById: Object.fromEntries(members.map((member) => [member.id, member])),
         monthlyTrainingDates: new Set(monthSessions.map((session) => session.date)),
         personalEntries,
         personalSessions: personalDetails
@@ -509,6 +684,23 @@ export default function HistoryRoute() {
     ? buildExerciseTrend(activeEntries.filter((entry) => entry.exerciseId === effectiveSelectedExerciseId))
     : buildSessionTrend(filteredSessions);
   const selectedExerciseName = history.exerciseOptions.find((option) => option.id === effectiveSelectedExerciseId)?.name;
+  const filteredEntries = effectiveSelectedExerciseId
+    ? activeEntries.filter((entry) => entry.exerciseId === effectiveSelectedExerciseId)
+    : activeEntries;
+  const chartMode = getHistoryChartMode({
+    dateFilter: dateRange.isSingleDay ? 'single_day' : 'range',
+    scope: dataScope,
+    selectedExerciseId: effectiveSelectedExerciseId,
+    selectedMemberId: history.currentMember?.id,
+  });
+  const barData =
+    chartMode === 'single_day_exercise_breakdown'
+      ? buildExerciseBreakdownBars(activeEntries, history.exerciseOptions)
+      : chartMode === 'single_day_set_breakdown'
+        ? buildSetBreakdownBars(filteredEntries)
+        : chartMode === 'group_single_day_contribution'
+          ? buildMemberContributionBars(filteredEntries, history.membersById)
+          : [];
   const isGuestPreview = authMode === 'guest_preview';
 
   const openDetail = useCallback(
@@ -575,11 +767,6 @@ export default function HistoryRoute() {
 
   return (
     <Screen
-      headerRight={
-        <Pressable accessibilityRole="button" onPress={() => setDateSheetVisible(true)} style={styles.headerIconButton}>
-          <Ionicons color={colors.text} name="calendar-outline" size={20} />
-        </Pressable>
-      }
       subtitle={history.currentMember ? `当前成员：${history.currentMember.displayName}` : '看趋势、找记录、编辑或删除记录'}
       title="记录"
     >
@@ -602,32 +789,32 @@ export default function HistoryRoute() {
             />
           ) : (
             <>
-              <ScopeToggle
-                dataScope={dataScope}
+              <HistoryFilterBar
                 groupName={history.groupName}
                 memberName={history.currentMember?.displayName ?? '暂无成员'}
-                setDataScope={(scope) => {
-                  if (scope === 'group' && !guardFeature('group_analytics')) {
-                    return;
-                  }
-                  setDataScope(scope);
-                }}
-              />
-
-              <DateRangeFilter
                 onOpenDatePicker={() => setDateSheetVisible(true)}
+                onOpenExerciseFilter={() => setExerciseFilterVisible(true)}
                 onRangeChange={(nextRange) => {
                   setRangeKey(nextRange);
                   setSelectedDate(null);
                 }}
                 onResetDate={() => setSelectedDate(null)}
+                onScopeChange={(scope) => {
+                  if (scope === 'group' && !guardFeature('group_analytics')) {
+                    return;
+                  }
+                  setDataScope(scope);
+                }}
                 rangeKey={rangeKey}
+                scope={dataScope}
                 selectedDate={selectedDate}
+                selectedExerciseName={selectedExerciseName}
               />
 
               <TrainingTrendCard
-                exerciseOptions={history.exerciseOptions}
-                onSelectExercise={setSelectedExerciseId}
+                barData={barData}
+                chartMode={chartMode}
+                dataScope={dataScope}
                 rangeLabel={dateRange.label}
                 selectedExerciseId={effectiveSelectedExerciseId}
                 selectedExerciseName={selectedExerciseName}
@@ -652,10 +839,6 @@ export default function HistoryRoute() {
 
       <DatePickerSheet
         monthCursor={monthCursor}
-        onClear={() => {
-          setSelectedDate(null);
-          setDateSheetVisible(false);
-        }}
         onClose={() => setDateSheetVisible(false)}
         onMonthChange={setMonthCursor}
         onSelectDate={(date) => {
@@ -665,6 +848,14 @@ export default function HistoryRoute() {
         selectedDate={selectedDate}
         trainingDates={history.monthlyTrainingDates}
         visible={isDateSheetVisible}
+      />
+
+      <ExerciseTrendFilterSheet
+        onClose={() => setExerciseFilterVisible(false)}
+        onSelect={setSelectedExerciseId}
+        options={history.exerciseOptions}
+        selectedExerciseId={effectiveSelectedExerciseId}
+        visible={isExerciseFilterVisible}
       />
 
       <RecordActionSheet
@@ -681,194 +872,133 @@ export default function HistoryRoute() {
   );
 }
 
-function ScopeToggle({
-  dataScope,
-  groupName,
-  memberName,
-  setDataScope,
-}: {
-  dataScope: DataScope;
-  groupName: string;
-  memberName: string;
-  setDataScope: (scope: DataScope) => void;
-}) {
-  return (
-    <AppCard padded={false} style={styles.scopeBar}>
-      <View style={styles.scopeLabel}>
-        <AppText variant="bodySmall" weight="900">
-          {dataScope === 'personal' ? memberName : groupName}
-        </AppText>
-      </View>
-      <View style={styles.scopePill}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setDataScope('personal')}
-          style={[styles.scopePillBtn, dataScope === 'personal' && styles.scopePillBtnActive]}
-        >
-          <AppText tone={dataScope === 'personal' ? 'inverse' : 'muted'} variant="caption" weight="900">
-            个人
-          </AppText>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setDataScope('group')}
-          style={[styles.scopePillBtn, dataScope === 'group' && styles.scopePillBtnActive]}
-        >
-          <AppText tone={dataScope === 'group' ? 'inverse' : 'muted'} variant="caption" weight="900">
-            小组
-          </AppText>
-        </Pressable>
-      </View>
-    </AppCard>
-  );
-}
-
-function DateRangeFilter({
-  onOpenDatePicker,
-  onRangeChange,
-  onResetDate,
-  rangeKey,
-  selectedDate,
-}: {
-  onOpenDatePicker: () => void;
-  onRangeChange: (rangeKey: RangeKey) => void;
-  onResetDate: () => void;
-  rangeKey: RangeKey;
-  selectedDate: string | null;
-}) {
-  return (
-    <AppCard style={styles.rangeCard}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rangeScroll}>
-        {rangeOptions.map((option) => (
-          <Pressable
-            accessibilityRole="button"
-            key={option.key}
-            onPress={() => onRangeChange(option.key)}
-            style={[styles.rangePill, !selectedDate && rangeKey === option.key && styles.rangePillActive]}
-          >
-            <AppText tone={!selectedDate && rangeKey === option.key ? 'inverse' : 'muted'} variant="caption" weight="900">
-              {option.label}
-            </AppText>
-          </Pressable>
-        ))}
-        <Pressable
-          accessibilityRole="button"
-          onPress={onOpenDatePicker}
-          style={[styles.rangePill, selectedDate && styles.rangePillActive]}
-        >
-          <Ionicons color={selectedDate ? colors.surface : colors.textMuted} name="calendar-outline" size={15} />
-          <AppText tone={selectedDate ? 'inverse' : 'muted'} variant="caption" weight="900">
-            {selectedDate ? formatShortDate(selectedDate) : '日期'}
-          </AppText>
-        </Pressable>
-        {selectedDate ? (
-          <Pressable accessibilityRole="button" onPress={onResetDate} style={styles.clearDateButton}>
-            <Ionicons color={colors.textMuted} name="close-outline" size={16} />
-          </Pressable>
-        ) : null}
-      </ScrollView>
-    </AppCard>
-  );
-}
-
 function TrainingTrendCard({
-  exerciseOptions,
-  onSelectExercise,
+  barData,
+  chartMode,
+  dataScope,
   rangeLabel,
   selectedExerciseId,
   selectedExerciseName,
   trend,
 }: {
-  exerciseOptions: ExerciseFilterOption[];
-  onSelectExercise: (exerciseId: string | null) => void;
+  barData: HistoryBarPoint[];
+  chartMode: HistoryChartMode;
+  dataScope: DataScope;
   rangeLabel: string;
   selectedExerciseId: string | null;
   selectedExerciseName?: string;
   trend: TrendPoint[];
 }) {
-  const [isSelectorOpen, setSelectorOpen] = useState(false);
-  const [query, setQuery] = useState('');
   const [selectedPoint, setSelectedPoint] = useState<SelectedTrendPoint>(null);
-  const values = trend.map((point) => point.volume);
+  const [selectedBar, setSelectedBar] = useState<HistoryBarPoint | null>(null);
+  const values = trend.map((point) => point.value);
+  const volumes = trend.map((point) => point.volume);
   const activeValues = values.filter((value) => value > 0);
-  const totalVolume = values.reduce((sum, value) => sum + value, 0);
+  const totalVolume = volumes.reduce((sum, value) => sum + value, 0);
   const latestVolume = activeValues.at(-1) ?? 0;
   const maxVolume = Math.max(0, ...values);
   const keyPointIndexes = getKeyPointIndexes(values, selectedPoint?.index);
-  const normalizedQuery = query.trim().toLowerCase();
-  const recentOptions = exerciseOptions.slice(0, 5);
-  const filteredOptions = normalizedQuery
-    ? exerciseOptions.filter((option) => option.name.toLowerCase().includes(normalizedQuery))
-    : exerciseOptions.filter((option) => !recentOptions.some((recent) => recent.id === option.id));
-
-  const chooseExercise = (exerciseId: string | null) => {
-    onSelectExercise(exerciseId);
-    setSelectedPoint(null);
-    setSelectorOpen(false);
-    setQuery('');
-  };
+  const isBarMode =
+    chartMode === 'single_day_exercise_breakdown' ||
+    chartMode === 'single_day_set_breakdown' ||
+    chartMode === 'group_single_day_contribution';
+  const chartCopy = getChartCopy(chartMode, dataScope, selectedExerciseName);
+  const barTotal = barData.reduce((sum, point) => sum + point.value, 0);
+  const barMax = Math.max(0, ...barData.map((point) => point.value));
 
   return (
     <AppCard style={styles.trendCard}>
       <View style={styles.trendHeader}>
         <View style={styles.trendTitleBlock}>
-          <AppText variant="subtitle">训练趋势</AppText>
+          <AppText variant="subtitle">{chartCopy.title}</AppText>
           <AppText tone="muted" variant="caption">
-            {rangeLabel}
+            {rangeLabel} · {chartCopy.subtitle}
           </AppText>
         </View>
-        <Pressable accessibilityRole="button" onPress={() => setSelectorOpen(true)} style={styles.exerciseButton}>
-          <AppText numberOfLines={1} variant="caption" weight="900">
-            {selectedExerciseName ?? '全部动作'}
-          </AppText>
-          <Ionicons color={colors.textMuted} name="chevron-down" size={15} />
-        </Pressable>
+        <Tag label={selectedExerciseName ?? '全部动作'} tone={selectedExerciseId ? 'brand' : 'neutral'} />
       </View>
 
-      <MiniLineChart
-        chartHeight={116}
-        data={values}
-        emptyMessage="当前范围还没有训练量"
-        formatValue={formatCompactKg}
-        highlightIndex={selectedPoint?.index}
-        keyPointIndexes={keyPointIndexes}
-        labels={trend.map((point) => point.label)}
-        minChartHeight={Math.max(100, maxVolume)}
-        onPointPress={(point, index) => {
-          const trendPoint = trend[index];
-          setSelectedPoint({
-            changeLabel: getChangeLabel(values, index),
-            date: trendPoint?.date,
-            exerciseCount: trendPoint?.exerciseCount ?? 0,
-            index,
-            label: point.label ?? trendPoint?.label ?? '',
-            setCount: trendPoint?.setCount ?? 0,
+      {isBarMode ? (
+        <HistoryBarChart
+          emptyMessage="这一天还没有可展示的训练数据"
+          formatValue={chartMode === 'single_day_set_breakdown' ? (value) => `${Math.round(value)}kg` : formatCompactKg}
+          onBarPress={(point) => {
+            setSelectedBar(point);
+            setSelectedPoint(null);
+          }}
+          points={barData}
+          selectedId={selectedBar?.id}
+        />
+      ) : (
+        <HistoryLineChart
+          emptyMessage="当前范围还没有训练量"
+          formatValue={formatCompactKg}
+          highlightIndex={selectedPoint?.index}
+          keyPointIndexes={keyPointIndexes}
+          onPointPress={(point, index) => {
+            const trendPoint = trend[index];
+            setSelectedPoint({
+              changeLabel: getChangeLabel(values, index),
+              date: trendPoint?.date,
+              exerciseCount: trendPoint?.exerciseCount ?? 0,
+              index,
+              label: point.label ?? trendPoint?.label ?? '',
+              setCount: trendPoint?.setCount ?? 0,
+              value: point.value,
+            });
+            setSelectedBar(null);
+          }}
+          points={trend.map((point): HistoryLinePoint => ({
+            date: point.date,
+            label: point.label,
+            meta: point.metricLabel,
             value: point.value,
-          });
-        }}
-        unitLabel="kg"
-        valueLabelStrategy="keyPoints"
-      />
+          }))}
+        />
+      )}
 
       {selectedPoint ? (
-        <AppCard style={styles.pointDetailCard} tone="soft">
-          <View style={styles.pointDetailHeader}>
-            <AppText variant="bodySmall" weight="900">
-              {selectedPoint.date ?? selectedPoint.label}
-            </AppText>
-            <Tag label={selectedPoint.changeLabel} tone={selectedPoint.changeLabel.startsWith('+') ? 'success' : 'neutral'} />
-          </View>
-          <AppText tone="muted" variant="caption">
-            {formatKg(selectedPoint.value)} · {selectedPoint.setCount} 组 · {selectedPoint.exerciseCount} 动作
-          </AppText>
-        </AppCard>
+        <ChartTooltip
+          metrics={[
+            { label: trend[selectedPoint.index]?.metricLabel ?? '指标', value: formatKg(selectedPoint.value) },
+            { label: '组数', value: `${selectedPoint.setCount} 组` },
+            { label: '动作', value: `${selectedPoint.exerciseCount} 个` },
+          ]}
+          subtitle={selectedPoint.changeLabel}
+          title={selectedPoint.date ?? selectedPoint.label}
+          tone={selectedPoint.changeLabel.startsWith('+') ? 'success' : 'neutral'}
+        />
+      ) : null}
+
+      {selectedBar ? (
+        <ChartTooltip
+          metrics={[
+            {
+              label: chartMode === 'single_day_set_breakdown' ? '重量' : '训练量',
+              value: chartMode === 'single_day_set_breakdown' ? `${Math.round(selectedBar.value)} kg` : formatKg(selectedBar.value),
+            },
+          ]}
+          subtitle={selectedBar.meta}
+          title={selectedBar.label}
+        />
       ) : null}
 
       <View style={styles.trendSummaryGrid}>
-        <TrendMetric label="范围总量" value={formatKg(totalVolume)} />
-        <TrendMetric label="最新一次" value={latestVolume > 0 ? formatKg(latestVolume) : '暂无'} />
-        <TrendMetric label="最高点" value={maxVolume > 0 ? formatKg(maxVolume) : '暂无'} />
-        <TrendMetric label="趋势" value={getTrendLabel(values)} />
+        {isBarMode ? (
+          <>
+            <TrendMetric label={chartMode === 'single_day_set_breakdown' ? '最高重量' : '合计'} value={barMax > 0 ? formatKg(chartMode === 'single_day_set_breakdown' ? barMax : barTotal) : '暂无'} />
+            <TrendMetric label="条目" value={`${barData.length} 项`} />
+            <TrendMetric label="最高项" value={barData[0]?.label ?? '暂无'} />
+            <TrendMetric label="图表" value="条形图" />
+          </>
+        ) : (
+          <>
+            <TrendMetric label="范围总量" value={formatKg(totalVolume)} />
+            <TrendMetric label={selectedExerciseId ? '最新指标' : '最新一次'} value={latestVolume > 0 ? formatKg(latestVolume) : '暂无'} />
+            <TrendMetric label="最高点" value={maxVolume > 0 ? formatKg(maxVolume) : '暂无'} />
+            <TrendMetric label="趋势" value={getTrendLabel(values)} />
+          </>
+        )}
       </View>
 
       {selectedExerciseId ? (
@@ -880,49 +1010,50 @@ function TrainingTrendCard({
           动作详情
         </AppButton>
       ) : null}
-
-      <AppModalSheet
-        onClose={() => setSelectorOpen(false)}
-        subtitle="选择后同一张趋势卡和记录列表会同步更新"
-        title="选择动作"
-        visible={isSelectorOpen}
-      >
-        <View style={styles.selectorSearch}>
-          <Ionicons color={colors.textMuted} name="search-outline" size={16} />
-          <TextInput
-            onChangeText={setQuery}
-            placeholder="搜索动作"
-            placeholderTextColor={colors.textSubtle}
-            style={styles.selectorInput}
-            value={query}
-          />
-        </View>
-        <ScrollView style={styles.selectorList} keyboardShouldPersistTaps="handled">
-          <SelectorOption
-            active={!selectedExerciseId}
-            meta={`${exerciseOptions.length} 个动作 · 总训练量`}
-            name="全部动作"
-            onPress={() => chooseExercise(null)}
-          />
-          {!normalizedQuery && recentOptions.length > 0 ? (
-            <SelectorSection
-              activeId={selectedExerciseId}
-              onSelect={(id) => chooseExercise(id)}
-              options={recentOptions}
-              title="最近练过"
-            />
-          ) : null}
-          <SelectorSection
-            activeId={selectedExerciseId}
-            emptyLabel="没有匹配动作"
-            onSelect={(id) => chooseExercise(id)}
-            options={filteredOptions}
-            title={normalizedQuery ? '搜索结果' : '全部动作'}
-          />
-        </ScrollView>
-      </AppModalSheet>
     </AppCard>
   );
+}
+
+function getChartCopy(mode: HistoryChartMode, scope: DataScope, selectedExerciseName?: string) {
+  if (mode === 'range_exercise_trend') {
+    return {
+      subtitle: `${selectedExerciseName ?? '动作'} · 估算 1RM / 最高重量优先`,
+      title: '动作趋势',
+    };
+  }
+
+  if (mode === 'single_day_exercise_breakdown') {
+    return {
+      subtitle: '按动作训练量排序',
+      title: '当天动作构成',
+    };
+  }
+
+  if (mode === 'single_day_set_breakdown') {
+    return {
+      subtitle: `${selectedExerciseName ?? '动作'} · 每组重量`,
+      title: '当天组表现',
+    };
+  }
+
+  if (mode === 'group_range_trend') {
+    return {
+      subtitle: selectedExerciseName ? `${selectedExerciseName} · 小组总量` : '成员 sets 汇总',
+      title: '小组训练趋势',
+    };
+  }
+
+  if (mode === 'group_single_day_contribution') {
+    return {
+      subtitle: selectedExerciseName ? `${selectedExerciseName} · 成员对比` : '成员训练量贡献',
+      title: '成员贡献',
+    };
+  }
+
+  return {
+    subtitle: scope === 'personal' ? '总训练量' : '小组总训练量',
+    title: '整体趋势',
+  };
 }
 
 function TrendMetric({ label, value }: { label: string; value: string }) {
@@ -935,73 +1066,6 @@ function TrendMetric({ label, value }: { label: string; value: string }) {
         {label}
       </AppText>
     </View>
-  );
-}
-
-function SelectorSection({
-  activeId,
-  emptyLabel = '暂无动作',
-  onSelect,
-  options,
-  title,
-}: {
-  activeId: string | null;
-  emptyLabel?: string;
-  onSelect: (exerciseId: string) => void;
-  options: ExerciseFilterOption[];
-  title: string;
-}) {
-  return (
-    <View style={styles.selectorSection}>
-      <AppText tone="muted" variant="caption" weight="900">
-        {title}
-      </AppText>
-      {options.length === 0 ? (
-        <AppText tone="muted" variant="bodySmall">
-          {emptyLabel}
-        </AppText>
-      ) : (
-        options.map((option) => (
-          <SelectorOption
-            active={activeId === option.id}
-            key={option.id}
-            meta="动作趋势与记录"
-            name={option.name}
-            onPress={() => onSelect(option.id)}
-          />
-        ))
-      )}
-    </View>
-  );
-}
-
-function SelectorOption({
-  active,
-  meta,
-  name,
-  onPress,
-}: {
-  active: boolean;
-  meta: string;
-  name: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.selectorOption, active && styles.selectorOptionActive, pressed && styles.pressed]}
-    >
-      <View style={styles.selectorOptionText}>
-        <AppText numberOfLines={1} variant="bodySmall" weight="900">
-          {name}
-        </AppText>
-        <AppText numberOfLines={1} tone="muted" variant="caption">
-          {meta}
-        </AppText>
-      </View>
-      {active ? <Ionicons color={colors.primary} name="checkmark-circle" size={18} /> : null}
-    </Pressable>
   );
 }
 
@@ -1113,7 +1177,6 @@ function RecordMeta({ label, value }: { label: string; value: string }) {
 
 function DatePickerSheet({
   monthCursor,
-  onClear,
   onClose,
   onMonthChange,
   onSelectDate,
@@ -1122,7 +1185,6 @@ function DatePickerSheet({
   visible,
 }: {
   monthCursor: Date;
-  onClear: () => void;
   onClose: () => void;
   onMonthChange: (date: Date) => void;
   onSelectDate: (date: string) => void;
@@ -1172,9 +1234,6 @@ function DatePickerSheet({
         })}
       </View>
       <View style={styles.modalActions}>
-        <AppButton onPress={onClear} variant="secondary">
-          清除日期筛选
-        </AppButton>
         <AppButton onPress={onClose}>完成</AppButton>
       </View>
     </AppModalSheet>

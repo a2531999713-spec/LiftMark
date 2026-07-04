@@ -263,7 +263,11 @@ export default function HistoryDetailRoute() {
           style: 'destructive',
           onPress: () => {
             void (async () => {
-              await repositories.workoutRepository.deleteSet(set.id);
+              if (scopedMemberId) {
+                await repositories.workoutRepository.deleteMemberSet(set.id, scopedMemberId);
+              } else {
+                await repositories.workoutRepository.deleteSet(set.id);
+              }
               try {
                 const nextDetail = detail ? await repositories.workoutRepository.getSessionDetail(detail.session.id) : null;
                 setDetail(nextDetail);
@@ -275,7 +279,7 @@ export default function HistoryDetailRoute() {
         },
       ]);
     },
-    [detail, guardFeature, repositories],
+    [detail, guardFeature, repositories, scopedMemberId],
   );
 
   const changeExercise = useCallback(

@@ -11,10 +11,12 @@ import type {
   AddWorkoutExerciseInput,
   AddWorkoutSetInput,
   ManualWorkoutExerciseInput,
+  ListHistorySessionsByScopeInput,
   ListOpenWorkoutSessionsForDateInput,
   ListSessionsInput,
   SaveWorkoutSetInput,
   UpdateWorkoutSessionInput,
+  WorkoutSessionAggregation,
   WorkoutSession,
   WorkoutSessionDetail,
   WorkoutSet,
@@ -769,6 +771,21 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     await this.cleanupEmptyExerciseRecords(row.session_id);
   }
 
+  async deleteMemberSet(setId: string, memberId: string): Promise<void> {
+    const db = await this.getDb();
+    const row = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM workout_sets WHERE id = ? AND member_id = ? AND deleted_at IS NULL',
+      setId,
+      memberId,
+    );
+
+    if (!row) {
+      return;
+    }
+
+    await this.deleteSet(setId);
+  }
+
   async deleteExerciseRecord(recordId: string): Promise<void> {
     const db = await this.getDb();
     const now = nowIso();
@@ -1072,6 +1089,51 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     }
   }
 
+  async getSessionAggregation(sessionId: string): Promise<WorkoutSessionAggregation> {
+    const db = await this.getDb();
+    const rows = await db.getAllAsync<{
+      completed_sets: number;
+      member_id: string;
+      session_count: number;
+      total_sets: number;
+      volume: number;
+    }>(
+      `SELECT
+        member_id,
+        SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS completed_sets,
+        COUNT(*) AS total_sets,
+        COUNT(DISTINCT session_id) AS session_count,
+        SUM(
+          CASE
+            WHEN completed = 1 THEN
+              COALESCE(actual_weight, planned_weight, 0) * COALESCE(actual_reps, planned_reps, 0)
+            ELSE 0
+          END
+        ) AS volume
+       FROM workout_sets
+       WHERE session_id = ? AND deleted_at IS NULL
+       GROUP BY member_id`,
+      sessionId,
+    );
+
+    const memberContributions = rows.map((row) => ({
+      completedSets: row.completed_sets ?? 0,
+      memberId: row.member_id,
+      sessionCount: row.session_count ?? 0,
+      totalSets: row.total_sets ?? 0,
+      volume: row.volume ?? 0,
+    }));
+
+    return {
+      completedSets: memberContributions.reduce((sum, item) => sum + item.completedSets, 0),
+      memberContributions,
+      participantCount: memberContributions.filter((item) => item.completedSets > 0).length,
+      sessionId,
+      totalSets: memberContributions.reduce((sum, item) => sum + item.totalSets, 0),
+      totalVolume: memberContributions.reduce((sum, item) => sum + item.volume, 0),
+    };
+  }
+
   async finishSession(sessionId: string): Promise<WorkoutSummary> {
     const db = await this.getDb();
     const now = nowIso();
@@ -1098,6 +1160,16 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       completedSets: counts?.completed_sets ?? 0,
       totalSets: counts?.total_sets ?? 0,
     };
+  }
+
+  async listHistorySessionsByScope(input: ListHistorySessionsByScopeInput): Promise<WorkoutSession[]> {
+    return this.listSessions({
+      fromDate: input.fromDate,
+      groupId: input.groupId,
+      limit: input.limit,
+      memberId: input.scope === 'personal' ? input.memberId : undefined,
+      toDate: input.toDate,
+    });
   }
 
   async listSessions(input: ListSessionsInput): Promise<WorkoutSession[]> {

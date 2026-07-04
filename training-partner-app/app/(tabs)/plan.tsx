@@ -565,7 +565,7 @@ export default function PlanRoute() {
                 disabled={!activePlan || activePlan.source === 'system'}
                 onPress={() => {
                   if (activePlan && activePlan.source !== 'system') {
-                    router.push({ pathname: '/plan/create', params: { editPlanId: activePlan.id } } as never);
+                    router.push({ pathname: '/plan/edit/[planId]', params: { planId: activePlan.id } } as never);
                   }
                 }}
                 size="sm"
@@ -684,7 +684,7 @@ export default function PlanRoute() {
           onPress={() => {
             setActionsVisible(false);
             if (activePlan && activePlan.source !== 'system') {
-              router.push({ pathname: '/plan/create', params: { editPlanId: activePlan.id } } as never);
+              router.push({ pathname: '/plan/edit/[planId]', params: { planId: activePlan.id } } as never);
             }
           }}
         />
@@ -809,7 +809,7 @@ export default function PlanRoute() {
                       disabled={plan.source === 'system'}
                       onPress={() => {
                         setManageVisible(false);
-                        router.push({ pathname: '/plan/create', params: { editPlanId: plan.id } } as never);
+                        router.push({ pathname: '/plan/edit/[planId]', params: { planId: plan.id } } as never);
                       }}
                       size="sm"
                       variant="secondary"

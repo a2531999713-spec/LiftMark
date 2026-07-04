@@ -3,6 +3,8 @@ import type { GroupMember } from '@/domain/member/member.types';
 
 export type HistorySetEntry = {
   sessionId: string;
+  setId?: string;
+  setNumber?: number;
   exerciseId: string;
   memberId: string;
   date: string;

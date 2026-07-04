@@ -153,12 +153,33 @@ export type WorkoutSummary = {
   totalSets: number;
 };
 
+export type WorkoutMemberContribution = {
+  completedSets: number;
+  memberId: ID;
+  sessionCount: number;
+  totalSets: number;
+  volume: number;
+};
+
+export type WorkoutSessionAggregation = {
+  completedSets: number;
+  memberContributions: WorkoutMemberContribution[];
+  participantCount: number;
+  sessionId: ID;
+  totalSets: number;
+  totalVolume: number;
+};
+
 export type ListSessionsInput = {
   groupId?: ID;
   memberId?: ID;
   fromDate?: string;
   toDate?: string;
   limit?: number;
+};
+
+export type ListHistorySessionsByScopeInput = ListSessionsInput & {
+  scope: 'personal' | 'group';
 };
 
 export type ListOpenWorkoutSessionsForDateInput = {

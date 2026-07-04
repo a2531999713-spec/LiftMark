@@ -5,9 +5,11 @@ import type {
   CreateSessionFromTodayPlanInput,
   CreateManualSessionInput,
   ListOpenWorkoutSessionsForDateInput,
+  ListHistorySessionsByScopeInput,
   ListSessionsInput,
   SaveWorkoutSetInput,
   UpdateWorkoutSessionInput,
+  WorkoutSessionAggregation,
   WorkoutSession,
   WorkoutSessionDetail,
   WorkoutSet,
@@ -26,11 +28,14 @@ export interface WorkoutRepository {
   updateExerciseRecordExercise(recordId: ID, exerciseId: ID, notes?: string): Promise<void>;
   saveSet(input: SaveWorkoutSetInput): Promise<WorkoutSet>;
   deleteSet(setId: ID): Promise<void>;
+  deleteMemberSet(setId: ID, memberId: ID): Promise<void>;
   deleteExerciseRecord(recordId: ID): Promise<void>;
   deleteSession(sessionId: ID): Promise<void>;
   deleteMemberSetsInSession(sessionId: ID, memberId: ID): Promise<void>;
   deleteSessionCascade(sessionId: ID): Promise<void>;
   cleanupEmptyExerciseRecords(sessionId: ID): Promise<void>;
+  getSessionAggregation(sessionId: ID): Promise<WorkoutSessionAggregation>;
   finishSession(sessionId: ID): Promise<WorkoutSummary>;
+  listHistorySessionsByScope(input: ListHistorySessionsByScopeInput): Promise<WorkoutSession[]>;
   listSessions(input: ListSessionsInput): Promise<WorkoutSession[]>;
 }
