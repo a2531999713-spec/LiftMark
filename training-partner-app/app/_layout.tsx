@@ -35,8 +35,9 @@ export default function RootLayout() {
     if (authStatus === 'checking') return;
 
     const isLoginRoute = segments[0] === 'account' && segments[1] === 'login';
+    const rootSegment = segments[0] as string | undefined;
     const publicRoutes = ['terms', 'privacy', 'about'];
-    const isPublicRoute = publicRoutes.includes(segments[0] as string);
+    const isPublicRoute = publicRoutes.includes(rootSegment ?? '') || rootSegment === 'legal';
 
     if (authStatus === 'unauthenticated' && !isLoginRoute && !isPublicRoute) {
       router.replace('/account/login' as never);
@@ -84,7 +85,10 @@ export default function RootLayout() {
       <Stack.Screen name="account/settings" options={{ headerShown: false }} />
       <Stack.Screen name="account/security" options={{ headerShown: false }} />
       <Stack.Screen name="profile/avatar" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/index" options={{ headerShown: false }} />
       <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/nickname" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/account" options={{ headerShown: false }} />
       <Stack.Screen name="profile/body-metrics" options={{ headerShown: false }} />
       <Stack.Screen name="profile/training-identity" options={{ title: '' }} />
       <Stack.Screen name="profile/groups" options={{ title: '' }} />
@@ -93,6 +97,14 @@ export default function RootLayout() {
       <Stack.Screen name="profile/privacy" options={{ title: '' }} />
       <Stack.Screen name="profile/sync" options={{ title: '' }} />
       <Stack.Screen name="profile/membership" options={{ headerShown: false }} />
+      <Stack.Screen name="groups/switch" options={{ headerShown: false }} />
+      <Stack.Screen name="groups/manage" options={{ title: '管理小组与成员' }} />
+      <Stack.Screen name="sync/index" options={{ title: '' }} />
+      <Stack.Screen name="backup/index" options={{ headerShown: false }} />
+      <Stack.Screen name="preferences/index" options={{ title: '' }} />
+      <Stack.Screen name="legal/privacy" options={{ headerShown: false }} />
+      <Stack.Screen name="legal/terms" options={{ headerShown: false }} />
+      <Stack.Screen name="feedback" options={{ headerShown: false }} />
       <Stack.Screen name="settings/members" options={{ title: '' }} />
       <Stack.Screen name="settings/member-units" options={{ title: '' }} />
       <Stack.Screen name="activation" options={{ headerShown: false }} />

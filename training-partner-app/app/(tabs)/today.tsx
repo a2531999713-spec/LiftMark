@@ -3,15 +3,24 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  ImageBackground,
+  Alert,
   Pressable,
   StyleSheet,
   View,
 } from 'react-native';
 
 import { liftmarkImages } from '@/assets/images';
+import { AccountMenuSheet } from '@/components/account';
 import { AuthGateSheets } from '@/components/auth';
 import { Avatar } from '@/components/avatar';
+import {
+  CurrentGroupStartCard,
+  HomeHeader,
+  PlanProgressCard,
+  TodayFocusList,
+  TodayTrainingHero,
+  type TodayFocusItem,
+} from '@/components/home';
 import { AppButton, AppCard, AppModalSheet, AppText, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
@@ -35,6 +44,7 @@ import type {
   WorkoutSessionDetail,
 } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { getAccountProfileCache, getAvatarDisplay, type AccountProfileCache } from '@/services/avatar';
 import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
@@ -44,11 +54,6 @@ import { colors, radius, shadows, spacing } from '@/theme';
 type NoticeState = {
   message: string;
   title: string;
-};
-
-type SuggestedWeightDisplay = {
-  hint: string;
-  value: string;
 };
 
 type WeeklyOverview = {
@@ -62,6 +67,8 @@ type FocusExercise = {
   exercise: Exercise | null;
   planExercise: PlanExercise;
 };
+
+type LastPerformanceMap = Record<string, string>;
 
 type WorkoutRecordScope = 'solo_local' | 'group_local';
 
@@ -158,9 +165,23 @@ function getGreetingByHour(): string {
   return '晚上好';
 }
 
-function formatGreeting(member: GroupMember | null): string {
-  const greeting = getGreetingByHour();
-  return member ? `${greeting}，${member.displayName} 👋` : `${greeting} 👋`;
+function maskPhone(phone?: string) {
+  if (!phone) return undefined;
+  if (phone.length < 7) return phone;
+  return `${phone.slice(0, 3)} **** ${phone.slice(-4)}`;
+}
+
+function getMembershipLabel(tier: ReturnType<typeof useAuthStore.getState>['membershipTier']) {
+  if (tier === 'lifetime') return '永久会员';
+  if (tier === 'pro') return '高级会员';
+  return '免费版';
+}
+
+function getSyncLabel(authStatus: ReturnType<typeof useAuthStore.getState>['authStatus']) {
+  if (authStatus === 'authenticated') return '可手动同步';
+  if (authStatus === 'offline_authenticated') return '本机保存';
+  if (authStatus === 'unauthenticated') return '未登录';
+  return '检查中';
 }
 
 function formatPrescription(exercise: PlanExercise): string {
@@ -181,13 +202,6 @@ function formatPrescription(exercise: PlanExercise): string {
 
 function formatKg(value: number): string {
   return `${Math.round(value).toLocaleString('zh-CN')} kg`;
-}
-
-function formatDuration(totalSeconds: number): string {
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return [hours, minutes, seconds].map((part) => `${part}`.padStart(2, '0')).join(':');
 }
 
 function getSessionDurationSeconds(detail: WorkoutSessionDetail): number {
@@ -234,6 +248,96 @@ function summarizeWeeklyOverview(
   };
 }
 
+function summarizeLastPerformance(
+  details: WorkoutSessionDetail[],
+  memberId?: string,
+): LastPerformanceMap {
+  if (!memberId) {
+    return {};
+  }
+
+  const result: LastPerformanceMap = {};
+  const orderedDetails = details
+    .slice()
+    .sort((left, right) => right.session.date.localeCompare(left.session.date));
+
+  for (const detail of orderedDetails) {
+    for (const exercise of detail.exercises) {
+      if (result[exercise.exerciseId]) {
+        continue;
+      }
+      const completedSets = detail.sets
+        .filter(
+          (set) =>
+            set.memberId === memberId &&
+            set.exerciseRecordId === exercise.id &&
+            set.completed &&
+            !set.skipped,
+        )
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+      const latestSet = completedSets[0];
+      const weight = latestSet?.actualWeight ?? latestSet?.plannedWeight;
+      const reps = latestSet?.actualReps ?? latestSet?.plannedReps;
+      if (typeof weight === 'number' && typeof reps === 'number') {
+        result[exercise.exerciseId] = `上次 ${weight}kg × ${reps}次`;
+      }
+    }
+  }
+
+  return result;
+}
+
+function estimatePlanVolume(
+  planExercises: PlanExercise[],
+  exerciseMap: Record<string, Exercise>,
+  profile: MemberProfile | null,
+): string {
+  if (!profile) {
+    return '--';
+  }
+
+  const total = planExercises.reduce((sum, planExercise) => {
+    const sets = planExercise.sets ?? 0;
+    const reps = planExercise.reps ?? planExercise.repMax ?? planExercise.repMin ?? 0;
+    if (sets <= 0 || reps <= 0) {
+      return sum;
+    }
+
+    const exercise = exerciseMap[planExercise.exerciseId] ?? null;
+    const result = calculateSuggestedWeight({
+      referenceLift: planExercise.referenceLift,
+      percent1RM: planExercise.percent1RM,
+      repMax: planExercise.repMax,
+      repMin: planExercise.repMin,
+      reps: planExercise.reps,
+      equipment: exercise?.equipment ?? 'other',
+      profile,
+    });
+
+    if (result.status !== 'ready') {
+      return sum;
+    }
+
+    return sum + result.weight * sets * reps;
+  }, 0);
+
+  return total > 0 ? formatKg(total) : '--';
+}
+
+function estimateWorkoutMinutes(planExercises: PlanExercise[]) {
+  if (planExercises.length === 0) {
+    return undefined;
+  }
+
+  const seconds = planExercises.reduce((sum, exercise) => {
+    const sets = exercise.sets ?? 3;
+    const rest = exercise.restSeconds ?? 90;
+    return sum + sets * (rest + 45);
+  }, 8 * 60);
+
+  return Math.max(20, Math.round(seconds / 60 / 5) * 5);
+}
+
 function formatPhaseLabel(phase: PlanPhase | null, phaseType?: PhaseType): string {
   if (phase?.name) {
     return phase.name;
@@ -248,57 +352,6 @@ function formatPhaseLabel(phase: PlanPhase | null, phaseType?: PhaseType): strin
   };
 
   return labels[phaseType ?? 'custom'];
-}
-
-function getDaysUntilNextDeload(currentWeek: number, phases: PlanPhase[]): number | null {
-  const nextDeload = phases
-    .filter((phase) => phase.type === 'deload' && phase.startWeek > currentWeek)
-    .sort((left, right) => left.startWeek - right.startWeek)[0];
-
-  if (!nextDeload) {
-    return null;
-  }
-
-  return Math.max(1, (nextDeload.startWeek - currentWeek) * 7);
-}
-
-function formatSuggestedWeight(
-  planExercise: PlanExercise | null,
-  exercise: Exercise | null,
-  profile: MemberProfile | null,
-): SuggestedWeightDisplay {
-  if (!profile) {
-    return { value: '未设置资料', hint: '补充 1RM 后自动计算' };
-  }
-
-  if (!planExercise) {
-    return { value: '参考上次重量', hint: '训练时可手动调整' };
-  }
-
-  const result = calculateSuggestedWeight({
-    referenceLift: planExercise.referenceLift,
-    percent1RM: planExercise.percent1RM,
-    repMax: planExercise.repMax,
-    repMin: planExercise.repMin,
-    reps: planExercise.reps,
-    equipment: exercise?.equipment ?? 'other',
-    profile,
-  });
-
-  if (result.status === 'ready') {
-    return {
-      value: `${result.weight} kg`,
-      hint: result.percent1RM
-        ? `按 ${Math.round(result.percent1RM * 100)}% 估算`
-        : '按计划次数估算',
-    };
-  }
-
-  if (result.status === 'missing_1rm') {
-    return { value: '缺少 1RM', hint: '去成员资料补充参考主项' };
-  }
-
-  return { value: '参考上次重量', hint: '孤立或器械动作按历史调整' };
 }
 
 function getPlanWeekOptions(days: PlanDay[], fallbackWeek: number): number[] {
@@ -445,6 +498,9 @@ export default function TodayRoute() {
   const todayWeekday = useMemo(() => getTodayWeekday(), []);
   const { guardFeature, sheets } = useAuthGate();
   const authStatus = useAuthStore((state) => state.authStatus);
+  const membershipTier = useAuthStore((state) => state.membershipTier);
+  const logout = useAuthStore((state) => state.logout);
+  const user = useAuthStore((state) => state.user);
   const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [recoveryMode, setRecoveryMode] = useState<RecoveryMode>('good');
@@ -456,8 +512,11 @@ export default function TodayRoute() {
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
   const [group, setGroup] = useState<Group | null>(null);
+  const [accountProfile, setAccountProfile] = useState<AccountProfileCache | null>(null);
+  const [lastPerformanceByExerciseId, setLastPerformanceByExerciseId] = useState<LastPerformanceMap>({});
   const [weeklyOverview, setWeeklyOverview] = useState<WeeklyOverview>(emptyWeeklyOverview);
   const [isAdviceSheetVisible, setAdviceSheetVisible] = useState(false);
+  const [isAccountMenuVisible, setAccountMenuVisible] = useState(false);
   const [isDaySheetVisible, setDaySheetVisible] = useState(false);
   const [isScopeSheetVisible, setScopeSheetVisible] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
@@ -479,6 +538,7 @@ export default function TodayRoute() {
 
     try {
       await initializeLocalDatabase();
+      const latestUser = useAuthStore.getState().user;
       const allGroups = await repositories.groupRepository.listGroups();
       const nextGroup = allGroups.find((item) => item.id === selectedGroupId) ?? allGroups[0] ?? null;
       if (!nextGroup) {
@@ -487,6 +547,8 @@ export default function TodayRoute() {
         setTodayPlan(null);
         setMembers([]);
         setProfiles({});
+        setAccountProfile(latestUser ? await getAccountProfileCache(latestUser.id) : null);
+        setLastPerformanceByExerciseId({});
         setPlanPhases([]);
         setPlanDays([]);
         setSelectedWeek(null);
@@ -513,13 +575,18 @@ export default function TodayRoute() {
         ]),
       );
       const nextProfilesByMemberId = Object.fromEntries(nextProfiles);
-      const currentMember = nextMembers[0] ?? null;
-      const [weekSessions, nextPhases, nextPlanDays] = await Promise.all([
+      const currentMember = nextMembers.find((member) => member.userId === latestUser?.id) ?? nextMembers[0] ?? null;
+      const [weekSessions, recentSessions, nextPhases, nextPlanDays, nextAccountProfile] = await Promise.all([
         repositories.workoutRepository.listSessions({
           fromDate: getLocalDateString(getWeekStart()),
           groupId: nextGroup.id,
           memberId: currentMember?.id,
           toDate: getLocalDateString(getWeekEnd()),
+          limit: 80,
+        }),
+        repositories.workoutRepository.listSessions({
+          groupId: nextGroup.id,
+          memberId: currentMember?.id,
           limit: 80,
         }),
         nextActivePlan
@@ -528,9 +595,13 @@ export default function TodayRoute() {
         nextActivePlan
           ? repositories.planRepository.listPlanDays(nextActivePlan.id)
           : Promise.resolve([]),
+        latestUser ? getAccountProfileCache(latestUser.id) : Promise.resolve(null),
       ]);
       const weekDetails = await Promise.all(
         weekSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)),
+      );
+      const recentDetails = await Promise.all(
+        recentSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)),
       );
 
       let result: TodayPlanResult | null = null;
@@ -602,6 +673,8 @@ export default function TodayRoute() {
       setSelectedWeekday(nextSelectedWeekday);
       setMembers(nextMembers);
       setProfiles(nextProfilesByMemberId);
+      setAccountProfile(nextAccountProfile);
+      setLastPerformanceByExerciseId(summarizeLastPerformance(recentDetails, currentMember?.id));
       setPlanPhases(nextPhases);
       setExerciseMap(nextExerciseMap);
       setWeeklyOverview(summarizeWeeklyOverview(weekDetails, currentMember?.id));
@@ -936,7 +1009,7 @@ export default function TodayRoute() {
     [members],
   );
 
-  const currentMember = members[0] ?? null;
+  const currentMember = members.find((member) => member.userId === user?.id) ?? members[0] ?? null;
   const currentProfile = currentMember ? (profiles[currentMember.id] ?? null) : null;
   const planExercises = useMemo(() => todayPlan?.exercises ?? [], [todayPlan]);
   const focusExercises = useMemo(
@@ -944,10 +1017,6 @@ export default function TodayRoute() {
     [exerciseMap, planExercises],
   );
   const mainFocus = focusExercises[0]?.exercise?.name ?? todayPlan?.day?.focus ?? null;
-  const firstPlanExercise = focusExercises[0]?.planExercise ?? null;
-  const firstExercise = focusExercises[0]?.exercise ?? null;
-  const suggestedWeight = formatSuggestedWeight(firstPlanExercise, firstExercise, currentProfile);
-  const activePlanWeeks = activePlan?.durationWeeks ?? 0;
   const weeklyTarget = activePlan?.frequencyPerWeek ?? 0;
   const weeklyProgressPercent =
     weeklyTarget > 0
@@ -958,13 +1027,40 @@ export default function TodayRoute() {
       ? `${Math.min(weeklyOverview.sessionCount, weeklyTarget)} / ${weeklyTarget}`
       : `${weeklyOverview.sessionCount} / -`;
   const selectedWeekValue = selectedWeek ?? group?.currentWeek ?? 1;
-  const nextDeloadDays = group ? getDaysUntilNextDeload(selectedWeekValue, planPhases) : null;
   const phaseLabel = formatPhaseLabel(todayPlan?.phase ?? null, group?.currentPhaseType);
   const selectedPlanDay = todayPlan?.day ?? null;
   const dayLabel = selectedPlanDay
     ? `第 ${selectedPlanDay.week} 周 · ${formatDayChoiceTitle(selectedPlanDay)}`
     : `第 ${selectedWeekValue} 周`;
+  const planSubtitle = selectedPlanDay
+    ? `${dayLabel} · ${selectedPlanDay.focus || phaseLabel}`
+    : `${dayLabel} · ${phaseLabel}`;
   const planWeekOptions = getPlanWeekOptions(planDays, selectedWeekValue);
+  const displayName =
+    accountProfile?.displayName?.trim() ||
+    user?.displayName?.trim() ||
+    currentMember?.displayName ||
+    '练刻用户';
+  const avatarDisplay = getAvatarDisplay({
+    accountProfile,
+    fallbackLocalUri: currentProfile?.avatarLocalUri,
+    fallbackThumbUrl: currentProfile?.avatarThumbUrl,
+    fallbackUrl: currentProfile?.avatarUrl ?? currentMember?.avatarUrl,
+    user,
+  });
+  const phoneMasked = accountProfile?.phoneMasked ?? maskPhone(user?.phone);
+  const liftmarkId = accountProfile?.liftmarkId ?? user?.liftmarkId;
+  const membershipLabel = getMembershipLabel(membershipTier);
+  const syncLabel = getSyncLabel(authStatus);
+  const estimatedVolume = estimatePlanVolume(planExercises, exerciseMap, currentProfile);
+  const estimatedMinutes = estimateWorkoutMinutes(planExercises);
+  const focusItems: TodayFocusItem[] = focusExercises.map(({ exercise, planExercise }) => ({
+    id: planExercise.id,
+    lastPerformance: lastPerformanceByExerciseId[planExercise.exerciseId] ?? '暂无上次记录',
+    name: exercise?.name ?? '未知动作',
+    prescription: formatPrescription(planExercise),
+    priority: planExercise.priority,
+  }));
   const isRestState = Boolean(
     todayPlan?.isRestDay ||
     recoveryMode === 'very_bad' ||
@@ -978,6 +1074,24 @@ export default function TodayRoute() {
     !todayPlan.isRestDay &&
     planExercises.length > 0,
   );
+  const navigateFromAccountMenu = useCallback((next: () => void) => {
+    setAccountMenuVisible(false);
+    next();
+  }, []);
+  const confirmLogout = useCallback(() => {
+    setAccountMenuVisible(false);
+    Alert.alert('确认退出登录？', '退出后将无法使用账号相关功能，但本机训练记录不会被删除。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '退出登录',
+        style: 'destructive',
+        onPress: () => {
+          void logout().then(() => router.replace('/account/login' as never));
+        },
+      },
+    ]);
+  }, [logout]);
+
   return (
     <Screen contentStyle={styles.screenContent}>
       {isLoading ? (
@@ -989,10 +1103,14 @@ export default function TodayRoute() {
       {!isLoading ? (
         <>
           <HomeHeader
-            currentMember={currentMember}
-            onNotificationPress={() =>
-              setNotice({ title: '功能开发中', message: '该功能正在开发中，后续版本开放。' })
-            }
+            avatarLocalUri={avatarDisplay.avatarLocalUri}
+            avatarThumbUrl={avatarDisplay.avatarThumbUrl}
+            avatarUrl={avatarDisplay.avatarUrl}
+            dateLabel={formatTodayDate()}
+            displayName={displayName}
+            greeting={getGreetingByHour()}
+            onAvatarPress={() => setAccountMenuVisible(true)}
+            showStatusDot={authStatus === 'authenticated'}
           />
 
           {authStatus === 'offline_authenticated' ? (
@@ -1052,13 +1170,12 @@ export default function TodayRoute() {
 
           {!error && activePlan && members.length > 0 ? (
             <>
-              <PlanQuickSwitchCard
-                dayLabel={dayLabel}
+              <PlanProgressCard
                 onPress={() => setDaySheetVisible(true)}
-                phaseLabel={phaseLabel}
                 planName={activePlan.name}
                 progressLabel={weeklyProgressLabel}
                 progressPercent={weeklyProgressPercent}
+                subtitle={planSubtitle}
               />
 
               {isRestState ? (
@@ -1079,50 +1196,71 @@ export default function TodayRoute() {
               ) : null}
 
               {!isRestState ? (
-                <TodaySummaryCard
-                  activePlanWeeks={activePlanWeeks}
-                  actionFilter={recoveryOptions.find((option) => option.mode === recoveryMode) ?? recoveryOptions[0]}
-                  dayTitle={selectedPlanDay?.title ?? '今日训练'}
-                  mainFocus={mainFocus ?? '暂无动作'}
-                  nextDeloadDays={nextDeloadDays}
-                  onFilterPress={() => setAdviceSheetVisible(true)}
-                  phaseLabel={phaseLabel}
-                  selectedWeek={selectedWeekValue}
-                  suggestedWeight={suggestedWeight}
+                <TodayTrainingHero
+                  estimatedMinutes={estimatedMinutes}
+                  imageSource={liftmarkImages.trainingHero}
+                  metrics={[
+                    { label: '本次训练', value: `${planExercises.length} 个动作` },
+                    { label: '预计容量', value: estimatedVolume },
+                    { label: '历史最佳', value: '暂无历史' },
+                  ]}
+                  subtitle={mainFocus ?? '暂无动作'}
+                  title={selectedPlanDay?.title ?? todayPlan?.day?.focus ?? '今日训练'}
                 />
               ) : null}
 
               {!isRestState ? (
-                <StartWorkoutCard
+                <CurrentGroupStartCard
+                  buttonLabel={members.length > 0 ? '选择成员并开始' : '添加成员并开始'}
+                  currentMemberId={currentMember?.id}
                   disabled={!canStartWorkout || isStarting}
+                  groupName={group?.name ?? '默认训练小组'}
                   isStarting={isStarting}
-                  onPress={() => void openWorkoutScope()}
+                  members={members}
+                  onStartPress={() => void openWorkoutScope()}
+                  onSwitchGroupPress={() => router.push('/groups/switch' as never)}
+                  profiles={profiles}
                 />
               ) : null}
 
               {!isRestState ? (
                 <TodayFocusList
-                  items={focusExercises}
+                  items={focusItems}
+                  onItemPress={() => router.push('/(tabs)/plan')}
                   onOpenAll={() => router.push('/(tabs)/plan')}
                 />
               ) : null}
-
-              <PartnerStrip
-                currentMemberId={currentMember?.id}
-                members={members}
-                onMemberPress={(member) =>
-                  router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } })
-                }
-                onOpenAll={() => router.push('/settings/members' as never)}
-                profiles={profiles}
-              />
-
-              <WeeklyOverviewGrid overview={weeklyOverview} />
 
             </>
           ) : null}
         </>
       ) : null}
+
+      <AccountMenuSheet
+        avatarLocalUri={avatarDisplay.avatarLocalUri}
+        avatarThumbUrl={avatarDisplay.avatarThumbUrl}
+        avatarUrl={avatarDisplay.avatarUrl}
+        displayName={displayName}
+        liftmarkId={liftmarkId}
+        membershipLabel={membershipLabel}
+        onAboutPress={() => navigateFromAccountMenu(() => router.push('/about' as never))}
+        onBackupPress={() => navigateFromAccountMenu(() => router.push('/backup' as never))}
+        onClose={() => setAccountMenuVisible(false)}
+        onFeedbackPress={() => navigateFromAccountMenu(() => router.push('/feedback' as never))}
+        onLogoutPress={confirmLogout}
+        onManageGroupPress={() => navigateFromAccountMenu(() => router.push('/groups/manage' as never))}
+        onMembershipPress={() => navigateFromAccountMenu(() => router.push('/profile/membership' as never))}
+        onPlanPress={() => navigateFromAccountMenu(() => router.push('/(tabs)/plan'))}
+        onPreferencesPress={() => navigateFromAccountMenu(() => router.push('/preferences' as never))}
+        onPrivacyPress={() => navigateFromAccountMenu(() => router.push('/legal/privacy' as never))}
+        onProfilePress={() => navigateFromAccountMenu(() => router.push('/profile' as never))}
+        onSwitchGroupPress={() => navigateFromAccountMenu(() => router.push('/groups/switch' as never))}
+        onSyncPress={() => navigateFromAccountMenu(() => router.push('/sync' as never))}
+        onTermsPress={() => navigateFromAccountMenu(() => router.push('/legal/terms' as never))}
+        phoneMasked={phoneMasked}
+        syncLabel={syncLabel}
+        visible={isAccountMenuVisible}
+      />
 
       <PlanDayPickerSheet
         days={planDays}
@@ -1271,375 +1409,6 @@ export default function TodayRoute() {
 
       <AuthGateSheets {...sheets} />
     </Screen>
-  );
-}
-
-function HomeHeader({
-  currentMember,
-  onNotificationPress,
-}: {
-  currentMember: GroupMember | null;
-  onNotificationPress: () => void;
-}) {
-  return (
-    <View style={styles.header}>
-      <View style={styles.headerText}>
-        <AppText style={styles.headerTitle} variant="title" weight="900">
-          {formatGreeting(currentMember)}
-        </AppText>
-        <AppText tone="muted" variant="bodySmall">
-          {formatTodayDate()}
-        </AppText>
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        onPress={onNotificationPress}
-        style={styles.notificationButton}
-      >
-        <Ionicons color={colors.textStrong} name="notifications-outline" size={24} />
-        <View style={styles.notificationDot} />
-      </Pressable>
-    </View>
-  );
-}
-
-function PlanQuickSwitchCard({
-  dayLabel,
-  onPress,
-  phaseLabel,
-  planName,
-  progressLabel,
-  progressPercent,
-}: {
-  dayLabel: string;
-  onPress: () => void;
-  phaseLabel: string;
-  planName: string;
-  progressLabel: string;
-  progressPercent: number;
-}) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.planSwitchCard, pressed && styles.pressed]}>
-      <View style={styles.planSwitchMain}>
-        <View style={styles.planSwitchIcon}>
-          <Ionicons color={colors.primary} name="calendar-outline" size={20} />
-        </View>
-        <View style={styles.planSwitchText}>
-          <AppText numberOfLines={1} variant="bodySmall" weight="900">
-            {planName}
-          </AppText>
-          <AppText numberOfLines={1} tone="muted" variant="caption">
-            {dayLabel} · {phaseLabel}
-          </AppText>
-        </View>
-        <Ionicons color={colors.textMuted} name="chevron-down" size={18} />
-      </View>
-      <View style={styles.planProgressRow}>
-        <AppText tone="muted" variant="caption">
-          本周进度 {progressLabel}
-        </AppText>
-        <View style={styles.planProgressTrack}>
-          <View style={[styles.planProgressFill, { width: `${progressPercent}%` }]} />
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
-function TodaySummaryCard({
-  activePlanWeeks,
-  actionFilter,
-  dayTitle,
-  mainFocus,
-  nextDeloadDays,
-  onFilterPress,
-  phaseLabel,
-  selectedWeek,
-  suggestedWeight,
-}: {
-  activePlanWeeks: number;
-  actionFilter: AdviceConfig;
-  dayTitle: string;
-  mainFocus: string;
-  nextDeloadDays: number | null;
-  onFilterPress: () => void;
-  phaseLabel: string;
-  selectedWeek: number;
-  suggestedWeight: SuggestedWeightDisplay;
-}) {
-  return (
-    <View style={styles.todaySummary}>
-      <ImageBackground
-        imageStyle={styles.summaryImage}
-        resizeMode="cover"
-        source={liftmarkImages.trainingHero}
-        style={styles.summaryImageBackground}
-      >
-        <View style={styles.summaryScrim} />
-        <View style={styles.summaryContent}>
-          <View style={styles.summaryTopRow}>
-            <View style={styles.phaseBadge}>
-              <Ionicons color={colors.surface} name="flash" size={13} />
-              <AppText tone="inverse" variant="caption" weight="900">
-                {phaseLabel}
-              </AppText>
-            </View>
-            <Pressable accessibilityRole="button" onPress={onFilterPress} style={styles.summaryFilterChip}>
-              <Ionicons color={colors.surface} name={actionFilter.icon} size={14} />
-              <AppText tone="inverse" variant="caption" weight="900">
-                {actionFilter.status}
-              </AppText>
-              <Ionicons color={colors.surface} name="chevron-down" size={13} />
-            </Pressable>
-          </View>
-          <AppText numberOfLines={1} style={styles.summaryTitle} variant="title" weight="900">
-            {dayTitle}
-          </AppText>
-          <AppText numberOfLines={1} style={styles.summarySubtitle} variant="bodySmall" weight="700">
-            {mainFocus}
-          </AppText>
-        </View>
-      </ImageBackground>
-      <View style={styles.metricRow}>
-        <SmallMetricCard helper={suggestedWeight.hint} label="建议重量" value={suggestedWeight.value} />
-        <SmallMetricCard
-          label={nextDeloadDays ? '距离下次减载' : '当前周数'}
-          value={nextDeloadDays ? `${nextDeloadDays} 天` : `第 ${selectedWeek} / ${activePlanWeeks || '-'} 周`}
-        />
-      </View>
-    </View>
-  );
-}
-
-function StartWorkoutCard({
-  disabled,
-  isStarting,
-  onPress,
-}: {
-  disabled: boolean;
-  isStarting: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <View style={styles.startSection}>
-      <View style={styles.startCopy}>
-        <AppText variant="subtitle" weight="900">
-          准备开始
-        </AppText>
-        <AppText tone="muted" variant="caption">
-          开始前选择本次记录给谁，避免把未参与成员写入训练记录。
-        </AppText>
-      </View>
-      <AppButton disabled={disabled} icon="play" loading={isStarting} onPress={onPress} size="lg">
-        选择成员并开始
-      </AppButton>
-    </View>
-  );
-}
-
-function SmallMetricCard({
-  helper,
-  label,
-  value,
-}: {
-  helper?: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <AppCard style={styles.metricCard}>
-      <AppText tone="muted" variant="caption">
-        {label}
-      </AppText>
-      <AppText numberOfLines={1} variant="title" weight="900">
-        {value}
-      </AppText>
-      {helper ? (
-        <AppText numberOfLines={1} tone="subtle" variant="caption">
-          {helper}
-        </AppText>
-      ) : null}
-    </AppCard>
-  );
-}
-
-function TodayFocusList({ items, onOpenAll }: { items: FocusExercise[]; onOpenAll: () => void }) {
-  return (
-    <AppCard style={styles.focusCard}>
-      <SectionTop actionLabel="查看全部" onActionPress={onOpenAll} title="今日重点" />
-      {items.length === 0 ? (
-        <AppText tone="muted" variant="bodySmall">
-          今日没有需要执行的重点动作。
-        </AppText>
-      ) : (
-        <View style={styles.focusRows}>
-          {items.map(({ exercise, planExercise }) => (
-            <Pressable
-              accessibilityRole="button"
-              key={planExercise.id}
-              onPress={onOpenAll}
-              style={({ pressed }) => [styles.focusRow, pressed && styles.focusRowPressed]}
-            >
-              <PriorityBadge priority={planExercise.priority} />
-              <View style={styles.focusText}>
-                <AppText numberOfLines={1} variant="bodySmall" weight="900">
-                  {exercise?.name ?? '未知动作'}
-                </AppText>
-                <AppText tone="muted" variant="caption">
-                  {formatPrescription(planExercise)}
-                </AppText>
-              </View>
-              <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
-            </Pressable>
-          ))}
-        </View>
-      )}
-      <View style={styles.priorityLegend}>
-        <LegendItem priority="A" text="为高优先级" />
-        <LegendItem priority="B" text="为中优先级" />
-        <LegendItem priority="C" text="为可选" />
-      </View>
-    </AppCard>
-  );
-}
-
-function PriorityBadge({ priority }: { priority: ExercisePriority }) {
-  const badgeStyle =
-    priority === 'A' ? styles.priorityA : priority === 'B' ? styles.priorityB : styles.priorityC;
-  const textStyle =
-    priority === 'A'
-      ? styles.priorityTextA
-      : priority === 'B'
-        ? styles.priorityTextB
-        : styles.priorityTextC;
-
-  return (
-    <View style={[styles.priorityBadge, badgeStyle]}>
-      <AppText style={textStyle} variant="subtitle" weight="900">
-        {priority}
-      </AppText>
-    </View>
-  );
-}
-
-function LegendItem({ priority, text }: { priority: ExercisePriority; text: string }) {
-  const textStyle =
-    priority === 'A'
-      ? styles.priorityTextA
-      : priority === 'B'
-        ? styles.priorityTextB
-        : styles.priorityTextC;
-
-  return (
-    <View style={styles.legendItem}>
-      <AppText style={textStyle} variant="bodySmall" weight="900">
-        {priority}
-      </AppText>
-      <AppText tone="muted" variant="caption">
-        {text}
-      </AppText>
-    </View>
-  );
-}
-
-function PartnerStrip({
-  currentMemberId,
-  members,
-  onMemberPress,
-  onOpenAll,
-  profiles,
-}: {
-  currentMemberId?: string;
-  members: GroupMember[];
-  onMemberPress: (member: GroupMember) => void;
-  onOpenAll: () => void;
-  profiles: Record<string, MemberProfile | null>;
-}) {
-  const visibleMembers = members.slice(0, 4);
-  const overflowCount = Math.max(0, members.length - visibleMembers.length);
-
-  return (
-    <View style={styles.partnerSection}>
-      <SectionTop
-        actionLabel="查看全部"
-        onActionPress={onOpenAll}
-        title={`当前搭子（${members.length}）`}
-      />
-      <View style={styles.partnerRow}>
-        {visibleMembers.map((member) => {
-          const active = member.id === currentMemberId;
-          return (
-            <Pressable
-              accessibilityRole="button"
-              key={member.id}
-              onPress={() => onMemberPress(member)}
-              style={({ pressed }) => [styles.partnerItem, pressed && styles.pressed]}
-            >
-              <View style={active && styles.avatarActiveWrap}>
-                <Avatar
-                  avatarLocalUri={profiles[member.id]?.avatarLocalUri}
-                  avatarThumbUrl={profiles[member.id]?.avatarThumbUrl}
-                  avatarUrl={profiles[member.id]?.avatarUrl ?? member.avatarUrl}
-                  name={member.displayName}
-                  size={52}
-                />
-              </View>
-              <AppText
-                numberOfLines={1}
-                style={active && styles.currentMemberName}
-                variant="caption"
-                weight="900"
-              >
-                {active ? '当前' : member.displayName}
-              </AppText>
-            </Pressable>
-          );
-        })}
-
-        {overflowCount > 0 ? (
-          <Pressable accessibilityRole="button" onPress={onOpenAll} style={styles.partnerItem}>
-            <View style={styles.avatarOverflow}>
-              <AppText variant="bodySmall" weight="900">
-                +{overflowCount}
-              </AppText>
-            </View>
-            <AppText tone="muted" variant="caption">
-              更多
-            </AppText>
-          </Pressable>
-        ) : null}
-
-      </View>
-    </View>
-  );
-}
-
-function WeeklyOverviewGrid({ overview }: { overview: WeeklyOverview }) {
-  return (
-    <View style={styles.weeklySection}>
-      <AppText variant="subtitle" weight="900">
-        本周概览
-      </AppText>
-      <View style={styles.weekGrid}>
-        <WeeklyTile label="我的本周训练次数" value={`${overview.sessionCount} 次`} />
-        <WeeklyTile label="我的完成组数" value={`${overview.completedSets} 组`} />
-        <WeeklyTile label="我的训练总量" value={formatKg(overview.volume)} />
-        <WeeklyTile label="我的训练时长" value={formatDuration(overview.durationSeconds)} />
-      </View>
-    </View>
-  );
-}
-
-function WeeklyTile({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.weekTile}>
-      <AppText numberOfLines={1} tone="muted" variant="caption">
-        {label}
-      </AppText>
-      <AppText numberOfLines={1} variant="title" weight="900">
-        {value}
-      </AppText>
-    </View>
   );
 }
 
@@ -1963,30 +1732,6 @@ function HomeEmptyState({
         </AppButton>
       ) : null}
     </AppCard>
-  );
-}
-
-function SectionTop({
-  actionLabel,
-  onActionPress,
-  title,
-}: {
-  actionLabel: string;
-  onActionPress: () => void;
-  title: string;
-}) {
-  return (
-    <View style={styles.sectionTop}>
-      <AppText variant="subtitle" weight="900">
-        {title}
-      </AppText>
-      <Pressable accessibilityRole="button" onPress={onActionPress} style={styles.sectionAction}>
-        <AppText tone="muted" variant="caption" weight="800">
-          {actionLabel}
-        </AppText>
-        <Ionicons color={colors.textMuted} name="chevron-forward" size={14} />
-      </Pressable>
-    </View>
   );
 }
 

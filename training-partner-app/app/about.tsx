@@ -1,19 +1,12 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
-import { useCallback } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
-import { AppText, Screen, SecondaryPageHeader } from '@/components/ui';
+import { AppText, Screen, SecondaryPageHeader, SettingsRow } from '@/components/ui';
 import { ProfileMenuItem, ProfileSection } from '@/components/profile';
 import { colors, radius, spacing } from '@/theme';
 
-const CONTACT_EMAIL = 'a2531999713@163.com';
-
 export default function AboutRoute() {
-  const handleEmail = useCallback(() => {
-    Linking.openURL(`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('练刻 LiftMark - 意见反馈')}`);
-  }, []);
-
   return (
     <Screen contentStyle={styles.screen}>
       <SecondaryPageHeader
@@ -33,6 +26,9 @@ export default function AboutRoute() {
 
       <ProfileSection title="关于">
         <View style={styles.aboutBlock}>
+          <SettingsRow label="App 名称" value="练刻 LiftMark" />
+          <SettingsRow label="版本" value={Constants.expoConfig?.version ?? '0.1.0'} />
+          <SettingsRow label="Android package" value="com.liftmark.app" />
           <AppText variant="body" tone="muted" style={styles.aboutText}>
             练刻是一款力量训练计划执行工具。它帮助你运行结构化训练计划，为每位成员保持独立的训练身份，记录训练历史，支持多人协作训练。
           </AppText>
@@ -44,11 +40,10 @@ export default function AboutRoute() {
 
       <ProfileSection title="意见反馈">
         <ProfileMenuItem
-          description="发送邮件反馈问题或建议"
-          icon="mail-outline"
+          description="问题反馈、功能建议和诊断信息"
+          icon="chatbubble-ellipses-outline"
           label="意见反馈"
-          onPress={handleEmail}
-          trailing={CONTACT_EMAIL}
+          onPress={() => router.push('/feedback' as never)}
         />
       </ProfileSection>
 
@@ -57,13 +52,13 @@ export default function AboutRoute() {
           description="查看用户服务协议"
           icon="document-text-outline"
           label="用户协议"
-          onPress={() => router.push('/terms' as never)}
+          onPress={() => router.push('/legal/terms' as never)}
         />
         <ProfileMenuItem
           description="查看隐私保护政策"
           icon="document-lock-outline"
           label="隐私政策"
-          onPress={() => router.push('/privacy' as never)}
+          onPress={() => router.push('/legal/privacy' as never)}
         />
       </ProfileSection>
 

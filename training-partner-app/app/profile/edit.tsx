@@ -7,9 +7,9 @@ import { AppButton, AppCard, AppText, EmptyState, Screen, SecondaryPageHeader } 
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember } from '@/domain/member/member.types';
 import { getAccountProfileCache, upsertAccountProfileCache, type AccountProfileCache } from '@/services/avatar';
+import { updateDisplayNameAcrossLocalProfiles } from '@/services/profileSyncService';
 import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
-import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { colors, radius, spacing, typography } from '@/theme';
 
 export default function ProfileEditRoute() {
@@ -100,26 +100,13 @@ export default function ProfileEditRoute() {
       });
       await updateLocalUser({ displayName: name });
 
-      let updatedMember: GroupMember | null = currentMember;
-      if (currentMember) {
-        updatedMember = await repositories.memberRepository.updateMember(currentMember.id, {
-          displayName: name,
-        });
-        await enqueueSyncCandidate({
-          entityType: 'groupMembers',
-          localId: updatedMember.id,
-          operation: 'update',
-          payload: {
-            displayName: updatedMember.displayName,
-            groupId: updatedMember.groupId,
-            memberType: updatedMember.memberType,
-            role: updatedMember.role,
-            userId: updatedMember.userId,
-          },
-          status: 'pending_update',
-          updatedAt: updatedMember.updatedAt,
-        });
-      }
+      const { updatedMembers } = await updateDisplayNameAcrossLocalProfiles({
+        displayName: name,
+        fallbackGroupId: currentMember?.groupId,
+        fallbackMemberId: currentMember?.id,
+        userId: user.id,
+      });
+      const updatedMember = updatedMembers.find((member) => member.id === currentMember?.id) ?? currentMember;
 
       await loadCurrentUser();
       setAccountProfile(updatedProfile);
@@ -131,7 +118,7 @@ export default function ProfileEditRoute() {
     } finally {
       setIsSaving(false);
     }
-  }, [accountProfile, currentMember, displayName, loadCurrentUser, repositories, updateLocalUser, user]);
+  }, [accountProfile, currentMember, displayName, loadCurrentUser, updateLocalUser, user]);
 
   return (
     <Screen>

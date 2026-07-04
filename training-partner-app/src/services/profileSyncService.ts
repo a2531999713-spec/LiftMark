@@ -1,10 +1,63 @@
-import { getDatabase, initializeLocalDatabase } from '@/data/local';
+import { createLocalRepositories, getDatabase, initializeLocalDatabase } from '@/data/local';
 import { createId } from '@/domain/common/ids';
+import type { GroupMember } from '@/domain/member/member.types';
 import { apiRequest } from '@/services/httpClient';
 import { readStoredSession } from '@/services/auth/tokenStorage';
+import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { resolveAvatarUrl } from '@/utils/avatarUrl';
 
 export type SyncOperationResult = { ok: true; message?: string } | { ok: false; message: string };
+type SyncMemberResult = { id: string; reason?: string; skipped?: boolean; synced?: boolean };
+
+export async function updateDisplayNameAcrossLocalProfiles(input: {
+  displayName: string;
+  fallbackGroupId?: string;
+  fallbackMemberId?: string;
+  userId?: string;
+}): Promise<{ updatedMembers: GroupMember[] }> {
+  await initializeLocalDatabase();
+  const repositories = createLocalRepositories();
+  const groups = await repositories.groupRepository.listGroups();
+  const updatedMembers: GroupMember[] = [];
+
+  for (const group of groups) {
+    const members = await repositories.memberRepository.listMembers(group.id);
+    let targets = input.userId
+      ? members.filter((member) => member.userId === input.userId)
+      : [];
+
+    if (targets.length === 0 && group.id === input.fallbackGroupId && input.fallbackMemberId) {
+      const fallback = members.find((member) => member.id === input.fallbackMemberId);
+      if (fallback) {
+        targets = [fallback];
+      }
+    }
+
+    for (const target of targets) {
+      const updated = await repositories.memberRepository.updateMember(target.id, {
+        displayName: input.displayName,
+      });
+      updatedMembers.push(updated);
+
+      await enqueueSyncCandidate({
+        entityType: 'groupMembers',
+        localId: updated.id,
+        operation: 'update',
+        payload: {
+          displayName: updated.displayName,
+          groupId: updated.groupId,
+          memberType: updated.memberType,
+          role: updated.role,
+          userId: updated.userId,
+        },
+        status: 'pending_update',
+        updatedAt: updated.updatedAt,
+      });
+    }
+  }
+
+  return { updatedMembers };
+}
 
 /**
  * 同步用户头像到服务器
@@ -141,7 +194,7 @@ export async function syncAllLocalGroupsToServer(): Promise<SyncOperationResult>
       );
 
       if (localMembers.length > 0) {
-        const memberResult = await apiRequest<{ results?: Array<{ id: string; reason?: string; skipped?: boolean; synced?: boolean }> }>('/sync/members', {
+        const memberResult = await apiRequest<{ results?: SyncMemberResult[] }>('/sync/members', {
           method: 'POST',
           accessToken: session.accessToken,
           body: {
@@ -203,12 +256,12 @@ export async function syncMembersToServer(
       dumbbellIncrement?: number;
     };
   }[]
-): Promise<SyncOperationResult & { results?: Array<{ id: string; reason?: string; skipped?: boolean; synced?: boolean }> }> {
+): Promise<SyncOperationResult & { results?: SyncMemberResult[] }> {
   const session = await readStoredSession();
   if (!session?.accessToken) return { ok: false, message: '请先登录后再同步成员。' };
 
   try {
-    const result = await apiRequest<{ results?: Array<{ id: string; reason?: string; skipped?: boolean; synced?: boolean }> }>('/sync/members', {
+    const result = await apiRequest<{ results?: SyncMemberResult[] }>('/sync/members', {
       method: 'POST',
       accessToken: session.accessToken,
       body: { groupId, members },

@@ -1,5 +1,14 @@
 ﻿# LiftMark 项目交接记录
 
+## 2026-07-05 首页与账号入口重构交接
+
+- 主导航当前为首页 / 计划 / 记录；`settings` tab 保留文件但通过 `href: null` 隐藏。
+- 首页头像入口打开 `AccountMenuSheet`，菜单是轻量入口，不承载完整个人资料详情。
+- 个人资料详情页为 `/profile`，分组包含账号资料、小组与同步、偏好与权益、法务与支持。
+- 小组切换入口为 `/groups/switch`，复杂管理入口为 `/groups/manage`。
+- 隐私政策和用户协议入口迁移到 `/legal/privacy` 与 `/legal/terms`，当前内容为草案。
+- 昵称保存由 `updateDisplayNameAcrossLocalProfiles` 统一更新本地账号相关成员并进入同步队列。
+
 ## 2026-06-30 cloud-first-workout-history-stability 交接
 
 - 当前项目路径：`C:\Users\zhw\Documents\LiftMark\training-partner-app`；后端路径：`C:\Users\zhw\Documents\LiftMark\apps\liftmark-api`。

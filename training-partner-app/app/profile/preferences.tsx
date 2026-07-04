@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton, AppCard, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppText, EmptyState, Screen, SecondaryPageHeader, SettingsRow, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { MemberProfile } from '@/domain/member/member.types';
@@ -49,6 +49,12 @@ export default function ProfilePreferencesRoute() {
 
   return (
     <Screen safeTop={false}>
+      <SecondaryPageHeader
+        caption="训练偏好"
+        icon="barbell-outline"
+        subtitle="单位、记录方式、休息计时和加重单位。"
+        title="训练偏好"
+      />
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="数据加载失败" description={error} actionLabel="重新加载" onActionPress={() => void load()} /> : null}
 
@@ -60,6 +66,7 @@ export default function ProfilePreferencesRoute() {
             <SettingsRow label="哑铃加重单位" value={`${profile?.dumbbellIncrement ?? 2.5} kg`} />
             <SettingsRow label="默认记录方式" value="重量 / 次数" />
             <SettingsRow label="休息计时" right={<Tag label="开启" tone="success" />} />
+            <SettingsRow label="默认训练模式" value="小组成员" />
             <SettingsRow label="周五策略" value={fridayStrategyLabel(group?.fridayStrategy)} />
           </AppCard>
 
