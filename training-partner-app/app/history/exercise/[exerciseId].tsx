@@ -17,6 +17,7 @@ type ExerciseSetRecord = {
   notes?: string;
   reps: number;
   sessionId: string;
+  setNumber: number;
   volume: number;
   weight: number;
 };
@@ -89,6 +90,7 @@ function buildExerciseHistoryView({
         notes: set.notes,
         reps,
         sessionId: detail.session.id,
+        setNumber: set.setNumber,
         volume: weight * reps,
         weight,
       });
@@ -126,7 +128,7 @@ function buildExerciseHistoryView({
 }
 
 export default function ExerciseHistoryRoute() {
-  const { exerciseId } = useLocalSearchParams<{ exerciseId: string }>();
+  const { exerciseId, fromDate, toDate } = useLocalSearchParams<{ exerciseId: string; fromDate?: string; toDate?: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const [view, setView] = useState<ExerciseHistoryView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -157,9 +159,11 @@ export default function ExerciseHistoryRoute() {
 
       const [exercise] = await repositories.exerciseRepository.listExercisesByIds([exerciseId]);
       const sessions = await repositories.workoutRepository.listSessions({
+        fromDate,
         groupId: group.id,
         limit: 240,
         memberId: member.id,
+        toDate,
       });
       const details = await Promise.all(sessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)));
       setView(buildExerciseHistoryView({ details, exercise: exercise ?? null, exerciseId, member }));
@@ -168,7 +172,7 @@ export default function ExerciseHistoryRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [exerciseId, repositories]);
+  }, [exerciseId, fromDate, repositories, toDate]);
 
   useFocusEffect(
     useCallback(() => {
@@ -187,7 +191,7 @@ export default function ExerciseHistoryRoute() {
         caption="动作历史"
         icon="barbell-outline"
         meta={view?.member.displayName}
-        subtitle="按实际训练次数展示，不用自然日补零。"
+        subtitle={fromDate && toDate ? `${fromDate} - ${toDate}` : '按实际训练次数展示，不用自然日补零。'}
         title={view?.exercise?.name ?? '动作详情'}
       />
 
@@ -264,22 +268,31 @@ export default function ExerciseHistoryRoute() {
                   accessibilityRole="button"
                   key={`${record.sessionId}-${index}`}
                   onPress={() => router.push({ pathname: '/history/[sessionId]', params: { sessionId: record.sessionId } } as never)}
-                  style={({ pressed }) => [styles.recordRow, pressed && styles.pressed]}
+                  style={({ pressed }) => [styles.recordCard, pressed && styles.pressed]}
                 >
-                  <View style={styles.recordDate}>
-                    <AppText variant="caption" weight="900">
-                      {formatShortDate(record.date)}
-                    </AppText>
+                  <View style={styles.recordTopRow}>
+                    <View style={styles.recordDate}>
+                      <AppText variant="caption" weight="900">
+                        {formatShortDate(record.date)}
+                      </AppText>
+                    </View>
+                    {index === 0 ? <Tag label="最近" tone="brand" /> : null}
                   </View>
-                  <View style={styles.recordMain}>
-                    <AppText variant="bodySmall" weight="900">
+                  <View style={styles.recordMetric}>
+                    <AppText variant="subtitle" weight="900">
                       {record.weight}kg x {record.reps}
                     </AppText>
-                    <AppText numberOfLines={1} tone="muted" variant="caption">
-                      {formatKg(record.volume)} · 1RM {record.estimatedOneRM || '-'}kg
+                    <AppText tone="muted" variant="bodySmall">
+                      估算 1RM：{record.estimatedOneRM > 0 ? `${record.estimatedOneRM} kg` : '样本不足'}
                     </AppText>
                   </View>
-                  <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
+                  <View style={styles.recordBottomRow}>
+                    <AppText numberOfLines={1} tone="muted" variant="caption">
+                      第 {record.setNumber} 组 · 训练量 {formatKg(record.volume)}
+                      {record.notes ? ` · ${record.notes}` : ''}
+                    </AppText>
+                    <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
+                  </View>
                 </Pressable>
               ))
             )}
@@ -401,18 +414,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
-  recordMain: {
-    flex: 1,
-    gap: 2,
-    minWidth: 0,
+  recordCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
   },
-  recordRow: {
+  recordTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  recordMetric: {
+    gap: 2,
+  },
+  recordBottomRow: {
     alignItems: 'center',
     borderTopColor: colors.border,
     borderTopWidth: 1,
     flexDirection: 'row',
-    gap: spacing.md,
-    paddingTop: spacing.md,
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+    paddingTop: spacing.sm,
   },
   screen: {
     gap: spacing.lg,

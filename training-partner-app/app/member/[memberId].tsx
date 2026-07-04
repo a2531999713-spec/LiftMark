@@ -10,6 +10,7 @@ import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { MemberFormValues } from '@/domain/member/member.validation';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
+import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { colors } from '@/theme/colors';
 
 function createInitialValues(member: GroupMember, profile: MemberProfile | null): MemberFormValues {
@@ -108,8 +109,22 @@ export default function MemberDetailRoute() {
       setSavedMessage(null);
 
       try {
-        await repositories.memberRepository.updateMember(member.id, {
+        const updatedMember = await repositories.memberRepository.updateMember(member.id, {
           displayName: values.displayName.trim(),
+        });
+        await enqueueSyncCandidate({
+          entityType: 'groupMembers',
+          localId: updatedMember.id,
+          operation: 'update',
+          payload: {
+            displayName: updatedMember.displayName,
+            groupId: updatedMember.groupId,
+            memberType: updatedMember.memberType,
+            role: updatedMember.role,
+            userId: updatedMember.userId,
+          },
+          status: 'pending_update',
+          updatedAt: updatedMember.updatedAt,
         });
         await repositories.memberRepository.updateProfile(member.id, {
           bodyweight: values.bodyweight,

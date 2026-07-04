@@ -9,12 +9,21 @@ import { addWeightStep, formatWeight, subtractWeightStep } from '@/domain/weight
 import type { WorkoutExerciseRecord } from '@/domain/workout/workout.types';
 import { colors, radius, spacing } from '@/theme';
 
-import { RestTimerPanel } from './RestTimerPanel';
 import { RpeSelector } from './RpeSelector';
 import { SetNotesInput } from './SetNotesInput';
 
 function formatNumber(value: number | undefined, fallback = '0'): string {
   return formatWeight(value, fallback);
+}
+
+function formatCompactTimer(seconds: number | undefined): string {
+  const safeSeconds = Math.max(0, seconds ?? 0);
+  const minutes = Math.floor(safeSeconds / 60);
+  const remain = safeSeconds % 60;
+  if (minutes <= 0) {
+    return `${remain}秒`;
+  }
+  return `${minutes}:${String(remain).padStart(2, '0')}`;
 }
 
 function parseNumericInput(raw: string, integer: boolean): number | null {
@@ -252,34 +261,37 @@ export function CurrentSetRecorder({
         </View>
       ) : null}
 
-      <View style={styles.actionRow}>
-        {isResting ? (
-          <RestTimerPanel
-            currentMemberName={memberName}
-            currentSetLabel={`第 ${setNumber} 组`}
-            elapsedSeconds={restElapsedSeconds}
-            nextMemberName={nextMemberName}
-            nextSetLabel={nextSetLabel}
-            plannedSeconds={plannedRestSeconds}
-            remainingSeconds={restSeconds ?? 0}
-          />
-        ) : (
-          <Pressable
-            accessibilityRole="button"
-            onPress={onCompleteSet}
-            style={[styles.primaryButton, isWorkoutReadyToFinish && styles.primaryButtonFinish]}
-          >
-            <Ionicons
-              color={colors.surface}
-              name={isWorkoutReadyToFinish ? 'flag-outline' : 'checkmark-circle-outline'}
-              size={18}
-            />
-            <AppText tone="inverse" variant="bodySmall" weight="800">
-              {isWorkoutReadyToFinish ? '完成训练' : '完成本组'}
+      {isResting ? (
+        <View style={styles.restHint}>
+          <View style={styles.restHintIcon}>
+            <Ionicons color={colors.primary} name="timer-outline" size={16} />
+          </View>
+          <View style={styles.restHintText}>
+            <AppText variant="caption" weight="900" style={styles.restHintTitle}>
+              休息中 · 还剩 {formatCompactTimer(restSeconds)}
             </AppText>
-          </Pressable>
-        )}
-      </View>
+            <AppText numberOfLines={1} tone="muted" variant="caption">
+              {nextMemberName ? `下一位：${nextMemberName}` : nextSetLabel ?? `计划休息 ${formatCompactTimer(plannedRestSeconds)}`}
+              {restElapsedSeconds !== undefined ? ` · 已休 ${formatCompactTimer(restElapsedSeconds)}` : ''}
+            </AppText>
+          </View>
+        </View>
+      ) : null}
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={onCompleteSet}
+        style={[styles.primaryButton, isWorkoutReadyToFinish && styles.primaryButtonFinish]}
+      >
+        <Ionicons
+          color={colors.surface}
+          name={isWorkoutReadyToFinish ? 'flag-outline' : 'checkmark-circle-outline'}
+          size={18}
+        />
+        <AppText tone="inverse" variant="bodySmall" weight="800">
+          {isWorkoutReadyToFinish ? '完成训练' : '完成本组'}
+        </AppText>
+      </Pressable>
     </AppCard>
   );
 }
@@ -360,10 +372,6 @@ const styles = StyleSheet.create({
     height: 48,
     textAlign: 'center',
   },
-  actionRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: colors.brand,
@@ -378,33 +386,29 @@ const styles = StyleSheet.create({
   primaryButtonFinish: {
     backgroundColor: colors.brandDark,
   },
-  restButton: {
+  restHint: {
     alignItems: 'center',
     backgroundColor: colors.primarySoft,
-    borderColor: colors.primary,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: 52,
-    paddingHorizontal: spacing.md,
-  },
-  restButtonContent: {
-    alignItems: 'center',
+    borderRadius: radius.sm,
     flexDirection: 'row',
     gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  restButtonText: {
-    color: colors.primary,
-  },
-  restTimerBadge: {
-    backgroundColor: colors.primary,
+  restHintIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
     borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xxs,
+    height: 30,
+    justifyContent: 'center',
+    width: 30,
   },
-  restTimerText: {
-    color: colors.surface,
+  restHintText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  restHintTitle: {
+    color: colors.primary,
   },
 });

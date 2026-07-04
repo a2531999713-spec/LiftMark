@@ -10,13 +10,35 @@ type GroupMemberStripProps = {
   members: GroupMember[];
   onSelectMember: (memberId: string) => void;
   profiles?: Record<string, MemberProfile | null>;
+  restStates?: Record<string, { remaining: number; status: 'ready' | 'resting' } | undefined>;
 };
 
-export function GroupMemberStrip({ currentMemberId, members, onSelectMember, profiles = {} }: GroupMemberStripProps) {
+function formatShortRest(seconds: number): string {
+  if (seconds >= 60) {
+    return `${Math.ceil(seconds / 60)}分`;
+  }
+  return `${Math.max(0, seconds)}秒`;
+}
+
+export function GroupMemberStrip({
+  currentMemberId,
+  members,
+  onSelectMember,
+  profiles = {},
+  restStates = {},
+}: GroupMemberStripProps) {
   return (
     <View style={styles.container}>
       {members.map((member) => {
         const isCurrent = member.id === currentMemberId;
+        const restState = restStates[member.id];
+        const statusLabel = restState
+          ? restState.status === 'ready'
+            ? '已恢复'
+            : formatShortRest(restState.remaining)
+          : isCurrent
+            ? '当前'
+            : '待记录';
 
         return (
           <Pressable
@@ -39,16 +61,26 @@ export function GroupMemberStrip({ currentMemberId, members, onSelectMember, pro
               variant="caption"
               weight="800"
               numberOfLines={1}
+              style={styles.memberName}
             >
               {member.displayName}
             </AppText>
-            {isCurrent ? (
-              <View style={styles.currentBadge}>
-                <AppText tone="brand" variant="caption" weight="900" style={styles.currentBadgeText}>
-                  当前
-                </AppText>
-              </View>
-            ) : null}
+            <View
+              style={[
+                styles.statusBadge,
+                isCurrent && styles.statusBadgeCurrent,
+                restState?.status === 'ready' && styles.statusBadgeReady,
+              ]}
+            >
+              <AppText
+                tone={isCurrent || restState ? 'brand' : 'muted'}
+                variant="caption"
+                weight="900"
+                style={styles.statusBadgeText}
+              >
+                {statusLabel}
+              </AppText>
+            </View>
           </Pressable>
         );
       })}
@@ -82,11 +114,23 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.brand,
   },
-  currentBadge: {
+  memberName: {
+    maxWidth: '100%',
+  },
+  statusBadge: {
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.pill,
+    minHeight: 18,
+    paddingHorizontal: spacing.xs,
     paddingVertical: 0,
   },
-  currentBadgeText: {
+  statusBadgeCurrent: {
+    backgroundColor: colors.primarySoft,
+  },
+  statusBadgeReady: {
+    backgroundColor: colors.successSoft,
+  },
+  statusBadgeText: {
     fontSize: 12,
     lineHeight: 16,
   },

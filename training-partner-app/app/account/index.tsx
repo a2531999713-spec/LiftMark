@@ -35,6 +35,9 @@ export default function AccountRoute() {
             <SettingsRow label="手机号" value={user.phone ?? '未绑定'} />
             <SettingsRow label="邮箱" value={user.email ?? '未绑定'} />
           </AppCard>
+          <AppButton onPress={() => router.push('/profile/edit' as never)}>
+            编辑我的资料
+          </AppButton>
           <AppButton onPress={() => router.push('/account/security' as never)} variant="secondary">
             账号安全
           </AppButton>

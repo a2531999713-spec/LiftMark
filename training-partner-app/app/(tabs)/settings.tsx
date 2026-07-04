@@ -145,7 +145,7 @@ export default function SettingsRoute() {
             onAvatarPress={() => void pickAvatar()}
             onGroupPress={() => router.push('/profile/groups' as never)}
             onPlanPress={() => router.push('/(tabs)/plan' as never)}
-            onPress={() => router.push('/account' as never)}
+            onPress={() => router.push('/profile/edit' as never)}
             phoneMasked={accountProfile?.phoneMasked}
             user={user}
           />

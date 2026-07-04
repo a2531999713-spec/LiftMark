@@ -705,14 +705,42 @@ export default function TodayRoute() {
 
     const nextScope: WorkoutRecordScope = members.length > 1 ? 'group_local' : 'solo_local';
     const currentMemberId = members[0]?.id;
-    setRecordScope(nextScope);
-    setSelectedParticipantIds(
+    const participantMemberIds =
       nextScope === 'solo_local' && currentMemberId
         ? [currentMemberId]
-        : members.map((member) => member.id),
-    );
+        : members.map((member) => member.id);
+    const resumeInput: CreateSessionFromTodayPlanInput = {
+      date: getLocalDateString(),
+      groupId: group.id,
+      phaseId: resolvedPlan.phase.id,
+      planExerciseIds: resolvedPlan.exercises.map((exercise) => exercise.id),
+      planId: resolvedPlan.plan.id,
+      participantMemberIds,
+      title: resolvedPlan.day.title,
+      trainingMode: nextScope,
+      week: resolvedPlan.day.week,
+      weekday: resolvedPlan.day.weekday,
+    };
+
+    try {
+      const openSessions = await repositories.workoutRepository.listOpenSessionsForDate({
+        date: resumeInput.date,
+        groupId: resumeInput.groupId,
+      });
+      const matchingSession = openSessions.find((session) => isSameWorkoutSelection(session, resumeInput));
+      if (matchingSession) {
+        router.push({ pathname: '/workout/[sessionId]', params: { sessionId: matchingSession.id } });
+        return;
+      }
+    } catch (sessionError) {
+      setError(sessionError instanceof Error ? sessionError.message : '读取未完成训练失败。');
+      return;
+    }
+
+    setRecordScope(nextScope);
+    setSelectedParticipantIds(participantMemberIds);
     setScopeSheetVisible(true);
-  }, [group, guardFeature, members, resolveSelectedWorkoutPlan]);
+  }, [group, guardFeature, members, repositories, resolveSelectedWorkoutPlan]);
 
   const toggleParticipant = useCallback((memberId: string) => {
     setSelectedParticipantIds((current) =>
@@ -1035,7 +1063,6 @@ export default function TodayRoute() {
 
               <RecoveryModeSelector
                 currentMode={recoveryMode}
-                onChange={setRecoveryMode}
                 onMorePress={() => setAdviceSheetVisible(true)}
                 options={recoveryOptions}
               />
@@ -1325,56 +1352,33 @@ function PlanQuickSwitchCard({
 
 function RecoveryModeSelector({
   currentMode,
-  onChange,
   onMorePress,
   options,
 }: {
   currentMode: RecoveryMode;
-  onChange: (mode: RecoveryMode) => void;
   onMorePress: () => void;
   options: AdviceConfig[];
 }) {
+  const activeOption = options.find((option) => option.mode === currentMode) ?? options[0];
+
   return (
-    <AppCard style={styles.recoverySelectorCard}>
-      <View style={styles.selectorHeader}>
+    <Pressable accessibilityRole="button" onPress={onMorePress} style={({ pressed }) => [styles.recoverySelectorBar, pressed && styles.pressed]}>
+      <AdviceIcon icon={activeOption.icon} tone={activeOption.tone} />
+      <View style={styles.recoverySelectorText}>
         <AppText variant="bodySmall" weight="900">
-          动作筛选
+          动作筛选 · {activeOption.status}
         </AppText>
-        <Pressable accessibilityRole="button" onPress={onMorePress} style={styles.selectorMore}>
-          <AppText tone="muted" variant="caption" weight="800">
-            说明
-          </AppText>
-          <Ionicons color={colors.textMuted} name="information-circle-outline" size={15} />
-        </Pressable>
+        <AppText numberOfLines={1} tone="muted" variant="caption">
+          {activeOption.message}
+        </AppText>
       </View>
-      <View style={styles.recoveryPills}>
-        {options.map((option) => {
-          const active = currentMode === option.mode;
-          return (
-            <Pressable
-              accessibilityRole="button"
-              key={option.mode}
-              onPress={() => onChange(option.mode)}
-              style={({ pressed }) => [
-                styles.recoveryPill,
-                active && styles.recoveryPillActive,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Ionicons color={active ? colors.surface : colors.textMuted} name={option.icon} size={15} />
-              <AppText
-                numberOfLines={1}
-                style={active ? styles.recoveryPillTextActive : styles.recoveryPillText}
-                variant="caption"
-                weight="900"
-              >
-                {option.status}
-              </AppText>
-            </Pressable>
-          );
-        })}
+      <View style={styles.recoverySelectorAction}>
+        <AppText tone="brand" variant="caption" weight="900">
+          更改
+        </AppText>
+        <Ionicons color={colors.primary} name="chevron-down" size={15} />
       </View>
-    </AppCard>
+    </Pressable>
   );
 }
 
@@ -2520,6 +2524,27 @@ const styles = StyleSheet.create({
   recoverySelectorCard: {
     gap: spacing.sm,
     padding: spacing.md,
+  },
+  recoverySelectorAction: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xxs,
+  },
+  recoverySelectorBar: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 68,
+    padding: spacing.md,
+  },
+  recoverySelectorText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
   },
   recoveryList: {
     gap: spacing.sm,

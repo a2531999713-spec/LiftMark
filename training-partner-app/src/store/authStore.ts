@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { deriveAuthMode, type AuthMode, type MembershipTier } from '@/domain/auth';
+import { getAccountProfileCache } from '@/services/avatar';
 import { createAuthService } from '@/services/auth/authService';
 import type {
   AuthSession,
@@ -12,6 +13,7 @@ import type {
   SendCodeInput,
   SendCodeResult,
 } from '@/services/auth/authTypes';
+import { readStoredSession, saveStoredSession } from '@/services/auth/tokenStorage';
 import { getMembership, type Membership } from '@/services/membershipService';
 
 type AuthStore = {
@@ -31,6 +33,7 @@ type AuthStore = {
   membershipTier: MembershipTier;
   register: (input: RegisterInput) => Promise<string | null>;
   sendCode: (input: SendCodeInput) => Promise<SendCodeResult>;
+  updateLocalUser: (patch: Partial<AuthUser>) => Promise<void>;
   user: AuthUser | null;
 };
 
@@ -63,6 +66,22 @@ async function resolveSessionState(session: AuthSession | null) {
     };
   }
 
+  const cachedProfile = await getAccountProfileCache(session.user.id).catch(() => null);
+  const cachedDisplayName = cachedProfile?.displayName?.trim();
+  const resolvedSession =
+    cachedDisplayName && cachedDisplayName !== session.user.displayName
+      ? {
+          ...session,
+          user: {
+            ...session.user,
+            displayName: cachedDisplayName,
+          },
+        }
+      : session;
+  if (resolvedSession !== session) {
+    await saveStoredSession(resolvedSession).catch(() => undefined);
+  }
+
   if (session.isOffline) {
     return {
       authStatus: 'offline_authenticated' as const,
@@ -70,7 +89,7 @@ async function resolveSessionState(session: AuthSession | null) {
       isLoggedIn: true,
       membership: null,
       membershipTier: 'free' as const,
-      user: session.user,
+      user: resolvedSession.user,
     };
   }
 
@@ -82,11 +101,11 @@ async function resolveSessionState(session: AuthSession | null) {
     isLoggedIn: true,
     membership,
     membershipTier,
-    user: session.user,
+    user: resolvedSession.user,
   };
 }
 
-export const useAuthStore = create<AuthStore>((set) => ({
+export const useAuthStore = create<AuthStore>((set, get) => ({
   authStatus: 'checking',
   authMode: 'guest_preview',
   error: null,
@@ -255,5 +274,25 @@ export const useAuthStore = create<AuthStore>((set) => ({
     } finally {
       set({ isLoading: false });
     }
+  },
+
+  async updateLocalUser(patch) {
+    const currentUser = get().user;
+    if (!currentUser) {
+      return;
+    }
+
+    const nextUser = { ...currentUser, ...patch };
+    const session = await readStoredSession();
+    if (session) {
+      await saveStoredSession({
+        ...session,
+        user: {
+          ...session.user,
+          ...patch,
+        },
+      });
+    }
+    set({ user: nextUser });
   },
 }));

@@ -1,99 +1,89 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppCard, AppText } from '@/components/ui';
 import { colors, radius, spacing } from '@/theme';
 
-export type HistoryRangeKey = '7d' | '30d' | 'month';
+export type HistoryRangeKey = '7d' | '30d' | 'month' | 'custom';
 export type HistoryScopeKey = 'personal' | 'group';
 
 type HistoryFilterBarProps = {
   groupName: string;
   memberName: string;
-  onOpenDatePicker: () => void;
   onOpenExerciseFilter: () => void;
-  onRangeChange: (rangeKey: HistoryRangeKey) => void;
-  onResetDate: () => void;
+  onOpenTimeFilter: () => void;
+  onResetTimeFilter: () => void;
   onScopeChange: (scope: HistoryScopeKey) => void;
-  rangeKey: HistoryRangeKey;
+  rangeLabel: string;
   scope: HistoryScopeKey;
-  selectedDate: string | null;
   selectedExerciseName?: string;
+  timeFilterActive: boolean;
 };
-
-const rangeOptions: { key: HistoryRangeKey; label: string }[] = [
-  { key: '7d', label: '近 7 天' },
-  { key: '30d', label: '近 30 天' },
-  { key: 'month', label: '本月' },
-];
-
-function formatShortDate(date: string): string {
-  return date.slice(5).replace('-', '/');
-}
 
 export function HistoryFilterBar({
   groupName,
   memberName,
-  onOpenDatePicker,
   onOpenExerciseFilter,
-  onRangeChange,
-  onResetDate,
+  onOpenTimeFilter,
+  onResetTimeFilter,
   onScopeChange,
-  rangeKey,
+  rangeLabel,
   scope,
-  selectedDate,
   selectedExerciseName,
+  timeFilterActive,
 }: HistoryFilterBarProps) {
+  const scopeLabel = scope === 'personal' ? '我的记录' : '小组记录';
+  const scopeMeta = scope === 'personal' ? memberName : groupName;
+  const nextScope = scope === 'personal' ? 'group' : 'personal';
+  const summary = `${scopeLabel} · ${rangeLabel} · ${selectedExerciseName ?? '全部动作'}`;
+
   return (
     <AppCard style={styles.container}>
       <View style={styles.topRow}>
         <View style={styles.titleBlock}>
           <AppText variant="subtitle">训练分析</AppText>
           <AppText numberOfLines={1} tone="muted" variant="caption">
-            {scope === 'personal' ? memberName : groupName}
+            {summary}
           </AppText>
         </View>
-        <View style={styles.scopePill}>
-          <ScopeButton active={scope === 'personal'} label="我的记录" onPress={() => onScopeChange('personal')} />
-          <ScopeButton active={scope === 'group'} label="当前小组" onPress={() => onScopeChange('group')} />
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onScopeChange(nextScope)}
+          style={styles.scopeSelector}
+        >
+          <View style={styles.scopeSelectorText}>
+            <AppText numberOfLines={1} variant="caption" weight="900">
+              {scopeLabel}
+            </AppText>
+            <AppText numberOfLines={1} tone="muted" variant="caption">
+              {scopeMeta}
+            </AppText>
+          </View>
+          <Ionicons color={colors.textMuted} name="swap-horizontal-outline" size={16} />
+        </Pressable>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-        {rangeOptions.map((option) => (
-          <FilterChip
-            active={!selectedDate && rangeKey === option.key}
-            key={option.key}
-            label={option.label}
-            onPress={() => onRangeChange(option.key)}
-          />
-        ))}
+      <View style={styles.compactBar}>
         <FilterChip
-          active={Boolean(selectedDate)}
+          active={timeFilterActive}
           icon="calendar-outline"
-          label={selectedDate ? formatShortDate(selectedDate) : '单日'}
-          onPress={onOpenDatePicker}
-          trailing={selectedDate ? 'close-outline' : undefined}
-          onTrailingPress={selectedDate ? onResetDate : undefined}
+          label={rangeLabel}
+          onPress={onOpenTimeFilter}
+          trailing={timeFilterActive ? 'close-outline' : 'chevron-down-outline'}
+          onTrailingPress={timeFilterActive ? onResetTimeFilter : undefined}
         />
         <FilterChip
           active={Boolean(selectedExerciseName)}
           icon="barbell-outline"
           label={selectedExerciseName ?? '全部动作'}
           onPress={onOpenExerciseFilter}
+          trailing="chevron-down-outline"
         />
-      </ScrollView>
+        <Pressable accessibilityRole="button" onPress={onOpenTimeFilter} style={styles.moreFilterButton}>
+          <Ionicons color={colors.textMuted} name="options-outline" size={18} />
+        </Pressable>
+      </View>
     </AppCard>
-  );
-}
-
-function ScopeButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.scopeButton, active && styles.scopeButtonActive]}>
-      <AppText tone={active ? 'inverse' : 'muted'} variant="caption" weight="900">
-        {label}
-      </AppText>
-    </Pressable>
   );
 }
 
@@ -128,10 +118,10 @@ function FilterChip({
 }
 
 const styles = StyleSheet.create({
-  chipRow: {
+  compactBar: {
     alignItems: 'center',
+    flexDirection: 'row',
     gap: spacing.sm,
-    paddingRight: spacing.lg,
   },
   container: {
     gap: spacing.md,
@@ -142,32 +132,42 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.pill,
     borderWidth: 1,
+    flex: 1,
     flexDirection: 'row',
     gap: spacing.xs,
     minHeight: 38,
-    maxWidth: 180,
+    minWidth: 0,
     paddingHorizontal: spacing.md,
   },
   filterChipActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
-  scopeButton: {
+  moreFilterButton: {
     alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
     borderRadius: radius.pill,
-    minHeight: 34,
+    borderWidth: 1,
+    height: 38,
     justifyContent: 'center',
-    paddingHorizontal: spacing.md,
+    width: 38,
   },
-  scopeButtonActive: {
-    backgroundColor: colors.primary,
-  },
-  scopePill: {
-    backgroundColor: colors.surfaceMuted,
+  scopeSelector: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
     borderRadius: radius.pill,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.xs,
-    padding: spacing.xs,
+    maxWidth: 148,
+    minHeight: 42,
+    paddingHorizontal: spacing.md,
+  },
+  scopeSelectorText: {
+    flex: 1,
+    minWidth: 0,
   },
   titleBlock: {
     flex: 1,

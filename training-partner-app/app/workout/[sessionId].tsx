@@ -18,7 +18,6 @@ import { CompletedSetList } from '@/components/workout/CompletedSetList';
 import { CurrentSetRecorder } from '@/components/workout/CurrentSetRecorder';
 import { ExerciseHeroCard } from '@/components/workout/ExerciseHeroCard';
 import { GroupMemberStrip } from '@/components/workout/GroupMemberStrip';
-import { RestTimerPanel } from '@/components/workout/RestTimerPanel';
 import { RotationOrderCard } from '@/components/workout/RotationOrderCard';
 import { WorkoutProgressStrip } from '@/components/workout/WorkoutProgressStrip';
 import { WorkoutLiveStatsBar } from '@/components/workout/WorkoutLiveStatsBar';
@@ -146,12 +145,14 @@ export default function WorkoutRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { authMode, guardFeature, sheets } = useAuthGate();
   const [detail, setDetail] = useState<WorkoutSessionDetail | null>(null);
+  const [allGroupMembers, setAllGroupMembers] = useState<GroupMember[]>([]);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
   const [exerciseMap, setExerciseMap] = useState<Record<string, Exercise>>({});
   const [replacementExercises, setReplacementExercises] = useState<Exercise[]>([]);
   const [activeExerciseIndex, setActiveExerciseIndex] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
   const [memberRestState, setMemberRestState] = useState<Record<string, MemberRestTimerState>>({});
   const [isWorkoutReadyToFinish, setWorkoutReadyToFinish] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
@@ -212,12 +213,19 @@ export default function WorkoutRoute() {
         nextDetail.exercises.map((exercise) => exercise.exerciseId),
       );
       setDetail(nextDetail);
+      setAllGroupMembers(allMembers);
       setMembers(nextMembers);
       setProfiles(Object.fromEntries(nextProfiles));
       setExerciseMap(Object.fromEntries(nextExercises.map((exercise) => [exercise.id, exercise])));
       const cursor = getWorkoutCursorFromQueue(
         nextDetail,
         nextMembers.map((member) => member.id),
+      );
+      const cursorMemberId = cursor ? nextMembers[cursor.memberIndex]?.id : undefined;
+      setActiveMemberId((current) =>
+        current && nextMembers.some((member) => member.id === current)
+          ? current
+          : cursorMemberId ?? nextMembers[0]?.id ?? null,
       );
       setActiveExerciseIndex((index) =>
         cursor
@@ -416,7 +424,7 @@ export default function WorkoutRoute() {
     }
   }, [detail, guardFeature, isFinishing, repositories, sessionId]);
 
-  const finishWorkout = useCallback(async (options: { force?: boolean } = {}) => {
+  const finishWorkout = useCallback(async () => {
     if (!sessionId) {
       return;
     }
@@ -427,7 +435,7 @@ export default function WorkoutRoute() {
       return;
     }
 
-    if (!options.force && detail) {
+    if (detail) {
       const completedSetCount = detail.sets.filter((set) => set.completed).length;
       const completedExerciseCount = detail.exercises.filter((record) =>
         detail.sets.some((set) => set.exerciseRecordId === record.id && set.completed),
@@ -439,6 +447,19 @@ export default function WorkoutRoute() {
             sum + (set.actualWeight ?? set.plannedWeight ?? 0) * (set.actualReps ?? set.plannedReps ?? 0),
           0,
         );
+
+      if (completedSetCount === 0) {
+        Alert.alert(
+          '本次训练没有有效记录',
+          '还没有完成任何一组。继续训练，或放弃这次空记录。',
+          [
+            { text: '继续训练', style: 'cancel' },
+            { text: '放弃本次', style: 'destructive', onPress: confirmDiscardWorkout },
+          ],
+        );
+        return;
+      }
+
       const shortWorkout = checkShortWorkout({
         completedExerciseCount,
         completedSetCount,
@@ -459,6 +480,12 @@ export default function WorkoutRoute() {
         );
         return;
       }
+
+      Alert.alert('结束本次训练？', '已完成的组会保存到历史记录，未完成组不会计入完成组。', [
+        { text: '继续训练', style: 'cancel' },
+        { text: '保存并结束', style: 'destructive', onPress: () => void saveCompletedWorkout() },
+      ]);
+      return;
     }
 
     await saveCompletedWorkout();
@@ -488,6 +515,17 @@ export default function WorkoutRoute() {
   const pendingRotationSet = activeRecord
     ? getNextWorkoutSetForRotation(activeSets, memberOrder, activeRecord.id)
     : null;
+  const validActiveMemberId =
+    activeMemberId && members.some((member) => member.id === activeMemberId)
+      ? activeMemberId
+      : null;
+  const currentMemberId = validActiveMemberId ?? pendingRotationSet?.memberId ?? members[0]?.id ?? '';
+  const currentMemberSets = sortedActiveSets.filter((set) => set.memberId === currentMemberId);
+  const currentDisplaySet =
+    currentMemberSets.find((set) => !set.completed && !set.skipped) ?? null;
+  const hasPendingForOtherMember = Boolean(
+    pendingRotationSet && pendingRotationSet.memberId !== currentMemberId,
+  );
   const membersById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const memberNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -530,16 +568,13 @@ export default function WorkoutRoute() {
     }));
   }, [detail, exerciseMap, activeExerciseIndex]);
 
-  const fallbackDisplaySet = sortedActiveSets.find((set) => !set.completed && !set.skipped) ?? sortedActiveSets.at(-1) ?? null;
-  const currentDisplaySet = pendingRotationSet ?? fallbackDisplaySet;
-  const currentProfile = currentDisplaySet ? profiles[currentDisplaySet.memberId] ?? null : null;
+  const currentProfile = currentMemberId ? profiles[currentMemberId] ?? null : null;
   const currentIncrement = getWeightIncrement(currentProfile, activeExercise);
-  const currentMemberId = currentDisplaySet?.memberId ?? members[0]?.id ?? '';
   const previousCompletedWeightForCurrentSet = currentDisplaySet
     ? [...activeSets]
         .filter(
           (set) =>
-            set.memberId === currentDisplaySet.memberId &&
+            set.memberId === currentMemberId &&
             set.completed &&
             set.setNumber < currentDisplaySet.setNumber &&
             set.actualWeight !== undefined &&
@@ -570,14 +605,12 @@ export default function WorkoutRoute() {
   }
 
   const currentMemberRest = memberRestState[currentMemberId];
-  const isCurrentMemberResting = false;
+  const isCurrentMemberResting = currentMemberRest?.status === 'resting';
   const currentMemberRestSeconds = currentMemberRest?.remaining ?? 0;
   const currentRestElapsedSeconds = currentMemberRest?.plannedSeconds
     ? Math.max(0, currentMemberRest.plannedSeconds - currentMemberRestSeconds)
     : 0;
   const restStatusMembers = members.filter((member) => Boolean(memberRestState[member.id]));
-  const selfMemberId = members[0]?.id;
-  const selfRestState = selfMemberId ? memberRestState[selfMemberId] : undefined;
   const nextSetForCurrentMember = activeSets
     .filter((set) => set.memberId === currentMemberId && set.setNumber > (currentDisplaySet?.setNumber ?? 0) && !set.skipped)
     .sort((left, right) => left.setNumber - right.setNumber)[0];
@@ -594,8 +627,12 @@ export default function WorkoutRoute() {
     }
     const targetSet = currentDisplaySet && !currentDisplaySet.completed && !currentDisplaySet.skipped
       ? currentDisplaySet
-      : pendingRotationSet;
+      : null;
     if (!targetSet) {
+      if (pendingRotationSet?.memberId && pendingRotationSet.memberId !== currentMemberId) {
+        setActiveMemberId(pendingRotationSet.memberId);
+        return;
+      }
       if (hasNextExercise) {
         goNextExercise();
       } else {
@@ -666,6 +703,7 @@ export default function WorkoutRoute() {
     }
 
     if (nextPendingSet) {
+      setActiveMemberId(nextPendingSet.memberId);
       setWorkoutReadyToFinish(false);
       return;
     }
@@ -770,6 +808,7 @@ export default function WorkoutRoute() {
             }
           : current,
       );
+      setActiveMemberId(uniqueTargetMemberIds[0] ?? currentMemberId);
       setWorkoutReadyToFinish(false);
       setLastSavedAt(new Date().toISOString());
 
@@ -806,6 +845,52 @@ export default function WorkoutRoute() {
     }
   }
 
+  async function removePendingSetsForMembers(targetMemberIds: string[]) {
+    if (!activeRecord || !detail) {
+      return;
+    }
+    if (!guardFeature('save_workout')) {
+      return;
+    }
+
+    const uniqueTargetMemberIds = Array.from(new Set(targetMemberIds.filter(Boolean)));
+    const targetSets = uniqueTargetMemberIds
+      .map((memberId) =>
+        [...activeSets]
+          .filter((set) => set.memberId === memberId && !set.completed && !set.skipped)
+          .sort(
+            (left, right) =>
+              right.setNumber - left.setNumber ||
+              right.updatedAt.localeCompare(left.updatedAt) ||
+              right.id.localeCompare(left.id),
+          )[0],
+      )
+      .filter((set): set is WorkoutSet => Boolean(set));
+
+    if (targetSets.length === 0) {
+      Alert.alert('没有可删除的未完成组', '当前动作下选中成员没有未完成的加做或计划组。');
+      return;
+    }
+
+    setDetail((current) =>
+      current
+        ? {
+            ...current,
+            sets: current.sets.filter((set) => !targetSets.some((target) => target.id === set.id)),
+          }
+        : current,
+    );
+    setWorkoutReadyToFinish(false);
+    setLastSavedAt(new Date().toISOString());
+
+    try {
+      await Promise.all(targetSets.map((set) => repositories.workoutRepository.deleteSet(set.id)));
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : '删除未完成组失败。');
+      void loadWorkout();
+    }
+  }
+
   function confirmAddExtraSet() {
     if (!activeRecord || !detail) {
       return;
@@ -822,6 +907,12 @@ export default function WorkoutRoute() {
         text: `仅 ${membersById.get(currentMemberId)?.displayName ?? '当前成员'}`,
         onPress: () => void addExtraSetsForMembers([currentMemberId]),
       },
+      ...members
+        .filter((member) => member.id !== currentMemberId)
+        .map((member) => ({
+          text: member.displayName,
+          onPress: () => void addExtraSetsForMembers([member.id]),
+        })),
       {
         text: '所有成员各加一组',
         onPress: () => void addExtraSetsForMembers(memberOrder),
@@ -829,18 +920,167 @@ export default function WorkoutRoute() {
     ]);
   }
 
-  function confirmFinishWorkout() {
-    Alert.alert('结束本次训练？', '已记录的数据会保存，未完成组不会计入完成组。', [
-      { text: '继续训练', style: 'cancel' },
-      { text: '保存并结束', style: 'destructive', onPress: () => void finishWorkout({ force: true }) },
+  function confirmRemovePendingSet() {
+    if (!activeRecord || !detail) {
+      return;
+    }
+
+    if (members.length <= 1) {
+      void removePendingSetsForMembers([currentMemberId]);
+      return;
+    }
+
+    Alert.alert('删除未完成组', '只删除本次训练当前动作下尚未完成的一组，不影响原计划。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: `仅 ${membersById.get(currentMemberId)?.displayName ?? '当前成员'}`,
+        onPress: () => void removePendingSetsForMembers([currentMemberId]),
+      },
+      ...members
+        .filter((member) => member.id !== currentMemberId)
+        .map((member) => ({
+          text: member.displayName,
+          onPress: () => void removePendingSetsForMembers([member.id]),
+        })),
+      {
+        text: '所有成员各删一组',
+        style: 'destructive' as const,
+        onPress: () => void removePendingSetsForMembers(memberOrder),
+      },
     ]);
+  }
+
+  async function addParticipantMember(memberId: string) {
+    if (!detail || members.some((member) => member.id === memberId)) {
+      return;
+    }
+    if (!guardFeature('save_workout')) {
+      return;
+    }
+
+    try {
+      setError(null);
+      const addedSets: WorkoutSet[] = [];
+      for (const record of detail.exercises) {
+        const plannedSetCount = Math.max(
+          1,
+          record.plannedSets ?? 0,
+          ...detail.sets
+            .filter((set) => set.exerciseRecordId === record.id)
+            .map((set) => set.setNumber),
+        );
+        for (let index = 0; index < plannedSetCount; index += 1) {
+          const set = await repositories.workoutRepository.addSetToExerciseRecord({
+            completed: false,
+            exerciseRecordId: record.id,
+            memberId,
+            reps: getWorkoutRecordInitialReps(record),
+            sessionId: detail.session.id,
+          });
+          addedSets.push(set);
+        }
+      }
+
+      void Promise.all(
+        addedSets.map((set) =>
+          enqueueSyncCandidate({
+            entityType: 'workoutSets',
+            localId: set.id,
+            operation: 'create',
+            payload: {
+              actualReps: set.actualReps,
+              actualRestSeconds: set.actualRestSeconds,
+              actualWeight: set.actualWeight,
+              completed: set.completed,
+              exerciseRecordId: set.exerciseRecordId,
+              memberId: set.memberId,
+              notes: set.notes,
+              plannedReps: set.plannedReps,
+              plannedWeight: set.plannedWeight,
+              rpe: set.rpe,
+              sessionId: set.sessionId,
+              setNumber: set.setNumber,
+              skipped: set.skipped,
+            },
+            status: 'pending_create',
+            updatedAt: set.updatedAt,
+          }),
+        ),
+      ).catch(() => undefined);
+
+      setActiveMemberId(memberId);
+      await loadWorkout();
+    } catch (addError) {
+      setError(addError instanceof Error ? addError.message : '添加参与成员失败。');
+    }
+  }
+
+  async function removeParticipantMember(memberId: string, force = false) {
+    if (!detail || members.length <= 1) {
+      Alert.alert('无法移除', '本次训练至少需要保留 1 位参与成员。');
+      return;
+    }
+    if (!guardFeature('save_workout')) {
+      return;
+    }
+
+    const memberSets = detail.sets.filter((set) => set.memberId === memberId);
+    const completedCount = memberSets.filter((set) => set.completed).length;
+    if (completedCount > 0 && !force) {
+      const memberName = allGroupMembers.find((member) => member.id === memberId)?.displayName ?? '该成员';
+      Alert.alert('移除已完成记录？', `${memberName} 已完成 ${completedCount} 组。移除后会删除他本次训练的数据。`, [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '确认移除',
+          style: 'destructive',
+          onPress: () => void removeParticipantMember(memberId, true),
+        },
+      ]);
+      return;
+    }
+
+    try {
+      await repositories.workoutRepository.deleteMemberSetsInSession(detail.session.id, memberId);
+      const nextMemberId = members.find((member) => member.id !== memberId)?.id ?? null;
+      setActiveMemberId(nextMemberId);
+      await loadWorkout();
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : '移除参与成员失败。');
+    }
+  }
+
+  function openParticipantEditor() {
+    if (!detail) {
+      return;
+    }
+
+    const participatingIds = new Set(members.map((member) => member.id));
+    const addableMembers = allGroupMembers.filter((member) => !participatingIds.has(member.id));
+    Alert.alert('编辑本次参与成员', '只影响本次训练 session，不会修改小组成员列表。', [
+      { text: '取消', style: 'cancel' },
+      ...addableMembers.map((member) => ({
+        text: `加入 ${member.displayName}`,
+        onPress: () => void addParticipantMember(member.id),
+      })),
+      ...members.map((member) => ({
+        text: `移除 ${member.displayName}`,
+        style: 'destructive' as const,
+        onPress: () => void removeParticipantMember(member.id),
+      })),
+    ]);
+  }
+
+  function confirmFinishWorkout() {
+    void finishWorkout();
   }
 
   function openWorkoutAdjustmentMenu() {
     Alert.alert('本次训练调整', '这些调整只影响本次训练，不会直接修改原计划。', [
       { text: '取消', style: 'cancel' },
+      { text: '编辑参与成员', onPress: openParticipantEditor },
       { text: '替换当前动作', onPress: () => void openReplaceSheet() },
       { text: '加做一组', onPress: confirmAddExtraSet },
+      { text: '删除未完成组', style: 'destructive', onPress: confirmRemovePendingSet },
       { text: '本次跳过动作', onPress: confirmSkipCurrentExercise },
       { text: '添加临时动作', onPress: () => void openTemporaryExerciseSheet() },
     ]);
@@ -1232,8 +1472,9 @@ export default function WorkoutRoute() {
                 <GroupMemberStrip
                   currentMemberId={currentMemberId}
                   members={members}
-                  onSelectMember={() => undefined}
+                  onSelectMember={setActiveMemberId}
                   profiles={profiles}
+                  restStates={memberRestState}
                 />
               ) : null}
 
@@ -1263,7 +1504,22 @@ export default function WorkoutRoute() {
                   weight={currentDisplaySet.actualWeight ?? currentDisplaySet.plannedWeight ?? previousCompletedWeightForCurrentSet}
                   weightIncrement={currentIncrement}
                 />
-              ) : null}
+              ) : (
+                <MemberExerciseCompleteCard
+                  hasNextExercise={hasNextExercise}
+                  hasPendingForOtherMember={hasPendingForOtherMember}
+                  memberName={membersById.get(currentMemberId)?.displayName ?? '成员'}
+                  nextMemberName={pendingRotationSet ? membersById.get(pendingRotationSet.memberId)?.displayName : undefined}
+                  onAddSet={confirmAddExtraSet}
+                  onNextExercise={goNextExercise}
+                  onSwitchNextMember={() => {
+                    if (pendingRotationSet?.memberId) {
+                      setActiveMemberId(pendingRotationSet.memberId);
+                    }
+                  }}
+                  onFinish={() => void finishWorkout()}
+                />
+              )}
 
               {restNotice ? (
                 <Pressable
@@ -1276,19 +1532,6 @@ export default function WorkoutRoute() {
                     {restNotice}
                   </AppText>
                 </Pressable>
-              ) : null}
-
-              {selfRestState ? (
-                <RestTimerPanel
-                  currentMemberName="你的休息"
-                  currentSetLabel="刚完成组"
-                  elapsedSeconds={selfRestState.plannedSeconds ? Math.max(0, selfRestState.plannedSeconds - selfRestState.remaining) : 0}
-                  nextMemberName={membersById.get(currentMemberId)?.displayName}
-                  nextSetLabel={nextSetLabel}
-                  plannedSeconds={selfRestState.plannedSeconds}
-                  remainingSeconds={selfRestState.remaining}
-                  status={selfRestState.status}
-                />
               ) : null}
 
               {members.length > 1 && restStatusMembers.length > 0 ? (
@@ -1365,6 +1608,67 @@ export default function WorkoutRoute() {
       />
       <AuthGateSheets {...sheets} />
     </SafeAreaView>
+  );
+}
+
+function MemberExerciseCompleteCard({
+  hasNextExercise,
+  hasPendingForOtherMember,
+  memberName,
+  nextMemberName,
+  onAddSet,
+  onFinish,
+  onNextExercise,
+  onSwitchNextMember,
+}: {
+  hasNextExercise: boolean;
+  hasPendingForOtherMember: boolean;
+  memberName: string;
+  nextMemberName?: string;
+  onAddSet: () => void;
+  onFinish: () => void;
+  onNextExercise: () => void;
+  onSwitchNextMember: () => void;
+}) {
+  return (
+    <View style={styles.memberDoneCard}>
+      <View style={styles.memberDoneIcon}>
+        <Ionicons color={colors.success} name="checkmark-circle-outline" size={22} />
+      </View>
+      <View style={styles.memberDoneText}>
+        <AppText variant="bodySmall" weight="900">
+          {memberName} 当前动作已完成
+        </AppText>
+        <AppText tone="muted" variant="caption">
+          可以给他加做一组，或继续记录下一位成员。
+        </AppText>
+      </View>
+      <View style={styles.memberDoneActions}>
+        <Pressable accessibilityRole="button" onPress={onAddSet} style={styles.memberDoneSecondary}>
+          <Ionicons color={colors.primary} name="add-circle-outline" size={16} />
+          <AppText tone="brand" variant="caption" weight="900">
+            加一组
+          </AppText>
+        </Pressable>
+        {hasPendingForOtherMember ? (
+          <Pressable accessibilityRole="button" onPress={onSwitchNextMember} style={styles.memberDonePrimary}>
+            <AppText tone="inverse" variant="caption" weight="900">
+              记录 {nextMemberName ?? '下一位'}
+            </AppText>
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            onPress={hasNextExercise ? onNextExercise : onFinish}
+            style={styles.memberDonePrimary}
+          >
+            <AppText tone="inverse" variant="caption" weight="900">
+              {hasNextExercise ? '下个动作' : '结束训练'}
+            </AppText>
+          </Pressable>
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -1457,6 +1761,49 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  memberDoneActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  memberDoneCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  memberDoneIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.successSoft,
+    borderRadius: radius.pill,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  memberDonePrimary: {
+    alignItems: 'center',
+    backgroundColor: colors.brand,
+    borderRadius: radius.md,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: spacing.md,
+  },
+  memberDoneSecondary: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: spacing.md,
+  },
+  memberDoneText: {
+    gap: spacing.xs,
   },
   restNotice: {
     alignItems: 'center',

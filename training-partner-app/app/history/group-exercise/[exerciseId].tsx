@@ -242,7 +242,13 @@ function formatMetricValue(metric: ExerciseAnalysisMetric, value: number): strin
 }
 
 export default function GroupExerciseDetailRoute() {
-  const { exerciseId } = useLocalSearchParams<{ exerciseId: string }>();
+  const { exerciseId, fromDate, groupId, toDate } = useLocalSearchParams<{
+    exerciseId: string;
+    fromDate?: string;
+    groupId?: string;
+    scope?: 'group' | 'personal';
+    toDate?: string;
+  }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
@@ -266,7 +272,7 @@ export default function GroupExerciseDetailRoute() {
     try {
       await initializeLocalDatabase();
       const groups = await repositories.groupRepository.listGroups();
-      const group = groups.find((item) => item.id === selectedGroupId) ?? groups[0] ?? null;
+      const group = groups.find((item) => item.id === groupId) ?? groups.find((item) => item.id === selectedGroupId) ?? groups[0] ?? null;
       if (!group) {
         throw new Error('默认小组尚未初始化。');
       }
@@ -275,7 +281,12 @@ export default function GroupExerciseDetailRoute() {
       }
 
       const members = await repositories.memberRepository.listMembers(group.id);
-      const sessions = await repositories.workoutRepository.listSessions({ groupId: group.id, limit: 200 });
+      const sessions = await repositories.workoutRepository.listSessions({
+        fromDate,
+        groupId: group.id,
+        limit: 240,
+        toDate,
+      });
       const details = await Promise.all(sessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)));
       const exerciseIds = Array.from(
         new Set(details.flatMap((detail) => detail.exercises.map((exerciseRecord) => exerciseRecord.exerciseId))),
@@ -306,7 +317,7 @@ export default function GroupExerciseDetailRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [exerciseId, repositories, selectedGroupId, setSelectedGroupId]);
+  }, [exerciseId, fromDate, groupId, repositories, selectedGroupId, setSelectedGroupId, toDate]);
 
   useFocusEffect(
     useCallback(() => {
@@ -326,11 +337,11 @@ export default function GroupExerciseDetailRoute() {
   return (
     <Screen>
       <SecondaryPageHeader
-        caption="小组动作"
+        caption="小组动作分析"
         icon="barbell-outline"
         meta={view ? `${view.memberSummaries.length} 名成员` : undefined}
-        subtitle={view ? `${view.groupName} · 小组动作对比` : '小组动作对比'}
-        title={view?.exerciseName ?? '动作详情'}
+        subtitle={view ? `${view.groupName} · ${fromDate && toDate ? `${fromDate} - ${toDate}` : '小组 sets 汇总'}` : '小组 sets 汇总'}
+        title={view?.exerciseName ? `小组动作分析：${view.exerciseName}` : '小组动作分析'}
       />
 
       {isLoading ? (
@@ -474,30 +485,33 @@ export default function GroupExerciseDetailRoute() {
                 accessibilityRole="button"
                 key={`${record.sessionId}-${record.memberId}-${index}`}
                 onPress={() => router.push({ pathname: '/history/[sessionId]', params: { sessionId: record.sessionId } } as never)}
-                style={({ pressed }) => [styles.recordRow, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.recordCard, pressed && styles.pressed]}
               >
-                <View style={styles.recordDate}>
-                  <AppText variant="caption" weight="900">
-                    {formatShortDate(record.date)}
-                  </AppText>
-                </View>
-                <View style={styles.recordMain}>
-                  <AppText variant="bodySmall" weight="900">
+                <View style={styles.recordTopRow}>
+                  <View style={styles.recordDate}>
+                    <AppText variant="caption" weight="900">
+                      {formatShortDate(record.date)}
+                    </AppText>
+                  </View>
+                  <AppText numberOfLines={1} style={styles.recordMemberName} variant="bodySmall" weight="900">
                     {record.memberName}
                   </AppText>
-                  <AppText tone="muted" variant="caption">
-                    {record.weight}kg x {record.reps} · {formatKg(record.volume)}
+                  {index === 0 ? <Tag label="最近" tone="brand" /> : null}
+                </View>
+                <View style={styles.recordMainMetric}>
+                  <AppText variant="subtitle" weight="900">
+                    {record.weight}kg x {record.reps}
+                  </AppText>
+                  <AppText tone="muted" variant="bodySmall">
+                    估算 1RM：{record.estimatedOneRM > 0 ? `${record.estimatedOneRM} kg` : '样本不足'}
                   </AppText>
                 </View>
-                <View style={styles.recordRight}>
-                  <AppText variant="caption" weight="900">
-                    {record.estimatedOneRM > 0 ? `${record.estimatedOneRM} kg` : '样本不足'}
+                <View style={styles.recordBottomRow}>
+                  <AppText numberOfLines={1} tone="muted" variant="caption">
+                    训练量 {formatKg(record.volume)}
                   </AppText>
-                  <AppText tone="muted" variant="caption">
-                    预估 1RM
-                  </AppText>
+                  <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
                 </View>
-                <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
               </Pressable>
             ))}
           </View>
@@ -637,24 +651,33 @@ const styles = StyleSheet.create({
   recordList: {
     gap: spacing.sm,
   },
-  recordMain: {
-    flex: 1,
-    gap: 2,
-    minWidth: 0,
-  },
-  recordRight: {
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  recordRow: {
-    alignItems: 'center',
+  recordCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
     padding: spacing.md,
+  },
+  recordTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  recordMemberName: {
+    flex: 1,
+    minWidth: 0,
+  },
+  recordMainMetric: {
+    gap: 2,
+  },
+  recordBottomRow: {
+    alignItems: 'center',
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: spacing.sm,
   },
   controlBlock: {
     gap: spacing.sm,

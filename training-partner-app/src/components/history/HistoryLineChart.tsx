@@ -38,6 +38,7 @@ export function HistoryLineChart({
       highlightIndex={highlightIndex}
       keyPointIndexes={keyPointIndexes}
       labels={points.map((point) => point.label)}
+      maxXAxisLabels={5}
       minChartHeight={Math.max(100, maxValue)}
       onPointPress={(_, index) => {
         const point = points[index];
@@ -46,7 +47,7 @@ export function HistoryLineChart({
         }
       }}
       unitLabel={unitLabel}
-      valueLabelStrategy="keyPoints"
+      valueLabelStrategy="none"
     />
   );
 }

@@ -84,6 +84,7 @@ export default function RootLayout() {
       <Stack.Screen name="account/settings" options={{ headerShown: false }} />
       <Stack.Screen name="account/security" options={{ headerShown: false }} />
       <Stack.Screen name="profile/avatar" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
       <Stack.Screen name="profile/body-metrics" options={{ headerShown: false }} />
       <Stack.Screen name="profile/training-identity" options={{ title: '' }} />
       <Stack.Screen name="profile/groups" options={{ title: '' }} />

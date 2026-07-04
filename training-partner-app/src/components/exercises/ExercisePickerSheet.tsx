@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import type {
@@ -71,6 +71,7 @@ export function ExercisePickerSheet({
   const [source, setSource] = useState<SourceFilter>('all');
   const [category, setCategory] = useState<ExerciseCategory | 'all'>('all');
   const [equipment, setEquipment] = useState<Equipment | 'all'>('all');
+  const [isFiltersExpanded, setFiltersExpanded] = useState(false);
   const [isCreateVisible, setCreateVisible] = useState(false);
 
   const filteredExercises = useMemo(() => {
@@ -90,6 +91,19 @@ export function ExercisePickerSheet({
           .some((value) => String(value).toLowerCase().includes(normalizedQuery));
       });
   }, [category, equipment, exercises, query, source]);
+
+  const activeFilterCount = [source !== 'all', category !== 'all', equipment !== 'all'].filter(Boolean).length;
+  const filterSummary = [
+    source === 'all' ? null : sourceFilters.find((item) => item.value === source)?.label,
+    category === 'all' ? null : categoryLabels[category],
+    equipment === 'all' ? null : equipmentLabels[equipment],
+  ].filter(Boolean).join(' · ') || '全部动作';
+
+  function resetFilters() {
+    setSource('all');
+    setCategory('all');
+    setEquipment('all');
+  }
 
   return (
     <>
@@ -111,46 +125,66 @@ export function ExercisePickerSheet({
           />
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.filterRow}>
-            {sourceFilters.map((item) => (
-              <FilterChip
-                active={source === item.value}
-                key={item.value}
-                label={item.label}
-                onPress={() => setSource(item.value)}
-              />
-            ))}
-          </View>
-        </ScrollView>
+        <View style={styles.compactFilterBar}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setFiltersExpanded((current) => !current)}
+            style={styles.filterSummaryButton}
+          >
+            <Ionicons color={colors.primary} name="options-outline" size={17} />
+            <View style={styles.filterSummaryText}>
+              <AppText numberOfLines={1} variant="caption" weight="900">
+                {filterSummary}
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                {activeFilterCount > 0 ? `${activeFilterCount} 个筛选 · ${filteredExercises.length} 个结果` : `${filteredExercises.length} 个结果`}
+              </AppText>
+            </View>
+            <Ionicons color={colors.textMuted} name={isFiltersExpanded ? 'chevron-up' : 'chevron-down'} size={16} />
+          </Pressable>
+          {activeFilterCount > 0 ? (
+            <Pressable accessibilityRole="button" onPress={resetFilters} style={styles.filterResetButton}>
+              <Ionicons color={colors.textMuted} name="close" size={16} />
+            </Pressable>
+          ) : null}
+        </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.filterRow}>
-            <FilterChip active={category === 'all'} label="全部肌群" onPress={() => setCategory('all')} />
-            {categoryOptions.map((item) => (
-              <FilterChip
-                active={category === item.value}
-                key={item.value}
-                label={item.label}
-                onPress={() => setCategory(item.value)}
-              />
-            ))}
+        {isFiltersExpanded ? (
+          <View style={styles.filterPanel}>
+            <FilterGroup title="来源">
+              {sourceFilters.map((item) => (
+                <FilterChip
+                  active={source === item.value}
+                  key={item.value}
+                  label={item.label}
+                  onPress={() => setSource(item.value)}
+                />
+              ))}
+            </FilterGroup>
+            <FilterGroup title="肌群">
+              <FilterChip active={category === 'all'} label="全部肌群" onPress={() => setCategory('all')} />
+              {categoryOptions.map((item) => (
+                <FilterChip
+                  active={category === item.value}
+                  key={item.value}
+                  label={item.label}
+                  onPress={() => setCategory(item.value)}
+                />
+              ))}
+            </FilterGroup>
+            <FilterGroup title="器械">
+              <FilterChip active={equipment === 'all'} label="全部器械" onPress={() => setEquipment('all')} />
+              {equipmentOptions.map((item) => (
+                <FilterChip
+                  active={equipment === item.value}
+                  key={item.value}
+                  label={item.label}
+                  onPress={() => setEquipment(item.value)}
+                />
+              ))}
+            </FilterGroup>
           </View>
-        </ScrollView>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.filterRow}>
-            <FilterChip active={equipment === 'all'} label="全部器械" onPress={() => setEquipment('all')} />
-            {equipmentOptions.map((item) => (
-              <FilterChip
-                active={equipment === item.value}
-                key={item.value}
-                label={item.label}
-                onPress={() => setEquipment(item.value)}
-              />
-            ))}
-          </View>
-        </ScrollView>
+        ) : null}
 
         <AppButton icon="add-outline" onPress={() => setCreateVisible(true)} variant="secondary">
           快速新建动作
@@ -342,6 +376,19 @@ function FilterChip({
   );
 }
 
+function FilterGroup({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <View style={styles.filterGroup}>
+      <AppText tone="muted" variant="caption" weight="800">
+        {title}
+      </AppText>
+      <View style={styles.filterRowWrap}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
 function InputBlock({
   label,
   multiline = false,
@@ -381,6 +428,11 @@ export function formatExerciseEquipment(equipment: Equipment): string {
 }
 
 const styles = StyleSheet.create({
+  compactFilterBar: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   errorCard: {
     padding: spacing.md,
   },
@@ -421,6 +473,15 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  filterGroup: {
+    gap: spacing.xs,
+  },
+  filterPanel: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
   filterChip: {
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
@@ -443,6 +504,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  filterResetButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  filterSummaryButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 46,
+    paddingHorizontal: spacing.md,
+  },
+  filterSummaryText: {
+    flex: 1,
+    gap: 1,
+    minWidth: 0,
   },
   formGrid: {
     flexDirection: 'row',

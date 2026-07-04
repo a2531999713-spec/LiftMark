@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
@@ -21,7 +21,7 @@ import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
 type DataScope = 'personal' | 'group';
-type RangeKey = '7d' | '30d' | 'month';
+type RangeKey = '7d' | '30d' | 'month' | 'custom';
 
 type DateRange = {
   fromDate: string;
@@ -29,6 +29,11 @@ type DateRange = {
   label: string;
   toDate: string;
 };
+
+type CustomDateRange = {
+  fromDate: string;
+  toDate: string;
+} | null;
 
 type ExerciseFilterOption = ExerciseTrendOption;
 
@@ -148,6 +153,14 @@ function formatShortDate(date: string): string {
   return date.slice(5).replace('-', '/');
 }
 
+function formatRangeLabel(fromDate: string, toDate: string): string {
+  const sameYear = fromDate.slice(0, 4) === toDate.slice(0, 4);
+  if (sameYear) {
+    return `${formatShortDate(fromDate)} - ${formatShortDate(toDate)}`;
+  }
+  return `${fromDate.replaceAll('-', '/')} - ${toDate.replaceAll('-', '/')}`;
+}
+
 function formatKg(value: number): string {
   return `${Math.round(value).toLocaleString('zh-CN')} kg`;
 }
@@ -160,13 +173,22 @@ function formatCompactKg(value: number): string {
   return `${Math.round(value)}kg`;
 }
 
-function getDateRange(rangeKey: RangeKey, selectedDate: string | null): DateRange {
+function getDateRange(rangeKey: RangeKey, selectedDate: string | null, customRange: CustomDateRange): DateRange {
   if (selectedDate) {
     return {
       fromDate: selectedDate,
       isSingleDay: true,
       label: formatShortDate(selectedDate),
       toDate: selectedDate,
+    };
+  }
+
+  if (rangeKey === 'custom' && customRange) {
+    return {
+      fromDate: customRange.fromDate,
+      isSingleDay: customRange.fromDate === customRange.toDate,
+      label: formatRangeLabel(customRange.fromDate, customRange.toDate),
+      toDate: customRange.toDate,
     };
   }
 
@@ -342,7 +364,7 @@ function buildSessionTrend(summaries: SessionSummary[]): TrendPoint[] {
     .filter((summary) => summary.setCount > 0 || summary.volume > 0)
     .slice()
     .sort((left, right) => `${left.date} ${left.session.updatedAt}`.localeCompare(`${right.date} ${right.session.updatedAt}`))
-    .slice(-12)
+    .slice(-60)
     .map((summary) => ({
       date: summary.date,
       exerciseCount: summary.exerciseCount,
@@ -401,7 +423,7 @@ function buildExerciseTrend(entries: HistorySetEntry[]): TrendPoint[] {
 
   return [...bySession.values()]
     .sort((left, right) => (left.date ?? '').localeCompare(right.date ?? ''))
-    .slice(-12);
+    .slice(-60);
 }
 
 function getKeyPointIndexes(values: number[], selectedIndex?: number): number[] {
@@ -560,8 +582,9 @@ export default function HistoryRoute() {
   const [dataScope, setDataScope] = useState<DataScope>('personal');
   const [rangeKey, setRangeKey] = useState<RangeKey>('30d');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [customRange, setCustomRange] = useState<CustomDateRange>(null);
   const [monthCursor, setMonthCursor] = useState(new Date());
-  const [isDateSheetVisible, setDateSheetVisible] = useState(false);
+  const [isTimeSheetVisible, setTimeSheetVisible] = useState(false);
   const [isExerciseFilterVisible, setExerciseFilterVisible] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const [recordAction, setRecordAction] = useState<SelectedRecordAction>(null);
@@ -569,7 +592,7 @@ export default function HistoryRoute() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const dateRange = useMemo(() => getDateRange(rangeKey, selectedDate), [rangeKey, selectedDate]);
+  const dateRange = useMemo(() => getDateRange(rangeKey, selectedDate, customRange), [customRange, rangeKey, selectedDate]);
 
   const loadHistory = useCallback(async () => {
     setIsLoading(true);
@@ -792,32 +815,35 @@ export default function HistoryRoute() {
               <HistoryFilterBar
                 groupName={history.groupName}
                 memberName={history.currentMember?.displayName ?? '暂无成员'}
-                onOpenDatePicker={() => setDateSheetVisible(true)}
                 onOpenExerciseFilter={() => setExerciseFilterVisible(true)}
-                onRangeChange={(nextRange) => {
-                  setRangeKey(nextRange);
+                onOpenTimeFilter={() => setTimeSheetVisible(true)}
+                onResetTimeFilter={() => {
+                  setRangeKey('30d');
                   setSelectedDate(null);
+                  setCustomRange(null);
                 }}
-                onResetDate={() => setSelectedDate(null)}
                 onScopeChange={(scope) => {
                   if (scope === 'group' && !guardFeature('group_analytics')) {
                     return;
                   }
                   setDataScope(scope);
                 }}
-                rangeKey={rangeKey}
+                rangeLabel={dateRange.label}
                 scope={dataScope}
-                selectedDate={selectedDate}
                 selectedExerciseName={selectedExerciseName}
+                timeFilterActive={rangeKey !== '30d' || Boolean(selectedDate) || Boolean(customRange)}
               />
 
               <TrainingTrendCard
                 barData={barData}
                 chartMode={chartMode}
                 dataScope={dataScope}
+                fromDate={dateRange.fromDate}
+                groupId={selectedGroupId}
                 rangeLabel={dateRange.label}
                 selectedExerciseId={effectiveSelectedExerciseId}
                 selectedExerciseName={selectedExerciseName}
+                toDate={dateRange.toDate}
                 trend={trend}
               />
 
@@ -837,17 +863,38 @@ export default function HistoryRoute() {
         </>
       ) : null}
 
-      <DatePickerSheet
+      <TimeRangeSheet
+        customRange={customRange}
         monthCursor={monthCursor}
-        onClose={() => setDateSheetVisible(false)}
+        onApplyCustomRange={(range) => {
+          setCustomRange(range);
+          setSelectedDate(null);
+          setRangeKey('custom');
+          setTimeSheetVisible(false);
+        }}
+        onClose={() => setTimeSheetVisible(false)}
         onMonthChange={setMonthCursor}
+        onResetRange={() => {
+          setRangeKey('30d');
+          setSelectedDate(null);
+          setCustomRange(null);
+          setTimeSheetVisible(false);
+        }}
+        onSelectPreset={(nextRange) => {
+          setRangeKey(nextRange);
+          setSelectedDate(null);
+          setCustomRange(null);
+          setTimeSheetVisible(false);
+        }}
         onSelectDate={(date) => {
           setSelectedDate(date);
-          setDateSheetVisible(false);
+          setCustomRange(null);
+          setTimeSheetVisible(false);
         }}
+        rangeKey={rangeKey}
         selectedDate={selectedDate}
         trainingDates={history.monthlyTrainingDates}
-        visible={isDateSheetVisible}
+        visible={isTimeSheetVisible}
       />
 
       <ExerciseTrendFilterSheet
@@ -876,17 +923,23 @@ function TrainingTrendCard({
   barData,
   chartMode,
   dataScope,
+  fromDate,
+  groupId,
   rangeLabel,
   selectedExerciseId,
   selectedExerciseName,
+  toDate,
   trend,
 }: {
   barData: HistoryBarPoint[];
   chartMode: HistoryChartMode;
   dataScope: DataScope;
+  fromDate: string;
+  groupId?: string | null;
   rangeLabel: string;
   selectedExerciseId: string | null;
   selectedExerciseName?: string;
+  toDate: string;
   trend: TrendPoint[];
 }) {
   const [selectedPoint, setSelectedPoint] = useState<SelectedTrendPoint>(null);
@@ -1004,10 +1057,21 @@ function TrainingTrendCard({
       {selectedExerciseId ? (
         <AppButton
           icon="barbell-outline"
-          onPress={() => router.push({ pathname: '/history/exercise/[exerciseId]', params: { exerciseId: selectedExerciseId } } as never)}
+          onPress={() =>
+            router.push({
+              pathname: dataScope === 'group' ? '/history/group-exercise/[exerciseId]' : '/history/exercise/[exerciseId]',
+              params: {
+                exerciseId: selectedExerciseId,
+                fromDate,
+                ...(dataScope === 'group' && groupId ? { groupId } : {}),
+                scope: dataScope,
+                toDate,
+              },
+            } as never)
+          }
           variant="secondary"
         >
-          动作详情
+          {dataScope === 'group' ? '查看小组动作分析' : '动作详情'}
         </AppButton>
       ) : null}
     </AppCard>
@@ -1175,27 +1239,154 @@ function RecordMeta({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DatePickerSheet({
+function TimeRangeSheet({
+  customRange,
   monthCursor,
+  onApplyCustomRange,
   onClose,
   onMonthChange,
+  onResetRange,
+  onSelectPreset,
   onSelectDate,
+  rangeKey,
   selectedDate,
   trainingDates,
   visible,
 }: {
+  customRange: CustomDateRange;
   monthCursor: Date;
+  onApplyCustomRange: (range: { fromDate: string; toDate: string }) => void;
   onClose: () => void;
   onMonthChange: (date: Date) => void;
+  onResetRange: () => void;
+  onSelectPreset: (rangeKey: Exclude<RangeKey, 'custom'>) => void;
   onSelectDate: (date: string) => void;
+  rangeKey: RangeKey;
   selectedDate: string | null;
   trainingDates: Set<string>;
   visible: boolean;
 }) {
+  const [mode, setMode] = useState<'menu' | 'single' | 'custom'>('menu');
+  const [customField, setCustomField] = useState<'from' | 'to'>('from');
+  const [draftFromDate, setDraftFromDate] = useState(customRange?.fromDate ?? getLocalDateString(addDays(new Date(), -29)));
+  const [draftToDate, setDraftToDate] = useState(customRange?.toDate ?? getLocalDateString());
   const monthDates = useMemo(() => getMonthDates(monthCursor), [monthCursor]);
 
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setMode('menu');
+      setCustomField('from');
+      setDraftFromDate(customRange?.fromDate ?? getLocalDateString(addDays(new Date(), -29)));
+      setDraftToDate(customRange?.toDate ?? getLocalDateString());
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [customRange, visible]);
+
+  const handleCustomDatePress = (date: string) => {
+    if (customField === 'from') {
+      if (draftToDate && date > draftToDate) {
+        Alert.alert('时间范围需要调整', '开始日期不能晚于结束日期。');
+        return;
+      }
+      setDraftFromDate(date);
+      setCustomField('to');
+      return;
+    }
+
+    if (date < draftFromDate) {
+      Alert.alert('时间范围需要调整', '结束日期不能早于开始日期。');
+      return;
+    }
+    setDraftToDate(date);
+  };
+
+  const applyCustomRange = () => {
+    if (!draftFromDate || !draftToDate) {
+      Alert.alert('请选择完整范围', '需要同时选择开始日期和结束日期。');
+      return;
+    }
+    if (draftToDate < draftFromDate) {
+      Alert.alert('时间范围需要调整', '结束日期不能早于开始日期。');
+      return;
+    }
+    onApplyCustomRange({ fromDate: draftFromDate, toDate: draftToDate });
+  };
+
   return (
-    <AppModalSheet onClose={onClose} subtitle="按单日筛选记录，清除后恢复当前时间范围" title="日期筛选" visible={visible}>
+    <AppModalSheet
+      onClose={onClose}
+      subtitle={mode === 'menu' ? '统一选择时间范围，单日和自定义范围都从这里进入。' : undefined}
+      title={mode === 'custom' ? '自定义时间范围' : mode === 'single' ? '选择单日' : '时间范围'}
+      visible={visible}
+    >
+      {mode === 'menu' ? (
+        <View style={styles.timeOptionList}>
+          <TimeRangeOption
+            active={!selectedDate && rangeKey === '7d'}
+            icon="calendar-outline"
+            label="近 7 天"
+            meta="查看最近一周训练状态"
+            onPress={() => onSelectPreset('7d')}
+          />
+          <TimeRangeOption
+            active={!selectedDate && rangeKey === '30d'}
+            icon="calendar-number-outline"
+            label="近 30 天"
+            meta="默认训练分析范围"
+            onPress={() => onSelectPreset('30d')}
+          />
+          <TimeRangeOption
+            active={!selectedDate && rangeKey === 'month'}
+            icon="calendar-clear-outline"
+            label="本月"
+            meta="按自然月统计训练"
+            onPress={() => onSelectPreset('month')}
+          />
+          <TimeRangeOption
+            active={Boolean(selectedDate)}
+            icon="today-outline"
+            label={selectedDate ? `单日 · ${formatShortDate(selectedDate)}` : '单日'}
+            meta="查看某一天练了什么"
+            onPress={() => setMode('single')}
+          />
+          <TimeRangeOption
+            active={rangeKey === 'custom' && Boolean(customRange)}
+            icon="calendar-sharp"
+            label={customRange ? formatRangeLabel(customRange.fromDate, customRange.toDate) : '自定义范围'}
+            meta="选择开始日期和结束日期"
+            onPress={() => setMode('custom')}
+          />
+          <AppButton onPress={onResetRange} variant="secondary">
+            恢复默认近 30 天
+          </AppButton>
+        </View>
+      ) : null}
+
+      {mode !== 'menu' ? (
+        <>
+          {mode === 'custom' ? (
+            <View style={styles.customRangeHeader}>
+              <DateTargetChip
+                active={customField === 'from'}
+                label="开始"
+                onPress={() => setCustomField('from')}
+                value={formatShortDate(draftFromDate)}
+              />
+              <Ionicons color={colors.textMuted} name="arrow-forward-outline" size={16} />
+              <DateTargetChip
+                active={customField === 'to'}
+                label="结束"
+                onPress={() => setCustomField('to')}
+                value={formatShortDate(draftToDate)}
+              />
+            </View>
+          ) : null}
+
       <View style={styles.modalHeader}>
         <Pressable accessibilityRole="button" onPress={() => onMonthChange(addMonths(monthCursor, -1))} style={styles.modalNavButton}>
           <Ionicons color={colors.text} name="chevron-back-outline" size={20} />
@@ -1216,14 +1407,17 @@ function DatePickerSheet({
         ))}
         {monthDates.map((date) => {
           const key = getLocalDateString(date);
-          const active = key === selectedDate;
+          const active = mode === 'custom'
+            ? key === draftFromDate || key === draftToDate
+            : key === selectedDate;
+          const inCustomRange = mode === 'custom' && key >= draftFromDate && key <= draftToDate;
           const hasTraining = trainingDates.has(key);
           return (
             <Pressable
               accessibilityRole="button"
               key={key}
-              onPress={() => onSelectDate(key)}
-              style={[styles.monthDay, active && styles.monthDayActive]}
+              onPress={() => (mode === 'custom' ? handleCustomDatePress(key) : onSelectDate(key))}
+              style={[styles.monthDay, inCustomRange && styles.monthDayInRange, active && styles.monthDayActive]}
             >
               <AppText tone={active ? 'inverse' : 'default'} variant="bodySmall" weight="900">
                 {date.getDate()}
@@ -1234,9 +1428,68 @@ function DatePickerSheet({
         })}
       </View>
       <View style={styles.modalActions}>
-        <AppButton onPress={onClose}>完成</AppButton>
-      </View>
+            {mode === 'custom' ? <AppButton onPress={applyCustomRange}>应用自定义范围</AppButton> : null}
+            <AppButton onPress={() => setMode('menu')} variant="secondary">
+              返回时间范围
+            </AppButton>
+          </View>
+        </>
+      ) : null}
     </AppModalSheet>
+  );
+}
+
+function TimeRangeOption({
+  active,
+  icon,
+  label,
+  meta,
+  onPress,
+}: {
+  active: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  meta: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.timeOption, active && styles.timeOptionActive]}>
+      <View style={styles.timeOptionIcon}>
+        <Ionicons color={active ? colors.surface : colors.primary} name={icon} size={18} />
+      </View>
+      <View style={styles.timeOptionText}>
+        <AppText variant="bodySmall" weight="900">
+          {label}
+        </AppText>
+        <AppText numberOfLines={1} tone="muted" variant="caption">
+          {meta}
+        </AppText>
+      </View>
+      {active ? <Ionicons color={colors.primary} name="checkmark-circle" size={18} /> : null}
+    </Pressable>
+  );
+}
+
+function DateTargetChip({
+  active,
+  label,
+  onPress,
+  value,
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+  value: string;
+}) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.dateTargetChip, active && styles.dateTargetChipActive]}>
+      <AppText tone={active ? 'inverse' : 'muted'} variant="caption" weight="800">
+        {label}
+      </AppText>
+      <AppText tone={active ? 'inverse' : 'default'} variant="bodySmall" weight="900">
+        {value}
+      </AppText>
+    </Pressable>
   );
 }
 
@@ -1579,6 +1832,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: '13.1%',
   },
+  monthDayInRange: {
+    backgroundColor: colors.primarySoft,
+  },
   monthDayActive: {
     backgroundColor: colors.primary,
   },
@@ -1594,6 +1850,55 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     gap: spacing.sm,
+  },
+  customRangeHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  dateTargetChip: {
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flex: 1,
+    gap: 2,
+    padding: spacing.md,
+  },
+  dateTargetChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  timeOption: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 68,
+    padding: spacing.md,
+  },
+  timeOptionActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
+  timeOptionIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderRadius: radius.md,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  timeOptionList: {
+    gap: spacing.sm,
+  },
+  timeOptionText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
   },
   pressed: {
     opacity: 0.82,

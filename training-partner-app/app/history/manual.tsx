@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, BackHandler, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
 import { ExercisePickerSheet, formatExerciseEquipment } from '@/components/exercises/ExercisePickerSheet';
@@ -142,6 +142,62 @@ export default function ManualHistoryRoute() {
     [exercises],
   ) as Record<string, Exercise | undefined>;
   const selectedExerciseIds = exerciseDrafts.map((draft) => draft.exerciseId);
+  const selectedMember = members.find((member) => member.id === selectedMemberId) ?? null;
+  const preview = useMemo(() => {
+    const setCount = exerciseDrafts.reduce((sum, draft) => sum + draft.sets.length, 0);
+    const volume = exerciseDrafts.reduce(
+      (exerciseSum, draft) =>
+        exerciseSum +
+        draft.sets.reduce((setSum, set) => {
+          const weight = parseOptionalNumber(set.weight);
+          const reps = parseOptionalInteger(set.reps);
+          if (!Number.isFinite(weight) || !Number.isFinite(reps)) {
+            return setSum;
+          }
+          return setSum + (weight ?? 0) * (reps ?? 0);
+        }, 0),
+      0,
+    );
+
+    return {
+      exerciseCount: exerciseDrafts.length,
+      memberName: selectedMember?.displayName ?? '未选择',
+      setCount,
+      volume,
+    };
+  }, [exerciseDrafts, selectedMember?.displayName]);
+  const hasUnsavedChanges = Boolean(
+    title.trim() !== '补录训练' ||
+      date !== (params.date ?? getLocalDateString()) ||
+      exerciseDrafts.length > 0,
+  );
+  const currentStep = exerciseDrafts.length > 0 ? 4 : selectedMemberId ? 2 : 1;
+
+  const confirmDiscard = useCallback((onDiscard: () => void) => {
+    if (!hasUnsavedChanges) {
+      onDiscard();
+      return;
+    }
+
+    Alert.alert('放弃本次补录？', '当前填写的动作和组数据尚未保存，离开后会丢失。', [
+      { text: '继续编辑', style: 'cancel' },
+      { text: '放弃补录', style: 'destructive', onPress: onDiscard },
+    ]);
+  }, [hasUnsavedChanges]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (!hasUnsavedChanges) {
+          return false;
+        }
+        confirmDiscard(() => router.back());
+        return true;
+      });
+
+      return () => subscription.remove();
+    }, [confirmDiscard, hasUnsavedChanges]),
+  );
 
   const addExerciseDraft = (exercise: Exercise) => {
     setExerciseDrafts((current) => {
@@ -168,13 +224,18 @@ export default function ManualHistoryRoute() {
     setExerciseDrafts((current) => current.filter((draft) => draft.id !== draftId));
   };
 
-  const addSetDraft = (draftId: string) => {
+  const addSetDraft = (draftId: string, seed?: ManualSetDraft) => {
     setExerciseDrafts((current) =>
       current.map((draft) =>
         draft.id === draftId
           ? {
               ...draft,
-              sets: [...draft.sets, createSetDraft()],
+              sets: [
+                ...draft.sets,
+                seed
+                  ? { id: createDraftId('set'), reps: seed.reps, weight: seed.weight }
+                  : createSetDraft(),
+              ],
             }
           : draft,
       ),
@@ -293,7 +354,18 @@ export default function ManualHistoryRoute() {
   };
 
   return (
-    <Screen subtitle="把过去完成的训练保存到历史记录。">
+    <Screen
+      headerRight={
+        <Pressable accessibilityRole="button" onPress={() => confirmDiscard(() => router.back())} style={styles.backPill}>
+          <Ionicons color={colors.textMuted} name="close" size={16} />
+          <AppText tone="muted" variant="caption" weight="900">
+            返回
+          </AppText>
+        </Pressable>
+      }
+      subtitle="把过去完成的训练保存到历史记录。"
+      title="补录训练"
+    >
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="补录训练暂时不可用" description={error} /> : null}
 
@@ -307,6 +379,8 @@ export default function ManualHistoryRoute() {
             subtitle="补录只修改训练记录，不会改动原训练计划。"
             title="保存过去完成的训练"
           />
+
+          <ManualStepStrip currentStep={currentStep} />
 
           <AppCard style={styles.card}>
             <SectionHeader title="训练信息" />
@@ -408,9 +482,19 @@ export default function ManualHistoryRoute() {
                         ))}
                       </View>
 
-                      <AppButton icon="add-outline" onPress={() => addSetDraft(draft.id)} size="sm" variant="ghost">
-                        新增一组
-                      </AppButton>
+                      <View style={styles.inlineActions}>
+                        <AppButton icon="add-outline" onPress={() => addSetDraft(draft.id)} size="sm" variant="ghost">
+                          新增一组
+                        </AppButton>
+                        <AppButton
+                          icon="copy-outline"
+                          onPress={() => addSetDraft(draft.id, draft.sets.at(-1))}
+                          size="sm"
+                          variant="secondary"
+                        >
+                          复制上一组
+                        </AppButton>
+                      </View>
                     </View>
                   );
                 })}
@@ -425,6 +509,16 @@ export default function ManualHistoryRoute() {
                 title="还没有添加动作"
               />
             )}
+          </AppCard>
+
+          <AppCard style={styles.previewCard} tone="brand">
+            <SectionHeader subtitle="保存前确认数据口径。" title="保存预览" />
+            <View style={styles.previewGrid}>
+              <PreviewMetric label="成员" value={preview.memberName} />
+              <PreviewMetric label="动作" value={`${preview.exerciseCount} 个`} />
+              <PreviewMetric label="组数" value={`${preview.setCount} 组`} />
+              <PreviewMetric label="训练量" value={`${Math.round(preview.volume).toLocaleString('zh-CN')} kg`} />
+            </View>
           </AppCard>
 
           <AppButton disabled={isSaving} icon="save-outline" onPress={() => void saveManualSession()} size="lg">
@@ -476,6 +570,46 @@ export default function ManualHistoryRoute() {
   );
 }
 
+function ManualStepStrip({ currentStep }: { currentStep: number }) {
+  const steps = [
+    { label: '对象', value: 1 },
+    { label: '动作', value: 2 },
+    { label: '组数据', value: 3 },
+    { label: '预览', value: 4 },
+  ];
+
+  return (
+    <View style={styles.stepStrip}>
+      {steps.map((step) => {
+        const active = currentStep >= step.value;
+        return (
+          <View key={step.value} style={[styles.stepItem, active && styles.stepItemActive]}>
+            <AppText tone={active ? 'inverse' : 'muted'} variant="caption" weight="900">
+              {step.value}
+            </AppText>
+            <AppText tone={active ? 'inverse' : 'muted'} variant="caption" weight="900">
+              {step.label}
+            </AppText>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function PreviewMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.previewMetric}>
+      <AppText variant="bodySmall" weight="900">
+        {value}
+      </AppText>
+      <AppText tone="muted" variant="caption">
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
 function Field({
   label,
   onChangeText,
@@ -517,6 +651,17 @@ function SelectableChip({ active, label, onPress }: { active: boolean; label: st
 }
 
 const styles = StyleSheet.create({
+  backPill: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
   card: {
     gap: spacing.md,
   },
@@ -578,6 +723,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 32,
   },
+  inlineActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
   field: {
     backgroundColor: colors.backgroundElevated,
     borderColor: colors.border,
@@ -601,6 +751,24 @@ const styles = StyleSheet.create({
   modalButtons: {
     gap: spacing.sm,
   },
+  previewCard: {
+    gap: spacing.md,
+  },
+  previewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  previewMetric: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexGrow: 1,
+    gap: spacing.xs,
+    minWidth: '45%',
+    padding: spacing.md,
+  },
   setCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -616,5 +784,22 @@ const styles = StyleSheet.create({
   },
   setList: {
     gap: spacing.sm,
+  },
+  stepItem: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: 34,
+  },
+  stepItemActive: {
+    backgroundColor: colors.primary,
+  },
+  stepStrip: {
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
 });

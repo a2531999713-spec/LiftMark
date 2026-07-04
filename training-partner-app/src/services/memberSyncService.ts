@@ -47,18 +47,14 @@ export async function syncGroupMembersAvatar(groupId: string): Promise<{ ok: tru
       const avatarThumbUrl = resolveAvatarUrl(
         serverMember.avatarThumbUrl ?? serverMember.avatar_thumb_url ?? serverMember.avatarUrl ?? serverMember.avatar_url,
       ) ?? null;
-      const displayName = serverMember.displayName ?? serverMember.nickname;
-
-      // 更新 group_members 表中的 avatar_url
+      // 这里只同步账号关联和头像，不能覆盖用户在本地编辑过的成员显示名。
       await db.runAsync(
         `UPDATE group_members
-         SET display_name = COALESCE(?, display_name),
-             user_id = ?,
+         SET user_id = ?,
              member_type = 'real',
              avatar_url = ?,
              updated_at = ?
          WHERE id = ? OR (group_id = ? AND user_id = ?)`,
-        displayName ?? null,
         userId,
         avatarUrl,
         new Date().toISOString(),
