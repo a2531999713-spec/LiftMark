@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { type DimensionValue, type LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { Pressable, type DimensionValue, type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 
 import { colors, spacing } from '@/theme';
 
@@ -17,6 +17,10 @@ type MiniLineChartProps = {
   minChartHeight?: number;
   chartHeight?: number;
   showValues?: boolean;
+  valueLabelStrategy?: 'none' | 'all' | 'keyPoints';
+  keyPointIndexes?: number[];
+  onPointPress?: (point: { index: number; value: number; label?: string }, index: number) => void;
+  getPointMeta?: (index: number) => Record<string, unknown> | undefined;
   formatValue?: (value: number) => string;
   emptyMessage?: string;
   unitLabel?: string;
@@ -44,6 +48,26 @@ function getVisibleXAxisIndexes(count: number, maxLabels: number, strategy: 'all
   return visible;
 }
 
+function getDefaultKeyPointIndexes(data: number[], highlightIndex?: number): number[] {
+  const indexes = new Set<number>();
+  const active = data
+    .map((value, index) => ({ index, value }))
+    .filter((point) => point.value > 0);
+
+  if (active.length === 0) {
+    return [];
+  }
+
+  indexes.add(active.at(-1)!.index);
+  indexes.add(active.reduce((max, point) => (point.value > max.value ? point : max), active[0]).index);
+  indexes.add(active.reduce((min, point) => (point.value < min.value ? point : min), active[0]).index);
+  if (highlightIndex !== undefined) {
+    indexes.add(highlightIndex);
+  }
+
+  return [...indexes];
+}
+
 export function MiniLineChart({
   data,
   labels,
@@ -55,6 +79,9 @@ export function MiniLineChart({
   minChartHeight = 100,
   chartHeight,
   showValues = false,
+  valueLabelStrategy,
+  keyPointIndexes,
+  onPointPress,
   formatValue = (value) => `${Math.round(value)}`,
   emptyMessage = '暂无数据',
   unitLabel,
@@ -71,6 +98,13 @@ export function MiniLineChart({
   });
   const tickValues = scale.ticks;
   const visibleXAxisIndexes = getVisibleXAxisIndexes(labels.length, maxXAxisLabels, labelSkipStrategy);
+  const effectiveLabelStrategy = valueLabelStrategy ?? (showValues ? 'all' : 'none');
+  const valueLabelIndexes =
+    effectiveLabelStrategy === 'all'
+      ? new Set(Array.from({ length: pointCount }, (_, index) => index))
+      : effectiveLabelStrategy === 'keyPoints'
+        ? new Set(keyPointIndexes ?? getDefaultKeyPointIndexes(sanitizedData, highlightIndex))
+        : new Set<number>();
 
   if (!hasData) {
     return (
@@ -109,6 +143,8 @@ export function MiniLineChart({
         <ChartArea
           chartHeight={effectiveChartHeight}
           highlightIndex={highlightIndex}
+          labels={labels}
+          onPointPress={onPointPress}
           points={points}
           tickCount={tickValues.length}
         />
@@ -118,9 +154,10 @@ export function MiniLineChart({
         <View style={styles.labelRow}>
         {labels.map((label, index) => {
           const isAxisLabelVisible = visibleXAxisIndexes.has(index);
+          const isValueVisible = valueLabelIndexes.has(index);
           return (
           <View key={`${label}-${index}`} style={[styles.labelColumn, pointCount === 1 && styles.labelColumnSingle]}>
-            {isAxisLabelVisible && showValues && sanitizedData[index] > 0 ? (
+            {isValueVisible && sanitizedData[index] > 0 ? (
               <AppText
                 numberOfLines={1}
                 style={index === highlightIndex && styles.highlightValue}
@@ -156,13 +193,15 @@ type ChartPoint = { index: number; value: number; xPercent: number; yPercent: nu
 type ChartAreaProps = {
   chartHeight: number;
   highlightIndex?: number;
+  labels: string[];
+  onPointPress?: (point: { index: number; value: number; label?: string }, index: number) => void;
   points: ChartPoint[];
   tickCount: number;
 };
 
 const PLOT_PADDING = 12;
 
-function ChartArea({ chartHeight, highlightIndex, points, tickCount }: ChartAreaProps) {
+function ChartArea({ chartHeight, highlightIndex, labels, onPointPress, points, tickCount }: ChartAreaProps) {
   const [containerWidth, setContainerWidth] = useState(0);
 
   function handleLayout(event: LayoutChangeEvent) {
@@ -185,7 +224,7 @@ function ChartArea({ chartHeight, highlightIndex, points, tickCount }: ChartArea
       {containerWidth > 0
         ? renderConnectingLines(points, chartHeight, containerWidth).concat(
             points.map((point, arrayIndex) =>
-              renderPoint(point, arrayIndex, chartHeight, containerWidth, highlightIndex),
+              renderPoint(point, arrayIndex, chartHeight, containerWidth, highlightIndex, labels, onPointPress),
             ),
           )
         : null}
@@ -243,6 +282,8 @@ function renderPoint(
   chartHeight: number,
   containerWidth: number,
   highlightIndex?: number,
+  labels?: string[],
+  onPointPress?: (point: { index: number; value: number; label?: string }, index: number) => void,
 ) {
   const isHighlighted = point.index === highlightIndex;
   const plotWidth = Math.max(1, containerWidth - PLOT_PADDING * 2);
@@ -250,15 +291,20 @@ function renderPoint(
   const leftPx = PLOT_PADDING + point.xPercent * plotWidth;
   const top = PLOT_PADDING + (1 - point.yPercent) * plotHeight;
   const dotSize = isHighlighted ? 10 : point.value !== 0 ? 7 : 5;
+  const touchSize = 32;
 
   return (
-    <View
+    <Pressable
+      accessibilityRole="button"
       key={`point-${arrayIndex}`}
+      onPress={() => onPointPress?.({ index: point.index, label: labels?.[point.index], value: point.value }, point.index)}
       style={[
         styles.pointWrapper,
         {
-          left: (leftPx - dotSize / 2) as DimensionValue,
-          top: top - dotSize / 2,
+          top: top - touchSize / 2,
+          height: touchSize,
+          width: touchSize,
+          left: (leftPx - touchSize / 2) as DimensionValue,
         },
       ]}
     >
@@ -277,7 +323,7 @@ function renderPoint(
             : styles.pointEmpty,
         ]}
       />
-    </View>
+    </Pressable>
   );
 }
 
@@ -344,10 +390,11 @@ const styles = StyleSheet.create({
     right: 0,
   },
   pointWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
     position: 'absolute',
   },
   point: {
-    position: 'absolute',
   },
   pointActive: {
     backgroundColor: colors.primary,

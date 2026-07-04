@@ -28,6 +28,9 @@ export interface WorkoutRepository {
   deleteSet(setId: ID): Promise<void>;
   deleteExerciseRecord(recordId: ID): Promise<void>;
   deleteSession(sessionId: ID): Promise<void>;
+  deleteMemberSetsInSession(sessionId: ID, memberId: ID): Promise<void>;
+  deleteSessionCascade(sessionId: ID): Promise<void>;
+  cleanupEmptyExerciseRecords(sessionId: ID): Promise<void>;
   finishSession(sessionId: ID): Promise<WorkoutSummary>;
   listSessions(input: ListSessionsInput): Promise<WorkoutSession[]>;
 }

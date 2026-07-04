@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect, useMemo } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, StyleSheet, TextInput, View } from 'react-native';
 
-import { AppButton, AppCard, AppText, SectionHeader, VisualHeroCard } from '@/components/ui';
-import { liftmarkImages } from '@/assets/images';
+import { AppButton, AppCard, AppText, SectionHeader, Tag } from '@/components/ui';
 import {
   defaultMemberFormValues,
   type MemberFormValues,
@@ -16,7 +16,9 @@ type MemberFormProps = {
   initialValues?: Partial<MemberFormValues>;
   submitLabel: string;
   isSubmitting?: boolean;
+  identityNote?: string;
   onSubmit(values: MemberFormValues): void | Promise<void>;
+  statusMessage?: string | null;
 };
 
 type NumberFieldName = Exclude<keyof MemberFormValues, 'displayName'>;
@@ -50,22 +52,58 @@ function parseOptionalNumber(value: string): number | undefined {
 
 export function MemberForm({
   initialValues,
+  identityNote,
   submitLabel,
   isSubmitting = false,
   onSubmit,
+  statusMessage,
 }: MemberFormProps) {
+  const initialBarbellIncrement = initialValues?.barbellIncrement;
+  const initialBench1RM = initialValues?.bench1RM;
+  const initialBodyweight = initialValues?.bodyweight;
+  const initialDeadlift1RM = initialValues?.deadlift1RM;
+  const initialDisplayName = initialValues?.displayName;
+  const initialDumbbellIncrement = initialValues?.dumbbellIncrement;
+  const initialOverheadPress1RM = initialValues?.overheadPress1RM;
+  const initialPullupReferenceWeight = initialValues?.pullupReferenceWeight;
+  const initialSquat1RM = initialValues?.squat1RM;
+  const defaultValues = useMemo(
+    () => ({
+      barbellIncrement: initialBarbellIncrement ?? defaultMemberFormValues.barbellIncrement,
+      bench1RM: initialBench1RM,
+      bodyweight: initialBodyweight,
+      deadlift1RM: initialDeadlift1RM,
+      displayName: initialDisplayName ?? defaultMemberFormValues.displayName,
+      dumbbellIncrement: initialDumbbellIncrement ?? defaultMemberFormValues.dumbbellIncrement,
+      overheadPress1RM: initialOverheadPress1RM,
+      pullupReferenceWeight: initialPullupReferenceWeight,
+      squat1RM: initialSquat1RM,
+    }),
+    [
+      initialBarbellIncrement,
+      initialBench1RM,
+      initialBodyweight,
+      initialDeadlift1RM,
+      initialDisplayName,
+      initialDumbbellIncrement,
+      initialOverheadPress1RM,
+      initialPullupReferenceWeight,
+      initialSquat1RM,
+    ],
+  );
   const {
     control,
     handleSubmit,
+    reset,
     formState: { errors, isDirty, isValid },
   } = useForm<MemberFormValues>({
     mode: 'onChange',
     resolver: zodResolver(memberFormSchema),
-    defaultValues: {
-      ...defaultMemberFormValues,
-      ...initialValues,
-    },
+    defaultValues,
   });
+  useEffect(() => {
+    reset(defaultValues);
+  }, [defaultValues, reset]);
   const hasInitialValues = Boolean(initialValues?.displayName);
   const canSubmit = isDirty && isValid && !isSubmitting;
   const saveLabel = isSubmitting
@@ -77,17 +115,33 @@ export function MemberForm({
   return (
     <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })}>
       <View style={styles.container}>
-        <VisualHeroCard
-          eyebrow="训练搭子"
-          icon="people-outline"
-          imageSource={liftmarkImages.partnerHero}
-          minHeight={176}
-          subtitle="更智能的推荐，更高效的多人轮换。"
-          title="创建训练搭子 保存常用训练参数"
-        />
+        {statusMessage ? (
+          <AppCard style={styles.statusCard} tone="soft">
+            <Ionicons color={colors.success} name="checkmark-circle-outline" size={20} />
+            <AppText variant="bodySmall" weight="900">
+              {statusMessage}
+            </AppText>
+          </AppCard>
+        ) : null}
+
+        {identityNote ? (
+          <AppCard style={styles.identityCard}>
+            <View style={styles.identityIcon}>
+              <Ionicons color={colors.primary} name="person-circle-outline" size={20} />
+            </View>
+            <View style={styles.identityText}>
+              <AppText variant="bodySmall" weight="900">
+                成员身份
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                {identityNote}
+              </AppText>
+            </View>
+          </AppCard>
+        ) : null}
 
         <AppCard style={styles.section}>
-          <SectionHeader subtitle="为你的搭子起个名字吧，可以随时修改。" title="基础信息" />
+          <SectionHeader title="基础信息" />
           <Controller
             control={control}
             name="displayName"
@@ -107,7 +161,10 @@ export function MemberForm({
         </AppCard>
 
         <AppCard style={styles.section}>
-          <SectionHeader subtitle="可留空，稍后随时补充。" title="训练参数" />
+          <View style={styles.sectionTitleRow}>
+            <SectionHeader title="训练参数" />
+            <Tag label="可选" tone="neutral" />
+          </View>
           <View style={styles.paramGrid}>
             {oneRmFields.map((field) => (
               <Controller
@@ -155,15 +212,6 @@ export function MemberForm({
         <AppButton disabled={!canSubmit} icon="save-outline" onPress={handleSubmit(onSubmit)} size="lg">
           {saveLabel}
         </AppButton>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => Alert.alert('稍后补充', '昵称需要先填写，其他训练参数可以留空后再补充。')}
-          style={styles.laterButton}
-        >
-          <AppText tone="muted" variant="bodySmall" weight="900">
-            稍后补充
-          </AppText>
-        </Pressable>
       </View>
     </KeyboardAvoidingView>
   );
@@ -270,6 +318,35 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing.md,
   },
+  statusCard: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  identityCard: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  identityIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.pill,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  identityText: {
+    flex: 1,
+    gap: 2,
+  },
+  sectionTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   inputBox: {
     backgroundColor: colors.backgroundElevated,
     borderColor: colors.border,
@@ -310,10 +387,5 @@ const styles = StyleSheet.create({
     height: 32,
     justifyContent: 'center',
     width: 32,
-  },
-  laterButton: {
-    alignItems: 'center',
-    paddingBottom: spacing.md,
-    paddingTop: spacing.xs,
   },
 });

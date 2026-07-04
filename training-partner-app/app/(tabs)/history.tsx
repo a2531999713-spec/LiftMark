@@ -1,45 +1,26 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { Avatar } from '@/components/avatar';
-import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MiniLineChart, MultiLineTrendChart, Screen, SectionHeader, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MiniLineChart, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
-import {
-  analyzeExerciseHistory,
-  estimateOneRM,
-  getGroupHistoryAnalysis,
-  selectLargestExerciseSeries,
-  type GroupHistoryAnalysis,
-  type HistoryAnalysis,
-  type HistorySetEntry,
-} from '@/domain/history/history-analysis';
-import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
+import { estimateOneRM, type HistorySetEntry } from '@/domain/history/history-analysis';
+import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutSession, WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
 type DataScope = 'personal' | 'group';
+type RangeKey = '7d' | '30d' | 'month';
 
-type SessionSummary = {
-  bestEstimatedOneRM?: number;
-  durationMinutes?: number;
-  exerciseCount: number;
-  mainExerciseNames: string[];
-  session: WorkoutSession;
-  setCount: number;
-  topSetLabel?: string;
-  volume: number;
-};
-
-type WeekTrendPoint = {
-  date?: string;
+type DateRange = {
+  fromDate: string;
   label: string;
-  volume: number;
+  toDate: string;
 };
 
 type ExerciseFilterOption = {
@@ -47,41 +28,71 @@ type ExerciseFilterOption = {
   name: string;
 };
 
-type HistoryState = {
-  analysis: HistoryAnalysis | null;
-  currentMember: GroupMember | null;
-  exercise: Exercise | null;
-  exerciseEntries: HistorySetEntry[];
-  exerciseOptions: ExerciseFilterOption[];
-  groupAnalysis: GroupHistoryAnalysis | null;
-  groupName: string;
-  memberProfilesById: Record<string, MemberProfile | null>;
-  monthlyTrainingDates: Set<string>;
-  recentSessions: SessionSummary[];
-  selectedDateSessions: SessionSummary[];
-  weeklyCompletedSets: number;
-  weeklySessionCount: number;
-  weeklyTrend: WeekTrendPoint[];
-  weeklyVolume: number;
+type SessionSummary = {
+  date: string;
+  durationMinutes?: number;
+  exerciseCount: number;
+  id: string;
+  mainExerciseNames: string[];
+  participantCount?: number;
+  session: WorkoutSession;
+  setCount: number;
+  title: string;
+  topSetLabel?: string;
+  volume: number;
 };
+
+type TrendPoint = {
+  date?: string;
+  exerciseCount: number;
+  label: string;
+  setCount: number;
+  sessionId?: string;
+  volume: number;
+};
+
+type HistoryState = {
+  currentMember: GroupMember | null;
+  exerciseOptions: ExerciseFilterOption[];
+  groupName: string;
+  groupEntries: HistorySetEntry[];
+  groupSessions: SessionSummary[];
+  monthlyTrainingDates: Set<string>;
+  personalEntries: HistorySetEntry[];
+  personalSessions: SessionSummary[];
+};
+
+type SelectedRecordAction = {
+  scope: DataScope;
+  summary: SessionSummary;
+} | null;
+
+type SelectedTrendPoint = {
+  changeLabel: string;
+  date?: string;
+  exerciseCount: number;
+  index: number;
+  label: string;
+  setCount: number;
+  value: number;
+} | null;
+
+const rangeOptions: { key: RangeKey; label: string }[] = [
+  { key: '7d', label: '近 7 天' },
+  { key: '30d', label: '近 30 天' },
+  { key: 'month', label: '本月' },
+];
 
 function createEmptyHistory(currentMember: GroupMember | null = null): HistoryState {
   return {
-    analysis: null,
     currentMember,
-    exercise: null,
-    exerciseEntries: [],
     exerciseOptions: [],
-    groupAnalysis: null,
+    groupEntries: [],
     groupName: '默认训练小组',
-    memberProfilesById: {},
+    groupSessions: [],
     monthlyTrainingDates: new Set<string>(),
-    recentSessions: [],
-    selectedDateSessions: [],
-    weeklyCompletedSets: 0,
-    weeklySessionCount: 0,
-    weeklyTrend: [],
-    weeklyVolume: 0,
+    personalEntries: [],
+    personalSessions: [],
   };
 }
 
@@ -92,6 +103,18 @@ function getLocalDateString(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+function addDays(date: Date, count: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + count);
+  return next;
+}
+
+function addMonths(date: Date, count: number): Date {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + count);
+  return next;
+}
+
 function formatMonthLabel(date: Date): string {
   return `${date.getFullYear()}年${date.getMonth() + 1}月`;
 }
@@ -100,51 +123,50 @@ function formatShortDate(date: string): string {
   return date.slice(5).replace('-', '/');
 }
 
-function addDays(date: Date, count: number) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + count);
-  return next;
+function formatKg(value: number): string {
+  return `${Math.round(value).toLocaleString('zh-CN')} kg`;
 }
 
-function addMonths(date: Date, count: number) {
-  const next = new Date(date);
-  next.setMonth(next.getMonth() + count);
-  return next;
+function formatCompactKg(value: number): string {
+  if (value >= 1000) {
+    return `${Math.round(value / 100) / 10}k`;
+  }
+
+  return `${Math.round(value)}kg`;
 }
 
-function getWeekDates(centerDate: string) {
-  const center = new Date(`${centerDate}T12:00:00`);
-  return Array.from({ length: 7 }, (_, index) => addDays(center, index - 3));
+function getDateRange(rangeKey: RangeKey, selectedDate: string | null): DateRange {
+  if (selectedDate) {
+    return {
+      fromDate: selectedDate,
+      label: formatShortDate(selectedDate),
+      toDate: selectedDate,
+    };
+  }
+
+  const today = new Date();
+  if (rangeKey === 'month') {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1, 12);
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0, 12);
+    return {
+      fromDate: getLocalDateString(start),
+      label: '本月',
+      toDate: getLocalDateString(end),
+    };
+  }
+
+  const dayCount = rangeKey === '7d' ? 7 : 30;
+  return {
+    fromDate: getLocalDateString(addDays(today, -(dayCount - 1))),
+    label: `近 ${dayCount} 天`,
+    toDate: getLocalDateString(today),
+  };
 }
 
 function getMonthDates(monthCursor: Date) {
   const first = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1, 12);
   const daysInMonth = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0).getDate();
   return Array.from({ length: daysInMonth }, (_, index) => new Date(first.getFullYear(), first.getMonth(), index + 1, 12));
-}
-
-function formatKg(value: number): string {
-  return `${Math.round(value).toLocaleString('zh-CN')} kg`;
-}
-
-function formatPercent(value: number): string {
-  return `${Math.round(value * 100)}%`;
-}
-
-function formatTrend(value: string): string {
-  if (value === 'up') {
-    return '上升';
-  }
-
-  if (value === 'down') {
-    return '下降';
-  }
-
-  if (value === 'stable') {
-    return '稳定';
-  }
-
-  return '样本不足';
 }
 
 function getDurationMinutes(session: WorkoutSession): number | undefined {
@@ -159,6 +181,10 @@ function getDurationMinutes(session: WorkoutSession): number | undefined {
   }
 
   return Math.round((finishedAt - startedAt) / 60000);
+}
+
+function getExerciseNameMap(exercises: Exercise[]): Record<string, string> {
+  return Object.fromEntries(exercises.map((exercise) => [exercise.id, exercise.name]));
 }
 
 function getMemberEntries(detail: WorkoutSessionDetail, memberId: string): HistorySetEntry[] {
@@ -179,23 +205,39 @@ function getMemberEntries(detail: WorkoutSessionDetail, memberId: string): Histo
     });
 }
 
+function getGroupEntries(detail: WorkoutSessionDetail): HistorySetEntry[] {
+  return detail.sets.map((set) => {
+    const record = detail.exercises.find((exercise) => exercise.id === set.exerciseRecordId);
+    return {
+      completed: set.completed,
+      date: detail.session.date,
+      exerciseId: record?.exerciseId ?? set.exerciseRecordId,
+      memberId: set.memberId,
+      reps: set.actualReps,
+      sessionId: detail.session.id,
+      weight: set.actualWeight,
+    };
+  });
+}
+
 function summarizeSession(
   detail: WorkoutSessionDetail,
-  memberId: string,
-  exerciseNamesById: Record<string, string> = {},
+  exerciseNamesById: Record<string, string>,
+  memberId?: string,
 ): SessionSummary {
-  const memberSets = detail.sets.filter((set) => set.memberId === memberId && set.completed);
+  const scopedSets = memberId ? detail.sets.filter((set) => set.memberId === memberId) : detail.sets;
+  const completedSets = scopedSets.filter((set) => set.completed);
+  const completedRecordIds = new Set(completedSets.map((set) => set.exerciseRecordId));
   const exerciseIds = new Set(
-    memberSets.map((set) => detail.exercises.find((exercise) => exercise.id === set.exerciseRecordId)?.exerciseId ?? set.exerciseRecordId),
+    completedSets.map((set) => detail.exercises.find((exercise) => exercise.id === set.exerciseRecordId)?.exerciseId ?? set.exerciseRecordId),
   );
-  const completedRecordIds = new Set(memberSets.map((set) => set.exerciseRecordId));
   const mainExerciseNames = detail.exercises
     .filter((exercise) => completedRecordIds.has(exercise.id))
     .slice()
     .sort((left, right) => left.orderIndex - right.orderIndex)
-    .map((exercise) => exerciseNamesById[exercise.exerciseId] ?? '未知动作')
+    .map((exercise) => exerciseNamesById[exercise.exerciseId] ?? '训练动作')
     .filter((name, index, names) => names.indexOf(name) === index);
-  const topSet = memberSets
+  const topSet = completedSets
     .map((set) => ({
       estimatedOneRM: estimateOneRM(set.actualWeight ?? set.plannedWeight ?? 0, set.actualReps ?? set.plannedReps ?? 0),
       reps: set.actualReps ?? set.plannedReps ?? 0,
@@ -205,49 +247,133 @@ function summarizeSession(
     .sort((left, right) => right.estimatedOneRM - left.estimatedOneRM)[0];
 
   return {
-    bestEstimatedOneRM: topSet?.estimatedOneRM,
+    date: detail.session.date,
     durationMinutes: getDurationMinutes(detail.session),
     exerciseCount: exerciseIds.size,
+    id: detail.session.id,
     mainExerciseNames,
+    participantCount: memberId ? undefined : new Set(completedSets.map((set) => set.memberId)).size,
     session: detail.session,
-    setCount: memberSets.length,
+    setCount: completedSets.length,
+    title: detail.session.title,
     topSetLabel: topSet ? `${topSet.weight}kg x ${topSet.reps}` : undefined,
-    volume: memberSets.reduce(
+    volume: completedSets.reduce(
       (sum, set) => sum + (set.actualWeight ?? set.plannedWeight ?? 0) * (set.actualReps ?? set.plannedReps ?? 0),
       0,
     ),
   };
 }
 
-function buildWeeklyTrend(summaries: SessionSummary[]): WeekTrendPoint[] {
+function buildSessionTrend(summaries: SessionSummary[]): TrendPoint[] {
   return summaries
     .filter((summary) => summary.setCount > 0 || summary.volume > 0)
-    .sort((left, right) => `${left.session.date} ${left.session.updatedAt}`.localeCompare(`${right.session.date} ${right.session.updatedAt}`))
-    .slice(-7)
+    .slice()
+    .sort((left, right) => `${left.date} ${left.session.updatedAt}`.localeCompare(`${right.date} ${right.session.updatedAt}`))
+    .slice(-12)
     .map((summary) => ({
-      date: summary.session.date,
-      label: formatShortDate(summary.session.date),
+      date: summary.date,
+      exerciseCount: summary.exerciseCount,
+      label: formatShortDate(summary.date),
+      sessionId: summary.id,
+      setCount: summary.setCount,
       volume: summary.volume,
     }));
 }
 
-function buildExerciseTrend(entries: HistorySetEntry[]): WeekTrendPoint[] {
-  const bySession = new Map<string, WeekTrendPoint>();
+function buildExerciseTrend(entries: HistorySetEntry[]): TrendPoint[] {
+  const bySession = new Map<string, TrendPoint>();
   entries
     .filter((entry) => entry.completed && (entry.weight ?? 0) > 0 && (entry.reps ?? 0) > 0)
     .forEach((entry) => {
       const current = bySession.get(entry.sessionId) ?? {
         date: entry.date,
+        exerciseCount: 1,
         label: formatShortDate(entry.date),
+        sessionId: entry.sessionId,
+        setCount: 0,
         volume: 0,
       };
+      current.setCount += 1;
       current.volume += (entry.weight ?? 0) * (entry.reps ?? 0);
       bySession.set(entry.sessionId, current);
     });
 
   return [...bySession.values()]
     .sort((left, right) => (left.date ?? '').localeCompare(right.date ?? ''))
-    .slice(-7);
+    .slice(-12);
+}
+
+function getKeyPointIndexes(values: number[], selectedIndex?: number): number[] {
+  const indexes = new Set<number>();
+  const active = values
+    .map((value, index) => ({ index, value }))
+    .filter((point) => point.value > 0);
+
+  if (active.length === 0) {
+    return [];
+  }
+
+  indexes.add(active.at(-1)!.index);
+  indexes.add(active.reduce((max, point) => (point.value > max.value ? point : max), active[0]).index);
+  indexes.add(active.reduce((min, point) => (point.value < min.value ? point : min), active[0]).index);
+  if (selectedIndex !== undefined) {
+    indexes.add(selectedIndex);
+  }
+
+  for (let index = 1; index < values.length; index += 1) {
+    const previous = values[index - 1];
+    const current = values[index];
+    if (previous > 0 && Math.abs(current - previous) / previous > 0.3) {
+      indexes.add(index);
+    }
+  }
+
+  return [...indexes]
+    .sort((left, right) => {
+      const priority = (index: number) => {
+        if (index === active.at(-1)!.index) return 0;
+        if (index === active.reduce((max, point) => (point.value > max.value ? point : max), active[0]).index) return 1;
+        if (index === selectedIndex) return 2;
+        return 3;
+      };
+      return priority(left) - priority(right);
+    })
+    .slice(0, values.length > 8 ? 4 : 5);
+}
+
+function getTrendLabel(values: number[]): string {
+  const active = values.filter((value) => value > 0);
+  if (active.length < 2) {
+    return '样本不足';
+  }
+
+  const first = active[0];
+  const latest = active.at(-1)!;
+  if (latest >= first * 1.05) {
+    return '上升';
+  }
+  if (latest <= first * 0.95) {
+    return '下降';
+  }
+  return '稳定';
+}
+
+function getChangeLabel(values: number[], index: number): string {
+  if (index <= 0) {
+    return '首次记录';
+  }
+
+  const previous = values[index - 1];
+  const current = values[index];
+  if (previous <= 0) {
+    return current > 0 ? '新增数据' : '无变化';
+  }
+
+  const change = Math.round(((current - previous) / previous) * 100);
+  if (Math.abs(change) < 3) {
+    return '基本持平';
+  }
+  return `${change > 0 ? '+' : ''}${change}%`;
 }
 
 export default function HistoryRoute() {
@@ -255,14 +381,18 @@ export default function HistoryRoute() {
   const { authMode, guardFeature, sheets } = useAuthGate();
   const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
-  const [selectedDate, setSelectedDate] = useState(getLocalDateString());
-  const [monthCursor, setMonthCursor] = useState(new Date());
-  const [isMonthVisible, setMonthVisible] = useState(false);
   const [dataScope, setDataScope] = useState<DataScope>('personal');
+  const [rangeKey, setRangeKey] = useState<RangeKey>('30d');
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [monthCursor, setMonthCursor] = useState(new Date());
+  const [isDateSheetVisible, setDateSheetVisible] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
+  const [recordAction, setRecordAction] = useState<SelectedRecordAction>(null);
   const [history, setHistory] = useState<HistoryState>(createEmptyHistory());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const dateRange = useMemo(() => getDateRange(rangeKey, selectedDate), [rangeKey, selectedDate]);
 
   const loadHistory = useCallback(async () => {
     setIsLoading(true);
@@ -290,110 +420,72 @@ export default function HistoryRoute() {
         setHistory(createEmptyHistory());
         return;
       }
-      const memberProfiles = await Promise.all(
-        members.map(async (member) => [
-          member.id,
-          await repositories.memberRepository.getMemberProfile(member.id),
-        ] as const),
-      );
 
       const monthStart = getLocalDateString(new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1, 12));
       const monthEnd = getLocalDateString(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0, 12));
-      const sevenDaysAgo = addDays(new Date(), -6);
-      const weekStart = getLocalDateString(sevenDaysAgo);
-      const today = getLocalDateString();
-      const [personalSessions, monthSessions, weekSessions, groupRecentSessions, groupWeekSessions] = await Promise.all([
-        repositories.workoutRepository.listSessions({ groupId: group.id, memberId: currentMember.id, limit: 200 }),
+      const [personalSessions, groupSessions, monthSessions] = await Promise.all([
         repositories.workoutRepository.listSessions({
           groupId: group.id,
           memberId: currentMember.id,
+          fromDate: dateRange.fromDate,
+          toDate: dateRange.toDate,
+          limit: 200,
+        }),
+        repositories.workoutRepository.listSessions({
+          groupId: group.id,
+          fromDate: dateRange.fromDate,
+          toDate: dateRange.toDate,
+          limit: 200,
+        }),
+        repositories.workoutRepository.listSessions({
+          groupId: group.id,
           fromDate: monthStart,
           toDate: monthEnd,
-          limit: 200,
-        }),
-        repositories.workoutRepository.listSessions({
-          groupId: group.id,
-          memberId: currentMember.id,
-          fromDate: weekStart,
-          toDate: today,
-          limit: 200,
-        }),
-        repositories.workoutRepository.listSessions({
-          groupId: group.id,
-          limit: 10,
-        }),
-        repositories.workoutRepository.listSessions({
-          groupId: group.id,
-          fromDate: weekStart,
-          toDate: today,
-          limit: 200,
+          limit: 300,
         }),
       ]);
-      const [personalDetails, weekDetails] = await Promise.all([
-        Promise.all(personalSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id))),
-        Promise.all(weekSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id))),
-      ]);
-      const groupSessionIds = Array.from(new Set([...groupRecentSessions, ...groupWeekSessions].map((session) => session.id)));
-      const groupDetails = await Promise.all(groupSessionIds.map((sessionId) => repositories.workoutRepository.getSessionDetail(sessionId)));
-      const groupDetailsById = new Map(groupDetails.map((detail) => [detail.session.id, detail]));
-      const groupWeekDetails = groupWeekSessions
-        .map((session) => groupDetailsById.get(session.id))
+
+      const detailIds = Array.from(new Set([...personalSessions, ...groupSessions].map((session) => session.id)));
+      const details = await Promise.all(detailIds.map((sessionId) => repositories.workoutRepository.getSessionDetail(sessionId)));
+      const detailsById = new Map(details.map((detail) => [detail.session.id, detail]));
+      const personalDetails = personalSessions
+        .map((session) => detailsById.get(session.id))
         .filter((detail): detail is WorkoutSessionDetail => Boolean(detail));
-      const groupRecentDetails = groupRecentSessions
-        .map((session) => groupDetailsById.get(session.id))
+      const groupDetails = groupSessions
+        .map((session) => detailsById.get(session.id))
         .filter((detail): detail is WorkoutSessionDetail => Boolean(detail));
-      const recentEntries = personalDetails.flatMap((detail) => getMemberEntries(detail, currentMember.id));
-      const series = selectLargestExerciseSeries(recentEntries);
-      const analysis = series ? analyzeExerciseHistory(series.entries) : null;
-      const exercise = series
-        ? (await repositories.exerciseRepository.listExercisesByIds([series.exerciseId]))[0] ?? null
-        : null;
-      const summaryExerciseIds = Array.from(
-        new Set(
-          [...personalDetails, ...weekDetails, ...groupDetails].flatMap((detail) =>
-            detail.exercises.map((exerciseRecord) => exerciseRecord.exerciseId),
-          ),
-        ),
+      const exerciseIds = Array.from(
+        new Set(details.flatMap((detail) => detail.exercises.map((exerciseRecord) => exerciseRecord.exerciseId))),
       );
-      const summaryExercises = await repositories.exerciseRepository.listExercisesByIds(summaryExerciseIds);
-      const exerciseNamesById = Object.fromEntries(summaryExercises.map((exerciseItem) => [exerciseItem.id, exerciseItem.name]));
-      const weeklySummaries = weekDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById));
-      const personalSummaries = personalDetails.map((detail) => summarizeSession(detail, currentMember.id, exerciseNamesById));
+      const exercises = exerciseIds.length > 0 ? await repositories.exerciseRepository.listExercisesByIds(exerciseIds) : [];
+      const exerciseNamesById = getExerciseNameMap(exercises);
+      const personalEntries = personalDetails.flatMap((detail) => getMemberEntries(detail, currentMember.id));
+      const groupEntries = groupDetails.flatMap(getGroupEntries);
+      const exerciseOptions = Array.from(new Set([...personalEntries, ...groupEntries].map((entry) => entry.exerciseId))).map((exerciseId) => ({
+        id: exerciseId,
+        name: exerciseNamesById[exerciseId] ?? '训练动作',
+      }));
 
       setHistory({
-        analysis,
         currentMember,
-        exercise,
-        exerciseEntries: recentEntries,
-        exerciseOptions: Array.from(new Set(recentEntries.map((entry) => entry.exerciseId))).map((exerciseId) => ({
-          id: exerciseId,
-          name: exerciseNamesById[exerciseId] ?? '训练动作',
-        })),
-        monthlyTrainingDates: new Set(monthSessions.map((session) => session.date)),
-        memberProfilesById: Object.fromEntries(memberProfiles),
-        recentSessions: personalSummaries,
-        selectedDateSessions: [],
-        groupAnalysis: getGroupHistoryAnalysis({
-          details: groupWeekDetails,
-          groupId: group.id,
-          groupName: group.name,
-          members,
-          exerciseNamesById,
-          recentDetails: groupRecentDetails,
-          rangeDays: 7,
-        }),
+        exerciseOptions,
+        groupEntries,
         groupName: group.name,
-        weeklyCompletedSets: weeklySummaries.reduce((sum, summary) => sum + summary.setCount, 0),
-        weeklySessionCount: weeklySummaries.filter((summary) => summary.setCount > 0).length,
-        weeklyTrend: buildWeeklyTrend(weeklySummaries),
-        weeklyVolume: weeklySummaries.reduce((sum, summary) => sum + summary.volume, 0),
+        groupSessions: groupDetails
+          .map((detail) => summarizeSession(detail, exerciseNamesById))
+          .filter((summary) => summary.setCount > 0),
+        monthlyTrainingDates: new Set(monthSessions.map((session) => session.date)),
+        personalEntries,
+        personalSessions: personalDetails
+          .map((detail) => summarizeSession(detail, exerciseNamesById, currentMember.id))
+          .filter((summary) => summary.setCount > 0),
       });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '历史记录加载失败。');
     } finally {
       setIsLoading(false);
     }
-  }, [authMode, monthCursor, repositories, selectedGroupId, setSelectedGroupId]);
+  }, [authMode, dateRange.fromDate, dateRange.toDate, monthCursor, repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -401,81 +493,95 @@ export default function HistoryRoute() {
     }, [loadHistory]),
   );
 
-  const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
-  const monthDates = useMemo(() => getMonthDates(monthCursor), [monthCursor]);
   const effectiveSelectedExerciseId =
     selectedExerciseId && history.exerciseOptions.some((option) => option.id === selectedExerciseId)
       ? selectedExerciseId
       : null;
-  const selectedExerciseOption = useMemo(
-    () => history.exerciseOptions.find((option) => option.id === effectiveSelectedExerciseId) ?? null,
-    [effectiveSelectedExerciseId, history.exerciseOptions],
-  );
-  const selectedExerciseEntries = useMemo(
-    () =>
-      effectiveSelectedExerciseId
-        ? history.exerciseEntries.filter((entry) => entry.exerciseId === effectiveSelectedExerciseId)
-        : history.exerciseEntries,
-    [effectiveSelectedExerciseId, history.exerciseEntries],
-  );
-  const selectedExerciseAnalysis = useMemo(() => {
-    if (effectiveSelectedExerciseId) {
-      return selectedExerciseEntries.length > 0 ? analyzeExerciseHistory(selectedExerciseEntries) : null;
-    }
-    return null;
-  }, [effectiveSelectedExerciseId, selectedExerciseEntries]);
-  const selectedExerciseTrend = useMemo(
-    () => (effectiveSelectedExerciseId ? buildExerciseTrend(selectedExerciseEntries) : history.weeklyTrend),
-    [effectiveSelectedExerciseId, history.weeklyTrend, selectedExerciseEntries],
-  );
-  const querySessions = useMemo(() => {
-    if (!effectiveSelectedExerciseId) {
-      return history.recentSessions;
-    }
-    const sessionIds = new Set(selectedExerciseEntries.map((entry) => entry.sessionId));
-    return history.recentSessions.filter((summary) => sessionIds.has(summary.session.id));
-  }, [effectiveSelectedExerciseId, history.recentSessions, selectedExerciseEntries]);
-  const selectedDateSessions = useMemo(
-    () => querySessions.filter((summary) => summary.session.date === selectedDate),
-    [querySessions, selectedDate],
-  );
-
-  const openRecentForEdit = useCallback(() => {
-    if (!guardFeature('manual_history')) {
-      return;
-    }
-
-    const latest = history.recentSessions[0]?.session;
-    if (!latest) {
-      Alert.alert('暂无训练', '完成或补录一次训练后，就可以查看训练详情。');
-      return;
-    }
-
-    router.push({
-      pathname: '/history/[sessionId]',
-      params: {
-        memberId: history.currentMember?.id,
-        scope: 'personal',
-        sessionId: latest.id,
-      },
-    } as never);
-  }, [guardFeature, history.currentMember?.id, history.recentSessions]);
-
+  const activeEntries = dataScope === 'personal' ? history.personalEntries : history.groupEntries;
+  const activeSessions = dataScope === 'personal' ? history.personalSessions : history.groupSessions;
+  const filteredSessionIds = effectiveSelectedExerciseId
+    ? new Set(activeEntries.filter((entry) => entry.exerciseId === effectiveSelectedExerciseId).map((entry) => entry.sessionId))
+    : null;
+  const filteredSessions = filteredSessionIds
+    ? activeSessions.filter((summary) => filteredSessionIds.has(summary.id))
+    : activeSessions;
+  const trend = effectiveSelectedExerciseId
+    ? buildExerciseTrend(activeEntries.filter((entry) => entry.exerciseId === effectiveSelectedExerciseId))
+    : buildSessionTrend(filteredSessions);
+  const selectedExerciseName = history.exerciseOptions.find((option) => option.id === effectiveSelectedExerciseId)?.name;
   const isGuestPreview = authMode === 'guest_preview';
+
+  const openDetail = useCallback(
+    (summary: SessionSummary, scope: DataScope) => {
+      router.push({
+        pathname: '/history/[sessionId]',
+        params: {
+          ...(scope === 'personal' && history.currentMember ? { memberId: history.currentMember.id } : {}),
+          scope,
+          sessionId: summary.id,
+        },
+      } as never);
+    },
+    [history.currentMember],
+  );
+
+  const deletePersonalRecord = useCallback(
+    (summary: SessionSummary) => {
+      if (!history.currentMember || !guardFeature('manual_history')) {
+        return;
+      }
+
+      Alert.alert('删除我的本次记录？', '只会删除你自己的训练数据，不会影响其他成员。', [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await repositories.workoutRepository.deleteMemberSetsInSession(summary.id, history.currentMember!.id);
+              setRecordAction(null);
+              await loadHistory();
+            })();
+          },
+        },
+      ]);
+    },
+    [guardFeature, history.currentMember, loadHistory, repositories],
+  );
+
+  const deleteGroupSession = useCallback(
+    (summary: SessionSummary) => {
+      if (!guardFeature('manual_history')) {
+        return;
+      }
+
+      Alert.alert('删除整次小组训练？', '会删除本次训练中所有成员的动作和组数据，无法撤销。', [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await repositories.workoutRepository.deleteSessionCascade(summary.id);
+              setRecordAction(null);
+              await loadHistory();
+            })();
+          },
+        },
+      ]);
+    },
+    [guardFeature, loadHistory, repositories],
+  );
 
   return (
     <Screen
       headerRight={
-        <Pressable accessibilityRole="button" onPress={() => setMonthVisible(true)} style={styles.headerCalBtn}>
+        <Pressable accessibilityRole="button" onPress={() => setDateSheetVisible(true)} style={styles.headerIconButton}>
           <Ionicons color={colors.text} name="calendar-outline" size={20} />
         </Pressable>
       }
-      subtitle={
-        history.currentMember
-          ? `当前成员：${history.currentMember.displayName}`
-          : '默认统计当前成员个人数据'
-      }
-
+      subtitle={history.currentMember ? `当前成员：${history.currentMember.displayName}` : '看趋势、找记录、编辑或删除记录'}
+      title="记录"
     >
       {isLoading ? (
         <View style={styles.loadingWrap}>
@@ -496,146 +602,79 @@ export default function HistoryRoute() {
             />
           ) : (
             <>
-          <ScopeToggle
-            dataScope={dataScope}
-            memberName={history.currentMember?.displayName ?? '暂无成员'}
-            setDataScope={(scope) => {
-              if (scope === 'group' && !guardFeature('group_analytics')) {
-                return;
-              }
-              setDataScope(scope);
-            }}
-          />
-
-          {dataScope === 'personal' ? (
-            <>
-              <PersonalOverview history={history} />
-
-              <QuickActions
-                onAdd={() => {
-                  if (guardFeature('manual_history')) router.push('/history/manual' as never);
-                }}
-                onEdit={openRecentForEdit}
-                onAnalytics={() => {
-                  if (guardFeature('advanced_history')) router.push('/history/analytics' as never);
+              <ScopeToggle
+                dataScope={dataScope}
+                groupName={history.groupName}
+                memberName={history.currentMember?.displayName ?? '暂无成员'}
+                setDataScope={(scope) => {
+                  if (scope === 'group' && !guardFeature('group_analytics')) {
+                    return;
+                  }
+                  setDataScope(scope);
                 }}
               />
 
-              <View style={styles.statGrid}>
-                <MiniStat icon="barbell-outline" label="本周训练" value={`${history.weeklySessionCount} 次`} accent={history.weeklySessionCount > 0} />
-                <MiniStat icon="layers-outline" label="完成组数" value={`${history.weeklyCompletedSets} 组`} accent={history.weeklyCompletedSets > 0} />
-                <MiniStat icon="flame-outline" label="本周容量" value={formatKg(history.weeklyVolume)} accent={history.weeklyVolume > 0} />
-              </View>
-
-              <ExerciseFilterBar
-                onSelect={setSelectedExerciseId}
-                options={history.exerciseOptions}
-                selectedExerciseId={effectiveSelectedExerciseId}
-              />
-
-              <TrendChart
-                analysis={selectedExerciseAnalysis}
-                exerciseId={effectiveSelectedExerciseId ?? undefined}
-                exerciseName={selectedExerciseOption?.name ?? '总训练量'}
-                trend={selectedExerciseTrend}
-              />
-
-              <CalendarWeek
-                monthCursor={monthCursor}
-                onOpenMonth={() => setMonthVisible(true)}
-                onSelectDate={setSelectedDate}
+              <DateRangeFilter
+                onOpenDatePicker={() => setDateSheetVisible(true)}
+                onRangeChange={(nextRange) => {
+                  setRangeKey(nextRange);
+                  setSelectedDate(null);
+                }}
+                onResetDate={() => setSelectedDate(null)}
+                rangeKey={rangeKey}
                 selectedDate={selectedDate}
-                trainingDates={history.monthlyTrainingDates}
-                weekDates={weekDates}
               />
 
-              <SectionHeader
-                actionLabel="补录"
-                onActionPress={() => {
+              <TrainingTrendCard
+                exerciseOptions={history.exerciseOptions}
+                onSelectExercise={setSelectedExerciseId}
+                rangeLabel={dateRange.label}
+                selectedExerciseId={effectiveSelectedExerciseId}
+                selectedExerciseName={selectedExerciseName}
+                trend={trend}
+              />
+
+              <HistoryRecordList
+                dataScope={dataScope}
+                onAdd={() => {
                   if (guardFeature('manual_history')) {
-                    router.push({ pathname: '/history/manual', params: { date: selectedDate } } as never);
+                    router.push({ pathname: '/history/manual', params: { date: selectedDate ?? dateRange.toDate } } as never);
                   }
                 }}
-                title={`${formatShortDate(selectedDate)} 当天记录`}
+                onOpenActions={(summary) => setRecordAction({ scope: dataScope, summary })}
+                onOpenDetail={(summary) => openDetail(summary, dataScope)}
+                sessions={filteredSessions}
               />
-              {selectedDateSessions.length === 0 ? (
-                <AppCard style={styles.emptyDayCard} tone="soft">
-                  <Ionicons color={colors.textSubtle} name="calendar-clear-outline" size={20} />
-                  <View style={styles.emptyDayText}>
-                    <AppText variant="bodySmall" weight="900">
-                      当天暂无匹配训练
-                    </AppText>
-                    <AppText tone="muted" variant="caption">
-                      可切换动作筛选，或点击「补录」添加已完成训练
-                    </AppText>
-                  </View>
-                </AppCard>
-              ) : (
-                <View style={styles.sessionList}>
-                  {selectedDateSessions.map((summary) => (
-                    <CompactSessionCard key={summary.session.id} memberId={history.currentMember?.id} summary={summary} />
-                  ))}
-                </View>
-              )}
-
-            </>
-          ) : (
-            <GroupHistoryView analysis={history.groupAnalysis} memberProfilesById={history.memberProfilesById} />
-          )}
             </>
           )}
         </>
       ) : null}
 
-      <Modal animationType="slide" transparent visible={isMonthVisible} onRequestClose={() => setMonthVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <AppCard style={styles.monthPanel}>
-            <View style={styles.modalHeader}>
-              <Pressable accessibilityRole="button" onPress={() => setMonthCursor((current) => addMonths(current, -1))} style={styles.modalNavBtn}>
-                <Ionicons color={colors.text} name="chevron-back-outline" size={20} />
-              </Pressable>
-              <AppText variant="subtitle">{formatMonthLabel(monthCursor)}</AppText>
-              <Pressable accessibilityRole="button" onPress={() => setMonthCursor((current) => addMonths(current, 1))} style={styles.modalNavBtn}>
-                <Ionicons color={colors.text} name="chevron-forward-outline" size={20} />
-              </Pressable>
-            </View>
-            <View style={styles.monthGrid}>
-              {['日', '一', '二', '三', '四', '五', '六'].map((d) => (
-                <AppText key={d} style={styles.weekdayLabel} variant="caption">
-                  {d}
-                </AppText>
-              ))}
-              {Array.from({ length: new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1).getDay() }).map((_, i) => (
-                <View key={`pad-${i}`} style={styles.monthDay} />
-              ))}
-              {monthDates.map((date) => {
-                const key = getLocalDateString(date);
-                const active = key === selectedDate;
-                const hasTraining = history.monthlyTrainingDates.has(key);
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={key}
-                    onPress={() => {
-                      setSelectedDate(key);
-                      setMonthVisible(false);
-                    }}
-                    style={[styles.monthDay, active && styles.monthDayActive]}
-                  >
-                    <AppText tone={active ? 'inverse' : 'default'} variant="bodySmall" weight="900">
-                      {date.getDate()}
-                    </AppText>
-                    {hasTraining ? <View style={[styles.calDot, active && styles.calDotInverse]} /> : null}
-                  </Pressable>
-                );
-              })}
-            </View>
-            <AppButton onPress={() => setMonthVisible(false)} variant="secondary">
-              关闭
-            </AppButton>
-          </AppCard>
-        </View>
-      </Modal>
+      <DatePickerSheet
+        monthCursor={monthCursor}
+        onClear={() => {
+          setSelectedDate(null);
+          setDateSheetVisible(false);
+        }}
+        onClose={() => setDateSheetVisible(false)}
+        onMonthChange={setMonthCursor}
+        onSelectDate={(date) => {
+          setSelectedDate(date);
+          setDateSheetVisible(false);
+        }}
+        selectedDate={selectedDate}
+        trainingDates={history.monthlyTrainingDates}
+        visible={isDateSheetVisible}
+      />
+
+      <RecordActionSheet
+        action={recordAction}
+        currentMemberId={history.currentMember?.id}
+        onClose={() => setRecordAction(null)}
+        onDeleteGroup={deleteGroupSession}
+        onDeletePersonal={deletePersonalRecord}
+        onOpenDetail={openDetail}
+      />
 
       <AuthGateSheets {...sheets} />
     </Screen>
@@ -644,18 +683,20 @@ export default function HistoryRoute() {
 
 function ScopeToggle({
   dataScope,
+  groupName,
   memberName,
   setDataScope,
 }: {
   dataScope: DataScope;
+  groupName: string;
   memberName: string;
   setDataScope: (scope: DataScope) => void;
 }) {
   return (
     <AppCard padded={false} style={styles.scopeBar}>
-      <View style={styles.scopeInfo}>
+      <View style={styles.scopeLabel}>
         <AppText variant="bodySmall" weight="900">
-          当前成员：{memberName}
+          {dataScope === 'personal' ? memberName : groupName}
         </AppText>
       </View>
       <View style={styles.scopePill}>
@@ -682,156 +723,169 @@ function ScopeToggle({
   );
 }
 
-function PersonalOverview({ history }: { history: HistoryState }) {
-  const sessionCount = history.weeklySessionCount;
-  const completedSets = history.weeklyCompletedSets;
+function DateRangeFilter({
+  onOpenDatePicker,
+  onRangeChange,
+  onResetDate,
+  rangeKey,
+  selectedDate,
+}: {
+  onOpenDatePicker: () => void;
+  onRangeChange: (rangeKey: RangeKey) => void;
+  onResetDate: () => void;
+  rangeKey: RangeKey;
+  selectedDate: string | null;
+}) {
   return (
-    <AppCard style={styles.overviewCard} tone="dark">
-      <View style={styles.overviewRow}>
-        <View style={styles.overviewMain}>
-          <AppText style={styles.overviewLabel} variant="caption">
-            本周训练量
+    <AppCard style={styles.rangeCard}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rangeScroll}>
+        {rangeOptions.map((option) => (
+          <Pressable
+            accessibilityRole="button"
+            key={option.key}
+            onPress={() => onRangeChange(option.key)}
+            style={[styles.rangePill, !selectedDate && rangeKey === option.key && styles.rangePillActive]}
+          >
+            <AppText tone={!selectedDate && rangeKey === option.key ? 'inverse' : 'muted'} variant="caption" weight="900">
+              {option.label}
+            </AppText>
+          </Pressable>
+        ))}
+        <Pressable
+          accessibilityRole="button"
+          onPress={onOpenDatePicker}
+          style={[styles.rangePill, selectedDate && styles.rangePillActive]}
+        >
+          <Ionicons color={selectedDate ? colors.surface : colors.textMuted} name="calendar-outline" size={15} />
+          <AppText tone={selectedDate ? 'inverse' : 'muted'} variant="caption" weight="900">
+            {selectedDate ? formatShortDate(selectedDate) : '日期'}
           </AppText>
-          <AppText tone="inverse" variant="headline">
-            {formatKg(history.weeklyVolume)}
-          </AppText>
-        </View>
-        <View style={styles.overviewSide}>
-          <View style={styles.overviewMetric}>
-            <AppText tone="inverse" variant="subtitle" weight="900">
-              {sessionCount}
-            </AppText>
-            <AppText style={styles.overviewLabel} variant="caption">
-              训练
-            </AppText>
-          </View>
-          <View style={styles.overviewDivider} />
-          <View style={styles.overviewMetric}>
-            <AppText tone="inverse" variant="subtitle" weight="900">
-              {completedSets}
-            </AppText>
-            <AppText style={styles.overviewLabel} variant="caption">
-              组数
-            </AppText>
-          </View>
-        </View>
-      </View>
+        </Pressable>
+        {selectedDate ? (
+          <Pressable accessibilityRole="button" onPress={onResetDate} style={styles.clearDateButton}>
+            <Ionicons color={colors.textMuted} name="close-outline" size={16} />
+          </Pressable>
+        ) : null}
+      </ScrollView>
     </AppCard>
   );
 }
 
-function QuickActions({ onAdd, onEdit, onAnalytics }: { onAdd: () => void; onEdit: () => void; onAnalytics: () => void }) {
-  return (
-    <View style={styles.quickActions}>
-      <Pressable accessibilityRole="button" onPress={onAdd} style={styles.quickBtn}>
-        <View style={[styles.quickBtnIcon, { backgroundColor: colors.primarySoft }]}>
-          <Ionicons color={colors.primary} name="add-outline" size={16} />
-        </View>
-        <AppText variant="bodySmall" weight="900">
-          补录训练
-        </AppText>
-      </Pressable>
-      <Pressable accessibilityRole="button" onPress={onEdit} style={styles.quickBtn}>
-        <View style={[styles.quickBtnIcon, { backgroundColor: colors.accentSoft }]}>
-          <Ionicons color={colors.accent} name="eye-outline" size={16} />
-        </View>
-        <AppText variant="bodySmall" weight="900">
-          训练详情
-        </AppText>
-      </Pressable>
-      <Pressable accessibilityRole="button" onPress={onAnalytics} style={styles.quickBtn}>
-        <View style={[styles.quickBtnIcon, { backgroundColor: colors.successSoft }]}>
-          <Ionicons color={colors.success} name="bar-chart-outline" size={16} />
-        </View>
-        <AppText variant="bodySmall" weight="900">
-          训练分析
-        </AppText>
-      </Pressable>
-    </View>
-  );
-}
-
-function MiniStat({
-  accent,
-  icon,
-  label,
-  value,
-}: {
-  accent?: boolean;
-  icon: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <View style={[styles.miniStat, accent && styles.miniStatAccent]}>
-      <Ionicons color={accent ? colors.primary : colors.textSubtle} name={icon as any} size={18} />
-      <AppText numberOfLines={1} variant="bodySmall" weight="900">
-        {value}
-      </AppText>
-      <AppText numberOfLines={1} tone="muted" variant="caption">
-        {label}
-      </AppText>
-    </View>
-  );
-}
-
-function ExerciseFilterBar({
-  onSelect,
-  options,
+function TrainingTrendCard({
+  exerciseOptions,
+  onSelectExercise,
+  rangeLabel,
   selectedExerciseId,
+  selectedExerciseName,
+  trend,
 }: {
-  onSelect: (exerciseId: string | null) => void;
-  options: ExerciseFilterOption[];
+  exerciseOptions: ExerciseFilterOption[];
+  onSelectExercise: (exerciseId: string | null) => void;
+  rangeLabel: string;
   selectedExerciseId: string | null;
+  selectedExerciseName?: string;
+  trend: TrendPoint[];
 }) {
-  const [isOpen, setOpen] = useState(false);
+  const [isSelectorOpen, setSelectorOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const selectedOption = options.find((option) => option.id === selectedExerciseId) ?? null;
-  const recentOptions = options.slice(0, 4);
+  const [selectedPoint, setSelectedPoint] = useState<SelectedTrendPoint>(null);
+  const values = trend.map((point) => point.volume);
+  const activeValues = values.filter((value) => value > 0);
+  const totalVolume = values.reduce((sum, value) => sum + value, 0);
+  const latestVolume = activeValues.at(-1) ?? 0;
+  const maxVolume = Math.max(0, ...values);
+  const keyPointIndexes = getKeyPointIndexes(values, selectedPoint?.index);
   const normalizedQuery = query.trim().toLowerCase();
-  const filteredOptions = options.filter((option) => option.name.toLowerCase().includes(normalizedQuery));
-  const otherOptions = normalizedQuery
-    ? filteredOptions
-    : options.filter((option) => !recentOptions.some((recent) => recent.id === option.id));
+  const recentOptions = exerciseOptions.slice(0, 5);
+  const filteredOptions = normalizedQuery
+    ? exerciseOptions.filter((option) => option.name.toLowerCase().includes(normalizedQuery))
+    : exerciseOptions.filter((option) => !recentOptions.some((recent) => recent.id === option.id));
 
   const chooseExercise = (exerciseId: string | null) => {
-    onSelect(exerciseId);
-    setOpen(false);
+    onSelectExercise(exerciseId);
+    setSelectedPoint(null);
+    setSelectorOpen(false);
     setQuery('');
   };
 
   return (
-    <AppCard style={styles.exerciseFilterCard}>
+    <AppCard style={styles.trendCard}>
       <View style={styles.trendHeader}>
         <View style={styles.trendTitleBlock}>
           <AppText variant="subtitle">训练趋势</AppText>
           <AppText tone="muted" variant="caption">
-            选择动作后更新趋势和记录
+            {rangeLabel}
           </AppText>
         </View>
-        <Tag label={selectedExerciseId ? '已筛选' : '总览'} tone={selectedExerciseId ? 'brand' : 'neutral'} />
+        <Pressable accessibilityRole="button" onPress={() => setSelectorOpen(true)} style={styles.exerciseButton}>
+          <AppText numberOfLines={1} variant="caption" weight="900">
+            {selectedExerciseName ?? '全部动作'}
+          </AppText>
+          <Ionicons color={colors.textMuted} name="chevron-down" size={15} />
+        </Pressable>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => setOpen(true)}
-        style={({ pressed }) => [styles.actionSelector, pressed && styles.pressed]}
-      >
-        <View style={styles.trendTitleBlock}>
-          <AppText variant="bodySmall" weight="900">
-            {selectedOption?.name ?? '全部动作'}
-          </AppText>
+
+      <MiniLineChart
+        chartHeight={116}
+        data={values}
+        emptyMessage="当前范围还没有训练量"
+        formatValue={formatCompactKg}
+        highlightIndex={selectedPoint?.index}
+        keyPointIndexes={keyPointIndexes}
+        labels={trend.map((point) => point.label)}
+        minChartHeight={Math.max(100, maxVolume)}
+        onPointPress={(point, index) => {
+          const trendPoint = trend[index];
+          setSelectedPoint({
+            changeLabel: getChangeLabel(values, index),
+            date: trendPoint?.date,
+            exerciseCount: trendPoint?.exerciseCount ?? 0,
+            index,
+            label: point.label ?? trendPoint?.label ?? '',
+            setCount: trendPoint?.setCount ?? 0,
+            value: point.value,
+          });
+        }}
+        unitLabel="kg"
+        valueLabelStrategy="keyPoints"
+      />
+
+      {selectedPoint ? (
+        <AppCard style={styles.pointDetailCard} tone="soft">
+          <View style={styles.pointDetailHeader}>
+            <AppText variant="bodySmall" weight="900">
+              {selectedPoint.date ?? selectedPoint.label}
+            </AppText>
+            <Tag label={selectedPoint.changeLabel} tone={selectedPoint.changeLabel.startsWith('+') ? 'success' : 'neutral'} />
+          </View>
           <AppText tone="muted" variant="caption">
-            默认查看总训练量，选择动作后收敛记录和趋势
+            {formatKg(selectedPoint.value)} · {selectedPoint.setCount} 组 · {selectedPoint.exerciseCount} 动作
           </AppText>
-        </View>
-        <Ionicons color={colors.textMuted} name="chevron-down" size={18} />
-      </Pressable>
+        </AppCard>
+      ) : null}
+
+      <View style={styles.trendSummaryGrid}>
+        <TrendMetric label="范围总量" value={formatKg(totalVolume)} />
+        <TrendMetric label="最新一次" value={latestVolume > 0 ? formatKg(latestVolume) : '暂无'} />
+        <TrendMetric label="最高点" value={maxVolume > 0 ? formatKg(maxVolume) : '暂无'} />
+        <TrendMetric label="趋势" value={getTrendLabel(values)} />
+      </View>
+
+      {selectedExerciseId ? (
+        <AppButton
+          icon="barbell-outline"
+          onPress={() => router.push({ pathname: '/history/exercise/[exerciseId]', params: { exerciseId: selectedExerciseId } } as never)}
+          variant="secondary"
+        >
+          动作详情
+        </AppButton>
+      ) : null}
 
       <AppModalSheet
-        onClose={() => setOpen(false)}
-        subtitle="搜索或选择真实练过的动作"
+        onClose={() => setSelectorOpen(false)}
+        subtitle="选择后同一张趋势卡和记录列表会同步更新"
         title="选择动作"
-        visible={isOpen}
+        visible={isSelectorOpen}
       >
         <View style={styles.selectorSearch}>
           <Ionicons color={colors.textMuted} name="search-outline" size={16} />
@@ -846,7 +900,7 @@ function ExerciseFilterBar({
         <ScrollView style={styles.selectorList} keyboardShouldPersistTaps="handled">
           <SelectorOption
             active={!selectedExerciseId}
-            meta={`${options.length} 个动作 · 总训练量趋势`}
+            meta={`${exerciseOptions.length} 个动作 · 总训练量`}
             name="全部动作"
             onPress={() => chooseExercise(null)}
           />
@@ -855,19 +909,32 @@ function ExerciseFilterBar({
               activeId={selectedExerciseId}
               onSelect={(id) => chooseExercise(id)}
               options={recentOptions}
-              title="最近动作"
+              title="最近练过"
             />
           ) : null}
           <SelectorSection
             activeId={selectedExerciseId}
             emptyLabel="没有匹配动作"
             onSelect={(id) => chooseExercise(id)}
-            options={otherOptions}
+            options={filteredOptions}
             title={normalizedQuery ? '搜索结果' : '全部动作'}
           />
         </ScrollView>
       </AppModalSheet>
     </AppCard>
+  );
+}
+
+function TrendMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.trendMetric}>
+      <AppText numberOfLines={1} variant="bodySmall" weight="900">
+        {value}
+      </AppText>
+      <AppText numberOfLines={1} tone="muted" variant="caption">
+        {label}
+      </AppText>
+    </View>
   );
 }
 
@@ -938,591 +1005,154 @@ function SelectorOption({
   );
 }
 
-function TrendChart({
-  analysis,
-  exerciseId,
-  exerciseName,
-  trend,
+function HistoryRecordList({
+  dataScope,
+  onAdd,
+  onOpenActions,
+  onOpenDetail,
+  sessions,
 }: {
-  analysis: HistoryAnalysis | null;
-  exerciseId?: string;
-  exerciseName?: string;
-  trend: WeekTrendPoint[];
+  dataScope: DataScope;
+  onAdd: () => void;
+  onOpenActions: (summary: SessionSummary) => void;
+  onOpenDetail: (summary: SessionSummary) => void;
+  sessions: SessionSummary[];
 }) {
-  const maxVolume = Math.max(1, ...trend.map((point) => point.volume));
-  const primarySuggestion = analysis?.suggestions[0] ?? '完成更多训练后生成基础规则建议';
-
   return (
-    <AppCard style={styles.trendCard}>
-      <View style={styles.trendHeader}>
-        <View style={styles.trendTitleBlock}>
-          <AppText variant="subtitle">训练趋势</AppText>
-          <AppText tone="muted" variant="caption">
-            近 7 天 · {exerciseName ?? '暂无重点动作'}
-          </AppText>
-        </View>
-        {exerciseId ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => router.push({ pathname: '/history/exercise/[exerciseId]', params: { exerciseId } } as never)}
-          >
-            <Tag label="动作详情" tone="brand" />
-          </Pressable>
-        ) : analysis ? <Tag label="有趋势" tone="success" /> : <Tag label="积累中" tone="neutral" />}
-      </View>
-
-      <MiniLineChart
-        chartHeight={96}
-        data={trend.map((point) => point.volume)}
-        emptyMessage="近 7 天还没有训练量"
-        formatValue={(value) => `${Math.round(value / 1000)}k`}
-        labels={trend.map((point) => point.label)}
-        minChartHeight={maxVolume}
-        unitLabel="kg"
+    <View style={styles.recordSection}>
+      <SectionHeader
+        actionLabel={dataScope === 'personal' ? '补录' : undefined}
+        onActionPress={dataScope === 'personal' ? onAdd : undefined}
+        subtitle={dataScope === 'personal' ? '查看、编辑或删除自己的记录' : '查看、编辑或删除整次小组训练'}
+        title={dataScope === 'personal' ? '训练记录' : '小组训练记录'}
       />
-
-      <View style={styles.suggestionBox}>
-        <AppText variant="bodySmall" weight="900">
-          {primarySuggestion}
-        </AppText>
-      </View>
-
-      {analysis ? (
-        <View style={styles.trendDetailRow}>
-          <View style={styles.trendDetailItem}>
-            <AppText tone="muted" variant="caption">
-              重量趋势
+      {sessions.length === 0 ? (
+        <AppCard style={styles.emptyRecordCard} tone="soft">
+          <Ionicons color={colors.textSubtle} name="calendar-clear-outline" size={22} />
+          <View style={styles.emptyRecordText}>
+            <AppText variant="bodySmall" weight="900">
+              当前范围暂无记录
             </AppText>
-            <AppText variant="caption" weight="900">
-              {formatTrend(analysis.weightTrend)}
+            <AppText tone="muted" variant="caption">
+              调整时间范围或动作筛选后再查看。
             </AppText>
           </View>
-          <View style={styles.trendDetailItem}>
-            <AppText tone="muted" variant="caption">
-              完成率
-            </AppText>
-            <AppText variant="caption" weight="900">
-              {formatPercent(analysis.completionRate)}
-            </AppText>
-          </View>
-          <View style={styles.trendDetailItem}>
-            <AppText tone="muted" variant="caption">
-              疲劳
-            </AppText>
-            <AppText numberOfLines={1} variant="caption" weight="900">
-              {analysis.fatigueFlags.length > 0 ? analysis.fatigueFlags.join('、') : '暂无'}
-            </AppText>
-          </View>
+        </AppCard>
+      ) : (
+        <View style={styles.sessionList}>
+          {sessions.map((summary) => (
+            <HistoryRecordCard
+              dataScope={dataScope}
+              key={summary.id}
+              onOpenActions={() => onOpenActions(summary)}
+              onPress={() => onOpenDetail(summary)}
+              summary={summary}
+            />
+          ))}
         </View>
-      ) : null}
-    </AppCard>
+      )}
+    </View>
   );
 }
 
-function GroupHistoryView({
-  analysis,
-  memberProfilesById,
+function HistoryRecordCard({
+  dataScope,
+  onOpenActions,
+  onPress,
+  summary,
 }: {
-  analysis: GroupHistoryAnalysis | null;
-  memberProfilesById: Record<string, MemberProfile | null>;
+  dataScope: DataScope;
+  onOpenActions: () => void;
+  onPress: () => void;
+  summary: SessionSummary;
 }) {
-  if (!analysis) {
-    return <EmptyState title="暂无小组训练数据" description="完成一次小组训练后，这里会显示小组汇总。" />;
-  }
-
   return (
-    <>
-      <GroupOverviewCard analysis={analysis} />
-      <GroupContributionCard analysis={analysis} memberProfilesById={memberProfilesById} />
-      <GroupExercisePerformanceCard analysis={analysis} memberProfilesById={memberProfilesById} />
-      <GroupTrendCard analysis={analysis} />
-      <GroupRecentSessionsCard analysis={analysis} />
-      <GroupInsightsCard analysis={analysis} />
-    </>
-  );
-}
-
-function GroupOverviewCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
-  return (
-    <AppCard style={styles.groupOverviewCard} tone="dark">
-      <View style={styles.groupOverviewHeader}>
-        <View style={styles.trendTitleBlock}>
-          <AppText style={styles.overviewLabel} variant="caption">
-            {analysis.groupName}
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.recordCard, pressed && styles.pressed]}>
+      <View style={styles.recordDateBox}>
+        <AppText variant="caption" weight="900">
+          {formatShortDate(summary.date)}
+        </AppText>
+        <View style={[styles.recordDot, summary.session.status === 'completed' ? styles.recordDotDone : styles.recordDotOpen]} />
+      </View>
+      <View style={styles.recordMain}>
+        <View style={styles.recordTitleRow}>
+          <AppText numberOfLines={1} style={styles.recordTitle} variant="bodySmall" weight="900">
+            {summary.title}
           </AppText>
-          <AppText tone="inverse" variant="headline">
-            {formatKg(analysis.totalVolume)}
-          </AppText>
-          <AppText style={styles.overviewLabel} variant="caption">
-            近 {analysis.rangeDays} 天小组训练量
-          </AppText>
+          <Pressable accessibilityRole="button" onPress={onOpenActions} style={styles.moreButton}>
+            <Ionicons color={colors.textMuted} name="ellipsis-horizontal" size={18} />
+          </Pressable>
         </View>
-        <Tag label={`${analysis.activeMemberCount}/${analysis.memberCount} 成员`} tone="dark" />
+        <AppText numberOfLines={1} tone="muted" variant="caption">
+          {summary.mainExerciseNames.slice(0, 2).join('、') || '训练记录'}
+        </AppText>
+        <View style={styles.recordMetaGrid}>
+          <RecordMeta label="时长" value={summary.durationMinutes ? `${summary.durationMinutes} 分钟` : '已完成'} />
+          <RecordMeta label="动作" value={`${summary.exerciseCount} 个`} />
+          <RecordMeta label="组数" value={`${summary.setCount} 组`} />
+          <RecordMeta label="训练量" value={formatKg(summary.volume)} />
+          {dataScope === 'group' ? <RecordMeta label="成员" value={`${summary.participantCount ?? 0} 人`} /> : null}
+        </View>
       </View>
-
-      <View style={styles.groupMetricRow}>
-        <DarkMetric label="训练次数" value={`${analysis.sessionCount} 次`} />
-        <View style={styles.overviewDivider} />
-        <DarkMetric label="完成组数" value={`${analysis.completedSets} 组`} />
-        <View style={styles.overviewDivider} />
-        <DarkMetric label="完成率" value={formatPercent(analysis.completionRate)} />
-      </View>
-    </AppCard>
+    </Pressable>
   );
 }
 
-function DarkMetric({ label, value }: { label: string; value: string }) {
+function RecordMeta({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.darkMetric}>
-      <AppText tone="inverse" variant="subtitle" weight="900">
+    <View style={styles.recordMetaItem}>
+      <AppText numberOfLines={1} variant="caption" weight="900">
         {value}
       </AppText>
-      <AppText style={styles.overviewLabel} variant="caption">
+      <AppText numberOfLines={1} tone="muted" variant="caption">
         {label}
       </AppText>
     </View>
   );
 }
 
-function GroupContributionCard({
-  analysis,
-  memberProfilesById,
-}: {
-  analysis: GroupHistoryAnalysis;
-  memberProfilesById: Record<string, MemberProfile | null>;
-}) {
-  return (
-    <AppCard style={styles.groupCard}>
-      <View style={styles.trendHeader}>
-        <View style={styles.trendTitleBlock}>
-          <AppText variant="subtitle">成员贡献</AppText>
-          <AppText tone="muted" variant="caption">
-            按近 7 天训练量排序
-          </AppText>
-        </View>
-        <Tag label="训练数据" tone="neutral" />
-      </View>
-
-      <View style={styles.memberAvatarRow}>
-        {analysis.memberContributions.slice(0, 4).map((member) => (
-          <View key={member.memberId} style={styles.memberAvatarItem}>
-            <View style={[styles.memberAvatarCircle, member.rank === 1 && styles.memberAvatarCircleTop]}>
-              <Avatar
-                avatarLocalUri={memberProfilesById[member.memberId]?.avatarLocalUri}
-                avatarThumbUrl={memberProfilesById[member.memberId]?.avatarThumbUrl}
-                avatarUrl={memberProfilesById[member.memberId]?.avatarUrl}
-                name={member.memberName}
-                size={46}
-              />
-            </View>
-            <AppText numberOfLines={1} variant="caption" weight="900">
-              {member.memberName}
-            </AppText>
-          </View>
-        ))}
-      </View>
-
-      <View style={styles.contributionList}>
-        {analysis.memberContributions.map((member) => (
-          <View key={member.memberId} style={styles.contributionRow}>
-            <View style={[styles.rankBadge, member.rank === 1 && styles.rankBadgeTop]}>
-              <AppText tone={member.rank === 1 ? 'inverse' : 'muted'} variant="caption" weight="900">
-                {member.rank}
-              </AppText>
-            </View>
-            <View style={styles.contributionName}>
-              <AppText numberOfLines={1} variant="bodySmall" weight="900">
-                {member.memberName}
-              </AppText>
-              <AppText tone="muted" variant="caption">
-                {member.sessionCount} 次 · {member.completedSets}/{member.totalSets} 组 · {member.mostTrainedExerciseName ?? '待积累'}
-              </AppText>
-              <AppText numberOfLines={1} tone="muted" variant="caption">
-                最佳动作 {member.bestExerciseName ?? '暂无'} · 最近 {member.lastTrainingDate ? formatShortDate(member.lastTrainingDate) : '暂无'}
-              </AppText>
-            </View>
-            <View style={styles.contributionValue}>
-              <AppText variant="bodySmall" weight="900">
-                {formatKg(member.volume)}
-              </AppText>
-              <Tag
-                label={member.statusLabel}
-                tone={member.statusLabel === '优秀' ? 'success' : member.statusLabel === '良好' ? 'accent' : member.statusLabel === '一般' ? 'warning' : 'neutral'}
-              />
-            </View>
-          </View>
-        ))}
-      </View>
-    </AppCard>
-  );
-}
-
-function GroupExercisePerformanceCard({
-  analysis,
-  memberProfilesById,
-}: {
-  analysis: GroupHistoryAnalysis;
-  memberProfilesById: Record<string, MemberProfile | null>;
-}) {
-  const sortedAnalyses = analysis.exerciseAnalyses
-    .slice()
-    .sort(
-      (left, right) =>
-        right.sessionCount - left.sessionCount ||
-        right.completedSets - left.completedSets ||
-        right.members.reduce((sum, member) => sum + member.latestVolume, 0) -
-          left.members.reduce((sum, member) => sum + member.latestVolume, 0),
-    );
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [isSelectorOpen, setSelectorOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const primary = sortedAnalyses.find((item) => item.key === selectedKey) ?? null;
-  const normalizedQuery = query.trim().toLowerCase();
-  const filteredAnalyses = sortedAnalyses.filter((item) => item.exerciseName.toLowerCase().includes(normalizedQuery));
-
-  if (analysis.exerciseAnalyses.length === 0) {
-    return (
-      <AppCard style={styles.groupCard}>
-        <View style={styles.trendHeader}>
-          <View style={styles.trendTitleBlock}>
-            <AppText variant="subtitle">动作趋势</AppText>
-            <AppText tone="muted" variant="caption">
-              从真实训练动作中选择后查看多人对比
-            </AppText>
-          </View>
-          <Tag label="待积累" tone="neutral" />
-        </View>
-        <View style={styles.inlineEmpty}>
-          <Ionicons color={colors.textMuted} name="barbell-outline" size={20} />
-          <AppText tone="muted" variant="bodySmall">
-            完成主项训练后，这里会显示成员最好重量、最近容量和趋势。
-          </AppText>
-        </View>
-      </AppCard>
-    );
-  }
-
-  const chartIndexes = primary
-    ? primary.labels
-    .map((_, index) => index)
-    .filter((index) => primary.trendSeries.some((series) => (series.values[index] ?? 0) > 0))
-    .slice(-7)
-    : [];
-  const chartLabels = chartIndexes.map((sourceIndex) => primary?.labels[sourceIndex] ?? '');
-  const chartSeries = primary?.trendSeries.map((series) => ({
-    label: series.memberName,
-    values: chartIndexes.map((index) => series.values[index] ?? 0),
-  })) ?? [];
-
-  return (
-    <AppCard style={styles.groupCard}>
-      <View style={styles.trendHeader}>
-        <View style={styles.trendTitleBlock}>
-          <AppText variant="subtitle">{primary ? `${primary.exerciseName}训练容量趋势` : '动作趋势'}</AppText>
-          <AppText tone="muted" variant="caption">
-            默认保留小组总览，选择动作后查看成员容量趋势
-          </AppText>
-        </View>
-        <Tag label={primary ? `${primary.members.length} 名成员` : `${sortedAnalyses.length} 个动作`} tone={primary ? 'brand' : 'neutral'} />
-      </View>
-
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => setSelectorOpen(true)}
-        style={({ pressed }) => [styles.actionSelector, pressed && styles.pressed]}
-      >
-        <View style={styles.trendTitleBlock}>
-          <AppText variant="bodySmall" weight="900">
-            {primary?.exerciseName ?? '全部动作'}
-          </AppText>
-          <AppText tone="muted" variant="caption">
-            点击选择分析动作
-          </AppText>
-        </View>
-        <Ionicons color={colors.textMuted} name="chevron-down" size={18} />
-      </Pressable>
-
-      <AppModalSheet
-        onClose={() => setSelectorOpen(false)}
-        subtitle="选择一个真实练过的动作查看多人对比"
-        title="小组动作选择"
-        visible={isSelectorOpen}
-      >
-        <View style={styles.selectorSearch}>
-          <Ionicons color={colors.textMuted} name="search-outline" size={16} />
-          <TextInput
-            onChangeText={setQuery}
-            placeholder="搜索动作"
-            placeholderTextColor={colors.textSubtle}
-            style={styles.selectorInput}
-            value={query}
-          />
-        </View>
-        <ScrollView style={styles.selectorList} keyboardShouldPersistTaps="handled">
-          <SelectorOption
-            active={!primary}
-            meta={`${sortedAnalyses.length} 个动作 · 小组总览`}
-            name="全部动作"
-            onPress={() => {
-              setSelectedKey(null);
-              setSelectorOpen(false);
-              setQuery('');
-            }}
-          />
-          <View style={styles.selectorSection}>
-            <AppText tone="muted" variant="caption" weight="900">
-              {normalizedQuery ? '搜索结果' : '真实训练动作'}
-            </AppText>
-            {filteredAnalyses.length === 0 ? (
-              <AppText tone="muted" variant="bodySmall">
-                没有匹配动作
-              </AppText>
-            ) : (
-              filteredAnalyses.map((item) => {
-                const bestWeight = Math.max(0, ...item.members.map((member) => member.bestWeight ?? 0));
-                return (
-                  <SelectorOption
-                    active={item.key === primary?.key}
-                    key={item.key}
-                    meta={`${item.sessionCount} 次 · ${item.members.length} 人 · ${
-                      bestWeight > 0 ? `${bestWeight} kg` : '暂无重量'
-                    }`}
-                    name={item.exerciseName}
-                    onPress={() => {
-                      setSelectedKey(item.key);
-                      setSelectorOpen(false);
-                      setQuery('');
-                    }}
-                  />
-                );
-              })
-            )}
-          </View>
-        </ScrollView>
-      </AppModalSheet>
-
-      {!primary ? (
-        <View style={styles.inlineEmpty}>
-          <Ionicons color={colors.textMuted} name="analytics-outline" size={20} />
-          <AppText tone="muted" variant="bodySmall">
-            当前默认展示小组总览。需要查看某个动作时，从上方选择器进入成员对比。
-          </AppText>
-        </View>
-      ) : (
-        <>
-          <MultiLineTrendChart
-            chartHeight={116}
-            emptyMessage="近 7 天暂无动作容量"
-            formatValue={(value) => `${Math.round(value / 1000)}k`}
-            labels={chartLabels}
-            series={chartSeries}
-            unitLabel="kg"
-          />
-
-          <View style={styles.performanceList}>
-            {primary.members.map((member) => (
-          <Pressable
-            accessibilityRole="button"
-            key={member.memberId}
-            onPress={() =>
-              router.push({
-                pathname: '/history/group-exercise/[exerciseId]',
-                params: { exerciseId: primary.key },
-              } as never)
-            }
-            style={({ pressed }) => [styles.performanceRow, pressed && styles.pressed]}
-          >
-            <Avatar
-              avatarLocalUri={memberProfilesById[member.memberId]?.avatarLocalUri}
-              avatarThumbUrl={memberProfilesById[member.memberId]?.avatarThumbUrl}
-              avatarUrl={memberProfilesById[member.memberId]?.avatarUrl}
-              name={member.memberName}
-              size={36}
-            />
-            <View style={styles.performanceMain}>
-              <AppText numberOfLines={1} variant="bodySmall" weight="900">
-                {member.memberName}
-              </AppText>
-              <AppText numberOfLines={1} tone="muted" variant="caption">
-                最近 {member.latestLabel ?? '暂无有效组'}
-              </AppText>
-            </View>
-            <View style={styles.performanceMetrics}>
-              <View style={styles.metricPill}>
-                <AppText variant="caption" weight="900">
-                  {member.bestWeight ? `${member.bestWeight} kg` : '暂无'}
-                </AppText>
-                <AppText tone="muted" variant="caption">
-                  最好
-                </AppText>
-              </View>
-              <View style={styles.metricPill}>
-                <AppText variant="caption" weight="900">
-                  {formatKg(member.latestVolume)}
-                </AppText>
-                <AppText tone="muted" variant="caption">
-                  最近容量
-                </AppText>
-              </View>
-              <Tag
-                label={formatTrend(member.trend)}
-                tone={member.trend === 'up' ? 'success' : member.trend === 'down' ? 'warning' : member.trend === 'stable' ? 'accent' : 'neutral'}
-              />
-            </View>
-            <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
-          </Pressable>
-            ))}
-          </View>
-        </>
-      )}
-    </AppCard>
-  );
-}
-
-function GroupTrendCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
-  const activeTrend = analysis.trend
-    .filter((point) => point.volume > 0 || point.completedSets > 0)
-    .slice(-7)
-    .map((point) => ({ ...point, label: formatShortDate(point.date) }));
-  const maxVolume = Math.max(1, ...activeTrend.map((point) => point.volume));
-  return (
-    <AppCard style={styles.trendCard}>
-      <View style={styles.trendHeader}>
-        <View style={styles.trendTitleBlock}>
-          <AppText variant="subtitle">小组趋势</AppText>
-          <AppText tone="muted" variant="caption">
-            近 7 天训练量折线
-          </AppText>
-        </View>
-        <Tag label={analysis.sessionCount > 0 ? '训练量' : '暂无训练'} tone={analysis.sessionCount > 0 ? 'brand' : 'neutral'} />
-      </View>
-      <MiniLineChart
-        chartHeight={112}
-        data={activeTrend.map((point) => point.volume)}
-        emptyMessage="近 7 天还没有小组训练量"
-        formatValue={(value) => `${Math.round(value / 1000)}k`}
-        labels={activeTrend.map((point) => point.label)}
-        minChartHeight={maxVolume}
-        showValues
-        unitLabel="kg"
-      />
-    </AppCard>
-  );
-}
-
-function GroupRecentSessionsCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
-  return (
-    <AppCard style={styles.groupCard}>
-      <View style={styles.trendHeader}>
-        <View style={styles.trendTitleBlock}>
-          <AppText variant="subtitle">最近小组训练记录</AppText>
-          <AppText tone="muted" variant="caption">
-            按训练时间排序
-          </AppText>
-        </View>
-        <Tag label={`${analysis.recentSessions.length} 条`} tone="neutral" />
-      </View>
-
-      {analysis.recentSessions.length === 0 ? (
-        <View style={styles.inlineEmpty}>
-          <Ionicons color={colors.textMuted} name="calendar-clear-outline" size={20} />
-          <AppText tone="muted" variant="bodySmall">
-            暂无小组训练记录
-          </AppText>
-        </View>
-      ) : (
-        <View style={styles.sessionList}>
-          {analysis.recentSessions.map((session) => (
-            <Pressable
-              accessibilityRole="button"
-              key={session.sessionId}
-              onPress={() =>
-                router.push({
-                  pathname: '/history/[sessionId]',
-                  params: { scope: 'group', sessionId: session.sessionId },
-                } as never)
-              }
-              style={({ pressed }) => [styles.groupSessionRow, pressed && styles.pressed]}
-            >
-              <View style={styles.sessionIcon}>
-                <Ionicons color={colors.primary} name="barbell-outline" size={18} />
-              </View>
-              <View style={styles.groupSessionText}>
-                <AppText numberOfLines={1} variant="bodySmall" weight="900">
-                  {session.title}
-                </AppText>
-                <AppText tone="muted" variant="caption">
-                  {formatShortDate(session.date)} · {session.exerciseCount} 动作 · {session.completedMembers}/{session.totalMembers} 完成
-                </AppText>
-              </View>
-              <View style={styles.groupSessionRight}>
-                <AppText variant="bodySmall" weight="900">
-                  {formatKg(session.volume)}
-                </AppText>
-                <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
-              </View>
-            </Pressable>
-          ))}
-        </View>
-      )}
-    </AppCard>
-  );
-}
-
-function GroupInsightsCard({ analysis }: { analysis: GroupHistoryAnalysis }) {
-  return (
-    <AppCard style={styles.groupInsightsCard} tone="brand">
-      <View style={styles.trendHeader}>
-        <View style={styles.trendTitleBlock}>
-          <AppText variant="subtitle">小组洞察</AppText>
-          <AppText tone="muted" variant="caption">
-            基于小组训练记录
-          </AppText>
-        </View>
-        <Ionicons color={colors.primary} name="analytics-outline" size={22} />
-      </View>
-      <View style={styles.insightList}>
-        {analysis.insights.map((insight) => (
-          <View key={insight} style={styles.insightRow}>
-            <View style={styles.insightDot} />
-            <AppText variant="bodySmall" weight="900">
-              {insight}
-            </AppText>
-          </View>
-        ))}
-      </View>
-    </AppCard>
-  );
-}
-
-function CalendarWeek({
+function DatePickerSheet({
   monthCursor,
-  onOpenMonth,
+  onClear,
+  onClose,
+  onMonthChange,
   onSelectDate,
   selectedDate,
   trainingDates,
-  weekDates,
+  visible,
 }: {
   monthCursor: Date;
-  onOpenMonth: () => void;
+  onClear: () => void;
+  onClose: () => void;
+  onMonthChange: (date: Date) => void;
   onSelectDate: (date: string) => void;
-  selectedDate: string;
+  selectedDate: string | null;
   trainingDates: Set<string>;
-  weekDates: Date[];
+  visible: boolean;
 }) {
+  const monthDates = useMemo(() => getMonthDates(monthCursor), [monthCursor]);
+
   return (
-    <AppCard style={styles.calCard}>
-      <View style={styles.calHeader}>
-        <AppText variant="subtitle">{formatMonthLabel(new Date(`${selectedDate}T12:00:00`))}</AppText>
-        <Pressable accessibilityRole="button" onPress={onOpenMonth} style={styles.calMonthBtn}>
-          <AppText variant="caption" weight="900">
-            月视图
-          </AppText>
-          <Ionicons color={colors.primary} name="chevron-forward-outline" size={14} />
+    <AppModalSheet onClose={onClose} subtitle="按单日筛选记录，清除后恢复当前时间范围" title="日期筛选" visible={visible}>
+      <View style={styles.modalHeader}>
+        <Pressable accessibilityRole="button" onPress={() => onMonthChange(addMonths(monthCursor, -1))} style={styles.modalNavButton}>
+          <Ionicons color={colors.text} name="chevron-back-outline" size={20} />
+        </Pressable>
+        <AppText variant="subtitle">{formatMonthLabel(monthCursor)}</AppText>
+        <Pressable accessibilityRole="button" onPress={() => onMonthChange(addMonths(monthCursor, 1))} style={styles.modalNavButton}>
+          <Ionicons color={colors.text} name="chevron-forward-outline" size={20} />
         </Pressable>
       </View>
-      <View style={styles.calWeekRow}>
-        {weekDates.map((date) => {
+      <View style={styles.monthGrid}>
+        {['日', '一', '二', '三', '四', '五', '六'].map((day) => (
+          <AppText key={day} style={styles.weekdayLabel} tone="muted" variant="caption">
+            {day}
+          </AppText>
+        ))}
+        {Array.from({ length: new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1).getDay() }).map((_, index) => (
+          <View key={`pad-${index}`} style={styles.monthDay} />
+        ))}
+        {monthDates.map((date) => {
           const key = getLocalDateString(date);
           const active = key === selectedDate;
           const hasTraining = trainingDates.has(key);
@@ -1531,279 +1161,172 @@ function CalendarWeek({
               accessibilityRole="button"
               key={key}
               onPress={() => onSelectDate(key)}
-              style={[styles.calDay, active && styles.calDayActive]}
+              style={[styles.monthDay, active && styles.monthDayActive]}
             >
-              <AppText tone={active ? 'inverse' : 'muted'} variant="caption">
-                {'日一二三四五六'[date.getDay()]}
-              </AppText>
               <AppText tone={active ? 'inverse' : 'default'} variant="bodySmall" weight="900">
                 {date.getDate()}
               </AppText>
-              <View style={[styles.calDot, hasTraining && !active && styles.calDotTrained, active && styles.calDotInverse]} />
+              {hasTraining ? <View style={[styles.monthDot, active && styles.monthDotActive]} /> : null}
             </Pressable>
           );
         })}
       </View>
-    </AppCard>
+      <View style={styles.modalActions}>
+        <AppButton onPress={onClear} variant="secondary">
+          清除日期筛选
+        </AppButton>
+        <AppButton onPress={onClose}>完成</AppButton>
+      </View>
+    </AppModalSheet>
   );
 }
 
-function CompactSessionCard({ memberId, summary }: { memberId?: string; summary: SessionSummary }) {
-  const session = summary.session;
-  const detailRoute = {
-    pathname: '/history/[sessionId]',
-    params: {
-      ...(memberId ? { memberId, scope: 'personal' } : { scope: 'group' }),
-      sessionId: session.id,
-    },
-  } as never;
-  const completed = session.status === 'completed';
+function RecordActionSheet({
+  action,
+  currentMemberId,
+  onClose,
+  onDeleteGroup,
+  onDeletePersonal,
+  onOpenDetail,
+}: {
+  action: SelectedRecordAction;
+  currentMemberId?: string;
+  onClose: () => void;
+  onDeleteGroup: (summary: SessionSummary) => void;
+  onDeletePersonal: (summary: SessionSummary) => void;
+  onOpenDetail: (summary: SessionSummary, scope: DataScope) => void;
+}) {
+  if (!action) {
+    return null;
+  }
+
+  const { scope, summary } = action;
+  const isPersonal = scope === 'personal';
 
   return (
-    <Pressable accessibilityRole="button" onPress={() => router.push(detailRoute)} style={({ pressed }) => [styles.compactCard, pressed && styles.pressed]}>
-      <View style={styles.compactLeft}>
-        <AppText variant="caption" weight="900">
-          {formatShortDate(session.date)}
-        </AppText>
-        <View style={[styles.compactStatusDot, completed ? styles.compactStatusDone : styles.compactStatusOngoing]} />
+    <AppModalSheet
+      onClose={onClose}
+      position="center"
+      subtitle={isPersonal ? '只处理当前成员的数据' : '这些操作会影响整次小组训练'}
+      title="记录操作"
+      visible={Boolean(action)}
+    >
+      <View style={styles.modalActions}>
+        <AppButton
+          icon="eye-outline"
+          onPress={() => {
+            onClose();
+            onOpenDetail(summary, scope);
+          }}
+          variant="secondary"
+        >
+          {isPersonal ? '查看详情' : '查看小组详情'}
+        </AppButton>
+        <AppButton
+          icon="create-outline"
+          onPress={() => {
+            onClose();
+            router.push({
+              pathname: '/history/[sessionId]',
+              params: {
+                ...(isPersonal && currentMemberId ? { memberId: currentMemberId } : {}),
+                edit: '1',
+                scope,
+                sessionId: summary.id,
+              },
+            } as never);
+          }}
+        >
+          {isPersonal ? '编辑我的记录' : '编辑小组记录'}
+        </AppButton>
+        <AppButton
+          icon="trash-outline"
+          onPress={() => (isPersonal ? onDeletePersonal(summary) : onDeleteGroup(summary))}
+          variant="danger"
+        >
+          {isPersonal ? '删除我的本次记录' : '删除整次小组训练'}
+        </AppButton>
+        <AppButton onPress={onClose} variant="secondary">
+          取消
+        </AppButton>
       </View>
-      <View style={styles.compactCenter}>
-        <AppText numberOfLines={1} variant="bodySmall" weight="900">
-          {summary.exerciseCount} 个动作 · {summary.setCount} 组
-        </AppText>
-        <AppText numberOfLines={1} tone="muted" variant="caption">
-          {summary.mainExerciseNames.slice(0, 2).join('、') || '训练记录'}
-        </AppText>
-      </View>
-      <View style={styles.compactRight}>
-        <AppText variant="bodySmall" weight="900">
-          {formatKg(summary.volume)}
-        </AppText>
-        <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
-      </View>
-    </Pressable>
+    </AppModalSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  actionSelector: {
-    alignItems: 'center',
-    backgroundColor: colors.backgroundElevated,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'space-between',
-    padding: spacing.md,
-  },
-  exerciseFilterCard: {
-    gap: spacing.md,
-  },
-  exerciseFilterChip: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    maxWidth: '48%',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  exerciseFilterChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  exerciseFilterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  exerciseFilterText: {
-    color: colors.textMuted,
-  },
-  exerciseFilterTextActive: {
-    color: colors.surface,
-  },
-  selectorInput: {
-    color: colors.textStrong,
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    minHeight: 42,
-  },
-  selectorList: {
-    maxHeight: 360,
-  },
-  selectorOption: {
+  headerIconButton: {
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing.sm,
-    padding: spacing.md,
-  },
-  selectorOptionActive: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary,
-  },
-  selectorOptionText: {
-    flex: 1,
-    gap: 2,
-    minWidth: 0,
-  },
-  selectorSearch: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  selectorSection: {
-    gap: spacing.xs,
-    marginTop: spacing.sm,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
   },
   loadingWrap: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
+    paddingVertical: spacing.lg,
   },
-  headerCalBtn: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 36,
-    justifyContent: 'center',
-    width: 36,
-  },
-
   scopeBar: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    justifyContent: 'space-between',
+    padding: spacing.xs,
   },
-  scopeInfo: {
+  scopeLabel: {
     flex: 1,
+    paddingLeft: spacing.md,
   },
   scopePill: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.pill,
     flexDirection: 'row',
-    padding: 2,
+    gap: spacing.xs,
+    padding: spacing.xs,
   },
   scopePillBtn: {
     alignItems: 'center',
     borderRadius: radius.pill,
+    minHeight: 36,
+    minWidth: 72,
+    justifyContent: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
   },
   scopePillBtnActive: {
     backgroundColor: colors.primary,
   },
-
-  overviewCard: {
-    gap: spacing.lg,
+  rangeCard: {
+    padding: spacing.sm,
   },
-  overviewRow: {
-    flexDirection: 'row',
-    gap: spacing.xl,
-    justifyContent: 'space-between',
-  },
-  overviewMain: {
-    flex: 1,
-    gap: spacing.xs,
-  },
-  overviewLabel: {
-    color: colors.darkMuted,
-  },
-  overviewSide: {
+  rangeScroll: {
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.lg,
-  },
-  overviewMetric: {
-    alignItems: 'center',
-    gap: 2,
-  },
-  overviewDivider: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    height: 28,
-    width: 1,
-  },
-  groupOverviewCard: {
-    gap: spacing.lg,
-  },
-  groupOverviewHeader: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'space-between',
-  },
-  groupMetricRow: {
-    alignItems: 'center',
-    borderTopColor: 'rgba(255,255,255,0.12)',
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.lg,
-    justifyContent: 'space-between',
-    paddingTop: spacing.md,
-  },
-  darkMetric: {
-    flex: 1,
-    gap: 2,
-  },
-
-  quickActions: {
-    flexDirection: 'row',
     gap: spacing.sm,
   },
-  quickBtn: {
+  rangePill: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: colors.backgroundElevated,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    flex: 1,
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs,
+    minHeight: 36,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
   },
-  quickBtnIcon: {
+  rangePillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  clearDateButton: {
     alignItems: 'center',
-    borderRadius: radius.sm,
-    height: 30,
+    backgroundColor: colors.backgroundElevated,
+    borderRadius: radius.pill,
+    height: 36,
     justifyContent: 'center',
-    width: 30,
+    width: 36,
   },
-
-  statGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  miniStat: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexBasis: '48%',
-    flexGrow: 1,
-    gap: spacing.xs,
-    padding: spacing.md,
-  },
-  miniStatAccent: {
-    borderColor: colors.primarySoft,
-  },
-
   trendCard: {
     gap: spacing.md,
   },
@@ -1817,296 +1340,137 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  suggestionBox: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.sm,
-    padding: spacing.md,
-  },
-  trendDetailRow: {
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingTop: spacing.md,
-  },
-  trendDetailItem: {
-    flex: 1,
-    gap: 2,
-  },
-
-  calCard: {
-    gap: spacing.md,
-  },
-  calHeader: {
+  exerciseButton: {
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'space-between',
-  },
-  calMonthBtn: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 2,
-  },
-  calWeekRow: {
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.xs,
+    maxWidth: 150,
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+  },
+  pointDetailCard: {
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  pointDetailHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  calDay: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
+  trendSummaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  trendMetric: {
+    backgroundColor: colors.backgroundElevated,
     borderRadius: radius.md,
+    flexGrow: 1,
+    minWidth: '47%',
+    gap: 2,
+    padding: spacing.md,
+  },
+  selectorSearch: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  selectorInput: {
+    color: colors.text,
+    flex: 1,
+    minHeight: 42,
+  },
+  selectorList: {
+    maxHeight: 360,
+  },
+  selectorSection: {
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+  },
+  selectorOption: {
+    alignItems: 'center',
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  selectorOptionActive: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
+  },
+  selectorOptionText: {
     flex: 1,
     gap: 2,
-    minHeight: 58,
-    paddingVertical: spacing.sm,
   },
-  calDayActive: {
-    backgroundColor: colors.primary,
+  recordSection: {
+    gap: spacing.md,
   },
-  calDot: {
-    borderRadius: radius.pill,
-    height: 5,
-    width: 5,
-  },
-  calDotTrained: {
-    backgroundColor: colors.primary,
-  },
-  calDotInverse: {
-    backgroundColor: colors.surface,
-  },
-
-  emptyDayCard: {
+  emptyRecordCard: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.md,
+    padding: spacing.lg,
   },
-  emptyDayText: {
+  emptyRecordText: {
     flex: 1,
     gap: 2,
   },
-
   sessionList: {
     gap: spacing.sm,
   },
-  compactCard: {
-    alignItems: 'center',
+  recordCard: {
+    alignItems: 'flex-start',
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    padding: spacing.md,
   },
-  compactLeft: {
+  recordDateBox: {
     alignItems: 'center',
-    gap: spacing.xs,
-    width: 40,
-  },
-  compactStatusDot: {
-    borderRadius: radius.pill,
-    height: 6,
-    width: 6,
-  },
-  compactStatusDone: {
-    backgroundColor: colors.success,
-  },
-  compactStatusOngoing: {
-    backgroundColor: colors.warning,
-  },
-  compactCenter: {
-    flex: 1,
-    gap: 2,
-  },
-  compactRight: {
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  groupCard: {
-    gap: spacing.md,
-  },
-  memberAvatarRow: {
-    flexDirection: 'row',
-    gap: spacing.lg,
-    justifyContent: 'space-around',
-  },
-  memberAvatarItem: {
-    alignItems: 'center',
-    flex: 1,
-    gap: spacing.xs,
-    minWidth: 0,
-  },
-  memberAvatarCircle: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 50,
-    justifyContent: 'center',
-    width: 50,
-  },
-  memberAvatarCircleTop: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  contributionList: {
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-  },
-  contributionRow: {
-    alignItems: 'center',
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  rankBadge: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.sm,
-    height: 26,
-    justifyContent: 'center',
-    width: 26,
-  },
-  rankBadgeTop: {
-    backgroundColor: colors.primary,
-  },
-  contributionName: {
-    flex: 1,
-    gap: 2,
-    minWidth: 0,
-  },
-  contributionValue: {
-    alignItems: 'flex-end',
-    gap: spacing.xs,
-  },
-  exerciseSummaryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  exerciseSummaryChip: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
+    backgroundColor: colors.backgroundElevated,
     borderRadius: radius.md,
-    borderWidth: 1,
-    flexBasis: '48%',
-    flexGrow: 1,
-    gap: 2,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  exerciseSummaryChipActive: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary,
-  },
-  performanceList: {
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-  },
-  performanceRow: {
-    alignItems: 'center',
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  performanceMain: {
-    flex: 1,
-    gap: 2,
-    minWidth: 0,
-  },
-  performanceMetrics: {
-    alignItems: 'flex-end',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.xs,
-    justifyContent: 'flex-end',
-    maxWidth: '62%',
-  },
-  metricPill: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.sm,
-    gap: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-  },
-  inlineEmpty: {
-    alignItems: 'center',
-    backgroundColor: colors.backgroundElevated,
-    borderRadius: radius.sm,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  sessionIcon: {
-    alignItems: 'center',
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.pill,
-    height: 38,
-    justifyContent: 'center',
-    width: 38,
-  },
-  groupSessionRow: {
-    alignItems: 'center',
-    backgroundColor: colors.backgroundElevated,
-    borderRadius: radius.sm,
-    flexDirection: 'row',
-    gap: spacing.md,
-    padding: spacing.md,
-  },
-  groupSessionText: {
-    flex: 1,
-    gap: 2,
-    minWidth: 0,
-  },
-  groupSessionRight: {
-    alignItems: 'flex-end',
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  groupInsightsCard: {
-    gap: spacing.md,
-  },
-  insightList: {
-    gap: spacing.sm,
-  },
-  insightRow: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.sm,
-    flexDirection: 'row',
-    gap: spacing.sm,
+    minWidth: 56,
     padding: spacing.sm,
   },
-  insightDot: {
-    backgroundColor: colors.primary,
+  recordDot: {
     borderRadius: radius.pill,
-    height: 6,
-    width: 6,
+    height: 7,
+    width: 7,
   },
-  modalBackdrop: {
-    backgroundColor: colors.overlay,
+  recordDotDone: {
+    backgroundColor: colors.success,
+  },
+  recordDotOpen: {
+    backgroundColor: colors.warning,
+  },
+  recordMain: {
     flex: 1,
-    justifyContent: 'flex-end',
-    padding: spacing.lg,
+    gap: spacing.xs,
   },
-  monthPanel: {
-    gap: spacing.lg,
-  },
-  modalHeader: {
+  recordTitleRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
-  modalNavBtn: {
+  recordTitle: {
+    flex: 1,
+  },
+  moreButton: {
     alignItems: 'center',
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.pill,
@@ -2114,28 +1478,65 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 34,
   },
-  weekdayLabel: {
-    textAlign: 'center',
-    width: '12.5%',
-  },
-  monthGrid: {
+  recordMetaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
   },
+  recordMetaItem: {
+    backgroundColor: colors.backgroundElevated,
+    borderRadius: radius.sm,
+    minWidth: 70,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalNavButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  monthGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  weekdayLabel: {
+    textAlign: 'center',
+    width: '13.1%',
+  },
   monthDay: {
     alignItems: 'center',
-    borderRadius: radius.sm,
-    gap: spacing.xs,
-    minHeight: 44,
-    paddingVertical: spacing.sm,
-    width: '12.5%',
+    backgroundColor: colors.backgroundElevated,
+    borderRadius: radius.md,
+    height: 42,
+    justifyContent: 'center',
+    width: '13.1%',
   },
   monthDayActive: {
     backgroundColor: colors.primary,
   },
+  monthDot: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    height: 4,
+    marginTop: 2,
+    width: 4,
+  },
+  monthDotActive: {
+    backgroundColor: colors.surface,
+  },
+  modalActions: {
+    gap: spacing.sm,
+  },
   pressed: {
-    opacity: 0.84,
-    transform: [{ scale: 0.99 }],
+    opacity: 0.82,
   },
 });

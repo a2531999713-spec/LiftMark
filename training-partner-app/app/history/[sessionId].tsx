@@ -22,7 +22,8 @@ function formatVolume(sets: WorkoutSet[]) {
 }
 
 export default function HistoryDetailRoute() {
-  const { memberId, scope, sessionId } = useLocalSearchParams<{
+  const { edit, memberId, scope, sessionId } = useLocalSearchParams<{
+    edit?: string;
     memberId?: string;
     scope?: 'personal' | 'group';
     sessionId: string;
@@ -79,7 +80,7 @@ export default function HistoryDetailRoute() {
       setDetail(nextDetail);
       setDate(nextDetail.session.date);
       setTitle(nextDetail.session.title);
-      setEditMode(false);
+      setEditMode(edit === '1');
       setMembers(Object.fromEntries(nextMembers.map((member) => [member.id, member])));
       setExercises(Object.fromEntries(nextExercises.map((exercise) => [exercise.id, exercise])));
       setAllExercises(nextAllExercises);
@@ -88,7 +89,7 @@ export default function HistoryDetailRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [authMode, repositories, sessionId]);
+  }, [authMode, edit, repositories, sessionId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -263,15 +264,18 @@ export default function HistoryDetailRoute() {
           onPress: () => {
             void (async () => {
               await repositories.workoutRepository.deleteSet(set.id);
-              setDetail((current) =>
-                current ? { ...current, sets: current.sets.filter((item) => item.id !== set.id) } : current,
-              );
+              try {
+                const nextDetail = detail ? await repositories.workoutRepository.getSessionDetail(detail.session.id) : null;
+                setDetail(nextDetail);
+              } catch {
+                router.replace('/(tabs)/history');
+              }
             })();
           },
         },
       ]);
     },
-    [guardFeature, repositories],
+    [detail, guardFeature, repositories],
   );
 
   const changeExercise = useCallback(
@@ -311,7 +315,7 @@ export default function HistoryDetailRoute() {
         return;
       }
 
-      Alert.alert('删除这个动作？', '该动作下的所有组都会被删除。', [
+      Alert.alert('删除这个动作？', '小组口径下会删除该动作下所有成员的组数据。', [
         { text: '取消', style: 'cancel' },
         {
           text: '删除',
@@ -319,22 +323,47 @@ export default function HistoryDetailRoute() {
           onPress: () => {
             void (async () => {
               await repositories.workoutRepository.deleteExerciseRecord(record.id);
-              setDetail((current) =>
-                current
-                  ? {
-                      ...current,
-                      exercises: current.exercises.filter((item) => item.id !== record.id),
-                      sets: current.sets.filter((item) => item.exerciseRecordId !== record.id),
-                    }
-                  : current,
-              );
+              try {
+                const nextDetail = detail ? await repositories.workoutRepository.getSessionDetail(detail.session.id) : null;
+                setDetail(nextDetail);
+              } catch {
+                router.replace('/(tabs)/history');
+              }
             })();
           },
         },
       ]);
     },
-    [guardFeature, repositories],
+    [detail, guardFeature, repositories],
   );
+
+  const confirmDeleteMemberRecord = useCallback(() => {
+    if (!detail) {
+      return;
+    }
+
+    if (!guardFeature('manual_history')) {
+      return;
+    }
+
+    if (!scopedMemberId) {
+      return;
+    }
+
+    Alert.alert('删除我的本次记录？', '只会删除你自己的训练数据，不会影响其他成员。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '删除',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            await repositories.workoutRepository.deleteMemberSetsInSession(detail.session.id, scopedMemberId);
+            router.replace('/(tabs)/history');
+          })();
+        },
+      },
+    ]);
+  }, [detail, guardFeature, repositories, scopedMemberId]);
 
   const confirmDeleteSession = useCallback(() => {
     if (!detail) {
@@ -345,14 +374,14 @@ export default function HistoryDetailRoute() {
       return;
     }
 
-    Alert.alert('删除整次训练？', '该训练的动作和组记录都会被删除。此操作需要确认。', [
+    Alert.alert('删除整次小组训练？', '会删除本次训练中所有成员的动作和组数据，无法撤销。', [
       { text: '取消', style: 'cancel' },
       {
         text: '删除',
         style: 'destructive',
         onPress: () => {
           void (async () => {
-            await repositories.workoutRepository.deleteSession(detail.session.id);
+            await repositories.workoutRepository.deleteSessionCascade(detail.session.id);
             router.replace('/(tabs)/history');
           })();
         },
@@ -361,7 +390,11 @@ export default function HistoryDetailRoute() {
   }, [detail, guardFeature, repositories]);
 
   return (
-    <Screen safeTop={false}>
+    <Screen
+      safeTop={false}
+      subtitle={isPersonalScope ? '只显示并编辑当前成员的数据' : '管理本次训练中所有成员的数据'}
+      title={isPersonalScope ? '我的训练记录' : '小组训练记录'}
+    >
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="训练详情暂时无法加载" description={error} /> : null}
 
@@ -533,18 +566,21 @@ export default function HistoryDetailRoute() {
                   setEditMode(true);
                 }}
               >
-                编辑记录
+                {isPersonalScope ? '编辑我的记录' : '编辑小组记录'}
               </AppButton>
               <AppButton
                 icon="trash-outline"
                 onPress={() => {
                   setActionsVisible(false);
-                  confirmDeleteSession();
+                  if (isPersonalScope) {
+                    confirmDeleteMemberRecord();
+                  } else {
+                    confirmDeleteSession();
+                  }
                 }}
-                disabled={isPersonalScope}
                 variant="danger"
               >
-                {isPersonalScope ? '个人口径不可删除整次小组训练' : '删除整次训练'}
+                {isPersonalScope ? '删除我的本次记录' : '删除整次小组训练'}
               </AppButton>
               <AppButton onPress={() => setActionsVisible(false)} variant="secondary">
                 取消

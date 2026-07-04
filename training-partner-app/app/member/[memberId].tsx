@@ -37,6 +37,7 @@ export default function MemberDetailRoute() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -104,12 +105,13 @@ export default function MemberDetailRoute() {
 
       setIsSaving(true);
       setError(null);
+      setSavedMessage(null);
 
       try {
-        const nextMember = await repositories.memberRepository.updateMember(member.id, {
+        await repositories.memberRepository.updateMember(member.id, {
           displayName: values.displayName.trim(),
         });
-        const nextProfile = await repositories.memberRepository.updateProfile(member.id, {
+        await repositories.memberRepository.updateProfile(member.id, {
           bodyweight: values.bodyweight,
           bench1RM: values.bench1RM,
           squat1RM: values.squat1RM,
@@ -120,9 +122,12 @@ export default function MemberDetailRoute() {
           dumbbellIncrement: values.dumbbellIncrement,
         });
 
-        setMember(nextMember);
-        setProfile(nextProfile);
-        router.replace('/(tabs)/members');
+        const refreshedMembers = await repositories.memberRepository.listMembers(member.groupId);
+        const refreshedMember = refreshedMembers.find((candidate) => candidate.id === member.id) ?? member;
+        const refreshedProfile = await repositories.memberRepository.getMemberProfile(member.id);
+        setMember(refreshedMember);
+        setProfile(refreshedProfile);
+        setSavedMessage('已保存');
       } catch (saveError) {
         setError(saveError instanceof Error ? saveError.message : '成员更新失败。');
       } finally {
@@ -131,6 +136,12 @@ export default function MemberDetailRoute() {
     },
     [guardFeature, member, repositories],
   );
+
+  const identityNote = member
+    ? member.memberType === 'real'
+      ? '这是已登录成员。昵称和头像如果来自账号资料，请到“我的资料”修改；训练参数可以在这里更新。'
+      : '这是本地成员。昵称、体重、1RM 和加重单位都会保存在当前设备。'
+    : undefined;
 
   return (
     <Screen>
@@ -147,9 +158,11 @@ export default function MemberDetailRoute() {
 
       {!isLoading && member ? (
         <MemberForm
+          identityNote={identityNote}
           initialValues={createInitialValues(member, profile)}
           isSubmitting={isSaving}
           onSubmit={handleSubmit}
+          statusMessage={savedMessage}
           submitLabel="保存成员"
         />
       ) : null}

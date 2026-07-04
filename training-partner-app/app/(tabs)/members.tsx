@@ -1,12 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
 import { Avatar } from '@/components/avatar';
-import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MetricCard, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
-import { liftmarkImages } from '@/assets/images';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
@@ -16,37 +15,10 @@ import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
-type PartnerStats = {
-  streakDays: number;
-  totalVolume: number;
-  weeklySessions: number;
-};
-
 type NoticeState = {
   message: string;
   title: string;
 };
-
-function formatKg(value: number): string {
-  return `${Math.round(value).toLocaleString('zh-CN')} kg`;
-}
-
-function calculateStreakDays(dates: string[]): number {
-  const dateSet = new Set(dates);
-  const cursor = new Date();
-  let streak = 0;
-
-  for (let index = 0; index < 30; index += 1) {
-    const key = cursor.toISOString().slice(0, 10);
-    if (!dateSet.has(key)) {
-      break;
-    }
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  return streak;
-}
 
 export default function MembersRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
@@ -56,8 +28,7 @@ export default function MembersRoute() {
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
-  const [stats, setStats] = useState<PartnerStats>({ streakDays: 0, totalVolume: 0, weeklySessions: 0 });
-  const [isLocalRuleVisible, setLocalRuleVisible] = useState(false);
+  const [isOnlinePanelOpen, setOnlinePanelOpen] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +48,6 @@ export default function MembersRoute() {
         setSelectedGroupId(nextGroup.id);
       }
 
-      // 从服务器同步成员头像
       await syncGroupMembersAvatar(nextGroup.id);
 
       const nextMembers = await repositories.memberRepository.listMembers(nextGroup.id);
@@ -87,24 +57,10 @@ export default function MembersRoute() {
           await repositories.memberRepository.getMemberProfile(member.id),
         ]),
       );
-      const sessions = await repositories.workoutRepository.listSessions({ groupId: nextGroup.id, limit: 20 });
-      const details = await Promise.all(sessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)));
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      const weeklySessions = sessions.filter((session) => new Date(session.date) >= sevenDaysAgo).length;
-      const totalVolume = details
-        .flatMap((detail) => detail.sets)
-        .filter((set) => set.completed)
-        .reduce((sum, set) => sum + (set.actualWeight ?? set.plannedWeight ?? 0) * (set.actualReps ?? set.plannedReps ?? 0), 0);
 
       setGroup(nextGroup);
       setMembers(nextMembers);
       setProfiles(Object.fromEntries(profileEntries));
-      setStats({
-        streakDays: calculateStreakDays(sessions.map((session) => session.date)),
-        totalVolume,
-        weeklySessions,
-      });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '搭子加载失败。');
     } finally {
@@ -119,26 +75,31 @@ export default function MembersRoute() {
   );
 
   const canAddMember = members.length < MAX_GROUP_MEMBERS;
+  const hasOnlineMembers = members.some((member) => member.memberType === 'real');
+  const groupModeLabel = hasOnlineMembers ? '联机小组' : '本地小组';
+
+  const addMember = useCallback(() => {
+    if (canAddMember) {
+      if (guardFeature('add_member', { memberCount: members.length })) {
+        router.push('/member/new');
+      }
+      return;
+    }
+
+    setNotice({
+      title: `小组最多支持 ${MAX_GROUP_MEMBERS} 位训练成员`,
+      message: '当前设备仍可继续管理已有成员和训练记录。',
+    });
+  }, [canAddMember, guardFeature, members.length]);
 
   return (
     <Screen
       headerRight={
-        <Pressable
-          accessibilityRole="button"
-          onPress={() =>
-            canAddMember
-              ? guardFeature('add_member', { memberCount: members.length }) && router.push('/member/new')
-              : setNotice({
-                  title: `小组最多支持 ${MAX_GROUP_MEMBERS} 位训练成员`,
-                  message: '适合一台设备多人轮换记录。多设备小组能力后续版本开放。',
-                })
-          }
-          style={styles.iconButton}
-        >
+        <Pressable accessibilityRole="button" onPress={addMember} style={styles.iconButton}>
           <Ionicons color={colors.text} name="person-add-outline" size={20} />
         </Pressable>
       }
-      subtitle="训练小组、成员 1RM 与搭子协作入口。"
+      subtitle="管理当前设备用于训练记录的小组成员"
       title="搭子"
     >
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -147,163 +108,124 @@ export default function MembersRoute() {
 
       {!isLoading && !error ? (
         <>
-          <VisualHeroCard
-            eyebrow="训练小组"
-            icon="people-outline"
-            imageSource={liftmarkImages.partnerHero}
-            subtitle={`${members.length} 成员 · 多人轮换 · 同动作不同重量`}
-            title={group?.name ?? '训练小组'}
-          >
-            <View style={styles.heroStats}>
-              <View style={styles.heroStatItem}>
-                <AppText tone="inverse" variant="caption">
-                  本周训练
-                </AppText>
-                <AppText tone="inverse" variant="subtitle">
-                  {stats.weeklySessions} 次
-                </AppText>
-              </View>
-              <View style={styles.heroDivider} />
-              <View style={styles.heroStatItem}>
-                <AppText tone="inverse" variant="caption">
-                  总训练量
-                </AppText>
-                <AppText tone="inverse" variant="subtitle">
-                  {formatKg(stats.totalVolume)}
-                </AppText>
-              </View>
-            </View>
-          </VisualHeroCard>
-
-          <AppCard style={styles.localRuleCard} tone="soft">
-            <View style={styles.localRuleRow}>
-              <Ionicons color={colors.primary} name="information-circle-outline" size={20} />
-              <AppText tone="muted" variant="bodySmall" style={styles.localRuleText}>
-                真实成员通过邀请码加入；本地成员只保存在当前设备。
-              </AppText>
-            </View>
-            <Pressable accessibilityRole="button" onPress={() => setLocalRuleVisible(true)} style={styles.localRuleLink}>
-              <AppText tone="brand" variant="caption">
-                了解小组
-              </AppText>
-              <Ionicons color={colors.primary} name="chevron-forward" size={16} />
-            </Pressable>
-          </AppCard>
-
-          <View style={styles.groupActions}>
-            <AppButton icon="enter-outline" onPress={() => router.push('/group/join' as never)} style={styles.groupActionButton} variant="secondary">
-              加入小组
-            </AppButton>
-            <AppButton
-              icon="share-social-outline"
-              onPress={() =>
-                group
-                  ? router.push({ pathname: '/group/invitations', params: { groupId: group.id } } as never)
-                  : setNotice({ title: '小组未就绪', message: '请稍后再试。' })
-              }
-              style={styles.groupActionButton}
-              variant="secondary"
-            >
-              邀请成员
-            </AppButton>
-          </View>
-
-          <AppCard style={styles.groupCard}>
-            <View style={styles.groupHeader}>
+          <AppCard style={styles.summaryCard}>
+            <View style={styles.summaryHeader}>
               <View style={styles.groupIcon}>
-                <Ionicons color={colors.primary} name="people-outline" size={24} />
+                <Ionicons color={colors.primary} name="people-outline" size={22} />
               </View>
-              <View style={styles.groupText}>
-                <AppText variant="subtitle">{group?.name ?? '训练小组'}</AppText>
-                <AppText tone="muted" variant="bodySmall">
-                  {members.length} 成员 · 训练数据 · 小组训练
+              <View style={styles.summaryText}>
+                <AppText numberOfLines={1} variant="subtitle">
+                  {group?.name ?? '训练小组'}
+                </AppText>
+                <AppText tone="muted" variant="caption">
+                  当前设备可为小组成员记录同一次训练
                 </AppText>
               </View>
-              <Tag label="组长" tone="neutral" />
+              <Tag label={groupModeLabel} tone={hasOnlineMembers ? 'brand' : 'neutral'} />
             </View>
-
-            <View style={styles.metricGrid}>
-              <MetricCard label="本周训练" value={`${stats.weeklySessions} 次`} />
-              <MetricCard label="总训练量" value={formatKg(stats.totalVolume)} />
-              <MetricCard label="连续打卡" value={`${stats.streakDays} 天`} />
+            <View style={styles.summaryMetaRow}>
+              <SummaryPill icon="person-outline" label={`${members.length}/${MAX_GROUP_MEMBERS} 人`} />
+              <SummaryPill icon="phone-portrait-outline" label="本机记录" />
             </View>
           </AppCard>
 
           <SectionHeader
             actionLabel={canAddMember ? '添加' : undefined}
-            onActionPress={
-              canAddMember
-                ? () => {
-                    if (guardFeature('add_member', { memberCount: members.length })) router.push('/member/new');
-                  }
-                : undefined
-            }
-            subtitle={`已配置 ${members.length}/${MAX_GROUP_MEMBERS} 人`}
-            title="成员"
+            onActionPress={canAddMember ? addMember : undefined}
+            subtitle="点击成员可编辑昵称、体重、1RM 和加重单位"
+            title="小组成员"
           />
 
           {members.length === 0 ? (
             <EmptyState
               actionLabel="添加成员"
-              description="先添加第一位成员，再输入 1RM 和加重单位。"
-              onActionPress={() => {
-                if (guardFeature('add_member', { memberCount: members.length })) router.push('/member/new');
-              }}
-              title="还没有训练搭子"
+              description="先添加第一位成员，再开始多人训练记录。"
+              onActionPress={addMember}
+              title="还没有训练成员"
             />
-          ) : null}
-
-          <View style={styles.memberList}>
-            {members.map((member) => (
-              <PartnerMemberCard
-                key={member.id}
-                member={member}
-                onPress={() => router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } })}
-                profile={profiles[member.id] ?? null}
-              />
-            ))}
-          </View>
-
-          {!canAddMember ? (
-            <AppCard style={styles.limitCard} tone="soft">
-              <AppText variant="bodySmall" weight="900">
-                小组最多支持 {MAX_GROUP_MEMBERS} 位训练成员
-              </AppText>
-              <AppText tone="muted" variant="caption">
-                适合一台设备多人轮换记录。多设备小组能力后续版本开放。
-              </AppText>
-            </AppCard>
           ) : (
-            <AppButton
-              icon="add-outline"
-              onPress={() => {
-                if (guardFeature('add_member', { memberCount: members.length })) router.push('/member/new');
-              }}
-            >
-              添加成员
-            </AppButton>
+            <View style={styles.memberList}>
+              {members.map((member) => (
+                <MemberListCard
+                  key={member.id}
+                  member={member}
+                  onPress={() => router.push({ pathname: '/member/[memberId]', params: { memberId: member.id } })}
+                  profile={profiles[member.id] ?? null}
+                />
+              ))}
+            </View>
           )}
 
-          <Modal animationType="slide" transparent visible={isLocalRuleVisible} onRequestClose={() => setLocalRuleVisible(false)}>
-            <View style={styles.modalBackdrop}>
-              <AppCard style={styles.localRulePanel}>
-                <View style={styles.localRulePanelHeader}>
-                  <AppText variant="subtitle">小组规则</AppText>
-                  <Pressable accessibilityRole="button" onPress={() => setLocalRuleVisible(false)} style={styles.modalCloseButton}>
-                    <Ionicons color={colors.text} name="close" size={18} />
-                  </Pressable>
+          {canAddMember ? (
+            <AppButton icon="add-outline" onPress={addMember}>
+              添加本地成员
+            </AppButton>
+          ) : (
+            <AppCard style={styles.limitCard} tone="soft">
+              <AppText variant="bodySmall" weight="900">
+                已达到 {MAX_GROUP_MEMBERS} 人上限
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                可继续编辑现有成员资料和训练参数。
+              </AppText>
+            </AppCard>
+          )}
+
+          <AppCard style={styles.onlineCard} tone="soft">
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setOnlinePanelOpen((current) => !current)}
+              style={styles.onlineHeader}
+            >
+              <View style={styles.onlineTitle}>
+                <Ionicons color={colors.textMuted} name="cloud-outline" size={18} />
+                <AppText variant="bodySmall" weight="900">
+                  联机小组能力
+                </AppText>
+              </View>
+              <Ionicons color={colors.textMuted} name={isOnlinePanelOpen ? 'chevron-up' : 'chevron-down'} size={18} />
+            </Pressable>
+            {isOnlinePanelOpen ? (
+              <View style={styles.onlineBody}>
+                <AppText tone="muted" variant="caption">
+                  联机小组用于多设备协作，当前本机仍可记录多人训练。
+                </AppText>
+                <View style={styles.onlineActions}>
+                  <AppButton
+                    icon="share-social-outline"
+                    onPress={() =>
+                      group
+                        ? router.push({ pathname: '/group/invitations', params: { groupId: group.id } } as never)
+                        : setNotice({ title: '小组未就绪', message: '请稍后再试。' })
+                    }
+                    size="sm"
+                    style={styles.onlineAction}
+                    variant="secondary"
+                  >
+                    邀请成员
+                  </AppButton>
+                  <AppButton
+                    icon="enter-outline"
+                    onPress={() => router.push('/group/join' as never)}
+                    size="sm"
+                    style={styles.onlineAction}
+                    variant="secondary"
+                  >
+                    加入小组
+                  </AppButton>
+                  <AppButton
+                    icon="sync-outline"
+                    onPress={() => router.push('/profile/sync' as never)}
+                    size="sm"
+                    style={styles.onlineAction}
+                    variant="secondary"
+                  >
+                    同步状态
+                  </AppButton>
                 </View>
-                <RuleItem text="真实成员需要登录账号，并通过邀请码加入小组。" />
-                <RuleItem text="本地成员只保存在当前设备，可继续用于现场轮换记录。" />
-                <RuleItem text="训练数据会保留在当前设备。" />
-                <RuleItem text="当前版本组长可以查看当前小组成员训练数据。" />
-                <RuleItem text="给真实成员上传训练数据后，对方需要在待确认数据中接受。" />
-                <AppButton onPress={() => setLocalRuleVisible(false)} variant="secondary">
-                  我知道了
-                </AppButton>
-              </AppCard>
-            </View>
-          </Modal>
+              </View>
+            ) : null}
+          </AppCard>
 
           <AppModalSheet
             onClose={() => setNotice(null)}
@@ -322,13 +244,24 @@ export default function MembersRoute() {
   );
 }
 
-type PartnerMemberCardProps = {
+function SummaryPill({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label: string }) {
+  return (
+    <View style={styles.summaryPill}>
+      <Ionicons color={colors.textMuted} name={icon} size={15} />
+      <AppText tone="muted" variant="caption" weight="900">
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
+type MemberListCardProps = {
   member: GroupMember;
   onPress: () => void;
   profile: MemberProfile | null;
 };
 
-function PartnerMemberCard({ member, onPress, profile }: PartnerMemberCardProps) {
+function MemberListCard({ member, onPress, profile }: MemberListCardProps) {
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.memberCard, pressed && styles.pressed]}>
       <Avatar
@@ -336,20 +269,24 @@ function PartnerMemberCard({ member, onPress, profile }: PartnerMemberCardProps)
         avatarThumbUrl={profile?.avatarThumbUrl}
         avatarUrl={profile?.avatarUrl ?? member.avatarUrl}
         name={member.displayName}
-        size={46}
+        size={48}
       />
       <View style={styles.memberMain}>
         <View style={styles.memberTop}>
-          <AppText variant="subtitle">{member.displayName}</AppText>
-          <View style={styles.memberTags}>
-            <Tag label={member.role === 'owner' ? '组长' : '成员'} tone="neutral" />
-            <Tag label={member.memberType === 'real' ? '真实成员' : '本地成员'} tone={member.memberType === 'real' ? 'success' : 'neutral'} />
-          </View>
+          <AppText numberOfLines={1} style={styles.memberName} variant="subtitle">
+            {member.displayName}
+          </AppText>
+          <Ionicons color={colors.textSubtle} name="chevron-forward" size={18} />
         </View>
-        <AppText tone="muted" variant="caption">
-          {profile?.bodyweight ? `${profile.bodyweight} kg` : '体重未设置'}
-        </AppText>
-        <View style={styles.liftRow}>
+        <View style={styles.memberTags}>
+          {member.role === 'owner' ? <Tag label="我" tone="brand" /> : null}
+          <Tag
+            label={member.memberType === 'real' ? '已登录成员' : '本地成员'}
+            tone={member.memberType === 'real' ? 'success' : 'neutral'}
+          />
+        </View>
+        <View style={styles.memberMetrics}>
+          <LiftValue label="体重" value={profile?.bodyweight} />
           <LiftValue label="卧推" value={profile?.bench1RM} />
           <LiftValue label="深蹲" value={profile?.squat1RM} />
           <LiftValue label="硬拉" value={profile?.deadlift1RM} />
@@ -365,17 +302,8 @@ function LiftValue({ label, value }: { label: string; value?: number }) {
       <AppText tone="muted" variant="caption">
         {label}
       </AppText>
-      <AppText variant="caption">{value ? `${value} kg` : '-'}</AppText>
-    </View>
-  );
-}
-
-function RuleItem({ text }: { text: string }) {
-  return (
-    <View style={styles.ruleItem}>
-      <View style={styles.ruleDot} />
-      <AppText tone="muted" variant="bodySmall" style={styles.ruleText}>
-        {text}
+      <AppText numberOfLines={1} variant="caption" weight="900">
+        {value ? `${value}kg` : '-'}
       </AppText>
     </View>
   );
@@ -392,47 +320,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 40,
   },
-  groupCard: {
-    gap: spacing.lg,
+  summaryCard: {
+    gap: spacing.md,
+    padding: spacing.lg,
   },
-  groupActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  groupActionButton: {
-    flex: 1,
-  },
-  localRuleCard: {
-    gap: spacing.sm,
-  },
-  localRuleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  localRuleText: {
-    flex: 1,
-  },
-  localRuleLink: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  heroStats: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.lg,
-  },
-  heroStatItem: {
-    gap: 2,
-  },
-  heroDivider: {
-    backgroundColor: 'rgba(255,255,255,0.26)',
-    height: 44,
-    width: 1,
-  },
-  groupHeader: {
+  summaryHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.md,
@@ -441,17 +333,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.primarySoft,
     borderRadius: radius.md,
-    height: 52,
+    height: 48,
     justifyContent: 'center',
-    width: 52,
+    width: 48,
   },
-  groupText: {
+  summaryText: {
     flex: 1,
     gap: 2,
   },
-  metricGrid: {
+  summaryMetaRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  summaryPill: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
   memberList: {
     gap: spacing.sm,
@@ -466,14 +368,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg,
   },
-  avatar: {
-    alignItems: 'center',
-    backgroundColor: colors.dark,
-    borderRadius: radius.pill,
-    height: 46,
-    justifyContent: 'center',
-    width: 46,
-  },
   memberMain: {
     flex: 1,
     gap: spacing.xs,
@@ -482,17 +376,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
-    justifyContent: 'space-between',
+  },
+  memberName: {
+    flex: 1,
   },
   memberTags: {
     alignItems: 'center',
     flexDirection: 'row',
-    flexShrink: 0,
     flexWrap: 'wrap',
     gap: spacing.xs,
-    justifyContent: 'flex-end',
   },
-  liftRow: {
+  memberMetrics: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
@@ -504,43 +398,33 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     padding: spacing.md,
   },
-  pressed: {
-    opacity: 0.82,
+  onlineCard: {
+    gap: spacing.sm,
+    padding: spacing.md,
   },
-  modalBackdrop: {
-    backgroundColor: colors.overlay,
-    flex: 1,
-    justifyContent: 'flex-end',
-    padding: spacing.lg,
-  },
-  localRulePanel: {
-    gap: spacing.md,
-  },
-  localRulePanelHeader: {
+  onlineHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    minHeight: 44,
   },
-  modalCloseButton: {
+  onlineTitle: {
     alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    height: 34,
-    justifyContent: 'center',
-    width: 34,
-  },
-  ruleItem: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  ruleDot: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    height: 7,
-    marginTop: 8,
-    width: 7,
+  onlineBody: {
+    gap: spacing.md,
   },
-  ruleText: {
-    flex: 1,
+  onlineActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  onlineAction: {
+    flexGrow: 1,
+  },
+  pressed: {
+    opacity: 0.82,
   },
 });

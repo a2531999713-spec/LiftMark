@@ -3,6 +3,8 @@ import { nowIso } from '@/domain/common/time';
 import type { WorkoutRepository } from '@/data/repositories/workoutRepository';
 import { calculateSuggestedWeight } from '@/domain/weight/weight-calculator';
 import { getPlanExerciseInitialReps, getPlanExerciseSetCount } from '@/domain/workout/workout.service';
+import { enqueueSyncCandidate } from '@/sync/syncQueue';
+import type { SyncEntityType } from '@/sync/syncTypes';
 import type {
   CreateSessionFromTodayPlanInput,
   CreateManualSessionInput,
@@ -38,8 +40,37 @@ import {
   type WorkoutSetRow,
 } from './mappers';
 
+type DeletedEntity = {
+  entityType: Extract<SyncEntityType, 'workoutSessions' | 'workoutExerciseRecords' | 'workoutSets'>;
+  groupId?: string;
+  localId: string;
+  parentServerId?: string | null;
+  remoteId?: string | null;
+  sessionId?: string;
+};
+
 export class SQLiteWorkoutRepository implements WorkoutRepository {
   constructor(private readonly getDb: DatabaseProvider) {}
+
+  private async enqueueDeletedEntities(entities: DeletedEntity[], updatedAt: string): Promise<void> {
+    await Promise.all(
+      entities.map((entity) =>
+        enqueueSyncCandidate({
+          entityType: entity.entityType,
+          localId: entity.localId,
+          operation: 'delete',
+          payload: {
+            groupId: entity.groupId,
+            parentServerId: entity.parentServerId ?? entity.sessionId,
+            sessionId: entity.sessionId,
+          },
+          remoteId: entity.remoteId ?? undefined,
+          status: 'pending_delete',
+          updatedAt,
+        }).catch(() => undefined),
+      ),
+    );
+  }
 
   private normalizeManualExercises(input: CreateManualSessionInput): ManualWorkoutExerciseInput[] {
     if (input.exercises?.length) {
@@ -84,6 +115,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         `SELECT * FROM workout_sessions
          WHERE group_id = ? AND date = ? AND plan_id = ? AND week = ? AND weekday = ?
            AND training_mode = ? AND status IN ('draft', 'in_progress')
+           AND deleted_at IS NULL
          ORDER BY created_at DESC
          LIMIT 1`,
         input.groupId,
@@ -256,6 +288,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
                      AND wer.exercise_id = ?
                      AND ws.completed = 1
                      AND ws.actual_weight IS NOT NULL
+                     AND ws.deleted_at IS NULL
+                     AND wer.deleted_at IS NULL
                    ORDER BY ws.updated_at DESC, ws.created_at DESC
                    LIMIT 1`,
                   member.id,
@@ -415,7 +449,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   async getSession(sessionId: string): Promise<WorkoutSession | null> {
     const db = await this.getDb();
     const row = await db.getFirstAsync<WorkoutSessionRow>(
-      'SELECT * FROM workout_sessions WHERE id = ?',
+      'SELECT * FROM workout_sessions WHERE id = ? AND deleted_at IS NULL',
       sessionId,
     );
     return row ? mapWorkoutSession(row) : null;
@@ -425,7 +459,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const db = await this.getDb();
     const session = await requireRow(await this.getSession(sessionId), `未找到训练：${sessionId}`);
     const exerciseRows = await db.getAllAsync<WorkoutExerciseRecordRow>(
-      'SELECT * FROM workout_exercise_records WHERE session_id = ? ORDER BY order_index ASC',
+      'SELECT * FROM workout_exercise_records WHERE session_id = ? AND deleted_at IS NULL ORDER BY order_index ASC',
       sessionId,
     );
     const setRows = await db.getAllAsync<WorkoutSetRow>(
@@ -433,6 +467,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
        INNER JOIN workout_exercise_records wer ON wer.id = ws.exercise_record_id
        INNER JOIN group_members gm ON gm.id = ws.member_id
        WHERE ws.session_id = ?
+         AND ws.deleted_at IS NULL
+         AND wer.deleted_at IS NULL
        ORDER BY wer.order_index ASC, gm.created_at ASC, ws.set_number ASC`,
       sessionId,
     );
@@ -449,6 +485,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const rows = await db.getAllAsync<WorkoutSessionRow>(
       `SELECT * FROM workout_sessions
        WHERE group_id = ? AND date = ? AND status IN ('draft', 'in_progress')
+         AND deleted_at IS NULL
        ORDER BY updated_at DESC, created_at DESC`,
       input.groupId,
       input.date,
@@ -575,14 +612,14 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const now = nowIso();
     const record = await requireRow(
       await db.getFirstAsync<WorkoutExerciseRecordRow>(
-        'SELECT * FROM workout_exercise_records WHERE id = ? AND session_id = ?',
+        'SELECT * FROM workout_exercise_records WHERE id = ? AND session_id = ? AND deleted_at IS NULL',
         input.exerciseRecordId,
         input.sessionId,
       ),
       `未找到动作记录：${input.exerciseRecordId}`,
     );
     const setNumberRow = await db.getFirstAsync<{ max_set_number: number | null }>(
-      'SELECT MAX(set_number) AS max_set_number FROM workout_sets WHERE exercise_record_id = ? AND member_id = ?',
+      'SELECT MAX(set_number) AS max_set_number FROM workout_sets WHERE exercise_record_id = ? AND member_id = ? AND deleted_at IS NULL',
       input.exerciseRecordId,
       input.memberId,
     );
@@ -653,7 +690,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
     const db = await this.getDb();
     const current = await requireRow(
-      await db.getFirstAsync<WorkoutSetRow>('SELECT * FROM workout_sets WHERE id = ?', input.id),
+      await db.getFirstAsync<WorkoutSetRow>('SELECT * FROM workout_sets WHERE id = ? AND deleted_at IS NULL', input.id),
       `未找到训练组：${input.id}`,
     );
     const updated = {
@@ -690,24 +727,349 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async deleteSet(setId: string): Promise<void> {
     const db = await this.getDb();
-    await db.runAsync('DELETE FROM workout_sets WHERE id = ?', setId);
+    const row = await db.getFirstAsync<{
+      exercise_record_id: string;
+      group_id: string;
+      id: string;
+      remote_id: string | null;
+      session_id: string;
+    }>(
+      `SELECT ws.id, ws.remote_id, ws.session_id, ws.exercise_record_id, session.group_id
+       FROM workout_sets ws
+       INNER JOIN workout_sessions session ON session.id = ws.session_id
+       WHERE ws.id = ? AND ws.deleted_at IS NULL`,
+      setId,
+    );
+
+    if (!row) {
+      return;
+    }
+
+    const now = nowIso();
+    await db.runAsync(
+      `UPDATE workout_sets
+       SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+       WHERE id = ?`,
+      now,
+      now,
+      setId,
+    );
+
+    await this.enqueueDeletedEntities(
+      [{
+        entityType: 'workoutSets',
+        groupId: row.group_id,
+        localId: row.id,
+        parentServerId: row.session_id,
+        remoteId: row.remote_id,
+        sessionId: row.session_id,
+      }],
+      now,
+    );
+    await this.cleanupEmptyExerciseRecords(row.session_id);
   }
 
   async deleteExerciseRecord(recordId: string): Promise<void> {
     const db = await this.getDb();
+    const now = nowIso();
+    const record = await db.getFirstAsync<{
+      group_id: string;
+      id: string;
+      remote_id: string | null;
+      session_id: string;
+    }>(
+      `SELECT record.id, record.remote_id, record.session_id, session.group_id
+       FROM workout_exercise_records record
+       INNER JOIN workout_sessions session ON session.id = record.session_id
+       WHERE record.id = ? AND record.deleted_at IS NULL`,
+      recordId,
+    );
+    if (!record) {
+      return;
+    }
+
+    const setRows = await db.getAllAsync<{
+      id: string;
+      remote_id: string | null;
+      session_id: string;
+    }>(
+      `SELECT id, remote_id, session_id
+       FROM workout_sets
+       WHERE exercise_record_id = ? AND deleted_at IS NULL`,
+      recordId,
+    );
+
     await db.withExclusiveTransactionAsync(async (txn) => {
-      await txn.runAsync('DELETE FROM workout_sets WHERE exercise_record_id = ?', recordId);
-      await txn.runAsync('DELETE FROM workout_exercise_records WHERE id = ?', recordId);
+      await txn.runAsync(
+        `UPDATE workout_sets
+         SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+         WHERE exercise_record_id = ? AND deleted_at IS NULL`,
+        now,
+        now,
+        recordId,
+      );
+      await txn.runAsync(
+        `UPDATE workout_exercise_records
+         SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+         WHERE id = ?`,
+        now,
+        now,
+        recordId,
+      );
     });
+
+    await this.enqueueDeletedEntities(
+      [
+        ...setRows.map((set) => ({
+          entityType: 'workoutSets' as const,
+          groupId: record.group_id,
+          localId: set.id,
+          parentServerId: record.session_id,
+          remoteId: set.remote_id,
+          sessionId: set.session_id,
+        })),
+        {
+          entityType: 'workoutExerciseRecords',
+          groupId: record.group_id,
+          localId: record.id,
+          parentServerId: record.session_id,
+          remoteId: record.remote_id,
+          sessionId: record.session_id,
+        },
+      ],
+      now,
+    );
+    await this.cleanupEmptyExerciseRecords(record.session_id);
   }
 
   async deleteSession(sessionId: string): Promise<void> {
+    await this.deleteSessionCascade(sessionId);
+  }
+
+  async deleteMemberSetsInSession(sessionId: string, memberId: string): Promise<void> {
     const db = await this.getDb();
+    const now = nowIso();
+    const setRows = await db.getAllAsync<{
+      group_id: string;
+      id: string;
+      remote_id: string | null;
+      session_id: string;
+    }>(
+      `SELECT ws.id, ws.remote_id, ws.session_id, session.group_id
+       FROM workout_sets ws
+       INNER JOIN workout_sessions session ON session.id = ws.session_id
+       WHERE ws.session_id = ? AND ws.member_id = ? AND ws.deleted_at IS NULL`,
+      sessionId,
+      memberId,
+    );
+
+    if (setRows.length === 0) {
+      return;
+    }
+
+    await db.runAsync(
+      `UPDATE workout_sets
+       SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+       WHERE session_id = ? AND member_id = ? AND deleted_at IS NULL`,
+      now,
+      now,
+      sessionId,
+      memberId,
+    );
+
+    await this.enqueueDeletedEntities(
+      setRows.map((set) => ({
+        entityType: 'workoutSets',
+        groupId: set.group_id,
+        localId: set.id,
+        parentServerId: sessionId,
+        remoteId: set.remote_id,
+        sessionId,
+      })),
+      now,
+    );
+    await this.cleanupEmptyExerciseRecords(sessionId);
+  }
+
+  async deleteSessionCascade(sessionId: string): Promise<void> {
+    const db = await this.getDb();
+    const now = nowIso();
+    const session = await db.getFirstAsync<{
+      group_id: string;
+      id: string;
+      remote_id: string | null;
+    }>(
+      `SELECT id, remote_id, group_id
+       FROM workout_sessions
+       WHERE id = ? AND deleted_at IS NULL`,
+      sessionId,
+    );
+    if (!session) {
+      return;
+    }
+
+    const recordRows = await db.getAllAsync<{
+      id: string;
+      remote_id: string | null;
+      session_id: string;
+    }>(
+      `SELECT id, remote_id, session_id
+       FROM workout_exercise_records
+       WHERE session_id = ? AND deleted_at IS NULL`,
+      sessionId,
+    );
+    const setRows = await db.getAllAsync<{
+      id: string;
+      remote_id: string | null;
+      session_id: string;
+    }>(
+      `SELECT id, remote_id, session_id
+       FROM workout_sets
+       WHERE session_id = ? AND deleted_at IS NULL`,
+      sessionId,
+    );
+
     await db.withExclusiveTransactionAsync(async (txn) => {
-      await txn.runAsync('DELETE FROM workout_sets WHERE session_id = ?', sessionId);
-      await txn.runAsync('DELETE FROM workout_exercise_records WHERE session_id = ?', sessionId);
-      await txn.runAsync('DELETE FROM workout_sessions WHERE id = ?', sessionId);
+      await txn.runAsync(
+        `UPDATE workout_sets
+         SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+         WHERE session_id = ? AND deleted_at IS NULL`,
+        now,
+        now,
+        sessionId,
+      );
+      await txn.runAsync(
+        `UPDATE workout_exercise_records
+         SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+         WHERE session_id = ? AND deleted_at IS NULL`,
+        now,
+        now,
+        sessionId,
+      );
+      await txn.runAsync(
+        `UPDATE workout_sessions
+         SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+         WHERE id = ?`,
+        now,
+        now,
+        sessionId,
+      );
     });
+
+    await this.enqueueDeletedEntities(
+      [
+        ...setRows.map((set) => ({
+          entityType: 'workoutSets' as const,
+          groupId: session.group_id,
+          localId: set.id,
+          parentServerId: sessionId,
+          remoteId: set.remote_id,
+          sessionId,
+        })),
+        ...recordRows.map((record) => ({
+          entityType: 'workoutExerciseRecords' as const,
+          groupId: session.group_id,
+          localId: record.id,
+          parentServerId: sessionId,
+          remoteId: record.remote_id,
+          sessionId,
+        })),
+        {
+          entityType: 'workoutSessions',
+          groupId: session.group_id,
+          localId: session.id,
+          remoteId: session.remote_id,
+          sessionId,
+        },
+      ],
+      now,
+    );
+  }
+
+  async cleanupEmptyExerciseRecords(sessionId: string): Promise<void> {
+    const db = await this.getDb();
+    const now = nowIso();
+    const session = await db.getFirstAsync<{
+      group_id: string;
+      id: string;
+      remote_id: string | null;
+    }>(
+      `SELECT id, remote_id, group_id
+       FROM workout_sessions
+       WHERE id = ? AND deleted_at IS NULL`,
+      sessionId,
+    );
+    if (!session) {
+      return;
+    }
+
+    const emptyRecords = await db.getAllAsync<{
+      id: string;
+      remote_id: string | null;
+      session_id: string;
+    }>(
+      `SELECT record.id, record.remote_id, record.session_id
+       FROM workout_exercise_records record
+       WHERE record.session_id = ?
+         AND record.deleted_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM workout_sets ws
+           WHERE ws.exercise_record_id = record.id
+             AND ws.deleted_at IS NULL
+         )`,
+      sessionId,
+    );
+
+    if (emptyRecords.length > 0) {
+      const placeholders = emptyRecords.map(() => '?').join(', ');
+      await db.runAsync(
+        `UPDATE workout_exercise_records
+         SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+         WHERE id IN (${placeholders})`,
+        now,
+        now,
+        ...emptyRecords.map((record) => record.id),
+      );
+      await this.enqueueDeletedEntities(
+        emptyRecords.map((record) => ({
+          entityType: 'workoutExerciseRecords',
+          groupId: session.group_id,
+          localId: record.id,
+          parentServerId: sessionId,
+          remoteId: record.remote_id,
+          sessionId,
+        })),
+        now,
+      );
+    }
+
+    const remainingSets = await db.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS count
+       FROM workout_sets
+       WHERE session_id = ? AND deleted_at IS NULL`,
+      sessionId,
+    );
+
+    if ((remainingSets?.count ?? 0) === 0) {
+      await db.runAsync(
+        `UPDATE workout_sessions
+         SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+         WHERE id = ? AND deleted_at IS NULL`,
+        now,
+        now,
+        sessionId,
+      );
+      await this.enqueueDeletedEntities(
+        [{
+          entityType: 'workoutSessions',
+          groupId: session.group_id,
+          localId: session.id,
+          remoteId: session.remote_id,
+          sessionId,
+        }],
+        now,
+      );
+    }
   }
 
   async finishSession(sessionId: string): Promise<WorkoutSummary> {
@@ -727,7 +1089,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS completed_sets,
         COUNT(*) AS total_sets
        FROM workout_sets
-       WHERE session_id = ?`,
+       WHERE session_id = ? AND deleted_at IS NULL`,
       sessionId,
     );
 
@@ -753,7 +1115,9 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     if (input.memberId) {
       clauses.push(`EXISTS (
         SELECT 1 FROM workout_sets member_sets
-        WHERE member_sets.session_id = ws.id AND member_sets.member_id = ?
+        WHERE member_sets.session_id = ws.id
+          AND member_sets.member_id = ?
+          AND member_sets.deleted_at IS NULL
       )`);
       params.push(input.memberId);
     }
@@ -767,6 +1131,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       clauses.push('ws.date <= ?');
       params.push(input.toDate);
     }
+
+    clauses.push('ws.deleted_at IS NULL');
 
     const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
     const rows = await db.getAllAsync<WorkoutSessionRow>(
