@@ -90,7 +90,7 @@ function toGoalDraft(goal?: BodyMetricGoal | null): GoalDraft {
 function parseNumber(value: string): number | undefined {
   const trimmed = value.trim().replace(',', '.');
   if (!trimmed) return undefined;
-  const parsed = Math.round(Number(trimmed) * 10) / 10;
+  const parsed = Math.round(Number(trimmed) * 100) / 100;
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
