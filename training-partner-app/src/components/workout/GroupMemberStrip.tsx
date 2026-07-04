@@ -14,10 +14,10 @@ type GroupMemberStripProps = {
 };
 
 function formatShortRest(seconds: number): string {
-  if (seconds >= 60) {
-    return `${Math.ceil(seconds / 60)}分`;
-  }
-  return `${Math.max(0, seconds)}秒`;
+  const safeSeconds = Math.max(0, seconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const remain = safeSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(remain).padStart(2, '0')}`;
 }
 
 export function GroupMemberStrip({
@@ -33,8 +33,8 @@ export function GroupMemberStrip({
         const isCurrent = member.id === currentMemberId;
         const restState = restStates[member.id];
         const statusLabel = restState
-          ? restState.status === 'ready'
-            ? '已恢复'
+            ? restState.status === 'ready'
+            ? '可开始'
             : formatShortRest(restState.remaining)
           : isCurrent
             ? '当前'

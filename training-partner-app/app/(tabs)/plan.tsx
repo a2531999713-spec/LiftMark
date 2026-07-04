@@ -511,27 +511,7 @@ export default function PlanRoute() {
   const activePlanWeeks = activePlan?.durationWeeks ?? DEFAULT_CYCLE_WEEK_COUNT;
   const activePlanProgress = Math.min(100, Math.round(((group?.currentWeek ?? 1) / activePlanWeeks) * 100));
   return (
-    <Screen
-      headerRight={
-        <View style={styles.headerActions}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
-                router.push('/plan/create' as never);
-              }
-            }}
-            style={styles.iconButton}
-          >
-            <Ionicons color={colors.text} name="add-outline" size={21} />
-          </Pressable>
-          <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.iconButton}>
-            <Ionicons color={colors.text} name="ellipsis-horizontal" size={21} />
-          </Pressable>
-        </View>
-      }
-
-    >
+    <Screen>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
 
       {error ? <EmptyState title="计划暂时无法加载" description={error} /> : null}
@@ -555,11 +535,8 @@ export default function PlanRoute() {
               <View style={[styles.progressFill, { width: `${activePlanProgress}%` }]} />
             </View>
             <View style={styles.inlineActions}>
-              <AppButton onPress={() => router.push('/(tabs)/today')} size="sm">
-                去训练页
-              </AppButton>
-              <AppButton onPress={() => setManageVisible(true)} size="sm" variant="secondary">
-                切换计划
+              <AppButton onPress={() => setManageVisible(true)} size="sm">
+                管理计划
               </AppButton>
               <AppButton
                 disabled={!activePlan || activePlan.source === 'system'}
@@ -571,7 +548,7 @@ export default function PlanRoute() {
                 size="sm"
                 variant="secondary"
               >
-                编辑计划
+                编辑当前计划
               </AppButton>
             </View>
           </VisualHeroCard>
@@ -779,10 +756,49 @@ export default function PlanRoute() {
       <AppModalSheet
         contentStyle={styles.manageContent}
         onClose={() => setManageVisible(false)}
-        subtitle="只能删除我的计划；系统方案、当前计划和最后一个我的计划不会被删除。"
-        title="管理我的计划"
+        subtitle="切换、创建、导入和删除计划都在这里；编辑当前计划走独立编辑流程。"
+        title="管理计划"
         visible={isManageVisible}
       >
+        <AppCard style={styles.manageActionsCard} tone="soft">
+          <PlanActionRow
+            icon="library-outline"
+            label="主流计划库"
+            onPress={() => {
+              setManageVisible(false);
+              setSchemeLibraryVisible(true);
+            }}
+          />
+          <PlanActionRow
+            icon="add-outline"
+            label="创建空白计划"
+            onPress={() => {
+              setManageVisible(false);
+              if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
+                router.push('/plan/create' as never);
+              }
+            }}
+          />
+          <PlanActionRow
+            icon="download-outline"
+            label="导入计划"
+            onPress={() => {
+              setManageVisible(false);
+              void importPlan();
+            }}
+          />
+          <PlanActionRow
+            disabled={!activePlan}
+            icon="share-outline"
+            label="导出当前计划"
+            onPress={() => {
+              if (activePlan) {
+                setManageVisible(false);
+                void exportPlan(activePlan);
+              }
+            }}
+          />
+        </AppCard>
         <ScrollView showsVerticalScrollIndicator={false}>
           <View style={styles.list}>
             {userPlans.map((plan) => {
@@ -1141,6 +1157,10 @@ const styles = StyleSheet.create({
   },
   manageContent: {
     maxHeight: 520,
+  },
+  manageActionsCard: {
+    gap: spacing.xs,
+    padding: spacing.md,
   },
   managePlanCard: {
     gap: spacing.md,

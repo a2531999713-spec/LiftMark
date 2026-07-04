@@ -12,8 +12,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AuthGateSheets } from '@/components/auth';
+import { Avatar } from '@/components/avatar';
 import { ExercisePickerSheet } from '@/components/exercises/ExercisePickerSheet';
-import { AppButton, AppText } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText } from '@/components/ui';
 import { CompletedSetList } from '@/components/workout/CompletedSetList';
 import { CurrentSetRecorder } from '@/components/workout/CurrentSetRecorder';
 import { ExerciseHeroCard } from '@/components/workout/ExerciseHeroCard';
@@ -116,6 +117,19 @@ type MemberRestTimerState = {
   status: 'ready' | 'resting';
 };
 
+type WorkoutAdjustmentOperation = 'extra_set' | 'remove_set' | 'skip' | 'replace' | 'temporary';
+type WorkoutAdjustmentScope = 'current' | 'selected' | 'all';
+
+type CompletedSetDeletionConfirm = {
+  memberIds: string[];
+  sets: WorkoutSet[];
+} | null;
+
+type ParticipantRemovalConfirm = {
+  completedCount: number;
+  member: GroupMember;
+} | null;
+
 function confirmExceptionalSetInput(weight: number, reps: number): Promise<boolean> {
   const reasons: string[] = [];
   if (weight > 1000) {
@@ -159,6 +173,15 @@ export default function WorkoutRoute() {
   const [isLoading, setIsLoading] = useState(true);
   const [isFinishing, setIsFinishing] = useState(false);
   const [exercisePickerMode, setExercisePickerMode] = useState<'addTemporary' | 'replace' | null>(null);
+  const [isAdjustmentSheetVisible, setAdjustmentSheetVisible] = useState(false);
+  const [adjustmentOperation, setAdjustmentOperation] = useState<WorkoutAdjustmentOperation>('extra_set');
+  const [adjustmentScope, setAdjustmentScope] = useState<WorkoutAdjustmentScope>('current');
+  const [selectedAdjustmentMemberIds, setSelectedAdjustmentMemberIds] = useState<string[]>([]);
+  const [isParticipantSheetVisible, setParticipantSheetVisible] = useState(false);
+  const [completedSetDeletionConfirm, setCompletedSetDeletionConfirm] =
+    useState<CompletedSetDeletionConfirm>(null);
+  const [participantRemovalConfirm, setParticipantRemovalConfirm] =
+    useState<ParticipantRemovalConfirm>(null);
   const [restNotice, setRestNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -610,7 +633,6 @@ export default function WorkoutRoute() {
   const currentRestElapsedSeconds = currentMemberRest?.plannedSeconds
     ? Math.max(0, currentMemberRest.plannedSeconds - currentMemberRestSeconds)
     : 0;
-  const restStatusMembers = members.filter((member) => Boolean(memberRestState[member.id]));
   const nextSetForCurrentMember = activeSets
     .filter((set) => set.memberId === currentMemberId && set.setNumber > (currentDisplaySet?.setNumber ?? 0) && !set.skipped)
     .sort((left, right) => left.setNumber - right.setNumber)[0];
@@ -619,6 +641,43 @@ export default function WorkoutRoute() {
     : nextSetForCurrentMember
       ? `第 ${nextSetForCurrentMember.setNumber} 组`
       : hasNextExercise ? '下一个动作' : '完成训练';
+
+  function resolveAdjustmentMemberIds(scope = adjustmentScope): string[] {
+    if (scope === 'all') {
+      return memberOrder;
+    }
+    if (scope === 'selected') {
+      return selectedAdjustmentMemberIds.filter((memberId) => memberOrder.includes(memberId));
+    }
+    return currentMemberId ? [currentMemberId] : [];
+  }
+
+  function toggleAdjustmentMember(memberId: string) {
+    setSelectedAdjustmentMemberIds((current) =>
+      current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : [...current, memberId],
+    );
+  }
+
+  function openAdjustmentSheet(operation: WorkoutAdjustmentOperation = 'extra_set') {
+    setAdjustmentOperation(operation);
+    setAdjustmentScope('current');
+    setSelectedAdjustmentMemberIds(currentMemberId ? [currentMemberId] : []);
+    setAdjustmentSheetVisible(true);
+  }
+
+  function findLastSetForMember(memberId: string, includeCompleted: boolean): WorkoutSet | null {
+    const candidates = activeSets
+      .filter((set) => set.memberId === memberId && !set.skipped && (includeCompleted || !set.completed))
+      .sort(
+        (left, right) =>
+          right.setNumber - left.setNumber ||
+          right.updatedAt.localeCompare(left.updatedAt) ||
+          right.id.localeCompare(left.id),
+      );
+    return candidates[0] ?? null;
+  }
 
   async function completeCurrentRound() {
     if (isWorkoutReadyToFinish) {
@@ -845,7 +904,7 @@ export default function WorkoutRoute() {
     }
   }
 
-  async function removePendingSetsForMembers(targetMemberIds: string[]) {
+  async function removeLastSetsForMembers(targetMemberIds: string[], allowCompletedDeletion = false) {
     if (!activeRecord || !detail) {
       return;
     }
@@ -854,21 +913,25 @@ export default function WorkoutRoute() {
     }
 
     const uniqueTargetMemberIds = Array.from(new Set(targetMemberIds.filter(Boolean)));
-    const targetSets = uniqueTargetMemberIds
-      .map((memberId) =>
-        [...activeSets]
-          .filter((set) => set.memberId === memberId && !set.completed && !set.skipped)
-          .sort(
-            (left, right) =>
-              right.setNumber - left.setNumber ||
-              right.updatedAt.localeCompare(left.updatedAt) ||
-              right.id.localeCompare(left.id),
-          )[0],
-      )
+    const pendingSets = uniqueTargetMemberIds
+      .map((memberId) => findLastSetForMember(memberId, false))
       .filter((set): set is WorkoutSet => Boolean(set));
+    const targetSets =
+      pendingSets.length > 0
+        ? pendingSets
+        : uniqueTargetMemberIds
+            .map((memberId) => findLastSetForMember(memberId, true))
+            .filter((set): set is WorkoutSet => Boolean(set));
 
     if (targetSets.length === 0) {
-      Alert.alert('没有可删除的未完成组', '当前动作下选中成员没有未完成的加做或计划组。');
+      Alert.alert('没有可删除的组', '当前动作下选中成员没有可调整的训练组。');
+      return;
+    }
+
+    const touchesCompletedRecord = targetSets.some((set) => set.completed);
+    if (touchesCompletedRecord && !allowCompletedDeletion) {
+      setCompletedSetDeletionConfirm({ memberIds: uniqueTargetMemberIds, sets: targetSets });
+      setAdjustmentSheetVisible(false);
       return;
     }
 
@@ -885,8 +948,9 @@ export default function WorkoutRoute() {
 
     try {
       await Promise.all(targetSets.map((set) => repositories.workoutRepository.deleteSet(set.id)));
+      setCompletedSetDeletionConfirm(null);
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : '删除未完成组失败。');
+      setError(deleteError instanceof Error ? deleteError.message : '删除训练组失败。');
       void loadWorkout();
     }
   }
@@ -895,59 +959,7 @@ export default function WorkoutRoute() {
     if (!activeRecord || !detail) {
       return;
     }
-
-    if (members.length <= 1) {
-      void addExtraSetsForMembers([currentMemberId]);
-      return;
-    }
-
-    Alert.alert('添加加做组', '加做组只影响本次训练记录，不会修改原计划。', [
-      { text: '取消', style: 'cancel' },
-      {
-        text: `仅 ${membersById.get(currentMemberId)?.displayName ?? '当前成员'}`,
-        onPress: () => void addExtraSetsForMembers([currentMemberId]),
-      },
-      ...members
-        .filter((member) => member.id !== currentMemberId)
-        .map((member) => ({
-          text: member.displayName,
-          onPress: () => void addExtraSetsForMembers([member.id]),
-        })),
-      {
-        text: '所有成员各加一组',
-        onPress: () => void addExtraSetsForMembers(memberOrder),
-      },
-    ]);
-  }
-
-  function confirmRemovePendingSet() {
-    if (!activeRecord || !detail) {
-      return;
-    }
-
-    if (members.length <= 1) {
-      void removePendingSetsForMembers([currentMemberId]);
-      return;
-    }
-
-    Alert.alert('删除未完成组', '只删除本次训练当前动作下尚未完成的一组，不影响原计划。', [
-      { text: '取消', style: 'cancel' },
-      {
-        text: `仅 ${membersById.get(currentMemberId)?.displayName ?? '当前成员'}`,
-        onPress: () => void removePendingSetsForMembers([currentMemberId]),
-      },
-      ...members
-        .filter((member) => member.id !== currentMemberId)
-        .map((member) => ({
-          text: member.displayName,
-          onPress: () => void removePendingSetsForMembers([member.id]),
-        })),
-      {
-        text: '所有成员各删一组',
-        style: 'destructive' as const,
-        onPress: () => void removePendingSetsForMembers(memberOrder),
-      },
-    ]);
+    openAdjustmentSheet('extra_set');
   }
 
   async function addParticipantMember(memberId: string) {
@@ -1027,15 +1039,10 @@ export default function WorkoutRoute() {
     const memberSets = detail.sets.filter((set) => set.memberId === memberId);
     const completedCount = memberSets.filter((set) => set.completed).length;
     if (completedCount > 0 && !force) {
-      const memberName = allGroupMembers.find((member) => member.id === memberId)?.displayName ?? '该成员';
-      Alert.alert('移除已完成记录？', `${memberName} 已完成 ${completedCount} 组。移除后会删除他本次训练的数据。`, [
-        { text: '取消', style: 'cancel' },
-        {
-          text: '确认移除',
-          style: 'destructive',
-          onPress: () => void removeParticipantMember(memberId, true),
-        },
-      ]);
+      const member = allGroupMembers.find((member) => member.id === memberId);
+      if (member) {
+        setParticipantRemovalConfirm({ completedCount, member });
+      }
       return;
     }
 
@@ -1054,20 +1061,8 @@ export default function WorkoutRoute() {
       return;
     }
 
-    const participatingIds = new Set(members.map((member) => member.id));
-    const addableMembers = allGroupMembers.filter((member) => !participatingIds.has(member.id));
-    Alert.alert('编辑本次参与成员', '只影响本次训练 session，不会修改小组成员列表。', [
-      { text: '取消', style: 'cancel' },
-      ...addableMembers.map((member) => ({
-        text: `加入 ${member.displayName}`,
-        onPress: () => void addParticipantMember(member.id),
-      })),
-      ...members.map((member) => ({
-        text: `移除 ${member.displayName}`,
-        style: 'destructive' as const,
-        onPress: () => void removeParticipantMember(member.id),
-      })),
-    ]);
+    setAdjustmentSheetVisible(false);
+    setParticipantSheetVisible(true);
   }
 
   function confirmFinishWorkout() {
@@ -1075,15 +1070,7 @@ export default function WorkoutRoute() {
   }
 
   function openWorkoutAdjustmentMenu() {
-    Alert.alert('本次训练调整', '这些调整只影响本次训练，不会直接修改原计划。', [
-      { text: '取消', style: 'cancel' },
-      { text: '编辑参与成员', onPress: openParticipantEditor },
-      { text: '替换当前动作', onPress: () => void openReplaceSheet() },
-      { text: '加做一组', onPress: confirmAddExtraSet },
-      { text: '删除未完成组', style: 'destructive', onPress: confirmRemovePendingSet },
-      { text: '本次跳过动作', onPress: confirmSkipCurrentExercise },
-      { text: '添加临时动作', onPress: () => void openTemporaryExerciseSheet() },
-    ]);
+    openAdjustmentSheet('extra_set');
   }
 
   async function refreshDetailCursor() {
@@ -1101,30 +1088,7 @@ export default function WorkoutRoute() {
     setWorkoutReadyToFinish(nextDetail.sets.some((set) => set.completed || set.skipped));
   }
 
-  function confirmSkipCurrentExercise() {
-    if (!activeRecord || !detail) {
-      return;
-    }
-
-    if (members.length <= 1) {
-      Alert.alert('本次跳过动作？', '该动作本次不会计入完成组，但不会从计划中删除。', [
-        { text: '取消', style: 'cancel' },
-        { text: '本次跳过', style: 'destructive', onPress: () => void skipCurrentExercise('all') },
-      ]);
-      return;
-    }
-
-    Alert.alert('本次跳过动作？', '该动作本次不会计入完成组，但不会从计划中删除。', [
-      { text: '取消', style: 'cancel' },
-      {
-        text: `仅 ${membersById.get(currentMemberId)?.displayName ?? '当前成员'}`,
-        onPress: () => void skipCurrentExercise('member'),
-      },
-      { text: '全小组本次跳过', style: 'destructive', onPress: () => void skipCurrentExercise('all') },
-    ]);
-  }
-
-  async function skipCurrentExercise(scope: 'all' | 'member') {
+  async function skipCurrentExerciseForMembers(targetMemberIds: string[]) {
     if (!activeRecord || !detail) {
       return;
     }
@@ -1132,11 +1096,12 @@ export default function WorkoutRoute() {
       return;
     }
 
+    const targetMemberSet = new Set(targetMemberIds);
     const targetSets = activeSets.filter(
       (set) =>
         !set.completed &&
         !set.skipped &&
-        (scope === 'all' || set.memberId === currentMemberId),
+        targetMemberSet.has(set.memberId),
     );
     if (targetSets.length === 0) {
       Alert.alert('无需跳过', '当前范围没有待记录的组。');
@@ -1156,6 +1121,52 @@ export default function WorkoutRoute() {
       await refreshDetailCursor();
     } catch (skipError) {
       setError(skipError instanceof Error ? skipError.message : '本次跳过动作失败。');
+    }
+  }
+
+  async function applyWorkoutAdjustment() {
+    if (!activeRecord || !detail) {
+      return;
+    }
+
+    const targetMemberIds = resolveAdjustmentMemberIds();
+    if (
+      ['extra_set', 'remove_set', 'skip'].includes(adjustmentOperation) &&
+      targetMemberIds.length === 0
+    ) {
+      Alert.alert('请选择成员', '至少选择一位成员后再确认调整。');
+      return;
+    }
+
+    if (adjustmentOperation === 'extra_set') {
+      await addExtraSetsForMembers(targetMemberIds);
+      setAdjustmentSheetVisible(false);
+      return;
+    }
+
+    if (adjustmentOperation === 'remove_set') {
+      await removeLastSetsForMembers(targetMemberIds);
+      if (!completedSetDeletionConfirm) {
+        setAdjustmentSheetVisible(false);
+      }
+      return;
+    }
+
+    if (adjustmentOperation === 'skip') {
+      await skipCurrentExerciseForMembers(targetMemberIds);
+      setAdjustmentSheetVisible(false);
+      return;
+    }
+
+    if (adjustmentOperation === 'replace') {
+      setAdjustmentSheetVisible(false);
+      await openReplaceSheet();
+      return;
+    }
+
+    if (adjustmentOperation === 'temporary') {
+      setAdjustmentSheetVisible(false);
+      await openTemporaryExerciseSheet();
     }
   }
 
@@ -1385,6 +1396,12 @@ export default function WorkoutRoute() {
     }
   }
 
+  const participatingMemberIds = useMemo(() => new Set(members.map((member) => member.id)), [members]);
+  const addableMembers = useMemo(
+    () => allGroupMembers.filter((member) => !participatingMemberIds.has(member.id)),
+    [allGroupMembers, participatingMemberIds],
+  );
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <View style={styles.container}>
@@ -1534,24 +1551,6 @@ export default function WorkoutRoute() {
                 </Pressable>
               ) : null}
 
-              {members.length > 1 && restStatusMembers.length > 0 ? (
-                <View style={styles.otherMembersRestSection}>
-                  <AppText variant="caption" weight="700" style={styles.otherMembersTitle}>休息状态</AppText>
-                  <View style={styles.otherMembersGrid}>
-                    {restStatusMembers.map((member) => (
-                      <View key={member.id} style={styles.otherMemberCard}>
-                        <AppText variant="caption" weight="800">{member.displayName}</AppText>
-                        <AppText variant="caption" weight="900" style={styles.otherMemberTime}>
-                          {memberRestState[member.id]?.status === 'ready'
-                            ? '已恢复'
-                            : formatTimer(memberRestState[member.id]?.remaining ?? 0)}
-                        </AppText>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-
               <CompletedSetList
                 completedSets={completedActiveSets}
                 memberNameMap={memberNameMap}
@@ -1606,6 +1605,100 @@ export default function WorkoutRoute() {
         title={exercisePickerMode === 'addTemporary' ? '添加临时动作' : '替换当前动作'}
         visible={Boolean(exercisePickerMode)}
       />
+      <WorkoutAdjustmentSheet
+        activeExerciseName={activeExercise?.name ?? activeRecord?.exerciseId ?? '当前动作'}
+        currentMemberId={currentMemberId}
+        memberIds={resolveAdjustmentMemberIds()}
+        members={members}
+        onApply={() => void applyWorkoutAdjustment()}
+        onClose={() => setAdjustmentSheetVisible(false)}
+        onEditParticipants={openParticipantEditor}
+        onOperationChange={setAdjustmentOperation}
+        onScopeChange={setAdjustmentScope}
+        onToggleMember={toggleAdjustmentMember}
+        operation={adjustmentOperation}
+        scope={adjustmentScope}
+        selectedMemberIds={selectedAdjustmentMemberIds}
+        visible={isAdjustmentSheetVisible}
+      />
+      <ParticipantEditorSheet
+        addableMembers={addableMembers}
+        currentMembers={members}
+        onAdd={(memberId) => void addParticipantMember(memberId)}
+        onClose={() => setParticipantSheetVisible(false)}
+        onRemove={(memberId) => void removeParticipantMember(memberId)}
+        profiles={profiles}
+        visible={isParticipantSheetVisible}
+      />
+      <AppModalSheet
+        onClose={() => setCompletedSetDeletionConfirm(null)}
+        position="center"
+        subtitle="这会删除已经保存的训练组，历史分析会同步变化。"
+        title="删除已完成组？"
+        visible={Boolean(completedSetDeletionConfirm)}
+      >
+        {completedSetDeletionConfirm ? (
+          <AppCard style={styles.confirmPreview} tone="soft">
+            <AppText variant="bodySmall" weight="900">
+              将删除 {completedSetDeletionConfirm.sets.length} 组已完成记录
+            </AppText>
+            <AppText tone="muted" variant="caption">
+              {completedSetDeletionConfirm.sets
+                .map((set) => `${membersById.get(set.memberId)?.displayName ?? '成员'} 第 ${set.setNumber} 组`)
+                .join('、')}
+            </AppText>
+          </AppCard>
+        ) : null}
+        <View style={styles.sheetFooterRow}>
+          <AppButton onPress={() => setCompletedSetDeletionConfirm(null)} variant="secondary">
+            取消
+          </AppButton>
+          <AppButton
+            onPress={() => {
+              if (completedSetDeletionConfirm) {
+                void removeLastSetsForMembers(completedSetDeletionConfirm.memberIds, true);
+              }
+            }}
+            variant="danger"
+          >
+            确认删除
+          </AppButton>
+        </View>
+      </AppModalSheet>
+      <AppModalSheet
+        onClose={() => setParticipantRemovalConfirm(null)}
+        position="center"
+        subtitle="移除后会删除该成员本次训练数据，但不影响小组成员列表。"
+        title="移除已有记录成员？"
+        visible={Boolean(participantRemovalConfirm)}
+      >
+        {participantRemovalConfirm ? (
+          <AppCard style={styles.confirmPreview} tone="soft">
+            <AppText variant="bodySmall" weight="900">
+              {participantRemovalConfirm.member.displayName}
+            </AppText>
+            <AppText tone="muted" variant="caption">
+              已完成 {participantRemovalConfirm.completedCount} 组
+            </AppText>
+          </AppCard>
+        ) : null}
+        <View style={styles.sheetFooterRow}>
+          <AppButton onPress={() => setParticipantRemovalConfirm(null)} variant="secondary">
+            取消
+          </AppButton>
+          <AppButton
+            onPress={() => {
+              if (participantRemovalConfirm) {
+                void removeParticipantMember(participantRemovalConfirm.member.id, true);
+                setParticipantRemovalConfirm(null);
+              }
+            }}
+            variant="danger"
+          >
+            确认移除
+          </AppButton>
+        </View>
+      </AppModalSheet>
       <AuthGateSheets {...sheets} />
     </SafeAreaView>
   );
@@ -1672,10 +1765,466 @@ function MemberExerciseCompleteCard({
   );
 }
 
+function WorkoutAdjustmentSheet({
+  activeExerciseName,
+  currentMemberId,
+  members,
+  onApply,
+  onClose,
+  onEditParticipants,
+  onOperationChange,
+  onScopeChange,
+  onToggleMember,
+  operation,
+  scope,
+  selectedMemberIds,
+  visible,
+}: {
+  activeExerciseName: string;
+  currentMemberId: string;
+  memberIds: string[];
+  members: GroupMember[];
+  onApply: () => void;
+  onClose: () => void;
+  onEditParticipants: () => void;
+  onOperationChange: (operation: WorkoutAdjustmentOperation) => void;
+  onScopeChange: (scope: WorkoutAdjustmentScope) => void;
+  onToggleMember: (memberId: string) => void;
+  operation: WorkoutAdjustmentOperation;
+  scope: WorkoutAdjustmentScope;
+  selectedMemberIds: string[];
+  visible: boolean;
+}) {
+  const memberName = members.find((member) => member.id === currentMemberId)?.displayName ?? '当前成员';
+  const needsScope = operation === 'extra_set' || operation === 'remove_set' || operation === 'skip';
+  const selectedCount =
+    scope === 'all' ? members.length : scope === 'current' ? (currentMemberId ? 1 : 0) : selectedMemberIds.length;
+
+  return (
+    <AppModalSheet
+      onClose={onClose}
+      subtitle={`只影响本次训练，不修改原计划 · ${activeExerciseName}`}
+      title="调整本次动作"
+      visible={visible}
+    >
+      <View style={styles.sheetSection}>
+        <AppText tone="muted" variant="caption" weight="900">
+          选择操作
+        </AppText>
+        <View style={styles.operationGrid}>
+          <AdjustmentOption
+            active={operation === 'extra_set'}
+            icon="add-circle-outline"
+            label="多做一组"
+            meta="给成员增加当前动作下一组"
+            onPress={() => onOperationChange('extra_set')}
+          />
+          <AdjustmentOption
+            active={operation === 'remove_set'}
+            danger
+            icon="remove-circle-outline"
+            label="少做一组"
+            meta="优先删除未完成最后一组"
+            onPress={() => onOperationChange('remove_set')}
+          />
+          <AdjustmentOption
+            active={operation === 'skip'}
+            icon="play-skip-forward-outline"
+            label="跳过动作"
+            meta="本次不继续记录这个动作"
+            onPress={() => onOperationChange('skip')}
+          />
+          <AdjustmentOption
+            active={operation === 'replace'}
+            icon="swap-horizontal-outline"
+            label="替换动作"
+            meta="选择替代动作"
+            onPress={() => onOperationChange('replace')}
+          />
+          <AdjustmentOption
+            active={operation === 'temporary'}
+            icon="add-outline"
+            label="添加临时动作"
+            meta="加入本次训练快照"
+            onPress={() => onOperationChange('temporary')}
+          />
+        </View>
+      </View>
+
+      {needsScope ? (
+        <View style={styles.sheetSection}>
+          <AppText tone="muted" variant="caption" weight="900">
+            选择范围
+          </AppText>
+          <View style={styles.scopeChoiceRow}>
+            <ScopeChoice
+              active={scope === 'current'}
+              label="当前成员"
+              meta={memberName}
+              onPress={() => onScopeChange('current')}
+            />
+            <ScopeChoice
+              active={scope === 'selected'}
+              label="指定成员"
+              meta={`${selectedMemberIds.length} 人`}
+              onPress={() => onScopeChange('selected')}
+            />
+            <ScopeChoice
+              active={scope === 'all'}
+              label="全部成员"
+              meta={`${members.length} 人`}
+              onPress={() => onScopeChange('all')}
+            />
+          </View>
+          {scope === 'selected' ? (
+            <View style={styles.memberAvatarGrid}>
+              {members.map((member) => {
+                const selected = selectedMemberIds.includes(member.id);
+                return (
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                    key={member.id}
+                    onPress={() => onToggleMember(member.id)}
+                    style={[styles.memberAvatarChoice, selected && styles.memberAvatarChoiceActive]}
+                  >
+                    <Avatar avatarUrl={member.avatarUrl} name={member.displayName} size={38} />
+                    <AppText numberOfLines={1} variant="caption" weight="900">
+                      {member.displayName}
+                    </AppText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      <View style={styles.adjustmentResponsibilityCard}>
+        <Ionicons color={colors.primary} name="information-circle-outline" size={18} />
+        <AppText tone="muted" variant="caption" style={styles.adjustmentResponsibilityText}>
+          多做/少做一组只调整当前动作的训练组；编辑参与成员只决定谁参加本次训练。
+        </AppText>
+      </View>
+
+      <View style={styles.sheetFooterRow}>
+        <AppButton onPress={onClose} variant="secondary">
+          取消
+        </AppButton>
+        <AppButton onPress={onEditParticipants} variant="secondary">
+          编辑参与成员
+        </AppButton>
+        <AppButton disabled={needsScope && selectedCount <= 0} onPress={onApply}>
+          确认调整
+        </AppButton>
+      </View>
+    </AppModalSheet>
+  );
+}
+
+function AdjustmentOption({
+  active,
+  danger = false,
+  icon,
+  label,
+  meta,
+  onPress,
+}: {
+  active: boolean;
+  danger?: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  meta: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={[styles.operationCard, active && styles.operationCardActive, danger && styles.operationCardDanger]}
+    >
+      <View style={[styles.operationIcon, active && styles.operationIconActive]}>
+        <Ionicons color={active ? colors.surface : danger ? colors.danger : colors.primary} name={icon} size={18} />
+      </View>
+      <View style={styles.operationText}>
+        <AppText variant="bodySmall" weight="900">
+          {label}
+        </AppText>
+        <AppText numberOfLines={2} tone="muted" variant="caption">
+          {meta}
+        </AppText>
+      </View>
+    </Pressable>
+  );
+}
+
+function ScopeChoice({
+  active,
+  label,
+  meta,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  meta: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.scopeChoice, active && styles.scopeChoiceActive]}>
+      <AppText tone={active ? 'inverse' : 'default'} variant="caption" weight="900">
+        {label}
+      </AppText>
+      <AppText tone={active ? 'inverse' : 'muted'} variant="caption">
+        {meta}
+      </AppText>
+    </Pressable>
+  );
+}
+
+function ParticipantEditorSheet({
+  addableMembers,
+  currentMembers,
+  onAdd,
+  onClose,
+  onRemove,
+  profiles,
+  visible,
+}: {
+  addableMembers: GroupMember[];
+  currentMembers: GroupMember[];
+  onAdd: (memberId: string) => void;
+  onClose: () => void;
+  onRemove: (memberId: string) => void;
+  profiles: Record<string, MemberProfile | null>;
+  visible: boolean;
+}) {
+  return (
+    <AppModalSheet
+      onClose={onClose}
+      subtitle="只影响本次训练参与者，不修改小组成员列表。"
+      title="编辑本次参与成员"
+      visible={visible}
+    >
+      <View style={styles.sheetSection}>
+        <AppText tone="muted" variant="caption" weight="900">
+          本次参与
+        </AppText>
+        <View style={styles.participantList}>
+          {currentMembers.map((member) => (
+            <ParticipantRow
+              actionLabel={currentMembers.length <= 1 ? '至少保留 1 人' : '移除'}
+              disabled={currentMembers.length <= 1}
+              key={member.id}
+              member={member}
+              onPress={() => onRemove(member.id)}
+              profile={profiles[member.id]}
+              tone="danger"
+            />
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.sheetSection}>
+        <AppText tone="muted" variant="caption" weight="900">
+          可加入成员
+        </AppText>
+        {addableMembers.length === 0 ? (
+          <AppCard style={styles.confirmPreview} tone="soft">
+            <AppText tone="muted" variant="caption">
+              小组成员都已在本次训练中。
+            </AppText>
+          </AppCard>
+        ) : (
+          <View style={styles.participantList}>
+            {addableMembers.map((member) => (
+              <ParticipantRow
+                actionLabel="加入"
+                key={member.id}
+                member={member}
+                onPress={() => onAdd(member.id)}
+                profile={profiles[member.id]}
+                tone="brand"
+              />
+            ))}
+          </View>
+        )}
+      </View>
+    </AppModalSheet>
+  );
+}
+
+function ParticipantRow({
+  actionLabel,
+  disabled = false,
+  member,
+  onPress,
+  profile,
+  tone,
+}: {
+  actionLabel: string;
+  disabled?: boolean;
+  member: GroupMember;
+  onPress: () => void;
+  profile?: MemberProfile | null;
+  tone: 'brand' | 'danger';
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.participantRow, disabled && styles.participantRowDisabled]}
+    >
+      <Avatar
+        avatarLocalUri={profile?.avatarLocalUri}
+        avatarThumbUrl={profile?.avatarThumbUrl}
+        avatarUrl={profile?.avatarUrl ?? member.avatarUrl}
+        name={member.displayName}
+        size={38}
+      />
+      <View style={styles.participantText}>
+        <AppText variant="bodySmall" weight="900">
+          {member.displayName}
+        </AppText>
+        <AppText tone="muted" variant="caption">
+          {tone === 'brand' ? '加入后会生成本次训练组' : '移除只影响本次 session'}
+        </AppText>
+      </View>
+      <AppText tone={tone === 'danger' ? 'danger' : 'brand'} variant="caption" weight="900">
+        {actionLabel}
+      </AppText>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  adjustmentResponsibilityCard: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  adjustmentResponsibilityText: {
+    flex: 1,
+  },
+  confirmPreview: {
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  memberAvatarChoice: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flex: 1,
+    gap: spacing.xs,
+    minWidth: 72,
+    padding: spacing.sm,
+  },
+  memberAvatarChoiceActive: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
+  },
+  memberAvatarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  operationCard: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 70,
+    padding: spacing.sm,
+    width: '48%',
+  },
+  operationCardActive: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
+  },
+  operationCardDanger: {
+    borderColor: colors.dangerSoft,
+  },
+  operationGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  operationIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  operationIconActive: {
+    backgroundColor: colors.primary,
+  },
+  operationText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  participantList: {
+    gap: spacing.sm,
+  },
+  participantRow: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 62,
+    padding: spacing.md,
+  },
+  participantRowDisabled: {
+    opacity: 0.62,
+  },
+  participantText: {
+    flex: 1,
+    gap: 2,
+  },
   safeArea: {
     backgroundColor: colors.background,
     flex: 1,
+  },
+  scopeChoice: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flex: 1,
+    gap: 2,
+    minHeight: 52,
+    justifyContent: 'center',
+    padding: spacing.sm,
+  },
+  scopeChoiceActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  scopeChoiceRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  sheetFooterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  sheetSection: {
+    gap: spacing.sm,
   },
   container: {
     flex: 1,
@@ -1730,28 +2279,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     gap: spacing.sm,
     padding: spacing.xxl,
-  },
-  otherMembersRestSection: {
-    gap: spacing.sm,
-  },
-  otherMembersTitle: {
-    color: colors.textMuted,
-  },
-  otherMembersGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  otherMemberCard: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    flex: 1,
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  otherMemberTime: {
-    color: colors.primary,
   },
   adjustmentHint: {
     alignItems: 'center',
@@ -1820,71 +2347,6 @@ const styles = StyleSheet.create({
     color: colors.textStrong,
     flex: 1,
   },
-  restHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  restIndicator: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    height: 8,
-    width: 8,
-  },
-  restMembers: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    justifyContent: 'center',
-  },
-  restMemberChip: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  restMemberDot: {
-    borderRadius: radius.pill,
-    height: 6,
-    width: 6,
-  },
-  restMemberText: {
-    color: colors.surface,
-  },
-  otherMembersRest: {
-    gap: spacing.sm,
-  },
-  otherMembersRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  otherMemberChip: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  otherMemberDot: {
-    borderRadius: radius.pill,
-    height: 6,
-    width: 6,
-  },
-  restSkipButton: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
   bottomBar: {
     alignSelf: 'center',
     backgroundColor: colors.surface,
@@ -1902,20 +2364,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     justifyContent: 'space-between',
-  },
-  bottomTimerRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  timerBadge: {
-    alignItems: 'center',
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
   },
   savedBadge: {
     alignItems: 'center',

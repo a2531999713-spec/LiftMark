@@ -28,6 +28,7 @@ export function HistoryLineChart({
 }: HistoryLineChartProps) {
   const values = points.map((point) => point.value);
   const maxValue = Math.max(0, ...values);
+  const maxXAxisLabels = points.length <= 10 ? points.length : 6;
 
   return (
     <MiniLineChart
@@ -38,7 +39,8 @@ export function HistoryLineChart({
       highlightIndex={highlightIndex}
       keyPointIndexes={keyPointIndexes}
       labels={points.map((point) => point.label)}
-      maxXAxisLabels={5}
+      labelSkipStrategy={points.length <= 10 ? 'all' : 'auto'}
+      maxXAxisLabels={maxXAxisLabels}
       minChartHeight={Math.max(100, maxValue)}
       onPointPress={(_, index) => {
         const point = points[index];

@@ -1061,12 +1061,6 @@ export default function TodayRoute() {
                 progressPercent={weeklyProgressPercent}
               />
 
-              <RecoveryModeSelector
-                currentMode={recoveryMode}
-                onMorePress={() => setAdviceSheetVisible(true)}
-                options={recoveryOptions}
-              />
-
               {isRestState ? (
                 <HomeEmptyState
                   actionLabel={todayPlan?.isRestDay ? '查看本周安排' : '调整动作筛选'}
@@ -1087,9 +1081,11 @@ export default function TodayRoute() {
               {!isRestState ? (
                 <TodaySummaryCard
                   activePlanWeeks={activePlanWeeks}
+                  actionFilter={recoveryOptions.find((option) => option.mode === recoveryMode) ?? recoveryOptions[0]}
                   dayTitle={selectedPlanDay?.title ?? '今日训练'}
                   mainFocus={mainFocus ?? '暂无动作'}
                   nextDeloadDays={nextDeloadDays}
+                  onFilterPress={() => setAdviceSheetVisible(true)}
                   phaseLabel={phaseLabel}
                   selectedWeek={selectedWeekValue}
                   suggestedWeight={suggestedWeight}
@@ -1350,51 +1346,23 @@ function PlanQuickSwitchCard({
   );
 }
 
-function RecoveryModeSelector({
-  currentMode,
-  onMorePress,
-  options,
-}: {
-  currentMode: RecoveryMode;
-  onMorePress: () => void;
-  options: AdviceConfig[];
-}) {
-  const activeOption = options.find((option) => option.mode === currentMode) ?? options[0];
-
-  return (
-    <Pressable accessibilityRole="button" onPress={onMorePress} style={({ pressed }) => [styles.recoverySelectorBar, pressed && styles.pressed]}>
-      <AdviceIcon icon={activeOption.icon} tone={activeOption.tone} />
-      <View style={styles.recoverySelectorText}>
-        <AppText variant="bodySmall" weight="900">
-          动作筛选 · {activeOption.status}
-        </AppText>
-        <AppText numberOfLines={1} tone="muted" variant="caption">
-          {activeOption.message}
-        </AppText>
-      </View>
-      <View style={styles.recoverySelectorAction}>
-        <AppText tone="brand" variant="caption" weight="900">
-          更改
-        </AppText>
-        <Ionicons color={colors.primary} name="chevron-down" size={15} />
-      </View>
-    </Pressable>
-  );
-}
-
 function TodaySummaryCard({
   activePlanWeeks,
+  actionFilter,
   dayTitle,
   mainFocus,
   nextDeloadDays,
+  onFilterPress,
   phaseLabel,
   selectedWeek,
   suggestedWeight,
 }: {
   activePlanWeeks: number;
+  actionFilter: AdviceConfig;
   dayTitle: string;
   mainFocus: string;
   nextDeloadDays: number | null;
+  onFilterPress: () => void;
   phaseLabel: string;
   selectedWeek: number;
   suggestedWeight: SuggestedWeightDisplay;
@@ -1409,11 +1377,20 @@ function TodaySummaryCard({
       >
         <View style={styles.summaryScrim} />
         <View style={styles.summaryContent}>
-          <View style={styles.phaseBadge}>
-            <Ionicons color={colors.surface} name="flash" size={13} />
-            <AppText tone="inverse" variant="caption" weight="900">
-              {phaseLabel}
-            </AppText>
+          <View style={styles.summaryTopRow}>
+            <View style={styles.phaseBadge}>
+              <Ionicons color={colors.surface} name="flash" size={13} />
+              <AppText tone="inverse" variant="caption" weight="900">
+                {phaseLabel}
+              </AppText>
+            </View>
+            <Pressable accessibilityRole="button" onPress={onFilterPress} style={styles.summaryFilterChip}>
+              <Ionicons color={colors.surface} name={actionFilter.icon} size={14} />
+              <AppText tone="inverse" variant="caption" weight="900">
+                {actionFilter.status}
+              </AppText>
+              <Ionicons color={colors.surface} name="chevron-down" size={13} />
+            </Pressable>
           </View>
           <AppText numberOfLines={1} style={styles.summaryTitle} variant="title" weight="900">
             {dayTitle}
@@ -2657,8 +2634,25 @@ const styles = StyleSheet.create({
   summarySubtitle: {
     color: 'rgba(255,255,255,0.86)',
   },
+  summaryFilterChip: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.68)',
+    borderColor: 'rgba(255, 255, 255, 0.24)',
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xxs,
+    minHeight: 32,
+    paddingHorizontal: spacing.sm,
+  },
   summaryTitle: {
     color: colors.surface,
+  },
+  summaryTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
   },
   todaySummary: {
     gap: spacing.md,

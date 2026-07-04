@@ -28,7 +28,7 @@ type ExercisePickerSheetProps = {
 type SourceFilter = ExerciseSource | 'all';
 
 const sourceFilters: { label: string; value: SourceFilter }[] = [
-  { label: '全部', value: 'all' },
+  { label: '全部动作', value: 'all' },
   { label: '系统动作', value: 'system' },
   { label: '我的动作', value: 'custom' },
 ];

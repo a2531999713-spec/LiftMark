@@ -128,6 +128,21 @@ export default function PlanEditDayRoute() {
     });
   };
 
+  const copyPreviousExerciseParams = () => {
+    if (!state || state.day.exercises.length < 2) {
+      Alert.alert('暂无可复制参数', '至少需要两个动作，才能把上一动作参数复制到最后一个动作。');
+      return;
+    }
+    const exercises = state.day.exercises;
+    const previous = exercises[exercises.length - 2];
+    const target = exercises[exercises.length - 1];
+    changeExercise(target.id, {
+      priority: previous.priority,
+      reps: previous.reps,
+      sets: previous.sets,
+    });
+  };
+
   const addExercise = (exercise: Exercise) => {
     if (!state || state.day.exercises.some((item) => item.exerciseId === exercise.id)) {
       return;
@@ -202,6 +217,7 @@ export default function PlanEditDayRoute() {
           onAddExercise={() => setPickerVisible(true)}
           onChangeDay={changeDay}
           onChangeExercise={changeExercise}
+          onCopyPreviousExerciseParams={copyPreviousExerciseParams}
           onMoveExercise={moveExercise}
           onRemoveExercise={(exerciseId) =>
             commitDay({

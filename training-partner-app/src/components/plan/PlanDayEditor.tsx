@@ -15,6 +15,7 @@ type PlanDayEditorProps = {
   onAddExercise: () => void;
   onChangeDay: (patch: Partial<PlanDayDraft>) => void;
   onChangeExercise: (exerciseId: string, patch: Partial<PlanExerciseDraft>) => void;
+  onCopyPreviousExerciseParams: () => void;
   onMoveExercise: (exerciseId: string, direction: 'up' | 'down') => void;
   onRemoveExercise: (exerciseId: string) => void;
   onSave: () => void;
@@ -27,6 +28,7 @@ export function PlanDayEditor({
   onAddExercise,
   onChangeDay,
   onChangeExercise,
+  onCopyPreviousExerciseParams,
   onMoveExercise,
   onRemoveExercise,
   onSave,
@@ -63,7 +65,15 @@ export function PlanDayEditor({
       </AppCard>
 
       <AppCard style={styles.card}>
-        <SectionHeader actionLabel="添加动作" onActionPress={onAddExercise} subtitle="每个动作可单独设置组数、次数和优先级。" title="动作" />
+        <SectionHeader subtitle="每个动作可单独设置组数、次数和优先级。" title="动作" />
+        <View style={styles.actionRow}>
+          <AppButton icon="add-outline" onPress={onAddExercise} size="sm">
+            添加动作
+          </AppButton>
+          <AppButton icon="copy-outline" onPress={onCopyPreviousExerciseParams} size="sm" variant="secondary">
+            复制上一动作参数
+          </AppButton>
+        </View>
         {day.exercises.length === 0 ? (
           <EmptyState actionLabel="添加动作" description="先添加一个动作，再保存训练日。" onActionPress={onAddExercise} title="还没有动作" />
         ) : (
@@ -136,6 +146,11 @@ function NumberField({
 }
 
 const styles = StyleSheet.create({
+  actionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
   card: {
     gap: spacing.md,
   },

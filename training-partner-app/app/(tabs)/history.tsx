@@ -90,6 +90,12 @@ type SelectedTrendPoint = {
   value: number;
 } | null;
 
+type BarDetail = {
+  metrics: { label: string; value: string }[];
+  subtitle?: string;
+  title: string;
+};
+
 const exerciseCategoryLabels: Record<ExerciseCategory | 'other', string> = {
   arms: '手臂',
   back: '背',
@@ -151,6 +157,63 @@ function formatMonthLabel(date: Date): string {
 
 function formatShortDate(date: string): string {
   return date.slice(5).replace('-', '/');
+}
+
+function parseDateString(date: string): Date {
+  return new Date(`${date}T12:00:00`);
+}
+
+function getDateSpanDays(fromDate: string, toDate: string): number {
+  const start = parseDateString(fromDate).getTime();
+  const end = parseDateString(toDate).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return 1;
+  }
+  return Math.floor((end - start) / 86400000) + 1;
+}
+
+type TrendBucket = {
+  endDate: string;
+  key: string;
+  label: string;
+  startDate: string;
+};
+
+function buildTrendBuckets(fromDate: string, toDate: string): TrendBucket[] {
+  const totalDays = getDateSpanDays(fromDate, toDate);
+  const start = parseDateString(fromDate);
+
+  if (totalDays <= 45) {
+    return Array.from({ length: totalDays }, (_, index) => {
+      const date = getLocalDateString(addDays(start, index));
+      return {
+        endDate: date,
+        key: date,
+        label: formatShortDate(date),
+        startDate: date,
+      };
+    });
+  }
+
+  const buckets: TrendBucket[] = [];
+  for (let offset = 0; offset < totalDays; offset += 7) {
+    const bucketStart = getLocalDateString(addDays(start, offset));
+    const bucketEnd = getLocalDateString(addDays(start, Math.min(totalDays - 1, offset + 6)));
+    buckets.push({
+      endDate: bucketEnd,
+      key: `${bucketStart}:${bucketEnd}`,
+      label: formatShortDate(bucketStart),
+      startDate: bucketStart,
+    });
+  }
+  return buckets;
+}
+
+function findTrendBucket<T extends { date?: string }>(buckets: TrendBucket[], item: T): TrendBucket | undefined {
+  if (!item.date) {
+    return undefined;
+  }
+  return buckets.find((bucket) => item.date! >= bucket.startDate && item.date! <= bucket.endDate);
 }
 
 function formatRangeLabel(fromDate: string, toDate: string): string {
@@ -359,25 +422,48 @@ function summarizeSession(
   };
 }
 
-function buildSessionTrend(summaries: SessionSummary[]): TrendPoint[] {
-  return summaries
-    .filter((summary) => summary.setCount > 0 || summary.volume > 0)
-    .slice()
-    .sort((left, right) => `${left.date} ${left.session.updatedAt}`.localeCompare(`${right.date} ${right.session.updatedAt}`))
-    .slice(-60)
-    .map((summary) => ({
-      date: summary.date,
-      exerciseCount: summary.exerciseCount,
-      label: formatShortDate(summary.date),
+function buildSessionTrend(summaries: SessionSummary[], fromDate: string, toDate: string): TrendPoint[] {
+  const buckets = buildTrendBuckets(fromDate, toDate);
+  const statsByBucket = new Map<string, TrendPoint & { exerciseIds: Set<string>; sessionIds: Set<string> }>();
+
+  buckets.forEach((bucket) => {
+    statsByBucket.set(bucket.key, {
+      date: bucket.startDate === bucket.endDate ? bucket.startDate : bucket.endDate,
+      exerciseCount: 0,
+      exerciseIds: new Set<string>(),
+      label: bucket.label,
       metricLabel: '训练量',
-      sessionId: summary.id,
-      setCount: summary.setCount,
-      value: summary.volume,
-      volume: summary.volume,
-    }));
+      sessionIds: new Set<string>(),
+      setCount: 0,
+      value: 0,
+      volume: 0,
+    });
+  });
+
+  summaries
+    .filter((summary) => summary.setCount > 0 || summary.volume > 0)
+    .forEach((summary) => {
+      const bucket = findTrendBucket(buckets, summary);
+      if (!bucket) return;
+      const current = statsByBucket.get(bucket.key);
+      if (!current) return;
+      current.sessionIds.add(summary.id);
+      current.setCount += summary.setCount;
+      current.volume += summary.volume;
+      current.value += summary.volume;
+      current.exerciseCount += summary.exerciseCount;
+      current.sessionId = summary.id;
+    });
+
+  return buckets.map((bucket) => {
+    const point = statsByBucket.get(bucket.key)!;
+    const { exerciseIds: _exerciseIds, sessionIds: _sessionIds, ...rest } = point;
+    return rest;
+  });
 }
 
-function buildExerciseTrend(entries: HistorySetEntry[]): TrendPoint[] {
+function buildExerciseTrend(entries: HistorySetEntry[], fromDate: string, toDate: string): TrendPoint[] {
+  const buckets = buildTrendBuckets(fromDate, toDate);
   const bySession = new Map<
     string,
     TrendPoint & {
@@ -388,12 +474,14 @@ function buildExerciseTrend(entries: HistorySetEntry[]): TrendPoint[] {
   entries
     .filter((entry) => entry.completed && (entry.weight ?? 0) > 0 && (entry.reps ?? 0) > 0)
     .forEach((entry) => {
-      const current = bySession.get(entry.sessionId) ?? {
+      const bucket = findTrendBucket(buckets, entry);
+      if (!bucket) return;
+      const current = bySession.get(bucket.key) ?? {
         bestEstimatedOneRM: 0,
         bestWeight: 0,
-        date: entry.date,
+        date: bucket.startDate === bucket.endDate ? bucket.startDate : bucket.endDate,
         exerciseCount: 1,
-        label: formatShortDate(entry.date),
+        label: bucket.label,
         metricLabel: '训练量',
         sessionId: entry.sessionId,
         setCount: 0,
@@ -418,12 +506,21 @@ function buildExerciseTrend(entries: HistorySetEntry[]): TrendPoint[] {
         current.metricLabel = '训练量';
       }
       current.topSetLabel = !current.topSetLabel || weight >= previousBestWeight ? `${weight}kg x ${reps}` : current.topSetLabel;
-      bySession.set(entry.sessionId, current);
+      bySession.set(bucket.key, current);
     });
 
-  return [...bySession.values()]
-    .sort((left, right) => (left.date ?? '').localeCompare(right.date ?? ''))
-    .slice(-60);
+  return buckets.map((bucket) => {
+    const current = bySession.get(bucket.key);
+    return current ?? {
+      date: bucket.startDate === bucket.endDate ? bucket.startDate : bucket.endDate,
+      exerciseCount: 0,
+      label: bucket.label,
+      metricLabel: '训练量',
+      setCount: 0,
+      value: 0,
+      volume: 0,
+    };
+  });
 }
 
 function getKeyPointIndexes(values: number[], selectedIndex?: number): number[] {
@@ -574,6 +671,96 @@ function buildMemberContributionBars(entries: HistorySetEntry[], membersById: Re
     .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label));
 }
 
+function getSetVolume(entry: HistorySetEntry): number {
+  return (entry.weight ?? 0) * (entry.reps ?? 0);
+}
+
+function formatSetDetail(entry: HistorySetEntry): string {
+  return `${entry.weight ?? 0}kg x ${entry.reps ?? 0}`;
+}
+
+function getBestEntry(entries: HistorySetEntry[]): HistorySetEntry | undefined {
+  return entries
+    .filter((entry) => entry.completed && (entry.weight ?? 0) > 0 && (entry.reps ?? 0) > 0)
+    .slice()
+    .sort((left, right) => estimateOneRM(right.weight ?? 0, right.reps ?? 0) - estimateOneRM(left.weight ?? 0, left.reps ?? 0))[0];
+}
+
+function buildBarDetail({
+  chartMode,
+  entries,
+  exerciseOptions,
+  membersById,
+  point,
+  selectedExerciseName,
+}: {
+  chartMode: HistoryChartMode;
+  entries: HistorySetEntry[];
+  exerciseOptions: ExerciseFilterOption[];
+  membersById: Record<string, GroupMember>;
+  point: HistoryBarPoint;
+  selectedExerciseName?: string;
+}): BarDetail {
+  const exerciseNameById = new Map(exerciseOptions.map((option) => [option.id, option.name]));
+  const completedEntries = entries.filter((entry) => entry.completed);
+
+  if (chartMode === 'single_day_exercise_breakdown') {
+    const scoped = completedEntries.filter((entry) => entry.exerciseId === point.id);
+    const best = getBestEntry(scoped);
+    const highestWeight = Math.max(0, ...scoped.map((entry) => entry.weight ?? 0));
+    return {
+      title: point.label,
+      subtitle: scoped.length > 0 ? `每组：${scoped.map(formatSetDetail).slice(0, 6).join('、')}` : '暂无组明细',
+      metrics: [
+        { label: '总训练量', value: formatKg(scoped.reduce((sum, entry) => sum + getSetVolume(entry), 0)) },
+        { label: '完成组数', value: `${scoped.length} 组` },
+        { label: '最高重量', value: highestWeight > 0 ? `${highestWeight} kg` : '暂无' },
+        { label: '最佳组', value: best ? formatSetDetail(best) : '暂无' },
+        { label: '估算 1RM', value: best ? `${Math.round(estimateOneRM(best.weight ?? 0, best.reps ?? 0))} kg` : '暂无' },
+      ],
+    };
+  }
+
+  if (chartMode === 'single_day_set_breakdown') {
+    const entry = completedEntries.find((item) => item.setId === point.id);
+    return {
+      title: selectedExerciseName ?? point.label,
+      subtitle: entry ? `第 ${entry.setNumber ?? '-'} 组 · ${formatSetDetail(entry)}` : point.meta,
+      metrics: [
+        { label: '重量', value: entry?.weight !== undefined ? `${entry.weight} kg` : `${Math.round(point.value)} kg` },
+        { label: '次数', value: entry?.reps !== undefined ? `${entry.reps} 次` : '暂无' },
+        { label: '训练量', value: entry ? formatKg(getSetVolume(entry)) : '暂无' },
+        { label: '估算 1RM', value: entry ? `${Math.round(estimateOneRM(entry.weight ?? 0, entry.reps ?? 0))} kg` : '暂无' },
+      ],
+    };
+  }
+
+  if (chartMode === 'group_single_day_contribution') {
+    const scoped = completedEntries.filter((entry) => entry.memberId === point.id);
+    const best = getBestEntry(scoped);
+    const totalVolume = completedEntries.reduce((sum, entry) => sum + getSetVolume(entry), 0);
+    const exerciseNames = Array.from(new Set(scoped.map((entry) => exerciseNameById.get(entry.exerciseId) ?? '训练动作')));
+    const share = totalVolume > 0 ? `${Math.round((point.value / totalVolume) * 100)}%` : '暂无';
+    return {
+      title: membersById[point.id]?.displayName ?? point.label,
+      subtitle: exerciseNames.length > 0 ? `参与动作：${exerciseNames.slice(0, 5).join('、')}` : point.meta,
+      metrics: [
+        { label: selectedExerciseName ? '该动作训练量' : '当天训练量', value: formatKg(point.value) },
+        { label: '完成组数', value: `${scoped.length} 组` },
+        { label: '参与动作', value: `${exerciseNames.length} 个` },
+        { label: '最佳组', value: best ? formatSetDetail(best) : '暂无' },
+        { label: '小组占比', value: share },
+      ],
+    };
+  }
+
+  return {
+    title: point.label,
+    subtitle: point.meta,
+    metrics: [{ label: '训练量', value: formatKg(point.value) }],
+  };
+}
+
 export default function HistoryRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { authMode, guardFeature, sheets } = useAuthGate();
@@ -704,8 +891,12 @@ export default function HistoryRoute() {
     ? activeSessions.filter((summary) => filteredSessionIds.has(summary.id))
     : activeSessions;
   const trend = effectiveSelectedExerciseId
-    ? buildExerciseTrend(activeEntries.filter((entry) => entry.exerciseId === effectiveSelectedExerciseId))
-    : buildSessionTrend(filteredSessions);
+    ? buildExerciseTrend(
+        activeEntries.filter((entry) => entry.exerciseId === effectiveSelectedExerciseId),
+        dateRange.fromDate,
+        dateRange.toDate,
+      )
+    : buildSessionTrend(filteredSessions, dateRange.fromDate, dateRange.toDate);
   const selectedExerciseName = history.exerciseOptions.find((option) => option.id === effectiveSelectedExerciseId)?.name;
   const filteredEntries = effectiveSelectedExerciseId
     ? activeEntries.filter((entry) => entry.exerciseId === effectiveSelectedExerciseId)
@@ -838,8 +1029,11 @@ export default function HistoryRoute() {
                 barData={barData}
                 chartMode={chartMode}
                 dataScope={dataScope}
+                entries={filteredEntries}
+                exerciseOptions={history.exerciseOptions}
                 fromDate={dateRange.fromDate}
                 groupId={selectedGroupId}
+                membersById={history.membersById}
                 rangeLabel={dateRange.label}
                 selectedExerciseId={effectiveSelectedExerciseId}
                 selectedExerciseName={selectedExerciseName}
@@ -923,8 +1117,11 @@ function TrainingTrendCard({
   barData,
   chartMode,
   dataScope,
+  entries,
+  exerciseOptions,
   fromDate,
   groupId,
+  membersById,
   rangeLabel,
   selectedExerciseId,
   selectedExerciseName,
@@ -934,8 +1131,11 @@ function TrainingTrendCard({
   barData: HistoryBarPoint[];
   chartMode: HistoryChartMode;
   dataScope: DataScope;
+  entries: HistorySetEntry[];
+  exerciseOptions: ExerciseFilterOption[];
   fromDate: string;
   groupId?: string | null;
+  membersById: Record<string, GroupMember>;
   rangeLabel: string;
   selectedExerciseId: string | null;
   selectedExerciseName?: string;
@@ -956,11 +1156,28 @@ function TrainingTrendCard({
     chartMode === 'single_day_set_breakdown' ||
     chartMode === 'group_single_day_contribution';
   const chartCopy = getChartCopy(chartMode, dataScope, selectedExerciseName);
-  const barTotal = barData.reduce((sum, point) => sum + point.value, 0);
+  const completedEntries = entries.filter((entry) => entry.completed);
+  const barTotal =
+    chartMode === 'single_day_set_breakdown'
+      ? completedEntries.reduce((sum, entry) => sum + getSetVolume(entry), 0)
+      : barData.reduce((sum, point) => sum + point.value, 0);
   const barMax = Math.max(0, ...barData.map((point) => point.value));
+  const completedSetCount = completedEntries.length;
+  const completedExerciseCount = new Set(completedEntries.map((entry) => entry.exerciseId)).size;
+  const participantCount = new Set(completedEntries.map((entry) => entry.memberId)).size;
+  const selectedBarDetail = selectedBar
+    ? buildBarDetail({
+        chartMode,
+        entries,
+        exerciseOptions,
+        membersById,
+        point: selectedBar,
+        selectedExerciseName,
+      })
+    : null;
 
   return (
-    <AppCard style={styles.trendCard}>
+    <AppCard style={styles.trendCard} tone="brand">
       <View style={styles.trendHeader}>
         <View style={styles.trendTitleBlock}>
           <AppText variant="subtitle">{chartCopy.title}</AppText>
@@ -971,43 +1188,61 @@ function TrainingTrendCard({
         <Tag label={selectedExerciseName ?? '全部动作'} tone={selectedExerciseId ? 'brand' : 'neutral'} />
       </View>
 
+      <View style={styles.trendHeroMetric}>
+        <AppText tone="muted" variant="caption" weight="900">
+          {isBarMode ? chartCopy.primaryMetricLabel : selectedExerciseId ? '最新表现' : '范围总训练量'}
+        </AppText>
+        <AppText variant="title" weight="900">
+          {isBarMode ? formatKg(barTotal) : formatKg(totalVolume)}
+        </AppText>
+        <AppText tone="muted" variant="caption">
+          {isBarMode
+            ? chartCopy.insight
+            : `${getTrendLabel(values)} · ${completedSetCount || trend.reduce((sum, point) => sum + point.setCount, 0)} 组`}
+        </AppText>
+      </View>
+
       {isBarMode ? (
-        <HistoryBarChart
-          emptyMessage="这一天还没有可展示的训练数据"
-          formatValue={chartMode === 'single_day_set_breakdown' ? (value) => `${Math.round(value)}kg` : formatCompactKg}
-          onBarPress={(point) => {
-            setSelectedBar(point);
-            setSelectedPoint(null);
-          }}
-          points={barData}
-          selectedId={selectedBar?.id}
-        />
+        <View style={styles.chartPanel}>
+          <HistoryBarChart
+            emptyMessage="这一天还没有可展示的训练数据"
+            formatValue={chartMode === 'single_day_set_breakdown' ? (value) => `${Math.round(value)}kg` : formatCompactKg}
+            onBarPress={(point) => {
+              setSelectedBar(point);
+              setSelectedPoint(null);
+            }}
+            points={barData}
+            selectedId={selectedBar?.id}
+          />
+        </View>
       ) : (
-        <HistoryLineChart
-          emptyMessage="当前范围还没有训练量"
-          formatValue={formatCompactKg}
-          highlightIndex={selectedPoint?.index}
-          keyPointIndexes={keyPointIndexes}
-          onPointPress={(point, index) => {
-            const trendPoint = trend[index];
-            setSelectedPoint({
-              changeLabel: getChangeLabel(values, index),
-              date: trendPoint?.date,
-              exerciseCount: trendPoint?.exerciseCount ?? 0,
-              index,
-              label: point.label ?? trendPoint?.label ?? '',
-              setCount: trendPoint?.setCount ?? 0,
+        <View style={styles.chartPanel}>
+          <HistoryLineChart
+            emptyMessage="当前范围还没有训练量"
+            formatValue={formatCompactKg}
+            highlightIndex={selectedPoint?.index}
+            keyPointIndexes={keyPointIndexes}
+            onPointPress={(point, index) => {
+              const trendPoint = trend[index];
+              setSelectedPoint({
+                changeLabel: getChangeLabel(values, index),
+                date: trendPoint?.date,
+                exerciseCount: trendPoint?.exerciseCount ?? 0,
+                index,
+                label: point.label ?? trendPoint?.label ?? '',
+                setCount: trendPoint?.setCount ?? 0,
+                value: point.value,
+              });
+              setSelectedBar(null);
+            }}
+            points={trend.map((point): HistoryLinePoint => ({
+              date: point.date,
+              label: point.label,
+              meta: point.metricLabel,
               value: point.value,
-            });
-            setSelectedBar(null);
-          }}
-          points={trend.map((point): HistoryLinePoint => ({
-            date: point.date,
-            label: point.label,
-            meta: point.metricLabel,
-            value: point.value,
-          }))}
-        />
+            }))}
+          />
+        </View>
       )}
 
       {selectedPoint ? (
@@ -1023,26 +1258,21 @@ function TrainingTrendCard({
         />
       ) : null}
 
-      {selectedBar ? (
+      {selectedBarDetail ? (
         <ChartTooltip
-          metrics={[
-            {
-              label: chartMode === 'single_day_set_breakdown' ? '重量' : '训练量',
-              value: chartMode === 'single_day_set_breakdown' ? `${Math.round(selectedBar.value)} kg` : formatKg(selectedBar.value),
-            },
-          ]}
-          subtitle={selectedBar.meta}
-          title={selectedBar.label}
+          metrics={selectedBarDetail.metrics}
+          subtitle={selectedBarDetail.subtitle}
+          title={selectedBarDetail.title}
         />
       ) : null}
 
       <View style={styles.trendSummaryGrid}>
         {isBarMode ? (
           <>
-            <TrendMetric label={chartMode === 'single_day_set_breakdown' ? '最高重量' : '合计'} value={barMax > 0 ? formatKg(chartMode === 'single_day_set_breakdown' ? barMax : barTotal) : '暂无'} />
-            <TrendMetric label="条目" value={`${barData.length} 项`} />
-            <TrendMetric label="最高项" value={barData[0]?.label ?? '暂无'} />
-            <TrendMetric label="图表" value="条形图" />
+            <TrendMetric label={chartMode === 'single_day_set_breakdown' ? '最高重量' : '总训练量'} value={barMax > 0 ? formatKg(chartMode === 'single_day_set_breakdown' ? barMax : barTotal) : '暂无'} />
+            <TrendMetric label="完成组数" value={`${completedSetCount} 组`} />
+            <TrendMetric label={dataScope === 'group' ? '参与成员' : '训练动作'} value={`${dataScope === 'group' ? participantCount : completedExerciseCount} 个`} />
+            <TrendMetric label={dataScope === 'group' ? '贡献最高' : '训练量最高'} value={barData[0]?.label ?? '暂无'} />
           </>
         ) : (
           <>
@@ -1081,6 +1311,8 @@ function TrainingTrendCard({
 function getChartCopy(mode: HistoryChartMode, scope: DataScope, selectedExerciseName?: string) {
   if (mode === 'range_exercise_trend') {
     return {
+      insight: '观察这个动作最近表现是否稳定提升',
+      primaryMetricLabel: '动作表现',
       subtitle: `${selectedExerciseName ?? '动作'} · 估算 1RM / 最高重量优先`,
       title: '动作趋势',
     };
@@ -1088,20 +1320,26 @@ function getChartCopy(mode: HistoryChartMode, scope: DataScope, selectedExercise
 
   if (mode === 'single_day_exercise_breakdown') {
     return {
-      subtitle: '按动作训练量排序',
-      title: '当天动作构成',
+      insight: '点击动作可查看最佳组和每组明细',
+      primaryMetricLabel: '当天总训练量',
+      subtitle: '动作训练量排行',
+      title: '当天训练构成',
     };
   }
 
   if (mode === 'single_day_set_breakdown') {
     return {
-      subtitle: `${selectedExerciseName ?? '动作'} · 每组重量`,
-      title: '当天组表现',
+      insight: '点击每组可查看重量、次数和估算 1RM',
+      primaryMetricLabel: '该动作训练量',
+      subtitle: `${selectedExerciseName ?? '动作'} · 每组表现`,
+      title: '当天动作明细',
     };
   }
 
   if (mode === 'group_range_trend') {
     return {
+      insight: '小组训练量来自成员 sets 汇总',
+      primaryMetricLabel: '小组总训练量',
       subtitle: selectedExerciseName ? `${selectedExerciseName} · 小组总量` : '成员 sets 汇总',
       title: '小组训练趋势',
     };
@@ -1109,12 +1347,16 @@ function getChartCopy(mode: HistoryChartMode, scope: DataScope, selectedExercise
 
   if (mode === 'group_single_day_contribution') {
     return {
-      subtitle: selectedExerciseName ? `${selectedExerciseName} · 成员对比` : '成员训练量贡献',
-      title: '成员贡献',
+      insight: '点击成员可查看当天动作和最佳组',
+      primaryMetricLabel: selectedExerciseName ? '该动作总训练量' : '小组总训练量',
+      subtitle: selectedExerciseName ? `${selectedExerciseName} · 成员动作表现` : '成员贡献排行',
+      title: selectedExerciseName ? '成员动作表现' : '当天小组贡献',
     };
   }
 
   return {
+    insight: '本周期训练量来自已完成组汇总',
+    primaryMetricLabel: scope === 'personal' ? '我的总训练量' : '小组总训练量',
     subtitle: scope === 'personal' ? '总训练量' : '小组总训练量',
     title: '整体趋势',
   };
@@ -1639,6 +1881,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 36,
   },
+  chartPanel: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+  },
   trendCard: {
     gap: spacing.md,
   },
@@ -1651,6 +1900,14 @@ const styles = StyleSheet.create({
   trendTitleBlock: {
     flex: 1,
     gap: 2,
+  },
+  trendHeroMetric: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.md,
   },
   exerciseButton: {
     alignItems: 'center',

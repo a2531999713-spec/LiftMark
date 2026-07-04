@@ -79,9 +79,6 @@ export function HistoryFilterBar({
           onPress={onOpenExerciseFilter}
           trailing="chevron-down-outline"
         />
-        <Pressable accessibilityRole="button" onPress={onOpenTimeFilter} style={styles.moreFilterButton}>
-          <Ionicons color={colors.textMuted} name="options-outline" size={18} />
-        </Pressable>
       </View>
     </AppCard>
   );
@@ -142,16 +139,6 @@ const styles = StyleSheet.create({
   filterChipActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
-  },
-  moreFilterButton: {
-    alignItems: 'center',
-    backgroundColor: colors.backgroundElevated,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 38,
-    justifyContent: 'center',
-    width: 38,
   },
   scopeSelector: {
     alignItems: 'center',

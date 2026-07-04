@@ -20,10 +20,7 @@ function formatCompactTimer(seconds: number | undefined): string {
   const safeSeconds = Math.max(0, seconds ?? 0);
   const minutes = Math.floor(safeSeconds / 60);
   const remain = safeSeconds % 60;
-  if (minutes <= 0) {
-    return `${remain}秒`;
-  }
-  return `${minutes}:${String(remain).padStart(2, '0')}`;
+  return `${String(minutes).padStart(2, '0')}:${String(remain).padStart(2, '0')}`;
 }
 
 function parseNumericInput(raw: string, integer: boolean): number | null {
@@ -268,10 +265,10 @@ export function CurrentSetRecorder({
           </View>
           <View style={styles.restHintText}>
             <AppText variant="caption" weight="900" style={styles.restHintTitle}>
-              休息中 · 还剩 {formatCompactTimer(restSeconds)}
+              休息 {formatCompactTimer(restSeconds)}
             </AppText>
             <AppText numberOfLines={1} tone="muted" variant="caption">
-              {nextMemberName ? `下一位：${nextMemberName}` : nextSetLabel ?? `计划休息 ${formatCompactTimer(plannedRestSeconds)}`}
+              {nextMemberName ? `下一位 ${nextMemberName}` : nextSetLabel ?? `建议 ${formatCompactTimer(plannedRestSeconds)}`}
               {restElapsedSeconds !== undefined ? ` · 已休 ${formatCompactTimer(restElapsedSeconds)}` : ''}
             </AppText>
           </View>
@@ -389,19 +386,19 @@ const styles = StyleSheet.create({
   restHint: {
     alignItems: 'center',
     backgroundColor: colors.primarySoft,
-    borderRadius: radius.sm,
+    borderRadius: radius.pill,
     flexDirection: 'row',
     gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   restHintIcon: {
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderRadius: radius.sm,
-    height: 30,
+    borderRadius: radius.pill,
+    height: 26,
     justifyContent: 'center',
-    width: 30,
+    width: 26,
   },
   restHintText: {
     flex: 1,
