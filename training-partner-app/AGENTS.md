@@ -6,167 +6,262 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before 
 
 - DO NOT send optional commentary or progress updates. Just do the work silently.
 
-# UI Design Rules — LiftMark Design System
+# UI Design Rules — LiftMark Mobile Design System
 
-**核心原则：** 每个页面都应该像一个高级健身应用，而不是数据录入表单。
+**核心原则：** 这是一个 React Native 移动健身应用，不是网页。所有设计决策必须从移动端体验出发。
 
 ## 禁止的反模式（NEVER）
 
 - ❌ 标签+输入框垂直堆叠的表单列表
-- ❌ 左边 label 右边 value 的设置行
+- ❌ 左边 label 右边 value 的设置行（iOS Settings 风格）
 - ❌ 全宽边框输入框 + 上方标签
 - ❌ 所有元素单列等间距排列
 - ❌ 纯白背景无视觉层次
 - ❌ 纯文字按钮无视觉权重
-- ❌ Settings 风格的 iOS grouped table view
+- ❌ 网页式导航栏（移动端用底部 Tab）
+- ❌ 没有 SafeAreaView 的页面
+- ❌ 没有键盘避让处理的输入页面
 
-## 必须使用的现代模式（ALWAYS）
+## 必须使用的移动端模式（ALWAYS）
 
-- ✅ **卡片布局** — 圆角16、阴影、分组内容
-- ✅ **视觉层次** — Hero 元素 → 区块 → 详情
-- ✅ **混合布局** — 网格、横向滚动、不对称排列
-- ✅ **操作导向 CTA** — 主要操作大、彩色、突出
-- ✅ **渐进式披露** — 先摘要，点击看详情
-- ✅ **空状态带插图** — 图标+文字+按钮，不是纯文字
+- ✅ **卡片布局** — `AppCard` 组件，圆角 `radius.lg`，阴影 `shadows.card`
+- ✅ **SafeAreaView** — 所有页面必须处理刘海屏和底部安全区
+- ✅ **键盘避让** — 输入页面使用 `ScrollView` + `keyboardShouldPersistTaps="handled"`
+- ✅ **触摸反馈** — `Pressable` 的 `pressed` 状态（opacity 0.85 + scale 0.98）
+- ✅ **底部 Tab 导航** — 使用 expo-router 的 `(tabs)` 布局
+- ✅ **渐进式披露** — 先摘要，点击展开详情
+- ✅ **空状态** — 使用 `EmptyState` 组件，带图标+标题+描述+按钮
 
-## 间距系统（8px base）
+## 主题系统（必须使用）
 
-- xs: 4px — 紧凑内联间距
-- sm: 8px — 相关元素之间
-- md: 16px — 卡片内区块之间
-- lg: 24px — 主要区块之间
-- xl: 32px — 屏幕边距
-- xxl: 48px — 不相关区块之间
-
-## 卡片设计规范
-
-```tsx
-// 正确：带阴影的卡片
-<AppCard style={{ padding: 16, borderRadius: 16, backgroundColor: '#fff' }}>
-  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primaryLight }}>
-      <Icon name="flash" size={24} color={colors.primary} />
-    </View>
-    <View style={{ flex: 1 }}>
-      <AppText variant="subtitle" weight="bold">Quick Action</AppText>
-      <AppText variant="caption" color="muted">描述文字</AppText>
-    </View>
-  </View>
-</AppCard>
-
-// 错误：表单行
-<View style={{ borderBottomWidth: 1, borderColor: '#eee', padding: 12 }}>
-  <Text style={{ fontSize: 12, color: '#999' }}>Label</Text>
-  <TextInput style={{ borderWidth: 1, padding: 8 }} />
-</View>
+```typescript
+import { colors, spacing, radius, shadows, typography } from '@/theme';
 ```
+
+### 颜色（从 colors.ts）
+- `colors.brand` / `colors.primary` — `#FF4A3D` 品牌红（主操作）
+- `colors.accent` — `#4C7CFF` 蓝色（次要操作）
+- `colors.success` — `#19C37D` 绿色（完成状态）
+- `colors.warning` — `#FFB020` 黄色（警告）
+- `colors.danger` — `#E5484D` 红色（删除、错误）
+- `colors.background` — `#F4F6F8` 屏幕背景
+- `colors.surface` — `#FFFFFF` 卡片背景
+- `colors.surfaceMuted` — `#F1F3F6` 次要背景
+- `colors.text` — `#1E293B` 主文字
+- `colors.textMuted` — `#64748B` 次要文字
+- `colors.textSubtle` — `#94A3B8` 弱化文字
+- `colors.border` — `#E5EAF0` 边框
+- `colors.darkCard` — `#1A2332` 深色卡片
+
+### 间距（从 spacing.ts）
+- `spacing.xxs` — 2px
+- `spacing.xs` — 4px
+- `spacing.sm` — 8px
+- `spacing.md` — 12px
+- `spacing.lg` — 16px
+- `spacing.xl` — 20px
+- `spacing.xxl` — 28px
+- `spacing.xxxl` — 36px
+- `spacing.xxxxl` — 48px
+
+### 圆角（从 radius.ts）
+- `radius.xs` — 6px
+- `radius.sm` — 8px
+- `radius.md` — 12px
+- `radius.lg` — 14px
+- `radius.xl` — 18px
+- `radius.pill` — 999px（胶囊按钮）
+
+### 阴影（从 shadows.ts）
+- `shadows.card` — 卡片阴影
+- `shadows.sm` — 小阴影
+- `shadows.md` — 中等阴影
+
+## 现有组件（优先使用）
+
+| 组件 | 用途 | 导入路径 |
+|------|------|----------|
+| `Screen` | 页面容器，处理 SafeArea 和 ScrollView | `@/components/ui` |
+| `AppCard` | 卡片容器，支持 tone: default/soft/brand/dark | `@/components/ui` |
+| `AppButton` | 按钮，支持 variant: primary/secondary/danger/ghost/dark | `@/components/ui` |
+| `AppText` | 文字，支持 variant 和 tone | `@/components/ui` |
+| `MetricCard` | 数据指标卡片（label + value + delta） | `@/components/ui` |
+| `ActionCard` | 可点击操作卡片（icon + label + description） | `@/components/ui` |
+| `Tag` | 标签，支持 tone: success/warning/danger/brand/soft | `@/components/ui` |
+| `EmptyState` | 空状态（icon + title + description + action） | `@/components/ui` |
+| `SectionHeader` | 区块标题 | `@/components/ui` |
+| `SettingsRow` | 设置行（label + value）| `@/components/ui` |
+| `Avatar` | 头像组件 | `@/components/ui` |
+| `SecondaryPageHeader` | 二级页面头部 | `@/components/ui` |
 
 ## 组件模式
 
-### 操作卡片（Action Card）
-用于可点击的操作：开始训练、添加成员、上传头像等
-- 左侧圆形图标容器
-- 中间标题+描述
-- 右侧箭头指示可点击
+### Screen 页面结构
+```tsx
+import { Screen } from '@/components/ui';
 
-### 数据卡片（Stat Card）
-用于显示指标：体重、次数、训练次数等
-- 居中布局
-- 顶部小标签（TOTAL SESSIONS）
-- 大号数字
-- 趋势指示
+// 基础页面
+<Screen title="页面标题" subtitle="副标题">
+  {/* 内容 */}
+</Screen>
 
-### 成员卡片（Member Card）
-用于小组成员展示
-- 左侧头像
-- 中间名字+角色标签
-- 右侧操作按钮
+// 不滚动的页面（如训练中）
+<Screen safeTop={false} scroll={false}>
+  {/* 内容 */}
+</Screen>
+```
 
-### 空状态（Empty State）
-当没有数据时：
-- 大号图标（64px）
-- 标题+描述
-- 操作按钮
+### AppCard 卡片
+```tsx
+import { AppCard } from '@/components/ui';
+
+// 默认卡片
+<AppCard>
+  <AppText>内容</AppText>
+</AppCard>
+
+// 品牌色背景
+<AppCard tone="brand">
+  <AppText>重要内容</AppText>
+</AppCard>
+
+// 深色卡片
+<AppCard tone="dark">
+  <AppText style={{ color: colors.surface }}>深色背景文字</AppText>
+</AppCard>
+```
+
+### AppButton 按钮
+```tsx
+import { AppButton } from '@/components/ui';
+
+// 主要按钮
+<AppButton icon="add-circle-outline" onPress={handlePress}>
+  开始训练
+</AppButton>
+
+// 次要按钮
+<AppButton variant="secondary" onPress={handlePress}>
+  取消
+</AppButton>
+
+// 危险按钮
+<AppButton variant="danger" onPress={handleDelete}>
+  删除
+</AppButton>
+
+// 幽灵按钮（无边框）
+<AppButton variant="ghost" onPress={handleCancel}>
+  取消
+</AppButton>
+```
+
+### MetricCard 数据卡片
+```tsx
+import { MetricCard } from '@/components/ui';
+
+<View style={{ flexDirection: 'row', gap: spacing.md }}>
+  <MetricCard label="TOTAL SESSIONS" value="42" delta="+12%" />
+  <MetricCard label="VOLUME" value="12.5t" delta="-5%" />
+</View>
+```
+
+### ActionCard 操作卡片
+```tsx
+import { ActionCard } from '@/components/ui';
+
+<View style={{ flexDirection: 'row', gap: spacing.sm }}>
+  <ActionCard
+    icon="barbell-outline"
+    label="开始训练"
+    description="开始新的训练"
+    onPress={handleStart}
+  />
+  <ActionCard
+    icon="people-outline"
+    label="邀请成员"
+    description="分享邀请码"
+    onPress={handleInvite}
+  />
+</View>
+```
+
+### EmptyState 空状态
+```tsx
+import { EmptyState } from '@/components/ui';
+
+<EmptyState
+  icon="barbell-outline"
+  title="暂无训练"
+  description="开始你的第一次训练吧"
+  actionLabel="开始训练"
+  onActionPress={handleStart}
+/>
+```
+
+## 移动端特定规范
+
+### SafeAreaView 处理
+- 所有页面必须使用 `Screen` 组件（内置 SafeArea）
+- 训练中页面可以禁用顶部安全区：`safeTop={false}`
+- 底部安全区由 Tab Bar 自动处理
+
+### 键盘处理
+- 输入页面使用 `ScrollView` + `keyboardShouldPersistTaps="handled"`
+- 数字输入使用 `keyboardType="numeric"`
+- 搜索输入使用 `returnKeyType="search"`
+
+### 触摸反馈
+- 所有可点击元素使用 `Pressable`
+- 添加 `pressed` 状态：`opacity: 0.85, transform: [{ scale: 0.98 }]`
+- 按钮最小高度：sm=38, md=48, lg=52
+
+### 横向滚动
+- 成员头像、操作快捷方式使用横向 `ScrollView`
+- 设置 `showsHorizontalScrollIndicator={false}`
+- 使用 `contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}`
+
+### 列表
+- 使用 `@shopify/flash-list` 替代 FlatList
+- 设置 `estimatedItemSize` 优化性能
 
 ## 屏幕特定规范
 
-### 设置/个人资料页
-- 用卡片+图标+描述，不用 iOS 风格的 grouped table
-- 开关独占卡片行
-- 危险操作（删除、退出）底部独立样式
+### 训练页（workout/[sessionId].tsx）
+- 计时器是 Hero 元素，使用大号数字
+- 当前组记录卡片居中突出
+- 成员轮换用 `GroupMemberStrip` 横向滚动
+- 已完成组用 `CompletedSetList` 紧凑列表
+- 进度条用 `WorkoutProgressStrip`
 
-### 同步/诊断页
-- 状态用彩色标签，不用文字段落
-- 图标+标签+值 横向排列
-- 相关检查分组到卡片
-- 操作按钮底部全宽
-
-### 训练页
-- 计时器和当前组是 Hero 元素
-- 已完成组用紧凑列表
+### 今日训练页（(tabs)/today.tsx）
+- 使用 `ImageBackground` 作为 Hero 区域
+- 周统计用 `WorkoutLiveStatsBar`
+- 计划详情用卡片分组
 - 成员头像横向滚动
-- 快捷操作浮动按钮
 
-## 字体层级
+### 设置页（(tabs)/settings.tsx）
+- 使用 `ProfileHeroCard` 展示用户信息
+- 使用 `ProfileMenuItem` 作为菜单项
+- 不要用 iOS 风格的 grouped table
 
-| 级别 | 大小 | 粗细 | 用途 |
-|------|------|------|------|
-| Hero | 32-40 | 900 | 页面标题、大数字 |
-| Title | 24-28 | 800 | 区块标题 |
-| Subtitle | 16-18 | 700 | 卡片标题 |
-| Body | 14-16 | 400 | 正文 |
-| Caption | 12-13 | 400 | 辅助信息 |
-| Micro | 10-11 | 500 | 标签、徽章 |
-
-## 颜色系统
-
-```typescript
-const colors = {
-  primary: '#4F46E5',        // Indigo — 主要操作
-  primaryLight: '#EEF2FF',   // 浅 indigo — 背景
-  accent: '#F59E0B',         // Amber — 高亮、进度
-  success: '#10B981',        // Green — 完成状态
-  danger: '#EF4444',         // Red — 删除、错误
-  background: '#F9FAFB',     // 浅灰 — 屏幕背景
-  card: '#FFFFFF',           // 白色 — 卡片背景
-  text: '#111827',           // 近黑 — 主文字
-  textMuted: '#6B7280',      // 灰 — 次要文字
-  border: '#E5E7EB',         // 浅灰 — 边框
-};
-```
+### 同步诊断页（profile/sync.tsx）
+- 状态用 `Tag` 组件，不用文字段落
+- 图标+标签+值 横向排列在 `SettingsRow`
+- 相关检查分组到 `AppCard`
+- 操作按钮底部全宽
 
 ## 预检查清单
 
 发布任何页面前：
-- [ ] 没有 label+input 的垂直列表
-- [ ] 所有内容分组在卡片中，间距正确
-- [ ] 视觉层次：Hero → 区块 → 详情
-- [ ] 主要操作视觉上最突出
-- [ ] 空状态有图标和清晰的 CTA
-- [ ] 没有小于 10px 的文字
+- [ ] 使用了 `Screen` 组件（SafeArea 已处理）
+- [ ] 使用了 `AppCard` 分组内容，不是裸 View
+- [ ] 使用了 `@/theme` 中的颜色、间距、圆角
+- [ ] 可点击元素有 `pressed` 触摸反馈
+- [ ] 输入页面有键盘避让处理
+- [ ] 空状态使用了 `EmptyState` 组件
+- [ ] 没有小于 12px 的文字
 - [ ] 触摸目标至少 44x44px
-- [ ] 图标风格一致（Ionicons）
-- [ ] 加载状态已处理（骨架屏，不是 spinner）
-
-## 主题引用
-
-```typescript
-import { colors, spacing, typography, borderRadius, shadows } from '@/theme';
-```
-
-永远不要硬编码颜色、尺寸或字体。使用主题变量。
-
-# When to Apply These Rules
-
-- 任何 UI 重写或布局变更
-- 添加新页面或组件
-- 改进现有页面布局
-- 修复视觉层次或间距问题
-- 配色方案或字体调整
-
-# Workflow
-
-1. 开始 UI 变更前，先阅读此设计规范
-2. 应用卡片布局，避免表单式设计
-3. 检查预检查清单
-4. 使用 `@/theme` 中的颜色和间距
+- [ ] 使用了 Ionicons 图标
+- [ ] 加载状态使用了 `ActivityIndicator` 或骨架屏
+- [ ] 没有硬编码颜色值
