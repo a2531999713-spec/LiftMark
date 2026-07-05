@@ -444,3 +444,244 @@ export const API_BASE_URL =
 - [ ] `pm2 status` 显示 `liftmark-api` 为 `online`
 - [ ] App 端可以正常登录
 - [ ] `pm2 logs liftmark-api --lines 20` 无报错
+
+---
+
+## 9. 管理员控制台 (Admin Console) 部署
+
+管理员后台是一个独立的 Next.js 16 standalone 应用，部署在 3001 端口，通过 nginx `/admin/` 反向代理对外提供服务。
+
+### 9.1 概览
+
+| 项 | 值 |
+|---|---|
+| 公网访问地址 | `http://47.100.239.29/admin/` |
+| 内部监听地址 | `http://127.0.0.1:3001` |
+| 部署目录 | `/home/deploy/liftmark/admin-deploy` |
+| 源代码目录 | `/home/deploy/liftmark/backend` |
+| PM2 进程名 | `liftmark-admin` |
+| 框架 | Next.js 16.2.6 (standalone) + React 19 |
+| basePath | `/admin` |
+
+### 9.2 管理员账号
+
+首次部署时通过 `npm run db:seed` 创建超级管理员，默认凭据（请尽快修改）：
+
+- 手机号 / 邮箱：`17606108291` / `2531999713@qq.com`
+- 密码：`lianke969`
+
+### 9.3 首次部署
+
+#### 9.3.1 在服务器上构建 standalone
+
+```bash
+cd /home/deploy/liftmark
+git pull origin master            # 确保在 master 分支且代码最新
+
+cd backend
+npm install --no-audit --no-fund  # 安装依赖（含 devDependencies 用于构建）
+npm run build                     # 生成 .next/standalone/
+```
+
+构建产物：`backend/.next/standalone/server.js` + `backend/.next/static/`
+
+#### 9.3.2 准备运行目录
+
+```bash
+DEST=/home/deploy/liftmark/admin-deploy
+SRC=/home/deploy/liftmark/backend
+
+rm -rf "$DEST"
+mkdir -p "$DEST/.next/static" "$DEST/public"
+
+# 复制 standalone（含 server.js、package.json、必要的 node_modules）
+cp -r "$SRC/.next/standalone/." "$DEST/"
+# 复制静态资源
+cp -r "$SRC/.next/static/." "$DEST/.next/static/"
+# 复制 public 目录（图标、favicon 等）
+cp -r "$SRC/public/." "$DEST/public/"
+```
+
+#### 9.3.3 配置 PM2
+
+在 `$DEST/ecosystem.config.cjs` 写入：
+
+```js
+module.exports = {
+  apps: [{
+    name: 'liftmark-admin',
+    script: 'server.js',
+    cwd: __dirname,
+    instances: 1,
+    exec_mode: 'fork',
+    max_memory_restart: '512M',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 3001,
+      HOSTNAME: '127.0.0.1',
+    },
+    error_file: '/home/deploy/liftmark/logs/liftmark-admin.err.log',
+    out_file: '/home/deploy/liftmark/logs/liftmark-admin.out.log',
+    time: true,
+  }]
+}
+```
+
+启动并保存：
+
+```bash
+mkdir -p /home/deploy/liftmark/logs
+cd "$DEST"
+pm2 start ecosystem.config.cjs
+pm2 save                              # 持久化进程列表
+sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u deploy --hp /home/deploy
+```
+
+#### 9.3.4 配置 nginx 反向代理
+
+编辑 `/etc/nginx/sites-enabled/liftmark`，新增 `/admin/` location：
+
+```nginx
+# 管理员控制台 - Next.js standalone @ port 3001
+location /admin/ {
+    proxy_pass http://127.0.0.1:3001/admin/;
+    proxy_http_version 1.1;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 60s;
+}
+
+# /admin -> /admin/ (trailing slash)
+location = /admin {
+    return 308 /admin/;
+}
+
+# 根路径 - 重定向到 /admin/
+location = / {
+    return 302 /admin/;
+}
+```
+
+应用配置：
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+#### 9.3.5 验证
+
+```bash
+# 1. 进程是否在线
+pm2 list | grep liftmark-admin
+
+# 2. 本地端口是否监听
+curl -s -o /dev/null -w "HTTP:%{http_code}\n" http://127.0.0.1:3001/admin/login
+
+# 3. 通过 nginx 是否可访问
+curl -s -o /dev/null -w "HTTP:%{http_code}\n" http://127.0.0.1/admin/login
+
+# 4. 公网是否可访问
+curl -s -o /dev/null -w "HTTP:%{http_code}\n" http://47.100.239.29/admin/login
+
+# 5. API 联通性（管理员登录）
+curl -s -X POST http://47.100.239.29/api/admin/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"account":"17606108291","password":"你的密码"}'
+```
+
+预期：所有 HTTP 状态码为 200，登录返回 `accessToken` 与 `refreshToken`。
+
+### 9.4 日常更新（重新部署）
+
+源代码改了之后，重新构建并替换部署目录：
+
+```bash
+cd /home/deploy/liftmark
+git pull origin master
+
+cd backend
+npm install --no-audit --no-fund
+npm run build
+
+DEST=/home/deploy/liftmark/admin-deploy
+SRC=/home/deploy/liftmark/backend
+
+# 备份旧目录（可选）
+mv "$DEST" "${DEST}.bak.$(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
+mkdir -p "$DEST/.next/static" "$DEST/public"
+cp -r "$SRC/.next/standalone/." "$DEST/"
+cp -r "$SRC/.next/static/." "$DEST/.next/static/"
+cp -r "$SRC/public/." "$DEST/public/"
+cp "${DEST}.bak."*/ecosystem.config.cjs "$DEST/" 2>/dev/null \
+  || cat > "$DEST/ecosystem.config.cjs" <<'EOF'
+module.exports = {
+  apps: [{
+    name: 'liftmark-admin', script: 'server.js', cwd: __dirname,
+    instances: 1, exec_mode: 'fork', max_memory_restart: '512M',
+    env: { NODE_ENV: 'production', PORT: 3001, HOSTNAME: '127.0.0.1' },
+    error_file: '/home/deploy/liftmark/logs/liftmark-admin.err.log',
+    out_file: '/home/deploy/liftmark/logs/liftmark-admin.out.log',
+    time: true,
+  }]
+}
+EOF
+
+pm2 restart liftmark-admin --update-env
+pm2 save
+```
+
+### 9.5 与 liftmark-api 协同部署
+
+`backend/admin-deploy/` 和 `apps/liftmark-api/` 是两个独立服务：
+
+| 服务 | 端口 | PM2 进程 | 跑在 |
+|---|---|---|---|
+| `liftmark-api` | 3000 | root 的 PM2 | `/home/deploy/liftmark/apps/liftmark-api` |
+| `liftmark-admin` | 3001 | deploy 的 PM2 | `/home/deploy/liftmark/admin-deploy` |
+
+API 路由前缀：`/api/admin/*`（由 `liftmark-api` 提供）
+页面路由前缀：`/admin/*`（由 `liftmark-admin` 提供）
+
+新增 / 修改管理后台 API 后只需重启 `liftmark-api`；新增 / 修改管理后台页面只需重建并重启 `liftmark-admin`。
+
+### 9.6 故障排查
+
+#### 9.6.1 访问 `/admin/` 返回 502
+
+```bash
+pm2 logs liftmark-admin --err --lines 30
+ss -tlnp | grep 3001   # 端口是否在监听
+```
+
+常见原因：
+- `admin-deploy/server.js` 不存在或路径不对（`find admin-deploy -name server.js`）
+- `admin-deploy/.next/static/` 缺失，导致页面加载时找不到资源
+- `admin-deploy/node_modules/` 缺失（应包含 `next`、`react`、`react-dom` 等）
+
+#### 9.6.2 登录页能打开但登录 500 / 401
+
+```bash
+# 检查 API 是否正常
+curl -s -X POST http://127.0.0.1:3000/api/admin/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"account":"17606108291","password":"你的密码"}'
+```
+
+- 返回 401：账号或密码错误
+- 返回 500：API 日志（`pm2 logs liftmark-api`）有详细错误
+
+#### 9.6.3 静态资源 404
+
+nginx 没把 `/admin/_next/static/*` 转发到 3001。检查 nginx 配置中 `location /admin/` 块是否完整。
+
+#### 9.6.4 切换分支或拉取代码后页面没更新
+
+代码更新了但 standalone 没重新构建。务必执行 `npm run build` 然后复制 `standalone/` 到 `admin-deploy/`，再 `pm2 restart liftmark-admin`。
+
