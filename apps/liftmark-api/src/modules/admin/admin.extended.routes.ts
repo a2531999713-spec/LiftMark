@@ -69,7 +69,7 @@ const grantMembershipBody = z.object({
   durationDays: z.number().int().positive().optional(),
   isLifetime: z.boolean().optional(),
   proGroupLimit: z.number().int().min(0).optional(),
-  source: z.enum(['manual', 'beta', 'campus', 'partner', 'compensation', 'payment_fix', 'test']).default('manual'),
+  source: z.enum(['activation_code', 'admin_grant', 'payment_reserved']).default('admin_grant'),
   reason: z.string().min(4).max(500),
   note: z.string().max(500).optional(),
   notify: z.boolean().default(true),
