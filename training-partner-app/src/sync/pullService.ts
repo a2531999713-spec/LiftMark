@@ -163,10 +163,15 @@ async function upsertWithRemoteId(db: LocalDatabase, input: RemoteIdUpsertInput)
     const columns = [...input.insertColumns, 'owner_user_id', 'remote_id', 'sync_status', 'last_synced_at'];
     const values: DbValue[] = [...input.insertValues, currentUserId, remoteId, 'synced', serverUpdatedAt];
     const placeholders = columns.map(() => '?').join(', ');
-    await db.runAsync(
-      `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`,
-      ...values,
-    );
+    try {
+      await db.runAsync(
+        `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`,
+        ...values,
+      );
+    } catch (error) {
+      console.error('[sync/pull] INSERT ERROR for', table, 'remote_id=', remoteId, ':', error instanceof Error ? error.message : error);
+      throw error;
+    }
     return true;
   }
 
@@ -688,28 +693,43 @@ export async function pullFromServer(
   const since = options?.fullPull ? new Date(0).toISOString() : await getLastPullAt(db);
   const path = `/sync/pull?since=${encodeURIComponent(since)}&deviceId=${DEVICE_ID}`;
 
+  console.log('[sync/pull] calling', path);
   const result = await apiRequest<PullResponse>(path, {
     accessToken: session.accessToken,
   });
 
   const changes = result.changes ?? {};
+  const totalCount = Object.values(changes).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+  console.log('[sync/pull] received', totalCount, 'records:',
+    Object.entries(changes).map(([k, v]) => `${k}=${Array.isArray(v) ? v.length : 0}`).join(', '));
+
   let pulled = 0;
 
-  pulled += await applyExercises(db, (changes.exercises as ServerRow[] | undefined) ?? []);
-  pulled += await applyTrainingPlans(db, (changes.trainingPlans as ServerRow[] | undefined) ?? [], currentUserId);
-  pulled += await applyPlanDays(db, (changes.planDays as ServerRow[] | undefined) ?? [], currentUserId);
-  pulled += await applyPlanExercises(db, (changes.planExercises as ServerRow[] | undefined) ?? [], currentUserId);
-  pulled += await applyWorkoutSessions(db, (changes.workoutSessions as ServerRow[] | undefined) ?? [], currentUserId);
-  pulled += await applyWorkoutExerciseRecords(
-    db,
-    (changes.workoutExerciseRecords as ServerRow[] | undefined) ?? [],
-    currentUserId,
-  );
-  pulled += await applyWorkoutSets(db, (changes.workoutSets as ServerRow[] | undefined) ?? [], currentUserId);
-  pulled += await applyBodyMetrics(db, (changes.bodyMetrics as ServerRow[] | undefined) ?? [], currentUserId);
-  // settings: 暂无本地表，跳过
+  const applySteps: Array<[string, () => Promise<number>]> = [
+    ['exercises', () => applyExercises(db, (changes.exercises as ServerRow[] | undefined) ?? [])],
+    ['trainingPlans', () => applyTrainingPlans(db, (changes.trainingPlans as ServerRow[] | undefined) ?? [], currentUserId)],
+    ['planDays', () => applyPlanDays(db, (changes.planDays as ServerRow[] | undefined) ?? [], currentUserId)],
+    ['planExercises', () => applyPlanExercises(db, (changes.planExercises as ServerRow[] | undefined) ?? [], currentUserId)],
+    ['workoutSessions', () => applyWorkoutSessions(db, (changes.workoutSessions as ServerRow[] | undefined) ?? [], currentUserId)],
+    ['workoutExerciseRecords', () => applyWorkoutExerciseRecords(db, (changes.workoutExerciseRecords as ServerRow[] | undefined) ?? [], currentUserId)],
+    ['workoutSets', () => applyWorkoutSets(db, (changes.workoutSets as ServerRow[] | undefined) ?? [], currentUserId)],
+    ['bodyMetrics', () => applyBodyMetrics(db, (changes.bodyMetrics as ServerRow[] | undefined) ?? [], currentUserId)],
+  ];
+
+  for (const step of applySteps) {
+    const name = step[0];
+    const fn = step[1];
+    try {
+      const n = await fn();
+      console.log('[sync/pull] applied', n, 'for', name);
+      pulled += n;
+    } catch (error) {
+      console.error('[sync/pull] ERROR applying', name, ':', error instanceof Error ? error.message : error);
+    }
+  }
 
   await setLastPullAt(db, result.serverTime);
+  console.log('[sync/pull] done, total applied:', pulled);
 
   return { ok: true, pulled, serverTime: result.serverTime };
 }

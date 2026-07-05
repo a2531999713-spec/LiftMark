@@ -8,16 +8,30 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 export async function sync(
   options?: { fullPull?: boolean; pushOnly?: boolean },
 ): Promise<{ ok: boolean; message?: string }> {
-  if (isSyncing) return { ok: true, message: 'sync in progress' };
+  if (isSyncing) {
+    console.log('[sync] skipped: already syncing');
+    return { ok: true, message: 'sync in progress' };
+  }
   isSyncing = true;
+  console.log('[sync] starting, options:', JSON.stringify(options ?? {}));
   try {
     if (!options?.pushOnly) {
+      console.log('[sync] starting pull...');
       await pullFromServer({ fullPull: options?.fullPull });
+      console.log('[sync] pull done');
+    } else {
+      console.log('[sync] pushOnly mode, skipping pull');
     }
+    console.log('[sync] starting push...');
     const pushResult = await requestImmediateSync();
+    console.log('[sync] push done:', JSON.stringify(pushResult));
     lastSyncAt = Date.now();
     return pushResult;
   } catch (error) {
+    console.error('[sync] FAILED:', error instanceof Error ? error.message : error);
+    if (error instanceof Error && error.stack) {
+      console.error('[sync] stack:', error.stack);
+    }
     return { ok: false, message: error instanceof Error ? error.message : 'sync failed' };
   } finally {
     isSyncing = false;
