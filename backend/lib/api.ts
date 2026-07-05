@@ -126,8 +126,8 @@ async function request<T>(
     if (response.status === 401) {
       // Token 失效，清空
       clearAuth();
-      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login';
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/admin/login')) {
+        window.location.href = '/admin/login';
       }
     }
     throw new ApiRequestError(
@@ -166,6 +166,6 @@ export async function login(account: string, password: string): Promise<LoginRes
 export function logout() {
   clearAuth();
   if (typeof window !== 'undefined') {
-    window.location.href = '/login';
+    window.location.href = '/admin/login';
   }
 }
