@@ -6,6 +6,7 @@ import { EmptyState, Screen } from '@/components/ui';
 import { ProfileHeroCard, ProfileMenuItem } from '@/components/profile';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
+import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
 import {
@@ -32,7 +33,7 @@ export default function SettingsRoute() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const currentMember = members.find((member) => member.userId === user?.id) ?? members[0] ?? null;
+  const currentMember = resolveDefaultTrainingMember(members, user?.id);
   const currentProfile = currentMember ? (profilesByMemberId[currentMember.id] ?? null) : null;
   const avatarDisplay = getAvatarDisplay({
     accountProfile,

@@ -9,6 +9,7 @@ import { AccountMenuRow, ProfileSummaryCard } from '@/components/account';
 import { AppText, EmptyState, Screen } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
+import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { getAccountProfileCache, getAvatarDisplay, type AccountProfileCache } from '@/services/avatar';
 import { useAuthStore } from '@/store/authStore';
@@ -62,7 +63,7 @@ export default function ProfileIndexRoute() {
         setSelectedGroupId(group.id);
       }
       const members = await repositories.memberRepository.listMembers(group.id);
-      const member = members.find((item) => item.userId === latestUser?.id) ?? members[0] ?? null;
+      const member = resolveDefaultTrainingMember(members, latestUser?.id);
       const [profile, cachedProfile] = await Promise.all([
         member ? repositories.memberRepository.getMemberProfile(member.id) : Promise.resolve(null),
         latestUser ? getAccountProfileCache(latestUser.id) : Promise.resolve(null),

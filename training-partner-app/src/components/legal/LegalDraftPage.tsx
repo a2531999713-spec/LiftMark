@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { AppCard, AppText, Screen, SecondaryPageHeader } from '@/components/ui';
+import { AppCard, AppText, Screen } from '@/components/ui';
 import { spacing } from '@/theme';
 
 type LegalDraftPageProps = {
@@ -185,29 +185,8 @@ const termsSections: LegalSection[] = [
 export function LegalDraftPage({ kind }: LegalDraftPageProps) {
   const isPrivacy = kind === 'privacy';
   const sections = isPrivacy ? privacySections : termsSections;
-  const title = isPrivacy ? '隐私政策' : '用户协议';
-  const note = isPrivacy
-    ? '当前为隐私政策草案，正式上线前将根据实际运营主体和服务内容完善。'
-    : '当前为用户协议草案，正式上线前将根据实际运营主体和服务内容完善。';
-
   return (
     <Screen contentStyle={styles.screen}>
-      <SecondaryPageHeader
-        caption="法务与支持"
-        icon={isPrivacy ? 'shield-checkmark-outline' : 'document-text-outline'}
-        subtitle={note}
-        tag="草案"
-        title={title}
-      />
-
-      <AppCard style={styles.notice} tone="brand">
-        <AppText variant="bodySmall" weight="900">
-          当前为草案
-        </AppText>
-        <AppText tone="muted" variant="bodySmall">
-          {note}
-        </AppText>
-      </AppCard>
 
       <View style={styles.sections}>
         {sections.map((section) => (

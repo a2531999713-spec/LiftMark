@@ -9,6 +9,112 @@ import { resolveAvatarUrl } from '@/utils/avatarUrl';
 export type SyncOperationResult = { ok: true; message?: string } | { ok: false; message: string };
 type SyncMemberResult = { id: string; reason?: string; skipped?: boolean; synced?: boolean };
 
+type SyncedMemberRow = {
+  id: string;
+  display_name: string;
+  user_id: string | null;
+  member_type: 'local' | 'real' | null;
+  local_member_id: string | null;
+  remote_id?: string | null;
+};
+
+function shouldKeepLocalTrainingName(member: SyncedMemberRow, currentUserId: string, serverUserId?: string | null): boolean {
+  return (
+    serverUserId === currentUserId &&
+    (member.member_type === 'local' || Boolean(member.local_member_id) || !member.user_id)
+  );
+}
+
+async function findMemberForServerMember(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  input: { groupId: string; currentUserId: string; serverMemberId: string; serverUserId?: string | null },
+): Promise<SyncedMemberRow | null> {
+  const exact = await db.getFirstAsync<SyncedMemberRow>(
+    `SELECT id, display_name, user_id, member_type, local_member_id, remote_id
+     FROM group_members
+     WHERE group_id = ?
+       AND (id = ? OR remote_id = ?)
+       AND deleted_at IS NULL
+     LIMIT 1`,
+    input.groupId,
+    input.serverMemberId,
+    input.serverMemberId,
+  );
+
+  if (input.serverUserId === input.currentUserId) {
+    const localTrainingMember = await db.getFirstAsync<SyncedMemberRow>(
+      `SELECT id, display_name, user_id, member_type, local_member_id, remote_id
+       FROM group_members
+       WHERE group_id = ?
+         AND deleted_at IS NULL
+         AND (member_type = 'local' OR local_member_id IS NOT NULL OR user_id IS NULL OR user_id = '')
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      input.groupId,
+    );
+    if (localTrainingMember) return localTrainingMember;
+  }
+
+  if (exact) return exact;
+
+  if (!input.serverUserId) return null;
+  return db.getFirstAsync<SyncedMemberRow>(
+    `SELECT id, display_name, user_id, member_type, local_member_id, remote_id
+     FROM group_members
+     WHERE group_id = ?
+       AND user_id = ?
+       AND deleted_at IS NULL
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    input.groupId,
+    input.serverUserId,
+  );
+}
+
+async function softDeleteDuplicateCurrentUserMembers(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  input: { groupId: string; keepMemberId: string; currentUserId: string; now: string },
+): Promise<void> {
+  const duplicates = await db.getAllAsync<{ id: string }>(
+    `SELECT id
+     FROM group_members
+     WHERE group_id = ?
+       AND user_id = ?
+       AND id != ?
+       AND deleted_at IS NULL`,
+    input.groupId,
+    input.currentUserId,
+    input.keepMemberId,
+  );
+
+  for (const duplicate of duplicates) {
+    const usage = await db.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS count
+       FROM workout_sets
+       WHERE member_id = ?`,
+      duplicate.id,
+    );
+    const bodyMetricUsage = await db.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS count
+       FROM body_metrics
+       WHERE member_id = ?`,
+      duplicate.id,
+    );
+    if ((usage?.count ?? 0) > 0 || (bodyMetricUsage?.count ?? 0) > 0) {
+      continue;
+    }
+
+    await db.runAsync(
+      `UPDATE group_members
+       SET deleted_at = ?, updated_at = ?
+       WHERE id = ?`,
+      input.now,
+      input.now,
+      duplicate.id,
+    );
+  }
+}
+
 export async function updateDisplayNameAcrossLocalProfiles(input: {
   displayName: string;
   fallbackGroupId?: string;
@@ -407,27 +513,22 @@ export async function syncServerDataToLocal(): Promise<void> {
 
     // 同步成员
     for (const serverMember of serverGroup.members) {
-      // 检查本地是否已存在该成员
-      const existingMember = await db.getFirstAsync<{ id: string }>(
-        `SELECT id
-         FROM group_members
-         WHERE group_id = ?
-           AND (id = ? OR user_id = ?)
-           AND deleted_at IS NULL
-         LIMIT 1`,
-        serverGroup.id,
-        serverMember.id,
-        serverMember.userId
-      );
+      const existingMember = await findMemberForServerMember(db, {
+        currentUserId,
+        groupId: serverGroup.id,
+        serverMemberId: serverMember.id,
+        serverUserId: serverMember.userId,
+      });
 
       if (!existingMember) {
         // 创建成员（归属以成员对应的账号为准，防止跨账号拉取时错填归属）
         const memberOwnerUserId = serverMember.userId ?? currentUserId;
         await db.runAsync(
           `INSERT INTO group_members (
-            id, owner_user_id, group_id, display_name, user_id, member_type, local_member_id,
+            id, remote_id, owner_user_id, group_id, display_name, user_id, member_type, local_member_id,
             role, avatar_url, joined_at, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 'real', NULL, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, 'real', NULL, ?, ?, ?, ?, ?)`,
+          serverMember.id,
           serverMember.id,
           memberOwnerUserId,
           serverGroup.id,
@@ -442,17 +543,40 @@ export async function syncServerDataToLocal(): Promise<void> {
       } else {
         // 更新成员归属以成员 userId 为准，避免按当前登录者抢归属。
         const memberOwnerUserId = serverMember.userId ?? currentUserId;
+        const keepLocalName = shouldKeepLocalTrainingName(existingMember, currentUserId, serverMember.userId);
+        const nextLocalMemberId = existingMember.local_member_id ?? (keepLocalName ? existingMember.id : null);
         await db.runAsync(
           `UPDATE group_members
-           SET owner_user_id = ?, display_name = ?, user_id = ?, member_type = 'real', avatar_url = ?, updated_at = ?
+           SET remote_id = COALESCE(remote_id, ?),
+               owner_user_id = ?,
+               display_name = ?,
+               user_id = ?,
+               member_type = 'real',
+               local_member_id = ?,
+               role = ?,
+               avatar_url = ?,
+               joined_at = COALESCE(joined_at, ?),
+               updated_at = ?
            WHERE id = ?`,
+          serverMember.id,
           memberOwnerUserId,
-          serverMember.displayName ?? serverMember.nickname,
+          keepLocalName ? existingMember.display_name : serverMember.displayName ?? serverMember.nickname,
           serverMember.userId,
+          nextLocalMemberId,
+          serverMember.role,
           resolveAvatarUrl(serverMember.avatarUrl) ?? null,
+          now,
           now,
           existingMember.id
         );
+        if (serverMember.userId === currentUserId) {
+          await softDeleteDuplicateCurrentUserMembers(db, {
+            currentUserId,
+            groupId: serverGroup.id,
+            keepMemberId: existingMember.id,
+            now,
+          });
+        }
       }
 
       // 同步成员资料

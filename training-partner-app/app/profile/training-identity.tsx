@@ -6,6 +6,7 @@ import { AuthGateSheets } from '@/components/auth';
 import { Avatar } from '@/components/avatar';
 import { AppButton, AppCard, AppText, EmptyState, Screen, SettingsRow, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
+import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
@@ -37,7 +38,7 @@ export default function TrainingIdentityRoute() {
         setSelectedGroupId(group.id);
       }
       const members = await repositories.memberRepository.listMembers(group.id);
-      const current = members[0] ?? null;
+      const current = resolveDefaultTrainingMember(members);
       setMember(current);
       setProfile(current ? await repositories.memberRepository.getMemberProfile(current.id) : null);
     } catch (loadError) {

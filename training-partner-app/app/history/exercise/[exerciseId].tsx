@@ -7,6 +7,7 @@ import { AppCard, AppText, EmptyState, MiniLineChart, Screen, SecondaryPageHeade
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import { estimateOneRM } from '@/domain/history/history-analysis';
+import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import { colors, radius, spacing } from '@/theme';
@@ -151,7 +152,7 @@ export default function ExerciseHistoryRoute() {
       }
 
       const members = await repositories.memberRepository.listMembers(group.id);
-      const member = members[0] ?? null;
+      const member = resolveDefaultTrainingMember(members);
       if (!member) {
         setView(null);
         return;

@@ -25,6 +25,7 @@ import { AppButton, AppCard, AppModalSheet, AppText, Screen, Tag } from '@/compo
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
+import { resolveDefaultTrainingMember, resolveDefaultTrainingMemberId } from '@/domain/member/member-selection';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type {
   ExercisePriority,
@@ -433,6 +434,7 @@ function formatDayChoiceSubtitle(day: PlanDay): string {
 }
 
 const homeHeaderTitlePool = [
+  // 激励型
   '今天也别空过',
   '把训练刻进今天',
   '完成一组，再说别的',
@@ -441,6 +443,69 @@ const homeHeaderTitlePool = [
   '这一组算数',
   '慢慢加重，稳定进步',
   '练完再休息',
+  '重量不骗人，练就对了',
+  '今天不偷懒，明天不后悔',
+  '昨天的极限，今天的热身',
+  '每次训练都在超越自己',
+  '汗水是进步的证明',
+  '今天的努力，明天的底气',
+  '别让昨天的自己失望',
+  '每组都全力以赴',
+  '变强没有捷径，但有今天',
+    // 沉稳型
+  '专注当下，每组到位',
+  '稳稳推进，悄悄变强',
+  '按计划训练，凭实力进步',
+  '组间休息，别休息太久',
+  '今天是计划的一部分',
+  '稳定的节奏，持续的进步',
+  '把动作做好，把重量加稳',
+  '训练不会骗人，数据会说话',
+  // 目标导向
+  '今天的训练，明天的成绩',
+  '按计划执行，看数据说话',
+  '每完成一次，就更近一步',
+  '记录今天，见证未来',
+  '训练有计划，进步有方向',
+  '今天的完成度是多少？',
+  '让每次训练都有意义',
+  '今天的训练，就是明天的突破',
+    // 热血型
+  '练就完了，别多想',
+  '只有练过才知道',
+  '今日不练，更待何时',
+  '把疲惫碾碎，把力量炼成',
+  '燃起来，今天的训练开始了',
+  '别废话，直接开练',
+  '每个动作都在铸造更好的你',
+  '今天份的狠劲，用在这里',
+    // 佛系有力量
+  '来了就好，开练吧',
+  '练多少都是进步',
+  '今天状态不错，继续保持',
+  '训练是和自己对话的时间',
+  '慢慢来，比较快',
+  '今天能练多少是多少',
+  '享受训练的过程，结果自然来',
+  '不急，但不停',
+   // 功能关联
+  '今天计划已就绪，开始吧',
+  '你的训练，由你掌控',
+  '用数据记录每一次进步',
+  '计划在这里，执行在你',
+  '每次训练都是数据积累',
+  '让训练有迹可循',
+  '今天要完成几个动作？',
+  '重量、组数、次数，都在这里',
+  '今日训练，今日毕',
+  '把时间献给训练',
+    // 文艺简约
+  '一组一组的来，一点一点的强',
+  '让今天比昨天多一点',
+  '认真训练，认真生活',
+  '力量，从每一次动作中生长',
+  '刻下今天的训练痕迹',
+  '练刻，记录每一次成长',
 ];
 
 function pickDailyHomeTitle() {
@@ -637,7 +702,7 @@ export default function TodayRoute() {
         ]),
       );
       const nextProfilesByMemberId = Object.fromEntries(nextProfiles);
-      const currentMember = nextMembers.find((member) => member.userId === latestUser?.id) ?? nextMembers[0] ?? null;
+      const currentMember = resolveDefaultTrainingMember(nextMembers, latestUser?.id);
       const [weekSessions, recentSessions, nextPhases, nextPlanDays, nextAccountProfile] = await Promise.all([
         loadOrDefault(
           'weekly sessions load',
@@ -870,7 +935,7 @@ export default function TodayRoute() {
     }
 
     const nextScope: WorkoutRecordScope = members.length > 1 ? 'group_local' : 'solo_local';
-    const currentMemberId = members[0]?.id;
+    const currentMemberId = resolveDefaultTrainingMemberId(members, user?.id);
     const participantMemberIds =
       nextScope === 'solo_local' && currentMemberId
         ? [currentMemberId]
@@ -906,7 +971,7 @@ export default function TodayRoute() {
     setRecordScope(nextScope);
     setSelectedParticipantIds(participantMemberIds);
     setScopeSheetVisible(true);
-  }, [group, guardFeature, members, repositories, resolveSelectedWorkoutPlan]);
+  }, [group, guardFeature, members, repositories, resolveSelectedWorkoutPlan, user?.id]);
 
   const toggleParticipant = useCallback((memberId: string) => {
     setSelectedParticipantIds((current) =>
@@ -979,7 +1044,7 @@ export default function TodayRoute() {
       return;
     }
 
-    const currentMemberId = members[0]?.id;
+    const currentMemberId = resolveDefaultTrainingMemberId(members, user?.id);
     const availableMemberIds = new Set(members.map((member) => member.id));
     const participantMemberIds =
       recordScope === 'solo_local'
@@ -1051,6 +1116,7 @@ export default function TodayRoute() {
     repositories,
     resolveSelectedWorkoutPlan,
     selectedParticipantIds,
+    user?.id,
   ]);
 
   const continueConflictingSession = useCallback(() => {
@@ -1089,7 +1155,7 @@ export default function TodayRoute() {
     (scope: WorkoutRecordScope) => {
       setRecordScope(scope);
       if (scope === 'solo_local') {
-        const currentMemberId = members[0]?.id;
+        const currentMemberId = resolveDefaultTrainingMemberId(members, user?.id);
         setSelectedParticipantIds(currentMemberId ? [currentMemberId] : []);
         return;
       }
@@ -1099,10 +1165,10 @@ export default function TodayRoute() {
         return validCurrent.length > 0 ? validCurrent : members.map((member) => member.id);
       });
     },
-    [members],
+    [members, user?.id],
   );
 
-  const currentMember = members.find((member) => member.userId === user?.id) ?? members[0] ?? null;
+  const currentMember = resolveDefaultTrainingMember(members, user?.id);
   const currentProfile = currentMember ? (profiles[currentMember.id] ?? null) : null;
   const planExercises = useMemo(() => todayPlan?.exercises ?? [], [todayPlan]);
   const focusExercises = useMemo(

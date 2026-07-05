@@ -11,6 +11,7 @@ import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { CreateCustomExerciseInput } from '@/data/repositories/exerciseRepository';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
+import { resolveDefaultTrainingMemberId } from '@/domain/member/member-selection';
 import type { GroupMember } from '@/domain/member/member.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, radius, spacing, typography } from '@/theme';
@@ -117,7 +118,7 @@ export default function ManualHistoryRoute() {
           setGroup(nextGroup);
           setMembers(nextMembers);
           setExercises(nextExercises);
-          setSelectedMemberId(nextMembers[0]?.id ?? '');
+          setSelectedMemberId(resolveDefaultTrainingMemberId(nextMembers) ?? '');
         }
       } catch (loadError) {
         if (mounted) {

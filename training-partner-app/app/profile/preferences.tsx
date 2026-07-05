@@ -6,6 +6,7 @@ import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppText, EmptyState, Screen, SecondaryPageHeader, SettingsRow, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
+import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { MemberProfile } from '@/domain/member/member.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, spacing } from '@/theme';
@@ -32,8 +33,9 @@ export default function ProfilePreferencesRoute() {
       const nextGroup = await repositories.groupRepository.getDefaultGroup();
       if (!nextGroup) throw new Error('默认小组尚未初始化。');
       const members = await repositories.memberRepository.listMembers(nextGroup.id);
+      const member = resolveDefaultTrainingMember(members);
       setGroup(nextGroup);
-      setProfile(members[0] ? await repositories.memberRepository.getMemberProfile(members[0].id) : null);
+      setProfile(member ? await repositories.memberRepository.getMemberProfile(member.id) : null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '偏好加载失败。');
     } finally {

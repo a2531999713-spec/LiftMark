@@ -16,6 +16,7 @@ import {
   type PrTimelineItem,
   type WeeklyHistoryBucket,
 } from '@/domain/history/history-analysis';
+import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
@@ -94,7 +95,7 @@ export default function HistoryAnalyticsRoute() {
       }
 
       const members = await repositories.memberRepository.listMembers(group.id);
-      const currentMember = members[0] ?? null;
+      const currentMember = resolveDefaultTrainingMember(members);
       if (!currentMember) {
         setState({ analysis: null, currentMember: null });
         return;

@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, StyleSheet, TextInput, View } from 'react-nat
 
 import { AppButton, AppCard, AppText, EmptyState, Screen, SecondaryPageHeader } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
+import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { GroupMember } from '@/domain/member/member.types';
 import { getAccountProfileCache, upsertAccountProfileCache, type AccountProfileCache } from '@/services/avatar';
 import { apiRequest } from '@/services/httpClient';
@@ -54,7 +55,7 @@ export default function ProfileEditRoute() {
         repositories.memberRepository.listMembers(group.id),
         getAccountProfileCache(latestUser.id),
       ]);
-      const member = members.find((item) => item.userId === latestUser.id) ?? members[0] ?? null;
+      const member = resolveDefaultTrainingMember(members, latestUser.id);
       const nextName = profile?.displayName?.trim() || latestUser.displayName || member?.displayName || '练刻用户';
 
       setAccountProfile(profile);

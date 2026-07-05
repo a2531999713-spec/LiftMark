@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { EditableAvatar } from '@/components/avatar';
 import { AppModalSheet, AppText, EmptyState, Screen, SecondaryPageHeader } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
+import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import {
   deleteAccountAvatar,
@@ -57,7 +58,7 @@ export default function AvatarRoute() {
         setSelectedGroupId(group.id);
       }
       const members = group ? await repositories.memberRepository.listMembers(group.id) : [];
-      const member = members.find((item) => item.userId === latestUser?.id) ?? members[0] ?? null;
+      const member = resolveDefaultTrainingMember(members, latestUser?.id);
       setCurrentMember(member);
       setCurrentProfile(member ? await repositories.memberRepository.getMemberProfile(member.id) : null);
       setAccountProfile(latestUser ? await getAccountProfileCache(latestUser.id) : null);

@@ -9,6 +9,7 @@ import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import { estimateOneRM } from '@/domain/history/history-analysis';
+import { resolveDefaultTrainingMemberId } from '@/domain/member/member-selection';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { PlanDay, PlanExercise, PlanTemplate } from '@/domain/plan/plan.types';
 import type { GroupWorkoutConsentSummary } from '@/domain/sync/workoutSync.types';
@@ -160,7 +161,7 @@ export default function WorkoutSummaryRoute() {
       setSummary(summarizeWorkoutSets(sessionId, nextDetail.sets));
       setView(buildSummaryView(nextDetail, members, exerciseMap));
       setProfilesByMemberId(Object.fromEntries(memberProfiles));
-      setConsentSummary(buildGroupWorkoutConsentSummary(nextDetail, members, members[0]?.id));
+      setConsentSummary(buildGroupWorkoutConsentSummary(nextDetail, members, resolveDefaultTrainingMemberId(members)));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '训练总结加载失败。');
     } finally {

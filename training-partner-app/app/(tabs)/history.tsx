@@ -14,6 +14,7 @@ import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Equipment, Exercise, ExerciseCategory } from '@/domain/exercise/exercise.types';
 import { getHistoryChartMode, type HistoryChartMode } from '@/domain/history/history-chart-mode';
 import { estimateOneRM, type HistorySetEntry } from '@/domain/history/history-analysis';
+import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutSession, WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
@@ -804,7 +805,7 @@ export default function HistoryRoute() {
       }
 
       const members = await repositories.memberRepository.listMembers(group.id);
-      const currentMember = members[0] ?? null;
+      const currentMember = resolveDefaultTrainingMember(members);
       if (!currentMember) {
         setHistory(createEmptyHistory());
         return;

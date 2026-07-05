@@ -13,6 +13,7 @@ import {
   type BodyTrainingCorrelationInput,
 } from '@/domain/body/body-metrics-analysis';
 import type { BodyMetric, BodyMetricGoal, BodyMetricGoalType } from '@/domain/body/body-metrics.types';
+import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
@@ -146,7 +147,7 @@ export default function BodyMetricsRoute() {
         setSelectedGroupId(group.id);
       }
       const members = await repositories.memberRepository.listMembers(group.id);
-      const member = members[0] ?? null;
+      const member = resolveDefaultTrainingMember(members);
       setCurrentMember(member);
       if (!member) {
         setMetrics([]);

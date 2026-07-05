@@ -1,5 +1,15 @@
 # 变更记录
 
+## 2026-07-06 - default-training-member-sync-fix
+
+### 默认本机成员与重复账号成员修复
+- 新增 `resolveDefaultTrainingMember` 统一规则：训练、历史、体测、资料页优先使用本地训练身份（如 `zhw`），没有本地身份时才退回当前登录账号成员。
+- 修复 `/sync/groups-pull` 同步后新增 `练刻3716` 这类账号成员被误当默认本机成员的问题。
+- 当前账号的云端真实成员会优先绑定到原本本地训练成员，并保留本地显示名；无训练记录、无体测记录的重复账号成员会软删除。
+- 覆盖首页、历史、动作历史、补录、体测、头像、资料、训练偏好、训练身份和训练总结页的个人成员口径。
+- 新增 `member-selection.test.ts` 覆盖“本地训练身份优先”和“已绑定真实账号但保留 localMemberId”的默认成员选择。
+- 已通过：`npm test -- --runInBand`（17 个套件 / 94 个用例）、`npm run typecheck -- --pretty false`、`npm run lint`。
+
 ## 2026-07-06 - account-recovery-sync-hardening
 
 ### 账号恢复与防串号修复
