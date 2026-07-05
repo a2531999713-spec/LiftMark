@@ -1,5 +1,13 @@
 # 变更记录
 
+## 2026-07-05 - ownership-repair-service
+
+### 登录后自动修复数据归属
+- 新增 `ownershipRepairService.ts`：用户登录后通过云端 API 反查小组和成员的真实归属，批量修正本地所有表的 `owner_user_id`。
+- 修复 migration 16 的局限：local 类型成员（`user_id = NULL`）和历史被错误覆盖的数据无法通过 migration 恢复归属，本服务在登录后用云端权威数据完成修复。
+- `authStore.ts` 在 `loadCurrentUser`、`login`、`loginWithCode`、`register` 后异步触发归属修复，不阻塞 UI。
+- 修复策略：以云端 `groups.ownerUserId` 和 `group_members.userId` 为权威来源，覆盖本地被错误改写的归属；训练数据按小组归属回填。
+
 ## 2026-07-05 - account-data-isolation-fix
 
 ### 账户数据隔离修复

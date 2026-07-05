@@ -15,6 +15,7 @@ import type {
 } from '@/services/auth/authTypes';
 import { readStoredSession, saveStoredSession } from '@/services/auth/tokenStorage';
 import { getMembership, type Membership } from '@/services/membershipService';
+import { repairLocalDataOwnership } from '@/services/ownershipRepairService';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 
 type AuthStore = {
@@ -128,6 +129,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       const nextState = await resolveSessionState(session);
       switchRuntimeAccountScope(nextState.user?.id ?? null);
       set(nextState);
+      // 登录态恢复后异步修复本地数据归属（不阻塞 UI）
+      if (nextState.user?.id) {
+        repairLocalDataOwnership().catch((error) => {
+          console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
+        });
+      }
     } catch (error) {
       switchRuntimeAccountScope(null);
       set({
@@ -189,6 +196,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         ...nextState,
         hasSeenSyncPrompt: false,
       });
+      // 登录后异步修复本地数据归属（不阻塞 UI）
+      repairLocalDataOwnership().catch((error) => {
+        console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
+      });
       return null;
     } finally {
       set({ isLoading: false });
@@ -218,6 +229,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       set({
         ...nextState,
         hasSeenSyncPrompt: false,
+      });
+      // 登录后异步修复本地数据归属（不阻塞 UI）
+      repairLocalDataOwnership().catch((error) => {
+        console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
       });
       return null;
     } finally {
@@ -270,6 +285,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       set({
         ...nextState,
         hasSeenSyncPrompt: false,
+      });
+      // 注册后异步修复本地数据归属（不阻塞 UI）
+      repairLocalDataOwnership().catch((error) => {
+        console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
       });
       return null;
     } finally {
