@@ -255,4 +255,45 @@ export class SQLiteMemberRepository implements MemberRepository {
 
     return updated;
   }
+
+  async deleteMember(memberId: string): Promise<void> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+
+    const member = await requireRow(
+      await db.getFirstAsync<GroupMemberRow>(
+        `SELECT gm.* FROM group_members gm
+         INNER JOIN groups ON groups.id = gm.group_id
+         WHERE gm.id = ?
+           AND ${scope.where}
+           AND gm.deleted_at IS NULL
+           AND groups.deleted_at IS NULL`,
+        memberId,
+        ...scope.params,
+      ),
+      `未找到成员：${memberId}`,
+    );
+
+    if (member.role === 'owner') {
+      throw new Error('小组所有者不能删除，请先转移所有者或切换小组。');
+    }
+
+    const now = nowIso();
+
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      await txn.runAsync(
+        `UPDATE group_members SET deleted_at = ?, updated_at = ? WHERE id = ?`,
+        now,
+        now,
+        memberId,
+      );
+      await txn.runAsync(
+        `UPDATE member_profiles SET deleted_at = ?, updated_at = ? WHERE member_id = ? AND deleted_at IS NULL`,
+        now,
+        now,
+        memberId,
+      );
+    });
+  }
 }

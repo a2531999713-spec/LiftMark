@@ -1,9 +1,9 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator } from 'react-native';
+import { ActivityIndicator, Alert } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton, EmptyState, Screen, SecondaryPageHeader } from '@/components/ui';
+import { AppButton, AppCard, AppText, EmptyState, Screen, SecondaryPageHeader } from '@/components/ui';
 import { MemberForm } from '@/components/members/MemberForm';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
@@ -37,6 +37,7 @@ export default function MemberDetailRoute() {
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
@@ -152,6 +153,53 @@ export default function MemberDetailRoute() {
     [guardFeature, member, repositories],
   );
 
+  const handleDelete = useCallback(() => {
+    if (!member) return;
+    if (member.role === 'owner') {
+      Alert.alert('无法删除', '小组所有者不能删除。如需移除，请先在小组设置中转移所有者。');
+      return;
+    }
+    Alert.alert(
+      `删除成员「${member.displayName}」？`,
+      '删除后该成员的历史训练记录仍保留在数据库中（软删除），但不再出现在训练小组列表。此操作不可撤销。',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '确认删除',
+          style: 'destructive',
+          onPress: async () => {
+            if (!member) return;
+            setIsDeleting(true);
+            try {
+              await repositories.memberRepository.deleteMember(member.id);
+              await enqueueSyncCandidate({
+                entityType: 'groupMembers',
+                localId: member.id,
+                operation: 'delete',
+                payload: {
+                  groupId: member.groupId,
+                  memberType: member.memberType,
+                },
+                status: 'pending_delete',
+                updatedAt: new Date().toISOString(),
+              });
+              Alert.alert('已删除', `成员「${member.displayName}」已从训练小组移除。`, [
+                { text: '知道了', onPress: () => router.replace('/(tabs)/members') },
+              ]);
+            } catch (deleteError) {
+              Alert.alert(
+                '删除失败',
+                deleteError instanceof Error ? deleteError.message : '请稍后重试。',
+              );
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [member, repositories]);
+
   const identityNote = member
     ? member.memberType === 'real'
       ? '这是已登录成员。昵称和头像如果来自账号资料，请到“我的资料”修改；训练参数可以在这里更新。'
@@ -180,6 +228,25 @@ export default function MemberDetailRoute() {
           statusMessage={savedMessage}
           submitLabel="保存成员"
         />
+      ) : null}
+
+      {!isLoading && member && member.role !== 'owner' ? (
+        <AppCard tone="soft">
+          <AppText variant="bodySmall" weight="900">
+            删除成员
+          </AppText>
+          <AppText tone="muted" variant="caption">
+            从训练小组移除该成员。历史训练记录保留在数据库，不会丢失。
+          </AppText>
+          <AppButton
+            disabled={isDeleting}
+            icon="trash-outline"
+            onPress={handleDelete}
+            variant="danger"
+          >
+            {isDeleting ? '删除中...' : '删除该成员'}
+          </AppButton>
+        </AppCard>
       ) : null}
 
       {!isLoading && !member ? (

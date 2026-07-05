@@ -1,8 +1,11 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { AppText } from '@/components/ui';
-import { colors, radius, spacing } from '@/theme';
+import { colors, spacing } from '@/theme';
+
+const ROLL_INTERVAL_MS = 8000;
 
 type HomeHeaderProps = {
   avatarLocalUri?: string;
@@ -10,9 +13,9 @@ type HomeHeaderProps = {
   avatarUrl?: string;
   displayName: string;
   onAvatarPress: () => void;
-  showStatusDot?: boolean;
   subtitle: string;
   title: string;
+  titlePool?: string[];
 };
 
 export function HomeHeader({
@@ -21,16 +24,14 @@ export function HomeHeader({
   avatarUrl,
   displayName,
   onAvatarPress,
-  showStatusDot = false,
   subtitle,
   title,
+  titlePool,
 }: HomeHeaderProps) {
   return (
     <View style={styles.header}>
       <View style={styles.headerText}>
-        <AppText numberOfLines={1} style={styles.title} variant="title" weight="900">
-          {title}
-        </AppText>
+        <RollingTitle baseTitle={title} pool={titlePool} />
         <AppText numberOfLines={1} tone="muted" variant="bodySmall">
           {subtitle}
         </AppText>
@@ -47,9 +48,48 @@ export function HomeHeader({
           name={displayName}
           size={38}
         />
-        {showStatusDot ? <View style={styles.statusDot} /> : null}
       </Pressable>
     </View>
+  );
+}
+
+function RollingTitle({ baseTitle, pool }: { baseTitle: string; pool?: string[] }) {
+  const titles = pool && pool.length > 1 ? pool : [baseTitle];
+  const [index, setIndex] = useState(() => {
+    if (titles.length <= 1) return 0;
+    const key = new Date().toDateString();
+    const score = key.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    return score % titles.length;
+  });
+  const [opacity] = useState(() => new Animated.Value(1));
+
+  useEffect(() => {
+    if (titles.length <= 1) return;
+
+    const timer = setInterval(() => {
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => {
+        setIndex((prev) => (prev + 1) % titles.length);
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, ROLL_INTERVAL_MS);
+
+    return () => clearInterval(timer);
+  }, [opacity, titles.length]);
+
+  return (
+    <Animated.View style={{ opacity }}>
+      <AppText numberOfLines={1} style={styles.title} variant="title" weight="900">
+        {titles[index] ?? baseTitle}
+      </AppText>
+    </Animated.View>
   );
 }
 
@@ -73,17 +113,6 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.82,
     transform: [{ scale: 0.98 }],
-  },
-  statusDot: {
-    backgroundColor: colors.primary,
-    borderColor: colors.surface,
-    borderRadius: radius.pill,
-    borderWidth: 2,
-    height: 12,
-    position: 'absolute',
-    right: -1,
-    top: -1,
-    width: 12,
   },
   title: {
     color: colors.textStrong,

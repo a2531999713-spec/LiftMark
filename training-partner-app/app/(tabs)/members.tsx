@@ -28,7 +28,6 @@ export default function MembersRoute() {
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
-  const [isOnlinePanelOpen, setOnlinePanelOpen] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -171,60 +170,13 @@ export default function MembersRoute() {
             </AppCard>
           )}
 
-          <AppCard style={styles.onlineCard} tone="soft">
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setOnlinePanelOpen((current) => !current)}
-              style={styles.onlineHeader}
-            >
-              <View style={styles.onlineTitle}>
-                <Ionicons color={colors.textMuted} name="cloud-outline" size={18} />
-                <AppText variant="bodySmall" weight="900">
-                  联机小组能力
-                </AppText>
-              </View>
-              <Ionicons color={colors.textMuted} name={isOnlinePanelOpen ? 'chevron-up' : 'chevron-down'} size={18} />
-            </Pressable>
-            {isOnlinePanelOpen ? (
-              <View style={styles.onlineBody}>
-                <AppText tone="muted" variant="caption">
-                  联机小组用于多设备协作，当前本机仍可记录多人训练。
-                </AppText>
-                <View style={styles.onlineActions}>
-                  <AppButton
-                    icon="share-social-outline"
-                    onPress={() =>
-                      group
-                        ? router.push({ pathname: '/group/invitations', params: { groupId: group.id } } as never)
-                        : setNotice({ title: '小组未就绪', message: '请稍后再试。' })
-                    }
-                    size="sm"
-                    style={styles.onlineAction}
-                    variant="secondary"
-                  >
-                    邀请成员
-                  </AppButton>
-                  <AppButton
-                    icon="enter-outline"
-                    onPress={() => router.push('/group/join' as never)}
-                    size="sm"
-                    style={styles.onlineAction}
-                    variant="secondary"
-                  >
-                    加入小组
-                  </AppButton>
-                  <AppButton
-                    icon="sync-outline"
-                    onPress={() => router.push('/profile/sync' as never)}
-                    size="sm"
-                    style={styles.onlineAction}
-                    variant="secondary"
-                  >
-                    同步状态
-                  </AppButton>
-                </View>
-              </View>
-            ) : null}
+          <AppCard style={styles.tipCard} tone="soft">
+            <View style={styles.tipRow}>
+              <Ionicons color={colors.textMuted} name="information-circle-outline" size={18} />
+              <AppText tone="muted" variant="caption">
+                点击成员可编辑参数；进入成员详情可删除非所有者成员。联机邀请和加入入口在账号面板的「训练小组」中。
+              </AppText>
+            </View>
           </AppCard>
 
           <AppModalSheet
@@ -398,31 +350,13 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     padding: spacing.md,
   },
-  onlineCard: {
-    gap: spacing.sm,
+  tipCard: {
     padding: spacing.md,
   },
-  onlineHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: 44,
-  },
-  onlineTitle: {
-    alignItems: 'center',
+  tipRow: {
+    alignItems: 'flex-start',
     flexDirection: 'row',
     gap: spacing.sm,
-  },
-  onlineBody: {
-    gap: spacing.md,
-  },
-  onlineActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  onlineAction: {
-    flexGrow: 1,
   },
   pressed: {
     opacity: 0.82,

@@ -7,4 +7,5 @@ export interface MemberRepository {
   createMember(input: CreateMemberInput): Promise<GroupMember>;
   updateMember(id: ID, patch: Partial<GroupMember>): Promise<GroupMember>;
   updateProfile(memberId: ID, patch: Partial<MemberProfile>): Promise<MemberProfile>;
+  deleteMember(memberId: ID): Promise<void>;
 }

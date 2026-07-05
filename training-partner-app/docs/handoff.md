@@ -1,5 +1,15 @@
 ﻿# LiftMark 项目交接记录
 
+## 2026-07-06 home-feedback-group-ux 交接
+
+- 首页右上角头像不再显示红点；`HomeHeader` 已移除 `showStatusDot` 属性和 `statusDot` 样式，红点之前仅表示登录状态，并非未读消息。
+- 首页标题改为滚动轮播：`HomeHeader` 新增 `RollingTitle` 子组件，从 `homeHeaderTitlePool` 每 8 秒淡入淡出切换，初始位置按日期哈希稳定选择；传入 `titlePool` 属性即可启用，不传则退化为静态标题。
+- 功能建议和问题反馈已合并为单一「反馈与建议」入口；账号面板内点击后弹出底部 `AppModalSheet`（`FeedbackSheet` 组件），用户在弹窗内切换类型并填写，不再切换面板模式。
+- `app/feedback.tsx` 独立页面同步改为合并表单（类型选择 + 内容 + 联系方式）。
+- 训练小组新增删除成员功能：`MemberRepository.deleteMember()` 软删除 `group_members` + `member_profiles`；成员详情页有删除按钮（danger），带二次确认和所有者保护。
+- 成员列表页（`app/(tabs)/members.tsx`）移除了折叠式「联机小组能力」区块，替换为提示卡，引导到账号面板「训练小组」入口做联机操作。
+- 已通过：`npm run typecheck`、`npm run lint`。
+
 ## 2026-07-05 紧凑首页与右上账号面板交接
 
 - 主导航当前为首页 / 计划 / 记录；`settings`、`members`、`explore` tab 保留文件但通过 `href: null` 隐藏。

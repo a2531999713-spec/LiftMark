@@ -1348,9 +1348,9 @@ export default function TodayRoute() {
             avatarUrl={avatarDisplay.avatarUrl}
             displayName={displayName}
             onAvatarPress={() => setAccountMenuVisible(true)}
-            showStatusDot={authStatus === 'authenticated'}
             subtitle={homeHeaderCopy.subtitle}
             title={homeHeaderCopy.title}
+            titlePool={homeHeaderTitlePool}
           />
 
           {authStatus === 'offline_authenticated' ? (
@@ -2604,113 +2604,4 @@ const styles = StyleSheet.create({
   sectionTop: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'space-between',
-  },
-  startCopy: {
-    flex: 1,
-    gap: 2,
-  },
-  startSection: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.md,
-    padding: spacing.md,
-    ...shadows.card,
-  },
-  summaryContent: {
-    gap: spacing.xs,
-    justifyContent: 'flex-end',
-    minHeight: 122,
-    padding: spacing.md,
-  },
-  summaryImage: {
-    opacity: 0.94,
-  },
-  summaryImageBackground: {
-    borderRadius: radius.lg,
-    minHeight: 122,
-    overflow: 'hidden',
-  },
-  summaryScrim: {
-    backgroundColor: 'rgba(1,12,22,0.58)',
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-  },
-  summarySubtitle: {
-    color: 'rgba(255,255,255,0.86)',
-  },
-  summaryFilterChip: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.68)',
-    borderColor: 'rgba(255, 255, 255, 0.24)',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.xxs,
-    minHeight: 32,
-    paddingHorizontal: spacing.sm,
-  },
-  summaryTitle: {
-    color: colors.surface,
-  },
-  summaryTopRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-    justifyContent: 'space-between',
-  },
-  todaySummary: {
-    gap: spacing.md,
-  },
-  weekChip: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    justifyContent: 'center',
-    minHeight: 34,
-    paddingHorizontal: spacing.md,
-  },
-  weekChipActive: {
-    backgroundColor: colors.primary,
-  },
-  weekChipText: {
-    color: colors.textMuted,
-  },
-  weekChipTextActive: {
-    color: colors.surface,
-  },
-  weekChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  weekGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-  },
-  weekTile: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    flexBasis: '47%',
-    flexGrow: 1,
-    gap: spacing.xs,
-    minHeight: 78,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.md,
-    ...shadows.card,
-  },
-  weeklySection: {
-    gap: spacing.md,
-  },
-});
+    g

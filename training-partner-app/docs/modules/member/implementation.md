@@ -90,6 +90,17 @@
 2. 保持输入输出可测试。
 3. 修改后同步相关模块和流程文档。
 
+### MemberRepository.deleteMember
+
+文件：`src/data/local/repositories/memberRepository.ts`  
+符号：`MemberRepository.deleteMember`  
+搜索锚点：`MemberRepository`  
+职责：软删除小组成员（设置 `group_members` 和 `member_profiles` 的 `deleted_at`）。  
+调用方：`app/member/[memberId].tsx`  
+依赖：group  
+测试：见 `test-plan.md`  
+约束：所有者（`role === 'owner'`）不可删除；删除后入队同步 `pending_delete`；历史训练记录不受影响（`listMembers` 已过滤 `deleted_at IS NULL`）。
+
 ### memberFormSchema
 
 文件：`src/domain/member/member.validation.ts`  
@@ -146,7 +157,7 @@
 ## 7. 高风险区域
 
 - 1RM 为空时不得阻塞进入 App，但建议重量必须显示“未设置 1RM”。
-- 成员删除策略待确认，不能破坏历史训练记录。
+- 成员删除已实现：软删除（deleted_at），所有者不可删除，历史训练记录不受影响。
 
 ## 8. 文档同步记录
 
