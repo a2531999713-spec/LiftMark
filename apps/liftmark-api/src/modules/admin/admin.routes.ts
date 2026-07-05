@@ -8,6 +8,7 @@ import { createActivationCode, createId } from '../../utils/ids';
 import { addDays, hashValue, verifyPassword } from '../../utils/security';
 import { signAccessToken, signRefreshToken } from '../../utils/tokens';
 import { grantMembership, toMembershipDto } from '../memberships/membership.service';
+import { registerAdminExtendedRoutes } from './admin.extended.routes';
 
 const adminLoginSchema = z.object({
   account: z.string().min(1),
@@ -265,5 +266,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       syncStates,
     };
   });
+
+  await registerAdminExtendedRoutes(app);
 }
 

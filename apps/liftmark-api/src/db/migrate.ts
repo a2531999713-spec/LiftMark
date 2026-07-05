@@ -536,6 +536,70 @@ async function ensureCloudSyncCompleteness(trx: Knex.Transaction) {
   await trx.raw('CREATE INDEX IF NOT EXISTS idx_settings_user_updated ON settings(user_id, updated_at DESC)');
 }
 
+async function createAdminAuditTables(trx: Knex.Transaction) {
+  // 后台操作审计日志（不可删除）
+  if (!(await trx.schema.hasTable('admin_audit_logs'))) {
+    await trx.schema.createTable('admin_audit_logs', (table) => {
+      table.string('id').primary();
+      table.string('operator_user_id').references('id').inTable('users').onDelete('SET NULL');
+      table.string('operator_name');
+      table.string('module').notNullable();
+      table.string('target_type').notNullable();
+      table.string('target_id').notNullable();
+      table.string('action').notNullable();
+      table.string('risk').notNullable().defaultTo('low');
+      table.string('reason');
+      table.specificType('before_snapshot', 'jsonb').defaultTo('{}');
+      table.specificType('after_snapshot', 'jsonb').defaultTo('{}');
+      table.string('ip');
+      table.string('device');
+      table.boolean('rollbackable').notNullable().defaultTo(false);
+      table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(trx.fn.now());
+    });
+    await trx.raw('CREATE INDEX IF NOT EXISTS idx_audit_logs_operator ON admin_audit_logs(operator_user_id, created_at DESC)');
+    await trx.raw('CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON admin_audit_logs(target_type, target_id, created_at DESC)');
+    await trx.raw('CREATE INDEX IF NOT EXISTS idx_audit_logs_module ON admin_audit_logs(module, created_at DESC)');
+  }
+
+  // 数据修正任务
+  if (!(await trx.schema.hasTable('admin_corrections'))) {
+    await trx.schema.createTable('admin_corrections', (table) => {
+      table.string('id').primary();
+      table.string('operator_user_id').references('id').inTable('users').onDelete('SET NULL');
+      table.string('operator_name');
+      table.string('target_type').notNullable();
+      table.string('target_id').notNullable();
+      table.string('target_user_id').references('id').inTable('users').onDelete('SET NULL');
+      table.string('field');
+      table.text('before_value');
+      table.text('after_value');
+      table.text('reason').notNullable();
+      table.boolean('sync_to_device').notNullable().defaultTo(false);
+      table.boolean('recompute').notNullable().defaultTo(false);
+      table.string('ticket_id');
+      table.string('status').notNullable().defaultTo('done');
+      table.timestamp('rolled_back_at', { useTz: true });
+      table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(trx.fn.now());
+      table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(trx.fn.now());
+    });
+    await trx.raw('CREATE INDEX IF NOT EXISTS idx_corrections_target ON admin_corrections(target_type, target_id, created_at DESC)');
+    await trx.raw('CREATE INDEX IF NOT EXISTS idx_corrections_user ON admin_corrections(target_user_id, created_at DESC)');
+  }
+
+  // 管理员备注
+  if (!(await trx.schema.hasTable('admin_user_notes'))) {
+    await trx.schema.createTable('admin_user_notes', (table) => {
+      table.string('id').primary();
+      table.string('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+      table.string('operator_user_id').references('id').inTable('users').onDelete('SET NULL');
+      table.string('operator_name');
+      table.text('content').notNullable();
+      table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(trx.fn.now());
+    });
+    await trx.raw('CREATE INDEX IF NOT EXISTS idx_user_notes_user ON admin_user_notes(user_id, created_at DESC)');
+  }
+}
+
 export async function migrate() {
   await ensureMigrationsTable();
   await runMigration('001_initial_cloud_schema', createInitialSchema);
@@ -545,6 +609,7 @@ export async function migrate() {
   await runMigration('005_group_invitations', createGroupInvitations);
   await runMigration('006_member_profile_avatar_fields', addMemberProfileAvatarFields);
   await runMigration('007_cloud_sync_completeness', ensureCloudSyncCompleteness);
+  await runMigration('008_admin_audit_tables', createAdminAuditTables);
 }
 
 if (require.main === module) {
