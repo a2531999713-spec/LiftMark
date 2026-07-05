@@ -132,12 +132,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       set(nextState);
       // 登录态恢复后异步修复本地数据归属（不阻塞 UI）
       if (nextState.user?.id) {
-        repairLocalDataOwnership().catch((error) => {
-          console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
-        });
-        sync({ fullPull: true }).catch((error) => {
-          console.warn('[auth] sync failed', error instanceof Error ? error.message : error);
-        });
+        // 先修复归属(修正小组owner_user_id), 完成后再同步(拉取训练数据)
+        repairLocalDataOwnership()
+          .then(() => sync({ fullPull: true }))
+          .catch((error) => {
+            console.warn('[auth] ownership repair or sync failed', error instanceof Error ? error.message : error);
+          });
       }
     } catch (error) {
       switchRuntimeAccountScope(null);
@@ -201,12 +201,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         hasSeenSyncPrompt: false,
       });
       // 登录后异步修复本地数据归属（不阻塞 UI）
-      repairLocalDataOwnership().catch((error) => {
-        console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
-      });
-      sync({ fullPull: true }).catch((error) => {
-        console.warn('[auth] sync failed', error instanceof Error ? error.message : error);
-      });
+      // 先修复归属(修正小组owner_user_id), 完成后再同步(拉取训练数据)
+      repairLocalDataOwnership()
+        .then(() => sync({ fullPull: true }))
+        .catch((error) => {
+          console.warn('[auth] ownership repair or sync failed', error instanceof Error ? error.message : error);
+        });
       return null;
     } finally {
       set({ isLoading: false });
@@ -238,12 +238,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         hasSeenSyncPrompt: false,
       });
       // 登录后异步修复本地数据归属（不阻塞 UI）
-      repairLocalDataOwnership().catch((error) => {
-        console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
-      });
-      sync({ fullPull: true }).catch((error) => {
-        console.warn('[auth] sync failed', error instanceof Error ? error.message : error);
-      });
+      // 先修复归属(修正小组owner_user_id), 完成后再同步(拉取训练数据)
+      repairLocalDataOwnership()
+        .then(() => sync({ fullPull: true }))
+        .catch((error) => {
+          console.warn('[auth] ownership repair or sync failed', error instanceof Error ? error.message : error);
+        });
       return null;
     } finally {
       set({ isLoading: false });
@@ -297,12 +297,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         hasSeenSyncPrompt: false,
       });
       // 注册后异步修复本地数据归属（不阻塞 UI）
-      repairLocalDataOwnership().catch((error) => {
-        console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
-      });
-      sync({ fullPull: true }).catch((error) => {
-        console.warn('[auth] sync failed', error instanceof Error ? error.message : error);
-      });
+      // 先修复归属(修正小组owner_user_id), 完成后再同步(拉取训练数据)
+      repairLocalDataOwnership()
+        .then(() => sync({ fullPull: true }))
+        .catch((error) => {
+          console.warn('[auth] ownership repair or sync failed', error instanceof Error ? error.message : error);
+        });
       return null;
     } finally {
       set({ isLoading: false });

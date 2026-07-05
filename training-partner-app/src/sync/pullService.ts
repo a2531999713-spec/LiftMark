@@ -728,6 +728,38 @@ export async function pullFromServer(
     }
   }
 
+  // Fix group ownership: any group referenced by pulled workout sessions
+  // should have owner_user_id = currentUserId (cloud data belongs to this account)
+  try {
+    const fixResult = await db.runAsync(
+      `UPDATE groups SET owner_user_id = ?
+       WHERE id IN (
+         SELECT DISTINCT group_id FROM workout_sessions
+         WHERE group_id IS NOT NULL AND group_id != ''
+           AND owner_user_id = ?
+       ) AND (owner_user_id IS NULL OR owner_user_id != ?)`,
+      currentUserId, currentUserId, currentUserId,
+    );
+    if (fixResult.changes && fixResult.changes > 0) {
+      console.log('[sync/pull] fixed group ownership for', fixResult.changes, 'groups ->', currentUserId);
+    }
+    // Also fix group_members ownership for members in these groups
+    const fixMembersResult = await db.runAsync(
+      `UPDATE group_members SET owner_user_id = ?
+       WHERE group_id IN (
+         SELECT DISTINCT group_id FROM workout_sessions
+         WHERE group_id IS NOT NULL AND group_id != ''
+           AND owner_user_id = ?
+       ) AND (owner_user_id IS NULL OR owner_user_id != ?)`,
+      currentUserId, currentUserId, currentUserId,
+    );
+    if (fixMembersResult.changes && fixMembersResult.changes > 0) {
+      console.log('[sync/pull] fixed group_members ownership for', fixMembersResult.changes, 'members ->', currentUserId);
+    }
+  } catch (error) {
+    console.error('[sync/pull] group ownership fix failed:', error instanceof Error ? error.message : error);
+  }
+
   await setLastPullAt(db, result.serverTime);
   console.log('[sync/pull] done, total applied:', pulled);
 
