@@ -56,19 +56,19 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    gap: spacing.lg,
-    padding: spacing.lg,
+    gap: spacing.sm,
+    padding: spacing.md,
     ...shadows.card,
   },
   iconBox: {
     alignItems: 'center',
     backgroundColor: colors.primarySoft,
-    borderRadius: radius.lg,
-    height: 64,
+    borderRadius: radius.md,
+    height: 46,
     justifyContent: 'center',
-    width: 64,
+    width: 46,
   },
   percent: {
     color: colors.primary,
@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
   progressTrack: {
     backgroundColor: colors.primarySoft,
     borderRadius: radius.pill,
-    height: 10,
+    height: 7,
     overflow: 'hidden',
   },
   textBlock: {
@@ -104,6 +104,6 @@ const styles = StyleSheet.create({
   topRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.lg,
+    gap: spacing.md,
   },
 });

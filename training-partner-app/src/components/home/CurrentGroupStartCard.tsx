@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { AppButton, AppText } from '@/components/ui';
@@ -14,7 +14,6 @@ type CurrentGroupStartCardProps = {
   isStarting?: boolean;
   members: GroupMember[];
   onStartPress: () => void;
-  onSwitchGroupPress: () => void;
   profiles: Record<string, MemberProfile | null>;
 };
 
@@ -26,11 +25,13 @@ export function CurrentGroupStartCard({
   isStarting = false,
   members,
   onStartPress,
-  onSwitchGroupPress,
   profiles,
 }: CurrentGroupStartCardProps) {
   const visibleMembers = members.slice(0, 3);
-  const names = members.slice(0, 2).map((member) => member.displayName).join('、');
+  const names = members
+    .slice(0, 2)
+    .map((member) => member.displayName)
+    .join('、');
   const overflowCount = Math.max(0, members.length - visibleMembers.length);
 
   return (
@@ -38,13 +39,13 @@ export function CurrentGroupStartCard({
       <View style={styles.groupSide}>
         <View style={styles.groupHeader}>
           <View style={styles.groupIcon}>
-            <Ionicons color={colors.primary} name="people-outline" size={25} />
+            <Ionicons color={colors.primary} name="people-outline" size={20} />
           </View>
           <View style={styles.groupText}>
             <AppText numberOfLines={1} variant="subtitle" weight="900">
               {groupName}
             </AppText>
-            <AppText numberOfLines={1} tone="muted" variant="bodySmall">
+            <AppText numberOfLines={1} tone="muted" variant="caption">
               {members.length} 位成员{names ? ` · ${names}` : ''}
             </AppText>
           </View>
@@ -65,7 +66,7 @@ export function CurrentGroupStartCard({
                 avatarThumbUrl={profiles[member.id]?.avatarThumbUrl}
                 avatarUrl={profiles[member.id]?.avatarUrl ?? member.avatarUrl}
                 name={member.displayName}
-                size={34}
+                size={30}
               />
             </View>
           ))}
@@ -76,12 +77,6 @@ export function CurrentGroupStartCard({
               </AppText>
             </View>
           ) : null}
-          <Pressable accessibilityRole="button" onPress={onSwitchGroupPress} style={styles.switchButton}>
-            <AppText tone="muted" variant="caption" weight="800">
-              切换小组
-            </AppText>
-            <Ionicons color={colors.textMuted} name="chevron-forward" size={13} />
-          </Pressable>
         </View>
       </View>
 
@@ -90,7 +85,7 @@ export function CurrentGroupStartCard({
         icon="play"
         loading={isStarting}
         onPress={onStartPress}
-        size="md"
+        size="sm"
         style={styles.startButton}
       >
         {buttonLabel}
@@ -104,34 +99,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
-    padding: spacing.lg,
+    padding: spacing.md,
     ...shadows.card,
   },
   groupHeader: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   groupIcon: {
     alignItems: 'center',
     backgroundColor: colors.primarySoft,
     borderRadius: radius.pill,
-    height: 54,
+    height: 40,
     justifyContent: 'center',
-    width: 54,
+    width: 40,
   },
   groupSide: {
     flex: 1,
-    gap: spacing.md,
+    gap: spacing.sm,
     minWidth: 0,
   },
   groupText: {
     flex: 1,
-    gap: spacing.xs,
+    gap: 2,
     minWidth: 0,
   },
   memberAvatar: {
@@ -144,7 +139,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   memberAvatarOverlap: {
-    marginLeft: -10,
+    marginLeft: -9,
   },
   memberRow: {
     alignItems: 'center',
@@ -156,19 +151,12 @@ const styles = StyleSheet.create({
     borderColor: colors.surface,
     borderRadius: radius.pill,
     borderWidth: 2,
-    height: 34,
+    height: 30,
     justifyContent: 'center',
-    width: 34,
+    width: 30,
   },
   startButton: {
-    maxWidth: 190,
-    minWidth: 150,
-  },
-  switchButton: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 2,
-    marginLeft: spacing.sm,
-    minHeight: 34,
+    maxWidth: 168,
+    minWidth: 142,
   },
 });

@@ -8,40 +8,44 @@ type HomeHeaderProps = {
   avatarLocalUri?: string;
   avatarThumbUrl?: string;
   avatarUrl?: string;
-  dateLabel: string;
   displayName: string;
-  greeting: string;
   onAvatarPress: () => void;
   showStatusDot?: boolean;
+  subtitle: string;
+  title: string;
 };
 
 export function HomeHeader({
   avatarLocalUri,
   avatarThumbUrl,
   avatarUrl,
-  dateLabel,
   displayName,
-  greeting,
   onAvatarPress,
   showStatusDot = false,
+  subtitle,
+  title,
 }: HomeHeaderProps) {
   return (
     <View style={styles.header}>
       <View style={styles.headerText}>
-        <AppText numberOfLines={1} style={styles.title} variant="display" weight="900">
-          {greeting}，{displayName} 👋
+        <AppText numberOfLines={1} style={styles.title} variant="headline" weight="900">
+          {title}
         </AppText>
-        <AppText tone="muted" variant="body">
-          {dateLabel}
+        <AppText numberOfLines={1} tone="muted" variant="bodySmall">
+          {subtitle}
         </AppText>
       </View>
-      <Pressable accessibilityRole="button" onPress={onAvatarPress} style={({ pressed }) => [styles.avatarButton, pressed && styles.pressed]}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onAvatarPress}
+        style={({ pressed }) => [styles.avatarButton, pressed && styles.pressed]}
+      >
         <Avatar
           avatarLocalUri={avatarLocalUri}
           avatarThumbUrl={avatarThumbUrl}
           avatarUrl={avatarUrl}
           name={displayName}
-          size={58}
+          size={40}
         />
         {showStatusDot ? <View style={styles.statusDot} /> : null}
       </Pressable>
@@ -56,13 +60,14 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.lg,
+    gap: spacing.md,
     justifyContent: 'space-between',
-    paddingTop: spacing.sm,
+    minHeight: 52,
+    paddingTop: spacing.xs,
   },
   headerText: {
     flex: 1,
-    gap: spacing.xs,
+    gap: 2,
     minWidth: 0,
   },
   pressed: {
@@ -73,12 +78,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderColor: colors.surface,
     borderRadius: radius.pill,
-    borderWidth: 3,
-    height: 17,
+    borderWidth: 2,
+    height: 12,
     position: 'absolute',
     right: -1,
-    top: -2,
-    width: 17,
+    top: -1,
+    width: 12,
   },
   title: {
     color: colors.textStrong,

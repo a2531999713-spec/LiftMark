@@ -1,13 +1,17 @@
 ﻿# LiftMark 项目交接记录
 
-## 2026-07-05 首页与账号入口重构交接
+## 2026-07-05 紧凑首页与右上账号面板交接
 
-- 主导航当前为首页 / 计划 / 记录；`settings` tab 保留文件但通过 `href: null` 隐藏。
-- 首页头像入口打开 `AccountMenuSheet`，菜单是轻量入口，不承载完整个人资料详情。
-- 个人资料详情页为 `/profile`，分组包含账号资料、小组与同步、偏好与权益、法务与支持。
-- 小组切换入口为 `/groups/switch`，复杂管理入口为 `/groups/manage`。
-- 隐私政策和用户协议入口迁移到 `/legal/privacy` 与 `/legal/terms`，当前内容为草案。
-- 昵称保存由 `updateDisplayNameAcrossLocalProfiles` 统一更新本地账号相关成员并进入同步队列。
+- 主导航当前为首页 / 计划 / 记录；`settings`、`members`、`explore` tab 保留文件但通过 `href: null` 隐藏。
+- 首页头像入口打开 `AccountPanel`，面板从右上头像附近展开，不再使用底部 `AccountMenuSheet`。
+- 首页头部使用训练语境文案，由当前计划日、训练重点、日期、周次和当前小组生成，不再显示“早上好 / 中午好 / 夜深了”等按小时问候。
+- 首页计划卡、训练 Hero、当前小组开始训练卡和今日重点列表已压缩；当前小组卡不承载管理成员或邀请成员职责。
+- `AccountPanel` 主菜单顶部头像 + 昵称摘要就是个人信息入口；不要再新增单独“个人资料”行。
+- 个人信息编辑在面板内完成，支持头像、昵称、年龄、性别、手机号、练刻 ID、会员和云同步状态；保存按钮仅在草稿变更后显示在右上角。
+- 昵称保存会更新 `account_profile_cache`、auth store 本地 user，以及当前账号绑定的本地成员名称；成员名称更新继续通过 `updateDisplayNameAcrossLocalProfiles` 入队。
+- “切换小组”和“管理小组与成员”合并为“训练小组”入口；子状态内可切换小组，并跳转 `/groups/manage` 或 `/profile/groups`。
+- 隐私政策和用户协议入口保留为 `/legal/privacy` 与 `/legal/terms`，当前内容为草案。
+- 本轮 APK release 构建通过；当前 emulator package service 报 `Can't find service: package`，导致安装、打开和截图验证阻塞。
 
 ## 2026-06-30 cloud-first-workout-history-stability 交接
 

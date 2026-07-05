@@ -452,6 +452,23 @@ export const migrations: Migration[] = [
       await ensureLocalSchemaCompatibility(db);
     },
   },
+  {
+    version: 14,
+    name: 'account_profile_demographics',
+    async up(db) {
+      const profileColumns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(account_profile_cache)',
+      );
+      const columnNames = new Set(profileColumns.map((column) => column.name));
+
+      if (!columnNames.has('age')) {
+        await db.execAsync('ALTER TABLE account_profile_cache ADD COLUMN age INTEGER;');
+      }
+      if (!columnNames.has('gender')) {
+        await db.execAsync('ALTER TABLE account_profile_cache ADD COLUMN gender TEXT;');
+      }
+    },
+  },
 ];
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {

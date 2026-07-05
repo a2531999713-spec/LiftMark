@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 
 import { liftmarkImages } from '@/assets/images';
-import { AccountMenuSheet } from '@/components/account';
+import { AccountPanel, type AccountProfileUpdate } from '@/components/account';
 import { AuthGateSheets } from '@/components/auth';
 import { Avatar } from '@/components/avatar';
 import {
@@ -44,8 +44,18 @@ import type {
   WorkoutSessionDetail,
 } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
-import { getAccountProfileCache, getAvatarDisplay, type AccountProfileCache } from '@/services/avatar';
+import {
+  deleteAccountAvatar,
+  getAccountProfileCache,
+  getAvatarDisplay,
+  syncAccountAvatarToLocalMemberProfiles,
+  updateAccountAvatarFromPicker,
+  updateAccountProfileDetails,
+  type AccountProfileCache,
+  type AvatarPickSource,
+} from '@/services/avatar';
 import { syncGroupMembersAvatar } from '@/services/memberSyncService';
+import { updateDisplayNameAcrossLocalProfiles } from '@/services/profileSyncService';
 import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
@@ -154,15 +164,6 @@ function getWeekEnd(date = new Date()): Date {
 function formatTodayDate(date = new Date()): string {
   const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
   return `${date.getMonth() + 1}月${date.getDate()}日 ${weekdays[date.getDay()]}`;
-}
-
-function getGreetingByHour(): string {
-  const hour = new Date().getHours();
-  if (hour < 6) return '夜深了';
-  if (hour < 11) return '早上好';
-  if (hour < 14) return '中午好';
-  if (hour < 18) return '下午好';
-  return '晚上好';
 }
 
 function maskPhone(phone?: string) {
@@ -431,6 +432,35 @@ function formatDayChoiceSubtitle(day: PlanDay): string {
   return [day.title, day.focus].filter(Boolean).join(' · ');
 }
 
+function buildHomeHeaderCopy(input: {
+  activePlanName?: string;
+  currentGroupName?: string;
+  focus?: string | null;
+  isRestState: boolean;
+  memberCount: number;
+  planDay?: PlanDay | null;
+  selectedWeek: number;
+}): { subtitle: string; title: string } {
+  const focus = input.focus?.trim();
+  const title = input.isRestState
+    ? '今日安排恢复'
+    : focus
+      ? `今天刻${focus}`
+      : input.planDay?.title?.trim() || '今天刻下一组';
+  const weekLabel = input.planDay
+    ? `第 ${input.planDay.week} 周 · ${formatDayChoiceTitle(input.planDay)}`
+    : `第 ${input.selectedWeek} 周`;
+  const planLabel = input.activePlanName ? `${input.activePlanName} · ${weekLabel}` : weekLabel;
+  const groupLabel = input.currentGroupName
+    ? `${input.currentGroupName} · ${input.memberCount} 人`
+    : '尚未选择训练小组';
+
+  return {
+    subtitle: `${formatTodayDate()} · ${planLabel} · ${groupLabel}`,
+    title,
+  };
+}
+
 function isSameWorkoutSelection(
   session: WorkoutSession,
   input: CreateSessionFromTodayPlanInput,
@@ -500,6 +530,7 @@ export default function TodayRoute() {
   const authStatus = useAuthStore((state) => state.authStatus);
   const membershipTier = useAuthStore((state) => state.membershipTier);
   const logout = useAuthStore((state) => state.logout);
+  const updateLocalUser = useAuthStore((state) => state.updateLocalUser);
   const user = useAuthStore((state) => state.user);
   const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
@@ -512,6 +543,7 @@ export default function TodayRoute() {
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [profiles, setProfiles] = useState<Record<string, MemberProfile | null>>({});
   const [group, setGroup] = useState<Group | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [accountProfile, setAccountProfile] = useState<AccountProfileCache | null>(null);
   const [lastPerformanceByExerciseId, setLastPerformanceByExerciseId] = useState<LastPerformanceMap>({});
   const [weeklyOverview, setWeeklyOverview] = useState<WeeklyOverview>(emptyWeeklyOverview);
@@ -540,6 +572,7 @@ export default function TodayRoute() {
       await initializeLocalDatabase();
       const latestUser = useAuthStore.getState().user;
       const allGroups = await repositories.groupRepository.listGroups();
+      setGroups(allGroups);
       const nextGroup = allGroups.find((item) => item.id === selectedGroupId) ?? allGroups[0] ?? null;
       if (!nextGroup) {
         setGroup(null);
@@ -1074,6 +1107,91 @@ export default function TodayRoute() {
     !todayPlan.isRestDay &&
     planExercises.length > 0,
   );
+  const homeHeaderCopy = buildHomeHeaderCopy({
+    activePlanName: activePlan?.name,
+    currentGroupName: group?.name,
+    focus: selectedPlanDay?.focus ?? mainFocus,
+    isRestState,
+    memberCount: members.length,
+    planDay: selectedPlanDay,
+    selectedWeek: selectedWeekValue,
+  });
+
+  const syncAccountProfileAvatarToMembers = useCallback(
+    async (profile: AccountProfileCache) => {
+      if (!user) return;
+      const syncResult = await syncAccountAvatarToLocalMemberProfiles({
+        avatarLocalUri: profile.avatarLocalUri,
+        avatarThumbUrl: profile.avatarThumbUrl,
+        avatarUpdatedAt: profile.avatarUpdatedAt,
+        avatarUrl: profile.avatarUrl,
+        fallbackMemberId: currentMember?.id,
+        userId: user.id,
+      });
+      if (Object.keys(syncResult.profilesByMemberId).length > 0) {
+        setProfiles((current) => ({ ...current, ...syncResult.profilesByMemberId }));
+      }
+    },
+    [currentMember?.id, user],
+  );
+
+  const saveAccountProfile = useCallback(
+    async (input: AccountProfileUpdate) => {
+      if (!user) {
+        throw new Error('请先登录后再修改资料。');
+      }
+      const nextDisplayName = input.displayName.trim();
+      const nextUser = { ...user, displayName: nextDisplayName };
+      const nextProfile = await updateAccountProfileDetails({
+        age: input.age,
+        displayName: nextDisplayName,
+        gender: input.gender,
+        user: nextUser,
+      });
+      await updateLocalUser({ displayName: nextDisplayName });
+      const { updatedMembers } = await updateDisplayNameAcrossLocalProfiles({
+        displayName: nextDisplayName,
+        fallbackGroupId: currentMember?.groupId,
+        fallbackMemberId: currentMember?.id,
+        userId: user.id,
+      });
+      if (updatedMembers.length > 0) {
+        setMembers((current) =>
+          current.map((member) => updatedMembers.find((updated) => updated.id === member.id) ?? member),
+        );
+      }
+      setAccountProfile(nextProfile);
+    },
+    [currentMember?.groupId, currentMember?.id, updateLocalUser, user],
+  );
+
+  const pickAccountAvatar = useCallback(
+    async (source: AvatarPickSource) => {
+      if (!user) {
+        throw new Error('请先登录后再修改头像。');
+      }
+      const result = await updateAccountAvatarFromPicker(user, source);
+      if (!result.ok) {
+        throw new Error(result.message);
+      }
+      setAccountProfile(result.profile);
+      await syncAccountProfileAvatarToMembers(result.profile);
+      if (result.message) {
+        setNotice({ title: '头像已更新', message: result.message });
+      }
+    },
+    [syncAccountProfileAvatarToMembers, user],
+  );
+
+  const removeAccountAvatar = useCallback(async () => {
+    if (!user) {
+      throw new Error('请先登录后再修改头像。');
+    }
+    const nextProfile = await deleteAccountAvatar(user);
+    setAccountProfile(nextProfile);
+    await syncAccountProfileAvatarToMembers(nextProfile);
+  }, [syncAccountProfileAvatarToMembers, user]);
+
   const navigateFromAccountMenu = useCallback((next: () => void) => {
     setAccountMenuVisible(false);
     next();
@@ -1106,11 +1224,11 @@ export default function TodayRoute() {
             avatarLocalUri={avatarDisplay.avatarLocalUri}
             avatarThumbUrl={avatarDisplay.avatarThumbUrl}
             avatarUrl={avatarDisplay.avatarUrl}
-            dateLabel={formatTodayDate()}
             displayName={displayName}
-            greeting={getGreetingByHour()}
             onAvatarPress={() => setAccountMenuVisible(true)}
             showStatusDot={authStatus === 'authenticated'}
+            subtitle={homeHeaderCopy.subtitle}
+            title={homeHeaderCopy.title}
           />
 
           {authStatus === 'offline_authenticated' ? (
@@ -1218,7 +1336,6 @@ export default function TodayRoute() {
                   isStarting={isStarting}
                   members={members}
                   onStartPress={() => void openWorkoutScope()}
-                  onSwitchGroupPress={() => router.push('/groups/switch' as never)}
                   profiles={profiles}
                 />
               ) : null}
@@ -1236,31 +1353,43 @@ export default function TodayRoute() {
         </>
       ) : null}
 
-      <AccountMenuSheet
-        avatarLocalUri={avatarDisplay.avatarLocalUri}
-        avatarThumbUrl={avatarDisplay.avatarThumbUrl}
-        avatarUrl={avatarDisplay.avatarUrl}
-        displayName={displayName}
-        liftmarkId={liftmarkId}
-        membershipLabel={membershipLabel}
-        onAboutPress={() => navigateFromAccountMenu(() => router.push('/about' as never))}
-        onBackupPress={() => navigateFromAccountMenu(() => router.push('/backup' as never))}
-        onClose={() => setAccountMenuVisible(false)}
-        onFeedbackPress={() => navigateFromAccountMenu(() => router.push('/feedback' as never))}
-        onLogoutPress={confirmLogout}
-        onManageGroupPress={() => navigateFromAccountMenu(() => router.push('/groups/manage' as never))}
-        onMembershipPress={() => navigateFromAccountMenu(() => router.push('/profile/membership' as never))}
-        onPlanPress={() => navigateFromAccountMenu(() => router.push('/(tabs)/plan'))}
-        onPreferencesPress={() => navigateFromAccountMenu(() => router.push('/preferences' as never))}
-        onPrivacyPress={() => navigateFromAccountMenu(() => router.push('/legal/privacy' as never))}
-        onProfilePress={() => navigateFromAccountMenu(() => router.push('/profile' as never))}
-        onSwitchGroupPress={() => navigateFromAccountMenu(() => router.push('/groups/switch' as never))}
-        onSyncPress={() => navigateFromAccountMenu(() => router.push('/sync' as never))}
-        onTermsPress={() => navigateFromAccountMenu(() => router.push('/legal/terms' as never))}
-        phoneMasked={phoneMasked}
-        syncLabel={syncLabel}
-        visible={isAccountMenuVisible}
-      />
+      {isAccountMenuVisible ? (
+        <AccountPanel
+          accountProfile={accountProfile}
+          activePlanName={activePlan?.name}
+          avatarLocalUri={avatarDisplay.avatarLocalUri}
+          avatarThumbUrl={avatarDisplay.avatarThumbUrl}
+          avatarUrl={avatarDisplay.avatarUrl}
+          currentGroup={group}
+          currentMemberId={currentMember?.id}
+          displayName={displayName}
+          groups={groups}
+          liftmarkId={liftmarkId}
+          membershipLabel={membershipLabel}
+          members={members}
+          onAboutPress={() => navigateFromAccountMenu(() => router.push('/about' as never))}
+          onAvatarPick={pickAccountAvatar}
+          onAvatarRemove={removeAccountAvatar}
+          onBackupPress={() => navigateFromAccountMenu(() => router.push('/backup' as never))}
+          onClose={() => setAccountMenuVisible(false)}
+          onCreateGroupPress={() => navigateFromAccountMenu(() => router.push('/profile/groups' as never))}
+          onFeedbackPress={() => navigateFromAccountMenu(() => router.push('/feedback' as never))}
+          onGroupSettingsPress={() => navigateFromAccountMenu(() => router.push('/profile/groups' as never))}
+          onLogoutPress={confirmLogout}
+          onManageMembersPress={() => navigateFromAccountMenu(() => router.push('/groups/manage' as never))}
+          onMembershipPress={() => navigateFromAccountMenu(() => router.push('/profile/membership' as never))}
+          onPlanPress={() => navigateFromAccountMenu(() => router.push('/(tabs)/plan'))}
+          onPreferencesPress={() => navigateFromAccountMenu(() => router.push('/preferences' as never))}
+          onPrivacyPress={() => navigateFromAccountMenu(() => router.push('/legal/privacy' as never))}
+          onSaveProfile={saveAccountProfile}
+          onSelectGroup={setSelectedGroupId}
+          onSyncPress={() => navigateFromAccountMenu(() => router.push('/sync' as never))}
+          onTermsPress={() => navigateFromAccountMenu(() => router.push('/legal/terms' as never))}
+          phoneMasked={phoneMasked}
+          syncLabel={syncLabel}
+          visible
+        />
+      ) : null}
 
       <PlanDayPickerSheet
         days={planDays}
@@ -2276,7 +2405,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   screenContent: {
-    gap: spacing.lg,
+    gap: spacing.md,
     paddingBottom: spacing.xxxxl,
   },
   scopeHint: {

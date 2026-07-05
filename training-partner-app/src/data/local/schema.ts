@@ -313,6 +313,8 @@ CREATE TABLE IF NOT EXISTS account_profile_cache (
   display_name TEXT,
   phone_masked TEXT,
   liftmark_id TEXT,
+  age INTEGER,
+  gender TEXT,
   avatar_url TEXT,
   avatar_thumb_url TEXT,
   avatar_local_uri TEXT,

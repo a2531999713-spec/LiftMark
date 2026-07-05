@@ -23,21 +23,21 @@ export function TodayFocusList({ items, onItemPress, onOpenAll }: TodayFocusList
   return (
     <View style={styles.section}>
       <View style={styles.header}>
-        <AppText style={styles.heading} variant="title" weight="900">
+        <AppText style={styles.heading} variant="subtitle" weight="900">
           今日重点
         </AppText>
         <Pressable accessibilityRole="button" onPress={onOpenAll} style={styles.headerAction}>
-          <AppText tone="muted" variant="bodySmall" weight="800">
+          <AppText tone="muted" variant="caption" weight="800">
             查看全部
           </AppText>
-          <Ionicons color={colors.textMuted} name="chevron-forward" size={17} />
+          <Ionicons color={colors.textMuted} name="chevron-forward" size={15} />
         </Pressable>
       </View>
 
       <View style={styles.card}>
         {items.length === 0 ? (
           <View style={styles.emptyRow}>
-            <Ionicons color={colors.textMuted} name="barbell-outline" size={22} />
+            <Ionicons color={colors.textMuted} name="barbell-outline" size={20} />
             <AppText tone="muted" variant="bodySmall">
               今日没有需要执行的重点动作。
             </AppText>
@@ -55,15 +55,15 @@ export function TodayFocusList({ items, onItemPress, onOpenAll }: TodayFocusList
               ]}
             >
               <View style={styles.thumbnail}>
-                <Ionicons color={colors.textStrong} name="barbell-outline" size={23} />
+                <Ionicons color={colors.textStrong} name="barbell-outline" size={20} />
               </View>
               <View style={styles.textBlock}>
-                <AppText numberOfLines={1} style={styles.exerciseName} variant="subtitle" weight="900">
+                <AppText numberOfLines={1} style={styles.exerciseName} variant="bodySmall" weight="900">
                   {item.name}
                 </AppText>
                 <View style={styles.prescriptionRow}>
                   <PriorityBadge priority={item.priority} />
-                  <AppText numberOfLines={1} tone="muted" variant="bodySmall">
+                  <AppText numberOfLines={1} tone="muted" variant="caption">
                     {item.prescription}
                   </AppText>
                 </View>
@@ -75,7 +75,7 @@ export function TodayFocusList({ items, onItemPress, onOpenAll }: TodayFocusList
                   </AppText>
                 </View>
               ) : null}
-              <Ionicons color={colors.textMuted} name="chevron-forward" size={20} />
+              <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
             </Pressable>
           ))
         )}
@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     borderWidth: 1,
     overflow: 'hidden',
     ...shadows.card,
@@ -110,8 +110,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
-    minHeight: 76,
-    padding: spacing.lg,
+    minHeight: 64,
+    padding: spacing.md,
   },
   exerciseName: {
     color: colors.textStrong,
@@ -132,9 +132,9 @@ const styles = StyleSheet.create({
   lastBadge: {
     backgroundColor: colors.primarySoft,
     borderRadius: radius.sm,
-    maxWidth: 128,
+    maxWidth: 106,
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingVertical: 3,
   },
   lastRow: {
     borderBottomWidth: 0,
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
   prescriptionRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   pressed: {
     opacity: 0.82,
@@ -153,34 +153,34 @@ const styles = StyleSheet.create({
   priorityBadge: {
     alignItems: 'center',
     borderRadius: radius.pill,
-    height: 22,
+    height: 19,
     justifyContent: 'center',
-    width: 32,
+    width: 28,
   },
   row: {
     alignItems: 'center',
     borderBottomColor: colors.border,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    gap: spacing.md,
-    minHeight: 90,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    gap: spacing.sm,
+    minHeight: 70,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   section: {
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   textBlock: {
     flex: 1,
-    gap: spacing.sm,
+    gap: spacing.xs,
     minWidth: 0,
   },
   thumbnail: {
     alignItems: 'center',
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.md,
-    height: 64,
+    height: 48,
     justifyContent: 'center',
-    width: 64,
+    width: 48,
   },
 });

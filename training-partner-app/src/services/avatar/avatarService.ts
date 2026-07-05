@@ -17,11 +17,13 @@ import {
 import { uploadAccountAvatar } from './avatarUploadService';
 
 type AccountProfileRow = {
+  age: number | null;
   avatar_local_uri: string | null;
   avatar_thumb_url: string | null;
   avatar_updated_at: string | null;
   avatar_url: string | null;
   display_name: string | null;
+  gender: AccountProfileCache['gender'] | null;
   liftmark_id: string | null;
   phone_masked: string | null;
   updated_at: string;
@@ -36,16 +38,49 @@ function maskPhone(phone?: string) {
 
 function mapAccountProfile(row: AccountProfileRow): AccountProfileCache {
   return {
+    age: row.age ?? undefined,
     avatarLocalUri: row.avatar_local_uri ?? undefined,
     avatarThumbUrl: resolveAvatarUrl(row.avatar_thumb_url),
     avatarUpdatedAt: row.avatar_updated_at ?? undefined,
     avatarUrl: resolveAvatarUrl(row.avatar_url),
     displayName: row.display_name ?? undefined,
+    gender: row.gender ?? undefined,
     liftmarkId: row.liftmark_id ?? undefined,
     phoneMasked: row.phone_masked ?? undefined,
     updatedAt: row.updated_at,
     userId: row.user_id,
   };
+}
+
+async function ensureAccountProfileCacheTable() {
+  await initializeLocalDatabase();
+  const db = await getDatabase();
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS account_profile_cache (
+      user_id TEXT PRIMARY KEY NOT NULL,
+      display_name TEXT,
+      phone_masked TEXT,
+      liftmark_id TEXT,
+      age INTEGER,
+      gender TEXT,
+      avatar_url TEXT,
+      avatar_thumb_url TEXT,
+      avatar_local_uri TEXT,
+      avatar_updated_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(account_profile_cache)');
+  const names = new Set(columns.map((column) => column.name));
+  if (!names.has('age')) {
+    await db.execAsync('ALTER TABLE account_profile_cache ADD COLUMN age INTEGER;');
+  }
+  if (!names.has('gender')) {
+    await db.execAsync('ALTER TABLE account_profile_cache ADD COLUMN gender TEXT;');
+  }
+
+  return db;
 }
 
 function isSupportedImage(asset: ImagePicker.ImagePickerAsset) {
@@ -156,21 +191,7 @@ async function pickImage(source: AvatarPickSource) {
 }
 
 export async function getAccountProfileCache(userId: string): Promise<AccountProfileCache | null> {
-  await initializeLocalDatabase();
-  const db = await getDatabase();
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS account_profile_cache (
-      user_id TEXT PRIMARY KEY NOT NULL,
-      display_name TEXT,
-      phone_masked TEXT,
-      liftmark_id TEXT,
-      avatar_url TEXT,
-      avatar_thumb_url TEXT,
-      avatar_local_uri TEXT,
-      avatar_updated_at TEXT,
-      updated_at TEXT NOT NULL
-    );
-  `);
+  const db = await ensureAccountProfileCacheTable();
   const row = await db.getFirstAsync<AccountProfileRow>(
     'SELECT * FROM account_profile_cache WHERE user_id = ?',
     userId,
@@ -179,34 +200,25 @@ export async function getAccountProfileCache(userId: string): Promise<AccountPro
 }
 
 export async function upsertAccountProfileCache(input: {
+  age?: number;
   avatarLocalUri?: string;
   avatarThumbUrl?: string;
   avatarUpdatedAt?: string;
   avatarUrl?: string;
+  gender?: AccountProfileCache['gender'];
   user: AuthUser;
 }): Promise<AccountProfileCache> {
-  await initializeLocalDatabase();
-  const db = await getDatabase();
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS account_profile_cache (
-      user_id TEXT PRIMARY KEY NOT NULL,
-      display_name TEXT,
-      phone_masked TEXT,
-      liftmark_id TEXT,
-      avatar_url TEXT,
-      avatar_thumb_url TEXT,
-      avatar_local_uri TEXT,
-      avatar_updated_at TEXT,
-      updated_at TEXT NOT NULL
-    );
-  `);
+  const db = await ensureAccountProfileCacheTable();
+  const existing = await getAccountProfileCache(input.user.id);
   const updatedAt = new Date().toISOString();
   const profile: AccountProfileCache = {
+    age: input.age ?? existing?.age,
     avatarLocalUri: input.avatarLocalUri,
     avatarThumbUrl: input.avatarThumbUrl,
     avatarUpdatedAt: input.avatarUpdatedAt,
     avatarUrl: input.avatarUrl,
     displayName: input.user.displayName,
+    gender: input.gender ?? existing?.gender,
     liftmarkId: input.user.liftmarkId,
     phoneMasked: maskPhone(input.user.phone),
     updatedAt,
@@ -215,13 +227,70 @@ export async function upsertAccountProfileCache(input: {
 
   await db.runAsync(
     `INSERT INTO account_profile_cache (
-       user_id, display_name, phone_masked, liftmark_id, avatar_url,
-       avatar_thumb_url, avatar_local_uri, avatar_updated_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     user_id, display_name, phone_masked, liftmark_id, avatar_url,
+       avatar_thumb_url, avatar_local_uri, avatar_updated_at, age, gender, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET
        display_name = excluded.display_name,
        phone_masked = excluded.phone_masked,
        liftmark_id = excluded.liftmark_id,
+       avatar_url = excluded.avatar_url,
+       avatar_thumb_url = excluded.avatar_thumb_url,
+       avatar_local_uri = excluded.avatar_local_uri,
+       avatar_updated_at = excluded.avatar_updated_at,
+       age = COALESCE(excluded.age, account_profile_cache.age),
+       gender = COALESCE(excluded.gender, account_profile_cache.gender),
+       updated_at = excluded.updated_at`,
+    profile.userId,
+    profile.displayName ?? null,
+    profile.phoneMasked ?? null,
+    profile.liftmarkId ?? null,
+    profile.avatarUrl ?? null,
+    profile.avatarThumbUrl ?? null,
+    profile.avatarLocalUri ?? null,
+    profile.avatarUpdatedAt ?? null,
+    profile.age ?? null,
+    profile.gender ?? null,
+    profile.updatedAt,
+  );
+
+  return profile;
+}
+
+export async function updateAccountProfileDetails(input: {
+  age?: number;
+  displayName: string;
+  gender?: AccountProfileCache['gender'];
+  user: AuthUser;
+}): Promise<AccountProfileCache> {
+  const db = await ensureAccountProfileCacheTable();
+  const existing = await getAccountProfileCache(input.user.id);
+  const updatedAt = new Date().toISOString();
+  const profile: AccountProfileCache = {
+    age: input.age,
+    avatarLocalUri: existing?.avatarLocalUri,
+    avatarThumbUrl: existing?.avatarThumbUrl,
+    avatarUpdatedAt: existing?.avatarUpdatedAt,
+    avatarUrl: existing?.avatarUrl ?? input.user.avatarUrl,
+    displayName: input.displayName,
+    gender: input.gender,
+    liftmarkId: existing?.liftmarkId ?? input.user.liftmarkId,
+    phoneMasked: existing?.phoneMasked ?? maskPhone(input.user.phone),
+    updatedAt,
+    userId: input.user.id,
+  };
+
+  await db.runAsync(
+    `INSERT INTO account_profile_cache (
+       user_id, display_name, phone_masked, liftmark_id, age, gender, avatar_url,
+       avatar_thumb_url, avatar_local_uri, avatar_updated_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       display_name = excluded.display_name,
+       phone_masked = excluded.phone_masked,
+       liftmark_id = excluded.liftmark_id,
+       age = excluded.age,
+       gender = excluded.gender,
        avatar_url = excluded.avatar_url,
        avatar_thumb_url = excluded.avatar_thumb_url,
        avatar_local_uri = excluded.avatar_local_uri,
@@ -231,6 +300,8 @@ export async function upsertAccountProfileCache(input: {
     profile.displayName ?? null,
     profile.phoneMasked ?? null,
     profile.liftmarkId ?? null,
+    profile.age ?? null,
+    profile.gender ?? null,
     profile.avatarUrl ?? null,
     profile.avatarThumbUrl ?? null,
     profile.avatarLocalUri ?? null,

@@ -45,7 +45,7 @@ export function TodayTrainingHero({
           </View>
 
           <View style={styles.titleBlock}>
-            <AppText numberOfLines={2} style={styles.title} variant="display" weight="900">
+            <AppText numberOfLines={2} style={styles.title} variant="headline" weight="900">
               {title}
             </AppText>
             <AppText numberOfLines={1} style={styles.subtitle} variant="subtitle" weight="800">
@@ -73,7 +73,7 @@ export function TodayTrainingHero({
 
 const styles = StyleSheet.create({
   background: {
-    minHeight: 230,
+    minHeight: 168,
   },
   card: {
     backgroundColor: colors.dark,
@@ -84,8 +84,8 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'space-between',
-    minHeight: 230,
-    padding: spacing.lg,
+    minHeight: 168,
+    padding: spacing.md,
   },
   image: {
     opacity: 0.9,
@@ -93,8 +93,8 @@ const styles = StyleSheet.create({
   label: {
     backgroundColor: colors.primary,
     borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   metricDivider: {
     borderLeftColor: colors.borderStrong,
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     flexDirection: 'row',
     paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
   },
   scrim: {
     backgroundColor: 'rgba(5,14,24,0.64)',
@@ -135,15 +135,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   title: {
     color: colors.surface,
   },
   titleBlock: {
     gap: spacing.sm,
-    marginVertical: spacing.xl,
+    marginVertical: spacing.md,
   },
   topRow: {
     alignItems: 'center',

@@ -1,11 +1,13 @@
 export type AvatarOwnerType = 'account' | 'member';
 
 export type AccountProfileCache = {
+  age?: number;
   avatarLocalUri?: string;
   avatarThumbUrl?: string;
   avatarUpdatedAt?: string;
   avatarUrl?: string;
   displayName?: string;
+  gender?: 'female' | 'male' | 'other' | 'unspecified';
   liftmarkId?: string;
   phoneMasked?: string;
   updatedAt: string;
