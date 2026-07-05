@@ -1,5 +1,14 @@
 # 变更记录
 
+## 2026-07-05 - account-data-isolation-fix
+
+### 账户数据隔离修复
+- 修复账户数据串号问题：188 账号登录后拉取同步会错误覆盖 176 账号的数据归属，导致 188 显示 176 的全部数据、176 反而看不到自己的数据。
+- `profileSyncService.ts` 的 `syncServerDataToLocal()` 不再无条件覆盖 `group_members`、`member_profiles` 的 `owner_user_id`，改为 `COALESCE` 只填充 NULL；新增行的归属以成员对应的 `user_id` 为准，而非拉取者。
+- 服务端 `profileSync.routes.ts` 的 `/sync/groups-pull` 接口返回新增 `ownerUserId` 字段，让客户端能正确判断小组真实归属。
+- 新增 migration 16 `fix_account_ownership`：App 启动时自动修正存量数据归属，包括 `group_members`、`member_profiles`、`workout_sessions`、`workout_exercise_records`、`workout_sets`、`plan_templates`、`plan_days`、`plan_exercises`、`body_metrics`、`body_metric_goals` 的 `owner_user_id` 回填与纠错。
+- 部署顺序：先更新服务器后端，再发布 App 更新；用户更新 App 后启动自动完成数据修复，无需手动操作。
+
 ## 2026-07-05 - home-account-panel-refinement
 
 - 首页左上角改为短训练文案池，按日期稳定选择，不再显示机械问候或把今日训练标题放在 Header。

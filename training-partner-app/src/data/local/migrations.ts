@@ -516,6 +516,148 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 16,
+    name: 'fix_account_ownership',
+    async up(db) {
+      // 1. group_members: 以 user_id 为准修正归属（回填 NULL + 修正被错误覆盖的）
+      await db.execAsync(`
+        UPDATE group_members
+        SET owner_user_id = user_id
+        WHERE user_id IS NOT NULL AND user_id != ''
+          AND (owner_user_id IS NULL OR owner_user_id != user_id);
+      `);
+
+      // 2. member_profiles: 继承对应 group_members 的 user_id
+      await db.execAsync(`
+        UPDATE member_profiles
+        SET owner_user_id = (
+          SELECT gm.user_id FROM group_members gm WHERE gm.id = member_profiles.member_id
+        )
+        WHERE EXISTS (
+          SELECT 1 FROM group_members gm
+          WHERE gm.id = member_profiles.member_id
+            AND gm.user_id IS NOT NULL AND gm.user_id != ''
+            AND (member_profiles.owner_user_id IS NULL OR member_profiles.owner_user_id != gm.user_id)
+        );
+      `);
+
+      // 3. workout_sessions: NULL 归属回填为小组 owner_user_id
+      await db.execAsync(`
+        UPDATE workout_sessions
+        SET owner_user_id = (
+          SELECT g.owner_user_id FROM groups g WHERE g.id = workout_sessions.group_id
+        )
+        WHERE owner_user_id IS NULL
+          AND EXISTS (
+            SELECT 1 FROM groups g
+            WHERE g.id = workout_sessions.group_id AND g.owner_user_id IS NOT NULL
+          );
+      `);
+
+      // 4. workout_exercise_records: NULL 归属回填为对应 session 的小组 owner_user_id
+      await db.execAsync(`
+        UPDATE workout_exercise_records
+        SET owner_user_id = (
+          SELECT g.owner_user_id
+          FROM groups g
+          INNER JOIN workout_sessions ws ON ws.group_id = g.id
+          WHERE ws.id = workout_exercise_records.session_id
+        )
+        WHERE owner_user_id IS NULL
+          AND EXISTS (
+            SELECT 1 FROM groups g
+            INNER JOIN workout_sessions ws ON ws.group_id = g.id
+            WHERE ws.id = workout_exercise_records.session_id AND g.owner_user_id IS NOT NULL
+          );
+      `);
+
+      // 5. workout_sets: NULL 归属回填
+      await db.execAsync(`
+        UPDATE workout_sets
+        SET owner_user_id = (
+          SELECT g.owner_user_id
+          FROM groups g
+          INNER JOIN workout_sessions ws ON ws.group_id = g.id
+          WHERE ws.id = workout_sets.session_id
+        )
+        WHERE owner_user_id IS NULL
+          AND EXISTS (
+            SELECT 1 FROM groups g
+            INNER JOIN workout_sessions ws ON ws.group_id = g.id
+            WHERE ws.id = workout_sets.session_id AND g.owner_user_id IS NOT NULL
+          );
+      `);
+
+      // 6. plan_templates: NULL 归属回填为 creator_id
+      await db.execAsync(`
+        UPDATE plan_templates
+        SET owner_user_id = creator_id
+        WHERE owner_user_id IS NULL AND creator_id IS NOT NULL AND creator_id != '';
+      `);
+
+      // 7. plan_days: NULL 归属回填为对应 plan 的归属
+      await db.execAsync(`
+        UPDATE plan_days
+        SET owner_user_id = (
+          SELECT COALESCE(pt.owner_user_id, pt.creator_id)
+          FROM plan_templates pt WHERE pt.id = plan_days.plan_id
+        )
+        WHERE owner_user_id IS NULL
+          AND EXISTS (
+            SELECT 1 FROM plan_templates pt
+            WHERE pt.id = plan_days.plan_id
+              AND COALESCE(pt.owner_user_id, pt.creator_id) IS NOT NULL
+          );
+      `);
+
+      // 8. plan_exercises: NULL 归属回填
+      await db.execAsync(`
+        UPDATE plan_exercises
+        SET owner_user_id = (
+          SELECT COALESCE(pt.owner_user_id, pt.creator_id)
+          FROM plan_templates pt
+          INNER JOIN plan_days pd ON pd.plan_id = pt.id
+          WHERE pd.id = plan_exercises.plan_day_id
+        )
+        WHERE owner_user_id IS NULL
+          AND EXISTS (
+            SELECT 1 FROM plan_templates pt
+            INNER JOIN plan_days pd ON pd.plan_id = pt.id
+            WHERE pd.id = plan_exercises.plan_day_id
+              AND COALESCE(pt.owner_user_id, pt.creator_id) IS NOT NULL
+          );
+      `);
+
+      // 9. body_metrics: NULL 归属回填为对应 member 的 user_id
+      await db.execAsync(`
+        UPDATE body_metrics
+        SET owner_user_id = (
+          SELECT gm.user_id FROM group_members gm WHERE gm.id = body_metrics.member_id
+        )
+        WHERE owner_user_id IS NULL
+          AND EXISTS (
+            SELECT 1 FROM group_members gm
+            WHERE gm.id = body_metrics.member_id
+              AND gm.user_id IS NOT NULL AND gm.user_id != ''
+          );
+      `);
+
+      // 10. body_metric_goals: NULL 归属回填
+      await db.execAsync(`
+        UPDATE body_metric_goals
+        SET owner_user_id = (
+          SELECT gm.user_id FROM group_members gm WHERE gm.id = body_metric_goals.member_id
+        )
+        WHERE owner_user_id IS NULL
+          AND EXISTS (
+            SELECT 1 FROM group_members gm
+            WHERE gm.id = body_metric_goals.member_id
+              AND gm.user_id IS NOT NULL AND gm.user_id != ''
+          );
+      `);
+    },
+  },
 ];
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {

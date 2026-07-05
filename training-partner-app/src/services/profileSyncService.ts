@@ -297,6 +297,7 @@ export async function pullGroupsAndMembers(): Promise<{
   groups: {
     id: string;
     name: string;
+    ownerUserId?: string | null;
     role: string;
     members: {
       id: string;
@@ -379,23 +380,26 @@ export async function syncServerDataToLocal(): Promise<void> {
     }
 
     if (!existingGroup) {
-      // 创建小组
+      // 创建小组（归属以服务端为准，防止跨账号拉取时错填归属）
+      const groupOwnerUserId = serverGroup.ownerUserId ?? currentUserId;
       await db.runAsync(
         `INSERT INTO groups (id, name, owner_user_id, active_plan_id, current_phase_type, current_week, friday_enabled, friday_strategy, created_at, updated_at)
          VALUES (?, ?, ?, '', 'strength', 1, 0, 'default_rest', ?, ?)`,
         serverGroup.id,
         serverGroup.name,
-        currentUserId,
+        groupOwnerUserId,
         now,
         now
       );
     } else {
+      // 更新小组（不覆盖已有归属，只填充 NULL）
+      const groupOwnerUserId = serverGroup.ownerUserId ?? currentUserId;
       await db.runAsync(
         `UPDATE groups
          SET name = ?, owner_user_id = COALESCE(owner_user_id, ?), updated_at = ?
          WHERE id = ?`,
         serverGroup.name,
-        currentUserId,
+        groupOwnerUserId,
         now,
         serverGroup.id,
       );
@@ -417,14 +421,15 @@ export async function syncServerDataToLocal(): Promise<void> {
       );
 
       if (!existingMember) {
-        // 创建成员
+        // 创建成员（归属以成员对应的账号为准，防止跨账号拉取时错填归属）
+        const memberOwnerUserId = serverMember.userId ?? currentUserId;
         await db.runAsync(
           `INSERT INTO group_members (
             id, owner_user_id, group_id, display_name, user_id, member_type, local_member_id,
             role, avatar_url, joined_at, created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, 'real', NULL, ?, ?, ?, ?, ?)`,
           serverMember.id,
-          currentUserId,
+          memberOwnerUserId,
           serverGroup.id,
           serverMember.displayName ?? serverMember.nickname,
           serverMember.userId,
@@ -435,12 +440,13 @@ export async function syncServerDataToLocal(): Promise<void> {
           now
         );
       } else {
-        // 更新成员头像
+        // 更新成员（不覆盖已有归属，只填充 NULL，防止跨账号拉取时抢夺归属）
+        const memberOwnerUserId = serverMember.userId ?? currentUserId;
         await db.runAsync(
           `UPDATE group_members
-           SET owner_user_id = ?, display_name = ?, user_id = ?, member_type = 'real', avatar_url = ?, updated_at = ?
+           SET owner_user_id = COALESCE(owner_user_id, ?), display_name = ?, user_id = ?, member_type = 'real', avatar_url = ?, updated_at = ?
            WHERE id = ?`,
-          currentUserId,
+          memberOwnerUserId,
           serverMember.displayName ?? serverMember.nickname,
           serverMember.userId,
           resolveAvatarUrl(serverMember.avatarUrl) ?? null,
@@ -457,14 +463,16 @@ export async function syncServerDataToLocal(): Promise<void> {
       );
 
       if (existingProfile) {
+        // 更新资料（不覆盖已有归属，只填充 NULL）
+        const profileOwnerUserId = serverMember.userId ?? currentUserId;
         await db.runAsync(
           `UPDATE member_profiles SET
-            owner_user_id = ?, bodyweight = ?, bench_1rm = ?, squat_1rm = ?, deadlift_1rm = ?,
+            owner_user_id = COALESCE(owner_user_id, ?), bodyweight = ?, bench_1rm = ?, squat_1rm = ?, deadlift_1rm = ?,
             overhead_press_1rm = ?, pullup_reference_weight = ?,
             barbell_increment = ?, dumbbell_increment = ?, updated_at = ?,
             avatar_url = ?, avatar_thumb_url = ?, avatar_local_uri = ?, avatar_updated_at = ?
            WHERE id = ?`,
-          currentUserId,
+          profileOwnerUserId,
           serverMember.profile.bodyweight ?? null,
           serverMember.profile.bench1RM ?? null,
           serverMember.profile.squat1RM ?? null,
@@ -482,6 +490,7 @@ export async function syncServerDataToLocal(): Promise<void> {
         );
       } else {
         const memberId = existingMember?.id || serverMember.id;
+        const profileOwnerUserId = serverMember.userId ?? currentUserId;
         await db.runAsync(
           `INSERT INTO member_profiles (
             id, owner_user_id, member_id, group_id, bodyweight, bench_1rm, squat_1rm, deadlift_1rm,
@@ -490,7 +499,7 @@ export async function syncServerDataToLocal(): Promise<void> {
             created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           createId('profile'),
-          currentUserId,
+          profileOwnerUserId,
           memberId,
           serverGroup.id,
           serverMember.profile.bodyweight ?? null,

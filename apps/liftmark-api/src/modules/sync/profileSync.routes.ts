@@ -273,6 +273,7 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
       groups.push({
         id: gm.id,
         name: gm.name,
+        ownerUserId: gm.owner_user_id,
         role: gm.role,
         members: members.map(m => ({
           id: m.member_id,
