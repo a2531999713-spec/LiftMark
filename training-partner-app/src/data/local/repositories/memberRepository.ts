@@ -6,6 +6,7 @@ import type { MemberRepository } from '@/data/repositories/memberRepository';
 
 import type { DatabaseProvider } from './base';
 import { requireRow } from './base';
+import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite } from '../accountScope';
 import {
   type GroupMemberRow,
   type MemberProfileRow,
@@ -16,26 +17,64 @@ import {
 export class SQLiteMemberRepository implements MemberRepository {
   constructor(private readonly getDb: DatabaseProvider) {}
 
+  private async getVisibleGroupOwnerUserId(groupId: string): Promise<string | null> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+    const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+      `SELECT owner_user_id FROM groups
+       WHERE id = ?
+         AND ${scope.where}
+         AND deleted_at IS NULL
+       LIMIT 1`,
+      groupId,
+      ...scope.params,
+    );
+    if (!row) {
+      throw new Error(`Group not visible for current account: ${groupId}`);
+    }
+    return getOwnerUserIdForWrite(userId, row.owner_user_id);
+  }
+
   async listMembers(groupId: string): Promise<GroupMember[]> {
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
     const rows = await db.getAllAsync<GroupMemberRow>(
-      'SELECT * FROM group_members WHERE group_id = ? ORDER BY created_at ASC',
+      `SELECT gm.* FROM group_members gm
+       INNER JOIN groups ON groups.id = gm.group_id
+       WHERE gm.group_id = ?
+         AND ${scope.where}
+         AND gm.deleted_at IS NULL
+         AND groups.deleted_at IS NULL
+       ORDER BY gm.created_at ASC`,
       groupId,
+      ...scope.params,
     );
     return rows.map(mapGroupMember);
   }
 
   async getMemberProfile(memberId: string): Promise<MemberProfile | null> {
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
     const row = await db.getFirstAsync<MemberProfileRow>(
-      'SELECT * FROM member_profiles WHERE member_id = ?',
+      `SELECT mp.* FROM member_profiles mp
+       INNER JOIN group_members gm ON gm.id = mp.member_id
+       INNER JOIN groups ON groups.id = gm.group_id
+       WHERE mp.member_id = ?
+         AND ${scope.where}
+         AND gm.deleted_at IS NULL
+         AND groups.deleted_at IS NULL`,
       memberId,
+      ...scope.params,
     );
     return row ? mapMemberProfile(row) : null;
   }
 
   async createMember(input: CreateMemberInput): Promise<GroupMember> {
     const db = await this.getDb();
+    const ownerUserId = await this.getVisibleGroupOwnerUserId(input.groupId);
     const now = nowIso();
     const member: GroupMember = {
       id: input.id ?? createId('member'),
@@ -55,10 +94,11 @@ export class SQLiteMemberRepository implements MemberRepository {
     await db.withExclusiveTransactionAsync(async (txn) => {
       await txn.runAsync(
         `INSERT INTO group_members (
-          id, group_id, display_name, user_id, member_type, local_member_id, role,
+          id, owner_user_id, group_id, display_name, user_id, member_type, local_member_id, role,
           avatar_url, joined_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         member.id,
+        ownerUserId,
         member.groupId,
         member.displayName,
         member.userId ?? null,
@@ -73,12 +113,13 @@ export class SQLiteMemberRepository implements MemberRepository {
 
       await txn.runAsync(
         `INSERT INTO member_profiles (
-          id, member_id, group_id, avatar_url, avatar_thumb_url, avatar_local_uri, avatar_updated_at,
+          id, owner_user_id, member_id, group_id, avatar_url, avatar_thumb_url, avatar_local_uri, avatar_updated_at,
           bodyweight, bench_1rm, squat_1rm, deadlift_1rm,
           overhead_press_1rm, pullup_reference_weight, barbell_increment,
           dumbbell_increment, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         createId('profile'),
+        ownerUserId,
         member.id,
         member.groupId,
         input.profile?.avatarUrl ?? null,
@@ -103,8 +144,19 @@ export class SQLiteMemberRepository implements MemberRepository {
 
   async updateMember(id: string, patch: Partial<GroupMember>): Promise<GroupMember> {
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
     const current = await requireRow(
-      await db.getFirstAsync<GroupMemberRow>('SELECT * FROM group_members WHERE id = ?', id),
+      await db.getFirstAsync<GroupMemberRow>(
+        `SELECT gm.* FROM group_members gm
+         INNER JOIN groups ON groups.id = gm.group_id
+         WHERE gm.id = ?
+           AND ${scope.where}
+           AND gm.deleted_at IS NULL
+           AND groups.deleted_at IS NULL`,
+        id,
+        ...scope.params,
+      ),
       `未找到成员：${id}`,
     );
     const updated: GroupMember = {
@@ -142,10 +194,19 @@ export class SQLiteMemberRepository implements MemberRepository {
 
   async updateProfile(memberId: string, patch: Partial<MemberProfile>): Promise<MemberProfile> {
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
     const current = await requireRow(
       await db.getFirstAsync<MemberProfileRow>(
-        'SELECT * FROM member_profiles WHERE member_id = ?',
+        `SELECT mp.* FROM member_profiles mp
+         INNER JOIN group_members gm ON gm.id = mp.member_id
+         INNER JOIN groups ON groups.id = gm.group_id
+         WHERE mp.member_id = ?
+           AND ${scope.where}
+           AND gm.deleted_at IS NULL
+           AND groups.deleted_at IS NULL`,
         memberId,
+        ...scope.params,
       ),
       `未找到成员资料：${memberId}`,
     );

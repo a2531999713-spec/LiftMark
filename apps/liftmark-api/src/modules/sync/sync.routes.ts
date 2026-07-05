@@ -65,9 +65,24 @@ function getPayloadString(payload: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
+function assertPayloadUserMatchesToken(userId: string, payload: Record<string, unknown>) {
+  const payloadUserId = getPayloadString(payload, [
+    'ownerUserId',
+    'owner_user_id',
+    'accountUserId',
+    'account_user_id',
+    'userId',
+    'user_id',
+  ]);
+  if (payloadUserId && payloadUserId !== userId) {
+    throw badRequest('sync payload user_id does not match authenticated user.');
+  }
+}
+
 async function upsertEntity(userId: string, entityType: EntityType, item: z.infer<typeof syncEntitySchema>) {
   const tableName = entityTableByType[entityType];
   const payload = item.payload ?? {};
+  assertPayloadUserMatchesToken(userId, payload);
   const clientUpdatedAt = item.updatedAt ? new Date(item.updatedAt) : new Date();
   const existing = await db(tableName).where({ user_id: userId, client_id: item.clientId }).first();
 

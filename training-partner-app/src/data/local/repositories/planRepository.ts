@@ -19,6 +19,7 @@ import type {
 import { filterExercisesByRecovery } from '@/domain/plan/plan.service';
 
 import { requireRow, type DatabaseProvider } from './base';
+import { getCurrentAccountUserId, getGroupAccountScope, getPlanAccountScope } from '../accountScope';
 import {
   mapPlanDay,
   mapPlanExercise,
@@ -38,21 +39,31 @@ export class SQLitePlanRepository implements PlanRepository {
 
   async getPlanById(planId: string): Promise<PlanTemplate | null> {
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getPlanAccountScope(userId, 'plan_templates');
     const row = await db.getFirstAsync<PlanTemplateRow>(
-      'SELECT * FROM plan_templates WHERE id = ?',
+      `SELECT * FROM plan_templates
+       WHERE id = ?
+         AND ${scope.where}
+       LIMIT 1`,
       planId,
+      ...scope.params,
     );
     return row ? mapPlanTemplate(row) : null;
   }
 
   async listUserPlans(): Promise<PlanTemplate[]> {
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getPlanAccountScope(userId, 'plan_templates');
     const rows = await db.getAllAsync<PlanTemplateRow>(
       `SELECT * FROM plan_templates
        WHERE source != 'system'
+         AND ${scope.where}
          AND id != ?
          AND COALESCE(origin_scheme_id, '') != ?
        ORDER BY updated_at DESC, created_at DESC`,
+      ...scope.params,
       LEGACY_FOUR_DAY_DEFAULT_USER_PLAN_ID,
       LEGACY_FOUR_DAY_SCHEME_ID,
     );
@@ -60,6 +71,8 @@ export class SQLitePlanRepository implements PlanRepository {
   }
 
   async listPlanPhases(planId: string): Promise<PlanPhase[]> {
+    const plan = await this.getPlanById(planId);
+    if (!plan) return [];
     const db = await this.getDb();
     const rows = await db.getAllAsync<PlanPhaseRow>(
       'SELECT * FROM plan_phases WHERE plan_id = ? ORDER BY order_index ASC',
@@ -69,6 +82,8 @@ export class SQLitePlanRepository implements PlanRepository {
   }
 
   async listPlanDays(planId: string): Promise<PlanDay[]> {
+    const plan = await this.getPlanById(planId);
+    if (!plan) return [];
     const db = await this.getDb();
     const rows = await db.getAllAsync<PlanDayRow>(
       'SELECT * FROM plan_days WHERE plan_id = ? ORDER BY week ASC, weekday ASC',
@@ -79,18 +94,28 @@ export class SQLitePlanRepository implements PlanRepository {
 
   async listPlanExercises(planDayId: string): Promise<PlanExercise[]> {
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getPlanAccountScope(userId, 'pt');
     const rows = await db.getAllAsync<PlanExerciseRow>(
-      'SELECT * FROM plan_exercises WHERE plan_day_id = ? ORDER BY order_index ASC',
+      `SELECT pe.* FROM plan_exercises pe
+       INNER JOIN plan_days pd ON pd.id = pe.plan_day_id
+       INNER JOIN plan_templates pt ON pt.id = pd.plan_id
+       WHERE pe.plan_day_id = ?
+         AND ${scope.where}
+       ORDER BY pe.order_index ASC`,
       planDayId,
+      ...scope.params,
     );
     return rows.map(mapPlanExercise);
   }
 
   async createUserPlan(input: CreateUserPlanInput): Promise<PlanTemplate> {
     const db = await this.getDb();
+    const ownerUserId = await getCurrentAccountUserId();
     const now = nowIso();
     const plan: PlanTemplate = {
       id: createId('plan'),
+      creatorId: ownerUserId ?? undefined,
       name: input.name.trim() || '我的训练计划',
       visibility: 'private',
       goal: input.goal,
@@ -107,10 +132,11 @@ export class SQLitePlanRepository implements PlanRepository {
     await db.withExclusiveTransactionAsync(async (txn) => {
       await txn.runAsync(
         `INSERT INTO plan_templates (
-          id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
+          id, owner_user_id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
           description, source, origin_scheme_id, version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         plan.id,
+        ownerUserId,
         plan.name,
         plan.creatorId ?? null,
         plan.visibility,
@@ -127,9 +153,10 @@ export class SQLitePlanRepository implements PlanRepository {
 
       await txn.runAsync(
         `INSERT INTO plan_phases (
-          id, plan_id, name, type, start_week, end_week, order_index
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         phaseId,
+        ownerUserId,
         plan.id,
         '基础周期',
         plan.goal === 'hypertrophy' ? 'hypertrophy' : plan.goal === 'strength' ? 'strength' : 'custom',
@@ -142,9 +169,10 @@ export class SQLitePlanRepository implements PlanRepository {
         const planDayId = createId('day');
         await txn.runAsync(
           `INSERT INTO plan_days (
-            id, plan_id, phase_id, week, weekday, title, focus, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, owner_user_id, plan_id, phase_id, week, weekday, title, focus, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           planDayId,
+          ownerUserId,
           plan.id,
           phaseId,
           Math.max(1, Math.round(day.week ?? 1)),
@@ -157,11 +185,12 @@ export class SQLitePlanRepository implements PlanRepository {
         for (const [exerciseIndex, exercise] of day.exercises.entries()) {
           await txn.runAsync(
             `INSERT INTO plan_exercises (
-              id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
+              id, owner_user_id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
               intensity_type, percent_1rm, rpe_target, rir_target, fixed_weight, reference_lift,
               rest_seconds, progression_rule_id, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             createId('plan_exercise'),
+            ownerUserId,
             planDayId,
             exercise.exerciseId,
             exercise.priority ?? 'A',
@@ -195,6 +224,7 @@ export class SQLitePlanRepository implements PlanRepository {
     }
 
     const db = await this.getDb();
+    const ownerUserId = current.creatorId ?? await getCurrentAccountUserId();
     const now = nowIso();
     const updated: PlanTemplate = {
       ...current,
@@ -233,9 +263,10 @@ export class SQLitePlanRepository implements PlanRepository {
 
       await txn.runAsync(
         `INSERT INTO plan_phases (
-          id, plan_id, name, type, start_week, end_week, order_index
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         phaseId,
+        ownerUserId,
         updated.id,
         '基础周期',
         updated.goal === 'hypertrophy' ? 'hypertrophy' : updated.goal === 'strength' ? 'strength' : 'custom',
@@ -248,9 +279,10 @@ export class SQLitePlanRepository implements PlanRepository {
         const planDayId = createId('day');
         await txn.runAsync(
           `INSERT INTO plan_days (
-            id, plan_id, phase_id, week, weekday, title, focus, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, owner_user_id, plan_id, phase_id, week, weekday, title, focus, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           planDayId,
+          ownerUserId,
           updated.id,
           phaseId,
           Math.max(1, Math.round(day.week ?? 1)),
@@ -263,11 +295,12 @@ export class SQLitePlanRepository implements PlanRepository {
         for (const [exerciseIndex, exercise] of day.exercises.entries()) {
           await txn.runAsync(
             `INSERT INTO plan_exercises (
-              id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
+              id, owner_user_id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
               intensity_type, percent_1rm, rpe_target, rir_target, fixed_weight, reference_lift,
               rest_seconds, progression_rule_id, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             createId('plan_exercise'),
+            ownerUserId,
             planDayId,
             exercise.exerciseId,
             exercise.priority ?? 'A',
@@ -317,35 +350,42 @@ export class SQLitePlanRepository implements PlanRepository {
       name: input.name,
       originSchemeId: input.scheme.id,
     });
+    const ownerUserId = await getCurrentAccountUserId();
+    const template = {
+      ...draft.template,
+      creatorId: ownerUserId ?? draft.template.creatorId,
+    };
 
     const db = await this.getDb();
     await db.withExclusiveTransactionAsync(async (txn) => {
       await txn.runAsync(
         `INSERT INTO plan_templates (
-          id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
+          id, owner_user_id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
           description, source, origin_scheme_id, version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        draft.template.id,
-        draft.template.name,
-        draft.template.creatorId ?? null,
-        draft.template.visibility,
-        draft.template.goal,
-        draft.template.durationWeeks,
-        draft.template.frequencyPerWeek,
-        draft.template.description ?? null,
-        draft.template.source,
-        draft.template.originSchemeId ?? null,
-        draft.template.version,
-        draft.template.createdAt,
-        draft.template.updatedAt,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        template.id,
+        ownerUserId,
+        template.name,
+        template.creatorId ?? null,
+        template.visibility,
+        template.goal,
+        template.durationWeeks,
+        template.frequencyPerWeek,
+        template.description ?? null,
+        template.source,
+        template.originSchemeId ?? null,
+        template.version,
+        template.createdAt,
+        template.updatedAt,
       );
 
       for (const phase of draft.phases) {
         await txn.runAsync(
           `INSERT INTO plan_phases (
-            id, plan_id, name, type, start_week, end_week, order_index
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           phase.id,
+          ownerUserId,
           phase.planId,
           phase.name,
           phase.type,
@@ -358,9 +398,10 @@ export class SQLitePlanRepository implements PlanRepository {
       for (const day of draft.days) {
         await txn.runAsync(
           `INSERT INTO plan_days (
-            id, plan_id, phase_id, week, weekday, title, focus, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, owner_user_id, plan_id, phase_id, week, weekday, title, focus, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           day.id,
+          ownerUserId,
           day.planId,
           day.phaseId,
           day.week,
@@ -374,11 +415,12 @@ export class SQLitePlanRepository implements PlanRepository {
       for (const exercise of draft.exercises) {
         await txn.runAsync(
           `INSERT INTO plan_exercises (
-            id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
+            id, owner_user_id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
             intensity_type, percent_1rm, rpe_target, rir_target, fixed_weight, reference_lift,
             rest_seconds, progression_rule_id, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           exercise.id,
+          ownerUserId,
           exercise.planDayId,
           exercise.exerciseId,
           exercise.priority,
@@ -400,7 +442,7 @@ export class SQLitePlanRepository implements PlanRepository {
       }
     });
 
-    return draft.template;
+    return template;
   }
 
   async importUserPlan(input: ImportUserPlanInput): Promise<PlanTemplate> {
@@ -409,6 +451,7 @@ export class SQLitePlanRepository implements PlanRepository {
     }
 
     const db = await this.getDb();
+    const ownerUserId = await getCurrentAccountUserId();
     const exerciseIdByImportedId = new Map<string, string>();
 
     await db.withExclusiveTransactionAsync(async (txn) => {
@@ -462,12 +505,13 @@ export class SQLitePlanRepository implements PlanRepository {
 
       await txn.runAsync(
         `INSERT INTO plan_templates (
-          id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
+          id, owner_user_id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
           description, source, origin_scheme_id, version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         input.template.id,
+        ownerUserId,
         input.template.name,
-        input.template.creatorId ?? null,
+        ownerUserId ?? input.template.creatorId ?? null,
         'private',
         input.template.goal,
         input.template.durationWeeks,
@@ -483,9 +527,10 @@ export class SQLitePlanRepository implements PlanRepository {
       for (const phase of input.phases) {
         await txn.runAsync(
           `INSERT INTO plan_phases (
-            id, plan_id, name, type, start_week, end_week, order_index
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           phase.id,
+          ownerUserId,
           phase.planId,
           phase.name,
           phase.type,
@@ -498,9 +543,10 @@ export class SQLitePlanRepository implements PlanRepository {
       for (const day of input.days) {
         await txn.runAsync(
           `INSERT INTO plan_days (
-            id, plan_id, phase_id, week, weekday, title, focus, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, owner_user_id, plan_id, phase_id, week, weekday, title, focus, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           day.id,
+          ownerUserId,
           day.planId,
           day.phaseId,
           day.week,
@@ -514,11 +560,12 @@ export class SQLitePlanRepository implements PlanRepository {
       for (const exercise of input.planExercises) {
         await txn.runAsync(
           `INSERT INTO plan_exercises (
-            id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
+            id, owner_user_id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
             intensity_type, percent_1rm, rpe_target, rir_target, fixed_weight, reference_lift,
             rest_seconds, progression_rule_id, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           exercise.id,
+          ownerUserId,
           exercise.planDayId,
           exerciseIdByImportedId.get(exercise.exerciseId) ?? exercise.exerciseId,
           exercise.priority,
@@ -542,6 +589,7 @@ export class SQLitePlanRepository implements PlanRepository {
 
     return {
       ...input.template,
+      creatorId: ownerUserId ?? input.template.creatorId,
       source: 'imported',
       visibility: 'private',
     };
@@ -560,9 +608,16 @@ export class SQLitePlanRepository implements PlanRepository {
     }
 
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const groupScope = getGroupAccountScope(userId, 'groups');
     const activeGroup = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM groups WHERE active_plan_id = ? LIMIT 1',
+      `SELECT id FROM groups
+       WHERE active_plan_id = ?
+         AND ${groupScope.where}
+         AND deleted_at IS NULL
+       LIMIT 1`,
       planId,
+      ...groupScope.params,
     );
 
     if (activeGroup) {

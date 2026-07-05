@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { db } from '../../db/connection';
 import { getAuthUser, requireAuth } from '../../middlewares/auth';
+import { badRequest } from '../../utils/errors';
 import { createId } from '../../utils/ids';
 import { assertGroupMember } from '../groups/groups.routes';
 
@@ -32,7 +33,22 @@ function numberValue(payload: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
+function assertPayloadUserMatchesToken(userId: string, payload: Record<string, unknown>) {
+  const payloadUserId = stringValue(payload, [
+    'ownerUserId',
+    'owner_user_id',
+    'accountUserId',
+    'account_user_id',
+    'userId',
+    'user_id',
+  ]);
+  if (payloadUserId && payloadUserId !== userId) {
+    throw badRequest('workout payload user_id does not match authenticated user.');
+  }
+}
+
 async function upsertGroupSession(userId: string, groupId: string, payload: Record<string, unknown>) {
+  assertPayloadUserMatchesToken(userId, payload);
   const clientId = stringValue(payload, ['clientId', 'id', 'localId']) ?? createId('client');
   const existing = await db('workout_sessions').where({ user_id: userId, client_id: clientId }).first();
   const serverId = existing?.id ?? createId('ws');
@@ -60,6 +76,7 @@ async function upsertGroupSession(userId: string, groupId: string, payload: Reco
 }
 
 async function upsertGroupSet(userId: string, groupId: string, payload: Record<string, unknown>) {
+  assertPayloadUserMatchesToken(userId, payload);
   const clientId = stringValue(payload, ['clientId', 'id', 'localId']) ?? createId('client');
   const existing = await db('workout_sets').where({ user_id: userId, client_id: clientId }).first();
   const serverId = existing?.id ?? createId('wset');
@@ -173,4 +190,3 @@ export async function registerWorkoutRoutes(app: FastifyInstance) {
     return { compare: rows };
   });
 }
-

@@ -199,14 +199,17 @@ export default function PlanRoute() {
     try {
       await initializeLocalDatabase();
       const nextGroup = await repositories.groupRepository.getDefaultGroup();
+      const nextUserPlans = await repositories.planRepository.listUserPlans();
       if (!nextGroup) {
-        throw new Error('默认小组尚未初始化。');
+        setGroup(null);
+        setActivePlan(null);
+        setUserPlans(nextUserPlans);
+        setDaySummaries([]);
+        setStats(emptyStats);
+        return;
       }
 
-      const [nextActivePlan, nextUserPlans] = await Promise.all([
-        repositories.planRepository.getPlanById(nextGroup.activePlanId),
-        repositories.planRepository.listUserPlans(),
-      ]);
+      const nextActivePlan = await repositories.planRepository.getPlanById(nextGroup.activePlanId);
 
       let nextDaySummaries: DaySummary[] = [];
       let nextStats = emptyStats;

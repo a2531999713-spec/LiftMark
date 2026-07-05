@@ -3,8 +3,30 @@ import { z } from 'zod';
 
 import { db } from '../../db/connection';
 import { getAuthUser, requireAuth } from '../../middlewares/auth';
+import { badRequest } from '../../utils/errors';
 import { createId } from '../../utils/ids';
 import { syncUserAvatarToMemberProfiles } from './avatarSync';
+
+async function getActiveMembership(groupId: string, userId: string) {
+  return db('group_members')
+    .where({ group_id: groupId, user_id: userId, status: 'active' })
+    .whereNull('left_at')
+    .first();
+}
+
+async function assertWritableGroup(groupId: string, userId: string) {
+  const group = await db('groups').where({ id: groupId }).whereNull('deleted_at').first();
+  if (!group) {
+    throw badRequest('sync group does not exist.');
+  }
+
+  const membership = await getActiveMembership(groupId, userId);
+  if (group.owner_user_id !== userId && !membership) {
+    throw badRequest('sync group does not belong to authenticated user.');
+  }
+
+  return { group, membership };
+}
 
 /**
  * 同步用户头像到服务器
@@ -43,6 +65,16 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
     for (const group of body.groups) {
       // 检查小组是否已存在
       const existing = await db('groups').where({ id: group.id }).first();
+      const activeMembership = existing ? await getActiveMembership(group.id, authUser.id) : null;
+
+      if (existing && existing.owner_user_id !== authUser.id && !activeMembership) {
+        request.log.warn(
+          { groupId: group.id, ownerUserId: existing.owner_user_id, authUserId: authUser.id },
+          'rejected cross-account group sync',
+        );
+        results.push({ id: group.id, synced: false, skipped: true, reason: 'group_belongs_to_other_account' });
+        continue;
+      }
 
       if (!existing) {
         // 创建小组
@@ -64,6 +96,26 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
           group_id: group.id,
           user_id: authUser.id,
           role: 'owner',
+          status: 'active',
+          joined_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date(),
+        });
+      } else if (existing.owner_user_id === authUser.id) {
+        await db('groups')
+          .where({ id: group.id })
+          .update({
+            name: group.name,
+            updated_at: new Date(),
+          });
+      }
+
+      if (existing && !activeMembership) {
+        await db('group_members').insert({
+          id: createId('gmem'),
+          group_id: group.id,
+          user_id: authUser.id,
+          role: existing.owner_user_id === authUser.id ? 'owner' : 'member',
           status: 'active',
           joined_at: new Date(),
           created_at: new Date(),
@@ -101,6 +153,7 @@ export async function registerProfileSyncRoutes(app: FastifyInstance) {
         }).optional(),
       })),
     }).parse(request.body);
+    await assertWritableGroup(body.groupId, authUser.id);
 
     const results = [];
     for (const member of body.members) {

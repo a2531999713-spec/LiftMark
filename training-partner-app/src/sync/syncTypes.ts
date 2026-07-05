@@ -28,6 +28,7 @@ export type SyncEntity = {
   entityType: SyncEntityType;
   localId: string;
   operation: SyncOperation;
+  ownerUserId?: string | null;
   payload?: Record<string, unknown>;
   remoteId?: string;
   status: SyncStatus;

@@ -33,39 +33,59 @@ export type SyncDiagnostics = {
   serverStatus?: unknown;
 };
 
-async function countTable(tableName: string) {
+async function countTable(tableName: string, userId?: string) {
   const db = await getDatabase();
-  const row = await db.getFirstAsync<{ count: number }>(`SELECT COUNT(*) AS count FROM ${tableName}`);
+  const row = userId
+    ? await db.getFirstAsync<{ count: number }>(`SELECT COUNT(*) AS count FROM ${tableName} WHERE owner_user_id = ?`, userId)
+    : await db.getFirstAsync<{ count: number }>(`SELECT COUNT(*) AS count FROM ${tableName}`);
   return row?.count ?? 0;
 }
 
-async function getLastSyncError() {
+async function getLastSyncError(userId?: string) {
   const db = await getDatabase();
-  const row = await db.getFirstAsync<{ sync_error: string | null }>(
-    `SELECT sync_error FROM local_sync_queue
-     WHERE sync_error IS NOT NULL AND sync_error <> ''
-     ORDER BY updated_at DESC
-     LIMIT 1`,
-  );
+  const row = userId
+    ? await db.getFirstAsync<{ sync_error: string | null }>(
+        `SELECT sync_error FROM local_sync_queue
+         WHERE owner_user_id = ?
+           AND sync_error IS NOT NULL
+           AND sync_error <> ''
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        userId,
+      )
+    : await db.getFirstAsync<{ sync_error: string | null }>(
+        `SELECT sync_error FROM local_sync_queue
+         WHERE sync_error IS NOT NULL AND sync_error <> ''
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+      );
   return row?.sync_error ?? undefined;
 }
 
-async function getRecentAvatarUrl() {
+async function getRecentAvatarUrl(userId?: string) {
   const db = await getDatabase();
-  const account = await db.getFirstAsync<{ avatar_url: string | null; avatar_thumb_url: string | null }>(
-    `SELECT avatar_url, avatar_thumb_url
-     FROM account_profile_cache
-     WHERE avatar_url IS NOT NULL OR avatar_thumb_url IS NOT NULL
-     ORDER BY updated_at DESC
-     LIMIT 1`,
-  );
-  const member = await db.getFirstAsync<{ avatar_url: string | null; avatar_thumb_url: string | null }>(
-    `SELECT avatar_url, avatar_thumb_url
-     FROM member_profiles
-     WHERE avatar_url IS NOT NULL OR avatar_thumb_url IS NOT NULL
-     ORDER BY updated_at DESC
-     LIMIT 1`,
-  );
+  const account = userId
+    ? await db.getFirstAsync<{ avatar_url: string | null; avatar_thumb_url: string | null }>(
+        `SELECT avatar_url, avatar_thumb_url
+         FROM account_profile_cache
+         WHERE user_id = ?
+           AND (avatar_url IS NOT NULL OR avatar_thumb_url IS NOT NULL)
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        userId,
+      )
+    : null;
+  const member = userId
+    ? await db.getFirstAsync<{ avatar_url: string | null; avatar_thumb_url: string | null }>(
+        `SELECT avatar_url, avatar_thumb_url
+         FROM member_profiles
+         WHERE owner_user_id = ?
+           AND (avatar_url IS NOT NULL OR avatar_thumb_url IS NOT NULL)
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        userId,
+      )
+    : null;
   return resolveAvatarUrl(account?.avatar_thumb_url ?? account?.avatar_url ?? member?.avatar_thumb_url ?? member?.avatar_url);
 }
 
@@ -97,17 +117,18 @@ export async function checkAvatarUrlAccess(url?: string) {
 export async function loadSyncDiagnostics(): Promise<SyncDiagnostics> {
   await initializeLocalDatabase();
   const session = await readStoredSession();
+  const currentUserId = session?.user.id;
   const db = await getDatabase();
   const [pendingCount, lastSyncError, recentAvatarUrl, health, localCounts, schemaChecks, migrationVersions] = await Promise.all([
     countPendingSyncItems(),
-    getLastSyncError(),
-    getRecentAvatarUrl(),
+    getLastSyncError(currentUserId),
+    getRecentAvatarUrl(currentUserId),
     checkServerHealth(),
     Promise.all([
-      countTable('group_members'),
-      countTable('member_profiles'),
-      countTable('workout_sessions'),
-      countTable('workout_sets'),
+      countTable('group_members', currentUserId),
+      countTable('member_profiles', currentUserId),
+      countTable('workout_sessions', currentUserId),
+      countTable('workout_sets', currentUserId),
     ]).then(([groupMembers, memberProfiles, workoutSessions, workoutSets]) => ({
       groupMembers,
       memberProfiles,

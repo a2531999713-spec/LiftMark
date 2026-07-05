@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS groups (
 CREATE TABLE IF NOT EXISTS group_members (
   id TEXT PRIMARY KEY,
   remote_id TEXT,
+  owner_user_id TEXT,
   group_id TEXT NOT NULL,
   display_name TEXT NOT NULL,
   user_id TEXT,
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS group_members (
 
 CREATE TABLE IF NOT EXISTS member_profiles (
   id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
   member_id TEXT NOT NULL,
   group_id TEXT NOT NULL,
   avatar_url TEXT,
@@ -85,6 +87,7 @@ CREATE TABLE IF NOT EXISTS exercise_alternatives (
 CREATE TABLE IF NOT EXISTS plan_templates (
   id TEXT PRIMARY KEY,
   remote_id TEXT,
+  owner_user_id TEXT,
   name TEXT NOT NULL,
   creator_id TEXT,
   visibility TEXT NOT NULL DEFAULT 'system',
@@ -105,6 +108,7 @@ CREATE TABLE IF NOT EXISTS plan_templates (
 
 CREATE TABLE IF NOT EXISTS plan_phases (
   id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
   plan_id TEXT NOT NULL,
   name TEXT NOT NULL,
   type TEXT NOT NULL,
@@ -115,6 +119,7 @@ CREATE TABLE IF NOT EXISTS plan_phases (
 
 CREATE TABLE IF NOT EXISTS plan_days (
   id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
   plan_id TEXT NOT NULL,
   phase_id TEXT NOT NULL,
   week INTEGER NOT NULL,
@@ -126,6 +131,7 @@ CREATE TABLE IF NOT EXISTS plan_days (
 
 CREATE TABLE IF NOT EXISTS plan_exercises (
   id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
   plan_day_id TEXT NOT NULL,
   exercise_id TEXT NOT NULL,
   priority TEXT NOT NULL,
@@ -148,6 +154,7 @@ CREATE TABLE IF NOT EXISTS plan_exercises (
 CREATE TABLE IF NOT EXISTS workout_sessions (
   id TEXT PRIMARY KEY,
   remote_id TEXT,
+  owner_user_id TEXT,
   group_id TEXT NOT NULL,
   plan_id TEXT NOT NULL,
   phase_id TEXT,
@@ -171,6 +178,7 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
 CREATE TABLE IF NOT EXISTS workout_exercise_records (
   id TEXT PRIMARY KEY,
   remote_id TEXT,
+  owner_user_id TEXT,
   session_id TEXT NOT NULL,
   plan_exercise_id TEXT,
   exercise_id TEXT NOT NULL,
@@ -197,6 +205,7 @@ CREATE TABLE IF NOT EXISTS workout_exercise_records (
 CREATE TABLE IF NOT EXISTS workout_sets (
   id TEXT PRIMARY KEY,
   remote_id TEXT,
+  owner_user_id TEXT,
   session_id TEXT NOT NULL,
   exercise_record_id TEXT NOT NULL,
   member_id TEXT NOT NULL,
@@ -222,6 +231,7 @@ CREATE TABLE IF NOT EXISTS workout_sets (
 
 CREATE TABLE IF NOT EXISTS progression_suggestions (
   id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
   member_id TEXT NOT NULL,
   exercise_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
@@ -233,6 +243,7 @@ CREATE TABLE IF NOT EXISTS progression_suggestions (
 
 CREATE TABLE IF NOT EXISTS recovery_logs (
   id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
   member_id TEXT NOT NULL,
   date TEXT NOT NULL,
   sleep_score INTEGER NOT NULL,
@@ -249,6 +260,7 @@ CREATE TABLE IF NOT EXISTS recovery_logs (
 CREATE TABLE IF NOT EXISTS body_metrics (
   id TEXT PRIMARY KEY,
   remote_id TEXT,
+  owner_user_id TEXT,
   member_id TEXT NOT NULL,
   date TEXT NOT NULL,
   weight_kg REAL,
@@ -271,6 +283,7 @@ CREATE TABLE IF NOT EXISTS body_metrics (
 
 CREATE TABLE IF NOT EXISTS local_sync_queue (
   id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
   entity_type TEXT NOT NULL,
   local_id TEXT NOT NULL,
   remote_id TEXT,
@@ -286,6 +299,7 @@ CREATE TABLE IF NOT EXISTS local_sync_queue (
 
 CREATE TABLE IF NOT EXISTS body_metric_goals (
   id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
   member_id TEXT NOT NULL,
   goal_type TEXT NOT NULL,
   target_weight_kg REAL,
@@ -324,16 +338,22 @@ CREATE TABLE IF NOT EXISTS account_profile_cache (
 
 CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON group_members(group_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_owner ON group_members(owner_user_id, group_id);
 CREATE INDEX IF NOT EXISTS idx_member_profiles_member_id ON member_profiles(member_id);
+CREATE INDEX IF NOT EXISTS idx_member_profiles_owner ON member_profiles(owner_user_id, group_id);
 CREATE INDEX IF NOT EXISTS idx_exercises_source_name ON exercises(source, name);
+CREATE INDEX IF NOT EXISTS idx_plan_templates_owner ON plan_templates(owner_user_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_plan_phases_plan_id ON plan_phases(plan_id);
 CREATE INDEX IF NOT EXISTS idx_plan_days_phase_weekday ON plan_days(phase_id, week, weekday);
 CREATE INDEX IF NOT EXISTS idx_plan_exercises_day_id ON plan_exercises(plan_day_id);
 CREATE INDEX IF NOT EXISTS idx_workout_sessions_group_date ON workout_sessions(group_id, date);
+CREATE INDEX IF NOT EXISTS idx_workout_sessions_owner_date ON workout_sessions(owner_user_id, date);
 CREATE INDEX IF NOT EXISTS idx_workout_sets_session_id ON workout_sets(session_id);
 CREATE INDEX IF NOT EXISTS idx_workout_sets_member_exercise ON workout_sets(member_id, exercise_record_id);
+CREATE INDEX IF NOT EXISTS idx_workout_sets_owner ON workout_sets(owner_user_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_local_sync_queue_status ON local_sync_queue(status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_local_sync_queue_entity ON local_sync_queue(entity_type, local_id);
+CREATE INDEX IF NOT EXISTS idx_local_sync_queue_owner_status ON local_sync_queue(owner_user_id, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_progression_member_exercise ON progression_suggestions(member_id, exercise_id);
 CREATE INDEX IF NOT EXISTS idx_body_metrics_member_date ON body_metrics(member_id, date);
 CREATE INDEX IF NOT EXISTS idx_body_metric_goals_member ON body_metric_goals(member_id);

@@ -15,6 +15,7 @@ import type {
 } from '@/services/auth/authTypes';
 import { readStoredSession, saveStoredSession } from '@/services/auth/tokenStorage';
 import { getMembership, type Membership } from '@/services/membershipService';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 
 type AuthStore = {
   authMode: AuthMode;
@@ -105,6 +106,10 @@ async function resolveSessionState(session: AuthSession | null) {
   };
 }
 
+function switchRuntimeAccountScope(userId?: string | null) {
+  useSelectedGroupStore.getState().switchAccountScope(userId);
+}
+
 export const useAuthStore = create<AuthStore>((set, get) => ({
   authStatus: 'checking',
   authMode: 'guest_preview',
@@ -120,8 +125,11 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     set({ error: null, isLoading: true });
     try {
       const session = await authService.getCurrentSession();
-      set(await resolveSessionState(session));
+      const nextState = await resolveSessionState(session);
+      switchRuntimeAccountScope(nextState.user?.id ?? null);
+      set(nextState);
     } catch (error) {
+      switchRuntimeAccountScope(null);
       set({
         authStatus: 'unauthenticated',
         authMode: 'guest_preview',
@@ -162,6 +170,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const result = await authService.login(input);
       if (!result.ok) {
+        switchRuntimeAccountScope(null);
         set({
           authStatus: 'unauthenticated',
           authMode: 'guest_preview',
@@ -174,8 +183,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         return result.message;
       }
 
+      const nextState = await resolveSessionState(result.session);
+      switchRuntimeAccountScope(nextState.user?.id ?? null);
       set({
-        ...(await resolveSessionState(result.session)),
+        ...nextState,
         hasSeenSyncPrompt: false,
       });
       return null;
@@ -189,6 +200,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const result = await authService.loginWithCode(input);
       if (!result.ok) {
+        switchRuntimeAccountScope(null);
         set({
           authStatus: 'unauthenticated',
           authMode: 'guest_preview',
@@ -201,8 +213,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         return result.message;
       }
 
+      const nextState = await resolveSessionState(result.session);
+      switchRuntimeAccountScope(nextState.user?.id ?? null);
       set({
-        ...(await resolveSessionState(result.session)),
+        ...nextState,
         hasSeenSyncPrompt: false,
       });
       return null;
@@ -215,6 +229,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     set({ error: null, isLoading: true });
     try {
       await authService.logout();
+      switchRuntimeAccountScope(null);
       set({
         authMode: 'guest_preview',
         authStatus: 'unauthenticated',
@@ -237,6 +252,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const result = await authService.register(input);
       if (!result.ok) {
+        switchRuntimeAccountScope(null);
         set({
           authStatus: 'unauthenticated',
           authMode: 'guest_preview',
@@ -249,8 +265,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         return result.message;
       }
 
+      const nextState = await resolveSessionState(result.session);
+      switchRuntimeAccountScope(nextState.user?.id ?? null);
       set({
-        ...(await resolveSessionState(result.session)),
+        ...nextState,
         hasSeenSyncPrompt: false,
       });
       return null;

@@ -73,6 +73,10 @@ const openSessionRow = {
   updated_at: '2026-06-30T00:00:00.000Z',
 };
 
+const visibleGroupRow = {
+  owner_user_id: null,
+};
+
 describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
   it('uses the selected week and weekday when creating the workout session snapshot', async () => {
     const planDayQueryParams: unknown[][] = [];
@@ -106,6 +110,7 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       }),
     };
     const db = {
+      getFirstAsync: jest.fn(async (sql: string) => (sql.includes('FROM groups') ? visibleGroupRow : null)),
       withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
         await callback(transaction);
       }),
@@ -125,8 +130,8 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
     expect(planDayQueryParams[0]).toEqual(['plan_current', 'phase_strength', 8, 3]);
     expect(session.week).toBe(8);
     expect(session.weekday).toBe(3);
-    expect(insertedSessionParams[0][5]).toBe(8);
-    expect(insertedSessionParams[0][6]).toBe(3);
+    expect(insertedSessionParams[0][6]).toBe(8);
+    expect(insertedSessionParams[0][7]).toBe(3);
   });
 
   it('uses selected plan exercise ids instead of falling back to a hardcoded plan day', async () => {
@@ -147,6 +152,7 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       runAsync: jest.fn(async () => undefined),
     };
     const db = {
+      getFirstAsync: jest.fn(async (sql: string) => (sql.includes('FROM groups') ? visibleGroupRow : null)),
       withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
         await callback(transaction);
       }),
@@ -191,6 +197,7 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       }),
     };
     const db = {
+      getFirstAsync: jest.fn(async (sql: string) => (sql.includes('FROM groups') ? visibleGroupRow : null)),
       withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
         await callback(transaction);
       }),
@@ -207,8 +214,8 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       weekday: 3,
     });
 
-    expect(insertedSetParams[0][5]).toBe(72.5);
     expect(insertedSetParams[0][6]).toBe(72.5);
+    expect(insertedSetParams[0][7]).toBe(72.5);
   });
 
   it('reuses an existing open session only when the selected plan, week, day, and mode match', async () => {
@@ -218,6 +225,7 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       runAsync: jest.fn(),
     };
     const db = {
+      getFirstAsync: jest.fn(async (sql: string) => (sql.includes('FROM groups') ? visibleGroupRow : null)),
       withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
         await callback(transaction);
       }),
@@ -278,6 +286,7 @@ describe('SQLiteWorkoutRepository.createManualSession', () => {
       }),
     };
     const db = {
+      getFirstAsync: jest.fn(async (sql: string) => (sql.includes('FROM groups') ? visibleGroupRow : null)),
       withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
         await callback(transaction);
       }),
@@ -307,12 +316,12 @@ describe('SQLiteWorkoutRepository.createManualSession', () => {
 
     expect(session.status).toBe('completed');
     expect(exerciseRecordParams).toHaveLength(2);
-    expect(exerciseRecordParams[0][3]).toBe('exercise_bench');
-    expect(exerciseRecordParams[0][7]).toBe(2);
-    expect(exerciseRecordParams[1][3]).toBe('exercise_row');
-    expect(exerciseRecordParams[1][7]).toBe(1);
+    expect(exerciseRecordParams[0][4]).toBe('exercise_bench');
+    expect(exerciseRecordParams[0][8]).toBe(2);
+    expect(exerciseRecordParams[1][4]).toBe('exercise_row');
+    expect(exerciseRecordParams[1][8]).toBe(1);
     expect(setParams).toHaveLength(3);
-    expect(setParams.map((params) => [params[5], params[7]])).toEqual([
+    expect(setParams.map((params) => [params[6], params[8]])).toEqual([
       [100, 5],
       [105, 4],
       [80, 8],
@@ -325,6 +334,15 @@ describe('SQLiteWorkoutRepository.addSetToExerciseRecord', () => {
     const insertedSetParams: unknown[][] = [];
     const db = {
       getFirstAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM workout_sessions')) {
+          return {
+            ...openSessionRow,
+            id: 'session_1',
+          };
+        }
+        if (sql.includes('FROM groups')) {
+          return visibleGroupRow;
+        }
         if (sql.includes('FROM workout_exercise_records')) {
           return {
             id: 'record_1',
@@ -367,9 +385,9 @@ describe('SQLiteWorkoutRepository.addSetToExerciseRecord', () => {
     });
 
     expect(set.setNumber).toBe(4);
-    expect(insertedSetParams[0][4]).toBe(4);
-    expect(insertedSetParams[0][5]).toBe(102.5);
-    expect(insertedSetParams[0][7]).toBe(6);
+    expect(insertedSetParams[0][5]).toBe(4);
+    expect(insertedSetParams[0][6]).toBe(102.5);
+    expect(insertedSetParams[0][8]).toBe(6);
   });
 });
 
@@ -395,6 +413,9 @@ describe('SQLiteWorkoutRepository.addExerciseToSession', () => {
             created_at: '2026-07-02T00:00:00.000Z',
             updated_at: '2026-07-02T00:00:00.000Z',
           };
+        }
+        if (sql.includes('FROM groups')) {
+          return visibleGroupRow;
         }
         if (sql.includes('MAX(order_index)')) {
           return { max_order: 4 };
@@ -423,8 +444,8 @@ describe('SQLiteWorkoutRepository.addExerciseToSession', () => {
 
     expect(runCalls.some((call) => call.sql.includes('SET order_index = order_index + 1'))).toBe(true);
     const insertRecordCall = runCalls.find((call) => call.sql.includes('INSERT INTO workout_exercise_records'));
-    expect(insertRecordCall?.params[4]).toBe(2);
-    expect(insertRecordCall?.params[15]).toBe('临时添加动作');
+    expect(insertRecordCall?.params[5]).toBe(2);
+    expect(insertRecordCall?.params[16]).toBe('临时添加动作');
   });
 });
 
@@ -500,6 +521,7 @@ describe('SQLiteWorkoutRepository.saveSet', () => {
 describe('SQLiteWorkoutRepository.updateExerciseRecordExercise', () => {
   it('keeps the original planned exercise when replacing the current exercise', async () => {
     const db = {
+      getFirstAsync: jest.fn(async () => ({ id: 'record_1' })),
       runAsync: jest.fn(async () => undefined),
     };
 
@@ -518,6 +540,7 @@ describe('SQLiteWorkoutRepository.updateExerciseRecordExercise', () => {
 
   it('stores the replacement reason as workout-only record notes', async () => {
     const db = {
+      getFirstAsync: jest.fn(async () => ({ id: 'record_1' })),
       runAsync: jest.fn(async () => undefined),
     };
 

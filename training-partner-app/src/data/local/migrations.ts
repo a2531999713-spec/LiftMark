@@ -469,6 +469,53 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 15,
+    name: 'account_data_isolation',
+    async up(db) {
+      const ownerColumnsByTable: Record<string, string[]> = {
+        group_members: ['owner_user_id TEXT'],
+        member_profiles: ['owner_user_id TEXT'],
+        plan_templates: ['owner_user_id TEXT'],
+        plan_phases: ['owner_user_id TEXT'],
+        plan_days: ['owner_user_id TEXT'],
+        plan_exercises: ['owner_user_id TEXT'],
+        workout_sessions: ['owner_user_id TEXT'],
+        workout_exercise_records: ['owner_user_id TEXT'],
+        workout_sets: ['owner_user_id TEXT'],
+        progression_suggestions: ['owner_user_id TEXT'],
+        recovery_logs: ['owner_user_id TEXT'],
+        body_metrics: ['owner_user_id TEXT'],
+        body_metric_goals: ['owner_user_id TEXT'],
+        local_sync_queue: ['owner_user_id TEXT'],
+      };
+
+      for (const [tableName, columnDefinitions] of Object.entries(ownerColumnsByTable)) {
+        const existingColumns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+          `PRAGMA table_info(${tableName})`,
+        );
+        const existingColumnNames = new Set(existingColumns.map((column) => column.name));
+
+        for (const definition of columnDefinitions) {
+          const columnName = definition.split(' ')[0];
+          if (!existingColumnNames.has(columnName)) {
+            await db.execAsync(`ALTER TABLE ${tableName} ADD COLUMN ${definition};`);
+          }
+        }
+      }
+
+      await db.execAsync(`
+        CREATE INDEX IF NOT EXISTS idx_groups_owner ON groups(owner_user_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_group_members_owner ON group_members(owner_user_id, group_id);
+        CREATE INDEX IF NOT EXISTS idx_member_profiles_owner ON member_profiles(owner_user_id, group_id);
+        CREATE INDEX IF NOT EXISTS idx_plan_templates_owner ON plan_templates(owner_user_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_workout_sessions_owner_date ON workout_sessions(owner_user_id, date);
+        CREATE INDEX IF NOT EXISTS idx_workout_sets_owner ON workout_sets(owner_user_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_body_metrics_owner_date ON body_metrics(owner_user_id, date);
+        CREATE INDEX IF NOT EXISTS idx_local_sync_queue_owner_status ON local_sync_queue(owner_user_id, status, updated_at);
+      `);
+    },
+  },
 ];
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {

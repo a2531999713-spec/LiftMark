@@ -5,6 +5,7 @@ type MigrationCompatible = Pick<SQLiteDatabase, 'execAsync' | 'getAllAsync' | 'r
 
 const REQUIRED_COLUMNS: Record<string, string[]> = {
   group_members: [
+    'owner_user_id',
     'avatar_url',
     'user_id',
     'member_type',
@@ -17,7 +18,7 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     'last_synced_at',
     'deleted_at',
   ],
-  member_profiles: ['avatar_url', 'avatar_thumb_url', 'avatar_local_uri', 'avatar_updated_at'],
+  member_profiles: ['owner_user_id', 'avatar_url', 'avatar_thumb_url', 'avatar_local_uri', 'avatar_updated_at'],
   account_profile_cache: [
     'display_name',
     'phone_masked',
@@ -29,8 +30,9 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     'avatar_local_uri',
     'avatar_updated_at',
   ],
-  body_metrics: ['remote_id', 'sync_status', 'sync_error', 'version', 'last_synced_at', 'deleted_at'],
+  body_metrics: ['owner_user_id', 'remote_id', 'sync_status', 'sync_error', 'version', 'last_synced_at', 'deleted_at'],
   workout_exercise_records: [
+    'owner_user_id',
     'remote_id',
     'sync_status',
     'sync_error',
@@ -40,6 +42,7 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     'updated_at',
   ],
   workout_sets: [
+    'owner_user_id',
     'remote_id',
     'sync_status',
     'sync_error',
@@ -49,11 +52,20 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     'actual_rest_seconds',
   ],
   groups: ['remote_id', 'sync_status', 'sync_error', 'version', 'last_synced_at', 'deleted_at'],
-  workout_sessions: ['remote_id', 'sync_status', 'sync_error', 'version', 'last_synced_at', 'deleted_at'],
+  workout_sessions: ['owner_user_id', 'remote_id', 'sync_status', 'sync_error', 'version', 'last_synced_at', 'deleted_at'],
+  local_sync_queue: ['owner_user_id'],
+  plan_templates: ['owner_user_id'],
+  plan_phases: ['owner_user_id'],
+  plan_days: ['owner_user_id'],
+  plan_exercises: ['owner_user_id'],
+  progression_suggestions: ['owner_user_id'],
+  recovery_logs: ['owner_user_id'],
+  body_metric_goals: ['owner_user_id'],
 };
 
 const COLUMN_DEFINITIONS: Record<string, Record<string, string>> = {
   group_members: {
+    owner_user_id: 'owner_user_id TEXT',
     avatar_url: 'avatar_url TEXT',
     user_id: 'user_id TEXT',
     member_type: "member_type TEXT NOT NULL DEFAULT 'local'",
@@ -67,6 +79,7 @@ const COLUMN_DEFINITIONS: Record<string, Record<string, string>> = {
     deleted_at: 'deleted_at TEXT',
   },
   member_profiles: {
+    owner_user_id: 'owner_user_id TEXT',
     avatar_url: 'avatar_url TEXT',
     avatar_thumb_url: 'avatar_thumb_url TEXT',
     avatar_local_uri: 'avatar_local_uri TEXT',
@@ -84,6 +97,7 @@ const COLUMN_DEFINITIONS: Record<string, Record<string, string>> = {
     avatar_updated_at: 'avatar_updated_at TEXT',
   },
   body_metrics: {
+    owner_user_id: 'owner_user_id TEXT',
     remote_id: 'remote_id TEXT',
     sync_status: "sync_status TEXT NOT NULL DEFAULT 'local_only'",
     sync_error: 'sync_error TEXT',
@@ -92,6 +106,7 @@ const COLUMN_DEFINITIONS: Record<string, Record<string, string>> = {
     deleted_at: 'deleted_at TEXT',
   },
   workout_exercise_records: {
+    owner_user_id: 'owner_user_id TEXT',
     remote_id: 'remote_id TEXT',
     sync_status: "sync_status TEXT NOT NULL DEFAULT 'local_only'",
     sync_error: 'sync_error TEXT',
@@ -101,6 +116,7 @@ const COLUMN_DEFINITIONS: Record<string, Record<string, string>> = {
     updated_at: 'updated_at TEXT',
   },
   workout_sets: {
+    owner_user_id: 'owner_user_id TEXT',
     remote_id: 'remote_id TEXT',
     sync_status: "sync_status TEXT NOT NULL DEFAULT 'local_only'",
     sync_error: 'sync_error TEXT',
@@ -118,12 +134,37 @@ const COLUMN_DEFINITIONS: Record<string, Record<string, string>> = {
     deleted_at: 'deleted_at TEXT',
   },
   workout_sessions: {
+    owner_user_id: 'owner_user_id TEXT',
     remote_id: 'remote_id TEXT',
     sync_status: "sync_status TEXT NOT NULL DEFAULT 'local_only'",
     sync_error: 'sync_error TEXT',
     version: 'version INTEGER NOT NULL DEFAULT 0',
     last_synced_at: 'last_synced_at TEXT',
     deleted_at: 'deleted_at TEXT',
+  },
+  local_sync_queue: {
+    owner_user_id: 'owner_user_id TEXT',
+  },
+  plan_templates: {
+    owner_user_id: 'owner_user_id TEXT',
+  },
+  plan_phases: {
+    owner_user_id: 'owner_user_id TEXT',
+  },
+  plan_days: {
+    owner_user_id: 'owner_user_id TEXT',
+  },
+  plan_exercises: {
+    owner_user_id: 'owner_user_id TEXT',
+  },
+  progression_suggestions: {
+    owner_user_id: 'owner_user_id TEXT',
+  },
+  recovery_logs: {
+    owner_user_id: 'owner_user_id TEXT',
+  },
+  body_metric_goals: {
+    owner_user_id: 'owner_user_id TEXT',
   },
 };
 

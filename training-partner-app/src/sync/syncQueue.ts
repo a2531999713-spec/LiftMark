@@ -1,5 +1,6 @@
 import { initializeLocalDatabase } from '@/data/local/db';
 import { createId } from '@/domain/common/ids';
+import { getCurrentAccountUserId } from '@/data/local/accountScope';
 
 import type { SyncEntity, SyncQueueItem, SyncStatus } from './syncTypes';
 
@@ -11,6 +12,7 @@ type SyncQueueRow = {
   last_attempted_at: string | null;
   local_id: string;
   operation: SyncQueueItem['operation'];
+  owner_user_id: string | null;
   payload: string;
   remote_id: string | null;
   status: SyncStatus;
@@ -37,6 +39,7 @@ function mapQueueRow(row: SyncQueueRow): SyncQueueItem {
     lastAttemptedAt: row.last_attempted_at ?? undefined,
     localId: row.local_id,
     operation: row.operation,
+    ownerUserId: row.owner_user_id ?? undefined,
     payload: JSON.parse(row.payload) as Record<string, unknown>,
     remoteId: row.remote_id ?? undefined,
     status: row.status,
@@ -45,24 +48,129 @@ function mapQueueRow(row: SyncQueueRow): SyncQueueItem {
   };
 }
 
+async function resolveEntityOwnerUserId(
+  db: Awaited<ReturnType<typeof initializeLocalDatabase>>,
+  entity: SyncEntity,
+): Promise<string | null> {
+  const payloadOwner =
+    typeof entity.payload?.ownerUserId === 'string'
+      ? entity.payload.ownerUserId
+      : typeof entity.payload?.owner_user_id === 'string'
+        ? entity.payload.owner_user_id
+        : undefined;
+  if (entity.ownerUserId !== undefined) return entity.ownerUserId;
+  if (payloadOwner) return payloadOwner;
+
+  switch (entity.entityType) {
+    case 'workoutSessions': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(ws.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM workout_sessions ws
+         LEFT JOIN groups ON groups.id = ws.group_id
+         WHERE ws.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'workoutExerciseRecords': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(record.owner_user_id, session.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM workout_exercise_records record
+         LEFT JOIN workout_sessions session ON session.id = record.session_id
+         LEFT JOIN groups ON groups.id = session.group_id
+         WHERE record.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'workoutSets': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(ws.owner_user_id, session.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM workout_sets ws
+         LEFT JOIN workout_sessions session ON session.id = ws.session_id
+         LEFT JOIN groups ON groups.id = session.group_id
+         WHERE ws.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'trainingPlans': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(owner_user_id, creator_id) AS owner_user_id
+         FROM plan_templates
+         WHERE id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'planDays': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(pd.owner_user_id, pt.owner_user_id, pt.creator_id) AS owner_user_id
+         FROM plan_days pd
+         LEFT JOIN plan_templates pt ON pt.id = pd.plan_id
+         WHERE pd.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'planExercises': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(pe.owner_user_id, pd.owner_user_id, pt.owner_user_id, pt.creator_id) AS owner_user_id
+         FROM plan_exercises pe
+         LEFT JOIN plan_days pd ON pd.id = pe.plan_day_id
+         LEFT JOIN plan_templates pt ON pt.id = pd.plan_id
+         WHERE pe.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'bodyMetrics': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(bm.owner_user_id, gm.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM body_metrics bm
+         LEFT JOIN group_members gm ON gm.id = bm.member_id
+         LEFT JOIN groups ON groups.id = gm.group_id
+         WHERE bm.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'settings':
+      return getCurrentAccountUserId();
+    default:
+      return null;
+  }
+}
+
+function ownerFilterSql(userId: string | null) {
+  return userId
+    ? { sql: 'owner_user_id = ?', params: [userId] }
+    : { sql: 'owner_user_id IS NULL', params: [] };
+}
+
 export async function enqueueSyncCandidate(entity: SyncEntity): Promise<void> {
   const db = await initializeLocalDatabase();
   const now = new Date().toISOString();
   const status = normalizeQueueStatus(entity);
+  const ownerUserId = await resolveEntityOwnerUserId(db, entity);
+  const ownerFilter = ownerFilterSql(ownerUserId);
   const existing = await db.getFirstAsync<{ id: string }>(
     `SELECT id FROM local_sync_queue
-     WHERE entity_type = ? AND local_id = ? AND status IN ('pending_create', 'pending_update', 'pending_delete', 'sync_failed')
+     WHERE entity_type = ? AND local_id = ? AND ${ownerFilter.sql}
+       AND status IN ('pending_create', 'pending_update', 'pending_delete', 'sync_failed')
      ORDER BY created_at DESC
      LIMIT 1`,
     entity.entityType,
     entity.localId,
+    ...ownerFilter.params,
   );
 
   if (existing) {
     await db.runAsync(
       `UPDATE local_sync_queue
-       SET remote_id = ?, operation = ?, status = ?, payload = ?, sync_error = NULL, updated_at = ?
+       SET owner_user_id = ?, remote_id = ?, operation = ?, status = ?, payload = ?, sync_error = NULL, updated_at = ?
        WHERE id = ?`,
+      ownerUserId,
       entity.remoteId ?? null,
       entity.operation,
       status,
@@ -75,10 +183,11 @@ export async function enqueueSyncCandidate(entity: SyncEntity): Promise<void> {
 
   await db.runAsync(
     `INSERT INTO local_sync_queue (
-      id, entity_type, local_id, remote_id, operation, status, payload,
+      id, owner_user_id, entity_type, local_id, remote_id, operation, status, payload,
       attempts, sync_error, last_attempted_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     createId('sync_queue'),
+    ownerUserId,
     entity.entityType,
     entity.localId,
     entity.remoteId ?? null,
@@ -95,19 +204,26 @@ export async function enqueueSyncCandidate(entity: SyncEntity): Promise<void> {
 
 export async function countPendingSyncItems(): Promise<number> {
   const db = await initializeLocalDatabase();
+  const currentUserId = await getCurrentAccountUserId();
+  const ownerFilter = ownerFilterSql(currentUserId);
   const row = await db.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) AS count FROM local_sync_queue
-     WHERE status IN ('pending_create', 'pending_update', 'pending_delete', 'sync_failed')`,
+     WHERE ${ownerFilter.sql}
+       AND status IN ('pending_create', 'pending_update', 'pending_delete', 'sync_failed')`,
+    ...ownerFilter.params,
   );
   return row?.count ?? 0;
 }
 
-export async function listPendingSyncItems(): Promise<SyncQueueItem[]> {
+export async function listPendingSyncItems(options: { includeAllAccounts?: boolean } = {}): Promise<SyncQueueItem[]> {
   const db = await initializeLocalDatabase();
+  const currentUserId = await getCurrentAccountUserId();
+  const ownerFilter = options.includeAllAccounts ? null : ownerFilterSql(currentUserId);
   const rows = await db.getAllAsync<SyncQueueRow>(
     `SELECT * FROM local_sync_queue
-     WHERE status IN ('pending_create', 'pending_update', 'pending_delete', 'sync_failed')
+     WHERE ${ownerFilter ? `${ownerFilter.sql} AND ` : ''}status IN ('pending_create', 'pending_update', 'pending_delete', 'sync_failed')
      ORDER BY updated_at ASC`,
+    ...(ownerFilter?.params ?? []),
   );
   return rows.map(mapQueueRow);
 }

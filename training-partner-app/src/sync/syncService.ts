@@ -15,7 +15,7 @@ const defaultPreferences: SyncPreferences = {
   wifiOnly: true,
 };
 
-export const SYNC_NOT_CONFIGURED_MESSAGE = '云同步已接入队列。云端不可用时，训练数据会保留在当前设备并等待重试。';
+export const SYNC_NOT_CONFIGURED_MESSAGE = 'Cloud sync is queued locally and will retry when the server is available.';
 
 type ServerSyncEntityType =
   | 'exercises'
@@ -53,6 +53,15 @@ const serverSyncEntityTypes = new Set<SyncEntityType>([
 
 function buildServerEntity(item: SyncQueueItem) {
   const payload = item.payload ?? {};
+  const ownerPayload = item.ownerUserId
+    ? {
+        ...payload,
+        ownerUserId: item.ownerUserId,
+        owner_user_id: item.ownerUserId,
+        userId: item.ownerUserId,
+        user_id: item.ownerUserId,
+      }
+    : payload;
   return {
     clientId: item.localId,
     serverId: item.remoteId,
@@ -68,8 +77,28 @@ function buildServerEntity(item: SyncQueueItem) {
     status: typeof payload.status === 'string' ? payload.status : undefined,
     updatedAt: item.updatedAt,
     deletedAt: item.operation === 'delete' ? new Date().toISOString() : undefined,
-    payload,
+    payload: ownerPayload,
   };
+}
+
+function filterQueueItemsForUser(items: SyncQueueItem[], userId: string) {
+  const owned: SyncQueueItem[] = [];
+  let unboundCount = 0;
+  let otherAccountCount = 0;
+
+  for (const item of items) {
+    if (item.ownerUserId === userId) {
+      owned.push(item);
+      continue;
+    }
+    if (!item.ownerUserId) {
+      unboundCount += 1;
+    } else {
+      otherAccountCount += 1;
+    }
+  }
+
+  return { owned, otherAccountCount, unboundCount };
 }
 
 export async function getSyncSnapshot(): Promise<SyncSnapshot & { lastError?: string; serverStatus?: unknown }> {
@@ -98,7 +127,7 @@ export async function getSyncSnapshot(): Promise<SyncSnapshot & { lastError?: st
   } catch (error) {
     return {
       lastSyncedAt: undefined,
-      lastError: error instanceof Error ? error.message : '同步状态加载失败。',
+      lastError: error instanceof Error ? error.message : 'Sync status failed to load.',
       pendingCount,
       preferences: defaultPreferences,
       status: 'failed',
@@ -118,17 +147,23 @@ export async function updateSyncPreferences(preferences: SyncPreferences): Promi
 
 export async function requestImmediateSync(): Promise<{ ok: true; message?: string } | { ok: false; message: string }> {
   const session = await readStoredSession();
-  if (!session) return { ok: false, message: '请先登录后再使用云同步。' };
-  const pendingItems = await listPendingSyncItems();
+  if (!session) return { ok: false, message: 'Please sign in before using cloud sync.' };
+  const pendingItems = await listPendingSyncItems({ includeAllAccounts: true });
   if (pendingItems.length === 0) {
-    return { ok: true, message: '没有待同步数据。' };
+    return { ok: true, message: 'No pending sync data.' };
   }
 
-  const syncableItems = pendingItems.filter((item) => serverSyncEntityTypes.has(item.entityType));
+  const accountFiltered = filterQueueItemsForUser(pendingItems, session.user.id);
+  const syncableItems = accountFiltered.owned.filter((item) => serverSyncEntityTypes.has(item.entityType));
   if (syncableItems.length === 0) {
-    return { ok: false, message: '当前待同步实体暂未被服务端接口支持。' };
+    if (accountFiltered.unboundCount > 0 || accountFiltered.otherAccountCount > 0) {
+      return {
+        ok: false,
+        message: `Local data from other accounts or unbound data is isolated and will not sync to this account. unbound ${accountFiltered.unboundCount}, otherAccount ${accountFiltered.otherAccountCount}.`,
+      };
+    }
+    return { ok: false, message: 'No syncable items for the current account.' };
   }
-
   try {
     await markSyncItemsSyncing(syncableItems.map((item) => item.id));
 
@@ -161,11 +196,13 @@ export async function requestImmediateSync(): Promise<{ ok: true; message?: stri
       syncableItems.map((item) => markSyncItemSynced(item.id, mappings.get(item.localId)?.serverId)),
     );
 
-    const unsupportedCount = pendingItems.length - syncableItems.length;
-    const suffix = unsupportedCount > 0 ? `，另有 ${unsupportedCount} 条成员/小组类数据需使用专用同步。` : '';
-    return { ok: true, message: `已推送 ${syncableItems.length} 条待同步数据${suffix}` };
+    const unsupportedCount = accountFiltered.owned.length - syncableItems.length;
+    const isolatedCount = accountFiltered.unboundCount + accountFiltered.otherAccountCount;
+    const unsupportedSuffix = unsupportedCount > 0 ? `，另有 ${unsupportedCount} 条数据暂不支持当前同步通道。` : '';
+    const isolationSuffix = isolatedCount > 0 ? ` 本机存在其他账号或未绑定数据 ${isolatedCount} 条，已隔离未上传。` : '';
+    return { ok: true, message: `已推送 ${syncableItems.length} 条待同步数据${unsupportedSuffix}${isolationSuffix}` };
   } catch (error) {
-    const message = error instanceof Error ? error.message : '云同步服务连接失败，训练记录不受影响。';
+    const message = error instanceof Error ? error.message : 'Cloud sync failed. Training data remains on this device.';
     await Promise.all(syncableItems.map((item) => markSyncItemFailed(item.id, message)));
     return {
       ok: false,

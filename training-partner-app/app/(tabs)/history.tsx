@@ -795,7 +795,9 @@ export default function HistoryRoute() {
       const groups = await repositories.groupRepository.listGroups();
       const group = groups.find((item) => item.id === selectedGroupId) ?? groups[0] ?? null;
       if (!group) {
-        throw new Error('默认小组尚未初始化。');
+        setSelectedGroupId(undefined);
+        setHistory(createEmptyHistory());
+        return;
       }
       if (group.id !== selectedGroupId) {
         setSelectedGroupId(group.id);

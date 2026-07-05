@@ -25,6 +25,7 @@ import type {
 import { validateWorkoutSetInput } from '@/domain/workout/workout.validation';
 
 import { requireRow, type DatabaseProvider } from './base';
+import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite } from '../accountScope';
 import {
   mapExercise,
   mapGroupMember,
@@ -53,6 +54,41 @@ type DeletedEntity = {
 
 export class SQLiteWorkoutRepository implements WorkoutRepository {
   constructor(private readonly getDb: DatabaseProvider) {}
+
+  private async getVisibleGroupOwnerUserId(groupId: string): Promise<string | null> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+    const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+      `SELECT owner_user_id FROM groups
+       WHERE id = ?
+         AND ${scope.where}
+         AND deleted_at IS NULL
+       LIMIT 1`,
+      groupId,
+      ...scope.params,
+    );
+    if (!row) {
+      throw new Error(`Group not visible for current account: ${groupId}`);
+    }
+    return getOwnerUserIdForWrite(userId, row.owner_user_id);
+  }
+
+  private async getOwnedSessionRow(sessionId: string): Promise<WorkoutSessionRow | null> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+    return db.getFirstAsync<WorkoutSessionRow>(
+      `SELECT ws.* FROM workout_sessions ws
+       INNER JOIN groups ON groups.id = ws.group_id
+       WHERE ws.id = ?
+         AND ${scope.where}
+         AND ws.deleted_at IS NULL
+         AND groups.deleted_at IS NULL`,
+      sessionId,
+      ...scope.params,
+    );
+  }
 
   private async enqueueDeletedEntities(entities: DeletedEntity[], updatedAt: string): Promise<void> {
     await Promise.all(
@@ -108,6 +144,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async createSessionFromTodayPlan(input: CreateSessionFromTodayPlanInput): Promise<WorkoutSession> {
     const db = await this.getDb();
+    const ownerUserId = await this.getVisibleGroupOwnerUserId(input.groupId);
     const now = nowIso();
     const trainingMode = input.trainingMode ?? 'group_local';
     let session: WorkoutSession | null = null;
@@ -215,10 +252,11 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
       await txn.runAsync(
         `INSERT INTO workout_sessions (
-          id, group_id, plan_id, phase_id, date, week, weekday, title,
+          id, owner_user_id, group_id, plan_id, phase_id, date, week, weekday, title,
           status, training_mode, started_at, finished_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         createdSession.id,
+        ownerUserId,
         createdSession.groupId,
         createdSession.planId,
         createdSession.phaseId ?? null,
@@ -238,12 +276,13 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         const recordId = createId('exercise_record');
         await txn.runAsync(
           `INSERT INTO workout_exercise_records (
-            id, session_id, plan_exercise_id, exercise_id, order_index,
+            id, owner_user_id, session_id, plan_exercise_id, exercise_id, order_index,
             replaced_from_exercise_id, priority, planned_sets, planned_reps,
             planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
             planned_percent_1rm, planned_rest_seconds, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           recordId,
+          ownerUserId,
           createdSession.id,
           planExercise.id,
           planExercise.exerciseId,
@@ -309,11 +348,12 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
           for (let setNumber = 1; setNumber <= setCount; setNumber += 1) {
             await txn.runAsync(
               `INSERT INTO workout_sets (
-                id, session_id, exercise_record_id, member_id, set_number,
+                id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
                 planned_weight, actual_weight, planned_reps, actual_reps,
                 rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               createId('set'),
+              ownerUserId,
               createdSession.id,
               recordId,
               member.id,
@@ -347,6 +387,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async createManualSession(input: CreateManualSessionInput): Promise<WorkoutSession> {
     const db = await this.getDb();
+    const ownerUserId = await this.getVisibleGroupOwnerUserId(input.groupId);
     const now = nowIso();
     const weekday = (new Date(`${input.date}T12:00:00`).getDay() || 7) as WorkoutSession['weekday'];
     const manualExercises = this.normalizeManualExercises(input);
@@ -369,10 +410,11 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     await db.withExclusiveTransactionAsync(async (txn) => {
       await txn.runAsync(
         `INSERT INTO workout_sessions (
-          id, group_id, plan_id, phase_id, date, week, weekday, title,
+          id, owner_user_id, group_id, plan_id, phase_id, date, week, weekday, title,
           status, training_mode, started_at, finished_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         session.id,
+        ownerUserId,
         session.groupId,
         session.planId,
         null,
@@ -393,12 +435,13 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         const plannedReps = exercise.sets[0]?.reps ?? input.reps ?? null;
         await txn.runAsync(
           `INSERT INTO workout_exercise_records (
-            id, session_id, plan_exercise_id, exercise_id, order_index,
+            id, owner_user_id, session_id, plan_exercise_id, exercise_id, order_index,
             replaced_from_exercise_id, priority, planned_sets, planned_reps,
             planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
             planned_percent_1rm, planned_rest_seconds, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           recordId,
+          ownerUserId,
           session.id,
           null,
           exercise.exerciseId,
@@ -419,11 +462,12 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         for (const [setIndex, set] of exercise.sets.entries()) {
           await txn.runAsync(
             `INSERT INTO workout_sets (
-              id, session_id, exercise_record_id, member_id, set_number,
+              id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
               planned_weight, actual_weight, planned_reps, actual_reps,
               rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             createId('set'),
+            ownerUserId,
             session.id,
             recordId,
             input.memberId,
@@ -449,11 +493,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   }
 
   async getSession(sessionId: string): Promise<WorkoutSession | null> {
-    const db = await this.getDb();
-    const row = await db.getFirstAsync<WorkoutSessionRow>(
-      'SELECT * FROM workout_sessions WHERE id = ? AND deleted_at IS NULL',
-      sessionId,
-    );
+    const row = await this.getOwnedSessionRow(sessionId);
     return row ? mapWorkoutSession(row) : null;
   }
 
@@ -484,13 +524,19 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async listOpenSessionsForDate(input: ListOpenWorkoutSessionsForDateInput): Promise<WorkoutSession[]> {
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
     const rows = await db.getAllAsync<WorkoutSessionRow>(
-      `SELECT * FROM workout_sessions
-       WHERE group_id = ? AND date = ? AND status IN ('draft', 'in_progress')
-         AND deleted_at IS NULL
-       ORDER BY updated_at DESC, created_at DESC`,
+      `SELECT ws.* FROM workout_sessions ws
+       INNER JOIN groups ON groups.id = ws.group_id
+       WHERE ws.group_id = ? AND ws.date = ? AND ws.status IN ('draft', 'in_progress')
+         AND ${scope.where}
+         AND ws.deleted_at IS NULL
+         AND groups.deleted_at IS NULL
+       ORDER BY ws.updated_at DESC, ws.created_at DESC`,
       input.groupId,
       input.date,
+      ...scope.params,
     );
     return rows.map(mapWorkoutSession);
   }
@@ -527,6 +573,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const db = await this.getDb();
     const session = await requireRow(await this.getSession(input.sessionId), `未找到训练：${input.sessionId}`);
     const now = nowIso();
+    const ownerUserId = await this.getVisibleGroupOwnerUserId(session.groupId);
     const sets = input.sets?.length ? input.sets : [{ completed: true }];
     const memberIds = input.memberIds?.length ? input.memberIds : [input.memberId];
 
@@ -553,12 +600,13 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
       await txn.runAsync(
         `INSERT INTO workout_exercise_records (
-          id, session_id, plan_exercise_id, exercise_id, order_index,
+          id, owner_user_id, session_id, plan_exercise_id, exercise_id, order_index,
           replaced_from_exercise_id, priority, planned_sets, planned_reps,
           planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
           planned_percent_1rm, planned_rest_seconds, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         recordId,
+        ownerUserId,
         session.id,
         null,
         input.exerciseId,
@@ -580,11 +628,12 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         for (const [index, set] of sets.entries()) {
           await txn.runAsync(
             `INSERT INTO workout_sets (
-              id, session_id, exercise_record_id, member_id, set_number,
+              id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
               planned_weight, actual_weight, planned_reps, actual_reps,
               rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             createId('set'),
+            ownerUserId,
             session.id,
             recordId,
             memberId,
@@ -612,6 +661,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   async addSetToExerciseRecord(input: AddWorkoutSetInput): Promise<WorkoutSet> {
     const db = await this.getDb();
     const now = nowIso();
+    const session = await requireRow(await this.getSession(input.sessionId), `Workout session not visible: ${input.sessionId}`);
+    const ownerUserId = await this.getVisibleGroupOwnerUserId(session.groupId);
     const record = await requireRow(
       await db.getFirstAsync<WorkoutExerciseRecordRow>(
         'SELECT * FROM workout_exercise_records WHERE id = ? AND session_id = ? AND deleted_at IS NULL',
@@ -647,11 +698,12 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
     await db.runAsync(
       `INSERT INTO workout_sets (
-        id, session_id, exercise_record_id, member_id, set_number,
+        id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
         planned_weight, actual_weight, planned_reps, actual_reps,
         rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       setRow.id,
+      ownerUserId,
       setRow.session_id,
       setRow.exercise_record_id,
       setRow.member_id,
@@ -675,6 +727,24 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async updateExerciseRecordExercise(recordId: string, exerciseId: string, notes?: string): Promise<void> {
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+    const record = await db.getFirstAsync<{ id: string }>(
+      `SELECT record.id FROM workout_exercise_records record
+       INNER JOIN workout_sessions session ON session.id = record.session_id
+       INNER JOIN groups ON groups.id = session.group_id
+       WHERE record.id = ?
+         AND ${scope.where}
+         AND record.deleted_at IS NULL
+         AND session.deleted_at IS NULL
+         AND groups.deleted_at IS NULL
+       LIMIT 1`,
+      recordId,
+      ...scope.params,
+    );
+    if (!record) {
+      throw new Error(`Workout exercise record not visible for current account: ${recordId}`);
+    }
     await db.runAsync(
       `UPDATE workout_exercise_records
        SET exercise_id = ?,
@@ -691,8 +761,21 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     validateWorkoutSetInput(input);
 
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
     const current = await requireRow(
-      await db.getFirstAsync<WorkoutSetRow>('SELECT * FROM workout_sets WHERE id = ? AND deleted_at IS NULL', input.id),
+      await db.getFirstAsync<WorkoutSetRow>(
+        `SELECT ws.* FROM workout_sets ws
+         INNER JOIN workout_sessions session ON session.id = ws.session_id
+         INNER JOIN groups ON groups.id = session.group_id
+         WHERE ws.id = ?
+           AND ${scope.where}
+           AND ws.deleted_at IS NULL
+           AND session.deleted_at IS NULL
+           AND groups.deleted_at IS NULL`,
+        input.id,
+        ...scope.params,
+      ),
       `未找到训练组：${input.id}`,
     );
     const updated = {
@@ -729,6 +812,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async deleteSet(setId: string): Promise<void> {
     const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
     const row = await db.getFirstAsync<{
       exercise_record_id: string;
       group_id: string;
@@ -739,8 +824,14 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       `SELECT ws.id, ws.remote_id, ws.session_id, ws.exercise_record_id, session.group_id
        FROM workout_sets ws
        INNER JOIN workout_sessions session ON session.id = ws.session_id
-       WHERE ws.id = ? AND ws.deleted_at IS NULL`,
+       INNER JOIN groups ON groups.id = session.group_id
+       WHERE ws.id = ?
+         AND ${scope.where}
+         AND ws.deleted_at IS NULL
+         AND session.deleted_at IS NULL
+         AND groups.deleted_at IS NULL`,
       setId,
+      ...scope.params,
     );
 
     if (!row) {
@@ -789,6 +880,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   async deleteExerciseRecord(recordId: string): Promise<void> {
     const db = await this.getDb();
     const now = nowIso();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
     const record = await db.getFirstAsync<{
       group_id: string;
       id: string;
@@ -798,8 +891,14 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       `SELECT record.id, record.remote_id, record.session_id, session.group_id
        FROM workout_exercise_records record
        INNER JOIN workout_sessions session ON session.id = record.session_id
-       WHERE record.id = ? AND record.deleted_at IS NULL`,
+       INNER JOIN groups ON groups.id = session.group_id
+       WHERE record.id = ?
+         AND ${scope.where}
+         AND record.deleted_at IS NULL
+         AND session.deleted_at IS NULL
+         AND groups.deleted_at IS NULL`,
       recordId,
+      ...scope.params,
     );
     if (!record) {
       return;
@@ -866,6 +965,10 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   async deleteMemberSetsInSession(sessionId: string, memberId: string): Promise<void> {
     const db = await this.getDb();
     const now = nowIso();
+    const visibleSession = await this.getSession(sessionId);
+    if (!visibleSession) {
+      return;
+    }
     const setRows = await db.getAllAsync<{
       group_id: string;
       id: string;
@@ -911,6 +1014,10 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   async deleteSessionCascade(sessionId: string): Promise<void> {
     const db = await this.getDb();
     const now = nowIso();
+    const visibleSession = await this.getSession(sessionId);
+    if (!visibleSession) {
+      return;
+    }
     const session = await db.getFirstAsync<{
       group_id: string;
       id: string;
@@ -1006,6 +1113,10 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   async cleanupEmptyExerciseRecords(sessionId: string): Promise<void> {
     const db = await this.getDb();
     const now = nowIso();
+    const visibleSession = await this.getSession(sessionId);
+    if (!visibleSession) {
+      return;
+    }
     const session = await db.getFirstAsync<{
       group_id: string;
       id: string;
@@ -1091,6 +1202,10 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async getSessionAggregation(sessionId: string): Promise<WorkoutSessionAggregation> {
     const db = await this.getDb();
+    const visibleSession = await this.getSession(sessionId);
+    if (!visibleSession) {
+      throw new Error(`Workout session not visible for current account: ${sessionId}`);
+    }
     const rows = await db.getAllAsync<{
       completed_sets: number;
       member_id: string;
@@ -1137,6 +1252,10 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   async finishSession(sessionId: string): Promise<WorkoutSummary> {
     const db = await this.getDb();
     const now = nowIso();
+    const visibleSession = await this.getSession(sessionId);
+    if (!visibleSession) {
+      throw new Error(`Workout session not visible for current account: ${sessionId}`);
+    }
     await db.runAsync(
       `UPDATE workout_sessions
        SET status = ?, finished_at = ?, updated_at = ?
@@ -1175,6 +1294,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   async listSessions(input: ListSessionsInput): Promise<WorkoutSession[]> {
     const db = await this.getDb();
     const limit = input.limit ?? 50;
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
 
     const clauses: string[] = [];
     const params: (number | string)[] = [];
@@ -1205,10 +1326,14 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     }
 
     clauses.push('ws.deleted_at IS NULL');
+    clauses.push('groups.deleted_at IS NULL');
+    clauses.push(scope.where);
+    params.push(...scope.params);
 
     const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
     const rows = await db.getAllAsync<WorkoutSessionRow>(
       `SELECT ws.* FROM workout_sessions ws
+       INNER JOIN groups ON groups.id = ws.group_id
        ${where}
        ORDER BY ws.date DESC, ws.updated_at DESC
        LIMIT ?`,

@@ -4,6 +4,7 @@ import type { BodyMetricsRepository } from '@/data/repositories/bodyMetricsRepos
 import type { BodyMetric, BodyMetricGoal, UpsertBodyMetricGoalInput, UpsertBodyMetricInput } from '@/domain/body/body-metrics.types';
 
 import type { DatabaseProvider } from './base';
+import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite } from '../accountScope';
 
 type BodyMetricRow = {
   id: string;
@@ -68,8 +69,31 @@ function mapBodyMetricGoal(row: BodyMetricGoalRow): BodyMetricGoal {
 export class SQLiteBodyMetricsRepository implements BodyMetricsRepository {
   constructor(private readonly getDb: DatabaseProvider) {}
 
+  private async getVisibleMemberOwnerUserId(memberId: string): Promise<string | null> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+    const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+      `SELECT groups.owner_user_id
+       FROM group_members gm
+       INNER JOIN groups ON groups.id = gm.group_id
+       WHERE gm.id = ?
+         AND ${scope.where}
+         AND gm.deleted_at IS NULL
+         AND groups.deleted_at IS NULL
+       LIMIT 1`,
+      memberId,
+      ...scope.params,
+    );
+    if (!row) {
+      throw new Error(`Member not visible for current account: ${memberId}`);
+    }
+    return getOwnerUserIdForWrite(userId, row.owner_user_id);
+  }
+
   async getGoal(memberId: string): Promise<BodyMetricGoal | null> {
     const db = await this.getDb();
+    await this.getVisibleMemberOwnerUserId(memberId);
     const row = await db.getFirstAsync<BodyMetricGoalRow>(
       'SELECT * FROM body_metric_goals WHERE member_id = ? ORDER BY updated_at DESC LIMIT 1',
       memberId,
@@ -79,6 +103,7 @@ export class SQLiteBodyMetricsRepository implements BodyMetricsRepository {
 
   async getMetricForDate(memberId: string, date: string): Promise<BodyMetric | null> {
     const db = await this.getDb();
+    await this.getVisibleMemberOwnerUserId(memberId);
     const row = await db.getFirstAsync<BodyMetricRow>(
       'SELECT * FROM body_metrics WHERE member_id = ? AND date = ? ORDER BY updated_at DESC LIMIT 1',
       memberId,
@@ -89,6 +114,7 @@ export class SQLiteBodyMetricsRepository implements BodyMetricsRepository {
 
   async listMetrics(memberId: string, limit = 80): Promise<BodyMetric[]> {
     const db = await this.getDb();
+    await this.getVisibleMemberOwnerUserId(memberId);
     const rows = await db.getAllAsync<BodyMetricRow>(
       'SELECT * FROM body_metrics WHERE member_id = ? ORDER BY date DESC, updated_at DESC LIMIT ?',
       memberId,
@@ -99,6 +125,7 @@ export class SQLiteBodyMetricsRepository implements BodyMetricsRepository {
 
   async upsertGoal(input: UpsertBodyMetricGoalInput): Promise<BodyMetricGoal> {
     const db = await this.getDb();
+    const ownerUserId = await this.getVisibleMemberOwnerUserId(input.memberId);
     const now = nowIso();
     const existing = await this.getGoal(input.memberId);
     const goal: BodyMetricGoal = {
@@ -114,15 +141,17 @@ export class SQLiteBodyMetricsRepository implements BodyMetricsRepository {
 
     await db.runAsync(
       `INSERT INTO body_metric_goals (
-        id, member_id, goal_type, target_weight_kg, target_date, notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        id, owner_user_id, member_id, goal_type, target_weight_kg, target_date, notes, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
+        owner_user_id = excluded.owner_user_id,
         goal_type = excluded.goal_type,
         target_weight_kg = excluded.target_weight_kg,
         target_date = excluded.target_date,
         notes = excluded.notes,
         updated_at = excluded.updated_at`,
       goal.id,
+      ownerUserId,
       goal.memberId,
       goal.goalType,
       goal.targetWeightKg ?? null,
@@ -137,6 +166,7 @@ export class SQLiteBodyMetricsRepository implements BodyMetricsRepository {
 
   async upsertMetric(input: UpsertBodyMetricInput): Promise<BodyMetric> {
     const db = await this.getDb();
+    const ownerUserId = await this.getVisibleMemberOwnerUserId(input.memberId);
     const now = nowIso();
     const existing = await this.getMetricForDate(input.memberId, input.date);
     const metric: BodyMetric = {
@@ -158,10 +188,11 @@ export class SQLiteBodyMetricsRepository implements BodyMetricsRepository {
 
     await db.runAsync(
       `INSERT INTO body_metrics (
-        id, member_id, date, weight_kg, body_fat_percent, chest_cm, waist_cm,
+        id, owner_user_id, member_id, date, weight_kg, body_fat_percent, chest_cm, waist_cm,
         hip_cm, bicep_cm, thigh_cm, calf_cm, notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
+        owner_user_id = excluded.owner_user_id,
         date = excluded.date,
         weight_kg = excluded.weight_kg,
         body_fat_percent = excluded.body_fat_percent,
@@ -174,6 +205,7 @@ export class SQLiteBodyMetricsRepository implements BodyMetricsRepository {
         notes = excluded.notes,
         updated_at = excluded.updated_at`,
       metric.id,
+      ownerUserId,
       metric.memberId,
       metric.date,
       metric.weightKg ?? null,

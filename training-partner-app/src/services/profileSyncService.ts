@@ -116,15 +116,48 @@ export async function syncAllLocalGroupsToServer(): Promise<SyncOperationResult>
   try {
     await initializeLocalDatabase();
     const db = await getDatabase();
-    const now = new Date().toISOString();
     const currentUserId = session.user.id;
 
     // 获取所有本地小组
     const localGroups = await db.getAllAsync<{ id: string; name: string; created_at: string }>(
-      'SELECT id, name, created_at FROM groups ORDER BY created_at ASC'
+      `SELECT DISTINCT g.id, g.name, g.created_at
+       FROM groups g
+       LEFT JOIN group_members gm
+         ON gm.group_id = g.id
+        AND gm.user_id = ?
+        AND gm.deleted_at IS NULL
+       WHERE g.deleted_at IS NULL
+         AND (g.owner_user_id = ? OR gm.id IS NOT NULL)
+       ORDER BY g.created_at ASC`,
+      currentUserId,
+      currentUserId,
     );
+    const isolatedGroups = await db.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS count
+       FROM groups g
+       WHERE g.deleted_at IS NULL
+         AND (g.owner_user_id IS NULL OR g.owner_user_id != ?)
+         AND NOT EXISTS (
+           SELECT 1
+           FROM group_members gm
+           WHERE gm.group_id = g.id
+             AND gm.user_id = ?
+             AND gm.deleted_at IS NULL
+         )`,
+      currentUserId,
+      currentUserId,
+    );
+    const isolatedCount = isolatedGroups?.count ?? 0;
 
-    if (localGroups.length === 0) return { ok: true, message: '没有本地小组需要同步。' };
+    if (localGroups.length === 0) {
+      return {
+        ok: true,
+        message:
+          isolatedCount > 0
+            ? `No groups for current account. ${isolatedCount} local groups from other accounts or unbound data were isolated.`
+            : 'No local groups to sync for current account.',
+      };
+    }
 
     // 同步到服务器
     await apiRequest('/sync/groups', {
@@ -141,32 +174,6 @@ export async function syncAllLocalGroupsToServer(): Promise<SyncOperationResult>
 
     // 同步每个小组的成员
     for (const group of localGroups) {
-      const ownedMember = await db.getFirstAsync<{ id: string }>(
-        'SELECT id FROM group_members WHERE group_id = ? AND user_id = ? LIMIT 1',
-        group.id,
-        currentUserId,
-      );
-      if (!ownedMember) {
-        const fallbackMember = await db.getFirstAsync<{ id: string }>(
-          `SELECT id FROM group_members
-           WHERE group_id = ?
-           ORDER BY CASE WHEN display_name = ? THEN 0 ELSE 1 END, created_at ASC
-           LIMIT 1`,
-          group.id,
-          session.user.displayName,
-        );
-        if (fallbackMember) {
-          await db.runAsync(
-            `UPDATE group_members
-             SET user_id = ?, member_type = 'real', local_member_id = COALESCE(local_member_id, id), updated_at = ?
-             WHERE id = ?`,
-            currentUserId,
-            now,
-            fallbackMember.id,
-          );
-        }
-      }
-
       const localMembers = await db.getAllAsync<{
         id: string;
         display_name: string;
@@ -189,8 +196,11 @@ export async function syncAllLocalGroupsToServer(): Promise<SyncOperationResult>
                 mp.barbell_increment, mp.dumbbell_increment
          FROM group_members gm
          LEFT JOIN member_profiles mp ON mp.member_id = gm.id
-         WHERE gm.group_id = ?`,
-        group.id
+         WHERE gm.group_id = ?
+           AND gm.user_id = ?
+           AND gm.deleted_at IS NULL`,
+        group.id,
+        currentUserId,
       );
 
       if (localMembers.length > 0) {
@@ -225,7 +235,13 @@ export async function syncAllLocalGroupsToServer(): Promise<SyncOperationResult>
         }
       }
     }
-    return { ok: true, message: '本地小组和当前账号成员已同步。' };
+    return {
+      ok: true,
+      message:
+        isolatedCount > 0
+          ? `Current account groups synced. ${isolatedCount} local groups from other accounts or unbound data were isolated.`
+          : 'Current account groups synced.',
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : '本地小组同步服务器失败。';
     console.warn('[sync] syncAllLocalGroupsToServer failed', message);
@@ -323,6 +339,9 @@ export async function pullGroupsAndMembers(): Promise<{
  * 将服务器数据同步到本地数据库
  */
 export async function syncServerDataToLocal(): Promise<void> {
+  const session = await readStoredSession();
+  if (!session?.user?.id) return;
+  const currentUserId = session.user.id;
   const { groups } = await pullGroupsAndMembers();
   if (groups.length === 0) return;
 
@@ -330,11 +349,34 @@ export async function syncServerDataToLocal(): Promise<void> {
   const db = await getDatabase();
 
   for (const serverGroup of groups) {
+    const now = new Date().toISOString();
+    const serverHasCurrentUser = serverGroup.members.some((member) => member.userId === currentUserId);
     // 检查本地是否已存在该小组
-    const existingGroup = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM groups WHERE id = ?',
+    const existingGroup = await db.getFirstAsync<{ id: string; owner_user_id: string | null }>(
+      'SELECT id, owner_user_id FROM groups WHERE id = ?',
       serverGroup.id
     );
+    const currentMembership = existingGroup
+      ? await db.getFirstAsync<{ id: string }>(
+          `SELECT id
+           FROM group_members
+           WHERE group_id = ?
+             AND user_id = ?
+             AND deleted_at IS NULL
+           LIMIT 1`,
+          serverGroup.id,
+          currentUserId,
+        )
+      : null;
+
+    if (existingGroup?.owner_user_id && existingGroup.owner_user_id !== currentUserId && !currentMembership && !serverHasCurrentUser) {
+      console.warn('[sync] skipped server group because local group belongs to another account', {
+        groupId: serverGroup.id,
+        localOwnerUserId: existingGroup.owner_user_id,
+        currentUserId,
+      });
+      continue;
+    }
 
     if (!existingGroup) {
       // 创建小组
@@ -343,9 +385,19 @@ export async function syncServerDataToLocal(): Promise<void> {
          VALUES (?, ?, ?, '', 'strength', 1, 0, 'default_rest', ?, ?)`,
         serverGroup.id,
         serverGroup.name,
-        serverGroup.members[0]?.userId || '',
-        new Date().toISOString(),
-        new Date().toISOString()
+        currentUserId,
+        now,
+        now
+      );
+    } else {
+      await db.runAsync(
+        `UPDATE groups
+         SET name = ?, owner_user_id = COALESCE(owner_user_id, ?), updated_at = ?
+         WHERE id = ?`,
+        serverGroup.name,
+        currentUserId,
+        now,
+        serverGroup.id,
       );
     }
 
@@ -353,9 +405,14 @@ export async function syncServerDataToLocal(): Promise<void> {
     for (const serverMember of serverGroup.members) {
       // 检查本地是否已存在该成员
       const existingMember = await db.getFirstAsync<{ id: string }>(
-        'SELECT id FROM group_members WHERE id = ? OR (group_id = ? AND user_id = ?)',
-        serverMember.id,
+        `SELECT id
+         FROM group_members
+         WHERE group_id = ?
+           AND (id = ? OR user_id = ?)
+           AND deleted_at IS NULL
+         LIMIT 1`,
         serverGroup.id,
+        serverMember.id,
         serverMember.userId
       );
 
@@ -363,47 +420,51 @@ export async function syncServerDataToLocal(): Promise<void> {
         // 创建成员
         await db.runAsync(
           `INSERT INTO group_members (
-            id, group_id, display_name, user_id, member_type, local_member_id,
+            id, owner_user_id, group_id, display_name, user_id, member_type, local_member_id,
             role, avatar_url, joined_at, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, 'real', NULL, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, 'real', NULL, ?, ?, ?, ?, ?)`,
           serverMember.id,
+          currentUserId,
           serverGroup.id,
           serverMember.displayName ?? serverMember.nickname,
           serverMember.userId,
           serverMember.role,
           resolveAvatarUrl(serverMember.avatarUrl) ?? null,
-          new Date().toISOString(),
-          new Date().toISOString(),
-          new Date().toISOString()
+          now,
+          now,
+          now
         );
       } else {
         // 更新成员头像
         await db.runAsync(
           `UPDATE group_members
-           SET display_name = ?, user_id = ?, member_type = 'real', avatar_url = ?, updated_at = ?
+           SET owner_user_id = ?, display_name = ?, user_id = ?, member_type = 'real', avatar_url = ?, updated_at = ?
            WHERE id = ?`,
+          currentUserId,
           serverMember.displayName ?? serverMember.nickname,
           serverMember.userId,
           resolveAvatarUrl(serverMember.avatarUrl) ?? null,
-          new Date().toISOString(),
+          now,
           existingMember.id
         );
       }
 
       // 同步成员资料
       const existingProfile = await db.getFirstAsync<{ id: string }>(
-        'SELECT id FROM member_profiles WHERE member_id = ?',
-        existingMember?.id || serverMember.id
+        'SELECT id FROM member_profiles WHERE member_id = ? AND group_id = ?',
+        existingMember?.id || serverMember.id,
+        serverGroup.id,
       );
 
       if (existingProfile) {
         await db.runAsync(
           `UPDATE member_profiles SET
-            bodyweight = ?, bench_1rm = ?, squat_1rm = ?, deadlift_1rm = ?,
+            owner_user_id = ?, bodyweight = ?, bench_1rm = ?, squat_1rm = ?, deadlift_1rm = ?,
             overhead_press_1rm = ?, pullup_reference_weight = ?,
             barbell_increment = ?, dumbbell_increment = ?, updated_at = ?,
             avatar_url = ?, avatar_thumb_url = ?, avatar_local_uri = ?, avatar_updated_at = ?
            WHERE id = ?`,
+          currentUserId,
           serverMember.profile.bodyweight ?? null,
           serverMember.profile.bench1RM ?? null,
           serverMember.profile.squat1RM ?? null,
@@ -412,23 +473,24 @@ export async function syncServerDataToLocal(): Promise<void> {
           serverMember.profile.pullupReferenceWeight ?? null,
           serverMember.profile.barbellIncrement ?? 2.5,
           serverMember.profile.dumbbellIncrement ?? 2,
-          new Date().toISOString(),
+          now,
           resolveAvatarUrl(serverMember.avatarUrl) ?? null,
           resolveAvatarUrl(serverMember.avatarThumbUrl ?? serverMember.avatarUrl) ?? null,
           null,
-          serverMember.avatarUpdatedAt ?? new Date().toISOString(),
+          serverMember.avatarUpdatedAt ?? now,
           existingProfile.id
         );
       } else {
         const memberId = existingMember?.id || serverMember.id;
         await db.runAsync(
           `INSERT INTO member_profiles (
-            id, member_id, group_id, bodyweight, bench_1rm, squat_1rm, deadlift_1rm,
+            id, owner_user_id, member_id, group_id, bodyweight, bench_1rm, squat_1rm, deadlift_1rm,
             overhead_press_1rm, pullup_reference_weight, barbell_increment, dumbbell_increment,
             avatar_url, avatar_thumb_url, avatar_local_uri, avatar_updated_at,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           createId('profile'),
+          currentUserId,
           memberId,
           serverGroup.id,
           serverMember.profile.bodyweight ?? null,
@@ -442,9 +504,9 @@ export async function syncServerDataToLocal(): Promise<void> {
           resolveAvatarUrl(serverMember.avatarUrl) ?? null,
           resolveAvatarUrl(serverMember.avatarThumbUrl ?? serverMember.avatarUrl) ?? null,
           null,
-          serverMember.avatarUpdatedAt ?? new Date().toISOString(),
-          new Date().toISOString(),
-          new Date().toISOString()
+          serverMember.avatarUpdatedAt ?? now,
+          now,
+          now
         );
       }
     }
