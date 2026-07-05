@@ -46,6 +46,7 @@ import type {
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
+import { requestImmediateSync } from '@/sync/syncService';
 import { colors, radius, spacing } from '@/theme';
 
 function formatTimer(seconds: number): string {
@@ -416,30 +417,32 @@ export default function WorkoutRoute() {
       return;
     }
 
-    setIsFinishing(true);
-    setError(null);
-    try {
-      await repositories.workoutRepository.finishSession(sessionId);
-      if (detail) {
-        void enqueueSyncCandidate({
-          entityType: 'workoutSessions',
-          localId: detail.session.id,
-          operation: 'update',
-          payload: {
-            date: detail.session.date,
-            groupId: detail.session.groupId,
-            planId: detail.session.planId,
-            status: 'completed',
-            title: detail.session.title,
-            trainingMode: detail.session.trainingMode,
-            week: detail.session.week,
-            weekday: detail.session.weekday,
-          },
-          status: 'pending_update',
-          updatedAt: new Date().toISOString(),
-        }).catch(() => undefined);
-      }
-      router.replace({ pathname: '/workout/summary/[sessionId]', params: { sessionId } });
+      setIsFinishing(true);
+      setError(null);
+      try {
+        await repositories.workoutRepository.finishSession(sessionId);
+        if (detail) {
+          void enqueueSyncCandidate({
+            entityType: 'workoutSessions',
+            localId: detail.session.id,
+            operation: 'update',
+            payload: {
+              date: detail.session.date,
+              groupId: detail.session.groupId,
+              planId: detail.session.planId,
+              status: 'completed',
+              title: detail.session.title,
+              trainingMode: detail.session.trainingMode,
+              week: detail.session.week,
+              weekday: detail.session.weekday,
+            },
+            status: 'pending_update',
+            updatedAt: new Date().toISOString(),
+          }).catch(() => undefined);
+        }
+        // 训练完成后自动同步
+        void requestImmediateSync().catch(() => undefined);
+        router.replace({ pathname: '/workout/summary/[sessionId]', params: { sessionId } });
     } catch (finishError) {
       setError(finishError instanceof Error ? finishError.message : '完成训练失败。');
     } finally {

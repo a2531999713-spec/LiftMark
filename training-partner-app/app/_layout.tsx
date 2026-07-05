@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { initializeLocalDatabase } from '@/data/local';
 import { syncAllLocalGroupsToServer } from '@/services/profileSyncService';
 import { useAuthStore } from '@/store/authStore';
+import { requestImmediateSync } from '@/sync/syncService';
 import { colors, spacing } from '@/theme';
 
 export default function RootLayout() {
@@ -22,6 +23,12 @@ export default function RootLayout() {
         void syncAllLocalGroupsToServer().then((result) => {
           if (!result.ok) {
             console.warn('本地小组同步失败', result.message);
+          }
+        });
+        // 自动同步待同步数据
+        void requestImmediateSync().then((result) => {
+          if (!result.ok) {
+            console.warn('自动同步失败', result.message);
           }
         });
       }

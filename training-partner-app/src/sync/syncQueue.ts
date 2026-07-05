@@ -102,14 +102,12 @@ export async function countPendingSyncItems(): Promise<number> {
   return row?.count ?? 0;
 }
 
-export async function listPendingSyncItems(limit = 50): Promise<SyncQueueItem[]> {
+export async function listPendingSyncItems(): Promise<SyncQueueItem[]> {
   const db = await initializeLocalDatabase();
   const rows = await db.getAllAsync<SyncQueueRow>(
     `SELECT * FROM local_sync_queue
      WHERE status IN ('pending_create', 'pending_update', 'pending_delete', 'sync_failed')
-     ORDER BY updated_at ASC
-     LIMIT ?`,
-    limit,
+     ORDER BY updated_at ASC`,
   );
   return rows.map(mapQueueRow);
 }
