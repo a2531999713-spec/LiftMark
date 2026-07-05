@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 
 import { useAuth } from '@/lib/auth-context';
 import { ApiRequestError } from '@/lib/api';
@@ -14,6 +13,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,9 +24,13 @@ export default function LoginPage() {
       router.push('/');
     } catch (err) {
       if (err instanceof ApiRequestError) {
-        setError(err.message);
+        if (err.statusCode === 401) {
+          setError('账号或密码错误，请重试。');
+        } else {
+          setError(err.message);
+        }
       } else {
-        setError('登录失败，请稍后重试。');
+        setError('网络异常，请稍后重试。');
       }
     } finally {
       setLoading(false);
@@ -34,73 +38,131 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 mb-4">
-            <svg className="w-9 h-9 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 5c0-1 .5-2 2-2s2 1 2 2v4l5.5 3c.5.3 1 .9 1 1.6V19a2 2 0 01-2 2H8a2 2 0 01-2-2v-5l-3-1.5v-1L8 13V9" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-white">LiftMark 管理后台</h1>
-          <p className="text-slate-400 text-sm mt-2">健身房训练记录与社交平台</p>
-        </div>
+    <div className="relative min-h-screen overflow-hidden bg-slate-950">
+      {/* 背景光晕 */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-orange-500/20 blur-3xl" />
+        <div className="absolute -right-32 top-1/3 h-[28rem] w-[28rem] rounded-full bg-indigo-500/20 blur-3xl" />
+        <div className="absolute bottom-0 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-rose-500/15 blur-3xl" />
+      </div>
 
-        <form onSubmit={handleSubmit} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 space-y-5">
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm">
-              {error}
+      {/* 网格背景 */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.04]"
+        style={{
+          backgroundImage:
+            'linear-gradient(to right, #fff 1px, transparent 1px), linear-gradient(to bottom, #fff 1px, transparent 1px)',
+          backgroundSize: '48px 48px',
+        }}
+      />
+
+      <div className="relative flex min-h-screen items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          {/* Logo & 标题 */}
+          <div className="mb-8 text-center">
+            <div className="mb-5 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 shadow-lg shadow-orange-500/30">
+              <svg className="h-9 w-9 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 5c0-1 .5-2 2-2s2 1 2 2v4l5.5 3c.5.3 1 .9 1 1.6V19a2 2 0 01-2 2H8a2 2 0 01-2-2v-5l-3-1.5v-1L8 13V9" />
+              </svg>
             </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">管理员账号</label>
-            <input
-              type="text"
-              value={account}
-              onChange={(e) => setAccount(e.target.value)}
-              placeholder="手机号 / 邮箱"
-              autoComplete="username"
-              required
-              className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 transition"
-            />
+            <h1 className="text-3xl font-bold tracking-tight text-white">LiftMark</h1>
+            <p className="mt-2 text-sm text-slate-400">健身房训练记录与社交平台 · 管理员控制台</p>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">密码</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
-              required
-              className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 transition"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
+          {/* 登录卡片 */}
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-xl">
+            {error && (
+              <div className="mb-5 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                <svg className="mt-0.5 h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
-                登录中...
-              </>
-            ) : (
-              '登录'
+                <span>{error}</span>
+              </div>
             )}
-          </button>
-        </form>
 
-        <p className="text-center text-slate-500 text-xs mt-6">
-          © 2026 LiftMark Admin · 仅供授权管理员访问
-        </p>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-300">管理员账号</label>
+                <div className="relative">
+                  <svg className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={account}
+                    onChange={(e) => setAccount(e.target.value)}
+                    placeholder="手机号 / 邮箱"
+                    autoComplete="username"
+                    required
+                    autoFocus
+                    className="w-full border border-slate-700 bg-slate-900/60 px-4 py-2.5 pl-10 text-white placeholder-slate-500 transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-300">密码</label>
+                <div className="relative">
+                  <svg className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0110 0v4" />
+                  </svg>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="请输入密码"
+                    autoComplete="current-password"
+                    required
+                    className="w-full border border-slate-700 bg-slate-900/60 px-4 py-2.5 pl-10 pr-10 text-white placeholder-slate-500 transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? (
+                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                      </svg>
+                    ) : (
+                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex w-full items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 py-2.5 font-medium text-white shadow-lg shadow-orange-500/30 transition hover:from-orange-600 hover:to-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
+                    </svg>
+                    <span>正在登录...</span>
+                  </>
+                ) : (
+                  <span>登录控制台</span>
+                )}
+              </button>
+            </form>
+          </div>
+
+          <p className="mt-6 text-center text-xs text-slate-600">
+            © 2026 LiftMark Admin · 仅供授权管理员访问
+          </p>
+        </div>
       </div>
     </div>
   );

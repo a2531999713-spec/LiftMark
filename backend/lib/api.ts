@@ -149,6 +149,26 @@ export const api = {
 };
 
 // ===== 登录 =====
+type LoginResponseRaw = {
+  accessToken: string;
+  refreshToken: string;
+  user: {
+    id: string;
+    phone: string | null;
+    email: string | null;
+    nickname: string;
+    avatar_url: string | null;
+    liftmarkId?: string;
+    liftmark_id?: string;
+    role: string;
+    status: string;
+    createdAt?: string;
+    created_at?: string;
+    lastLoginAt?: string | null;
+    last_login_at?: string | null;
+  };
+};
+
 export type LoginResponse = {
   accessToken: string;
   refreshToken: string;
@@ -156,10 +176,22 @@ export type LoginResponse = {
 };
 
 export async function login(account: string, password: string): Promise<LoginResponse> {
-  const result = await api.post<LoginResponse>('/admin/auth/login', { account, password });
-  setToken(result.accessToken);
-  setStoredUser(result.user);
-  return result;
+  const raw = await api.post<LoginResponseRaw>('/admin/auth/login', { account, password });
+  const user: AdminUser = {
+    id: raw.user.id,
+    phone: raw.user.phone,
+    email: raw.user.email,
+    nickname: raw.user.nickname,
+    avatarUrl: raw.user.avatar_url,
+    liftmarkId: raw.user.liftmarkId ?? raw.user.liftmark_id ?? '',
+    role: 'admin',
+    status: raw.user.status,
+    createdAt: raw.user.createdAt ?? raw.user.created_at ?? '',
+    lastLoginAt: raw.user.lastLoginAt ?? raw.user.last_login_at ?? null,
+  };
+  setToken(raw.accessToken);
+  setStoredUser(user);
+  return { accessToken: raw.accessToken, refreshToken: raw.refreshToken, user };
 }
 
 // 退出登录
