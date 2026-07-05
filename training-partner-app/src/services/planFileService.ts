@@ -62,12 +62,82 @@ export function parsePlanFile(json: string): LiftMarkPlanFile {
   return validatePlanFile(payload);
 }
 
-function stripLegacyIntensityTargets(exercise: PlanExercise): PlanExercise {
+function parseReps(reps: unknown): { repMin: number; repMax: number } {
+  if (typeof reps === 'number') return { repMin: reps, repMax: reps };
+  const match = String(reps).match(/(\d+)(?:\s*[-~]\s*(\d+))?/);
+  if (!match) return { repMin: 10, repMax: 10 };
+  const min = parseInt(match[1], 10);
+  const max = match[2] ? parseInt(match[2], 10) : min;
+  return { repMin: min, repMax: max };
+}
+
+function normalizePlanExercises(rawExercises: unknown[], dayMap: Map<string, string>): PlanExercise[] {
+  if (!Array.isArray(rawExercises)) return [];
+
+  const exerciseNameMap = new Map<string, string>();
+  let idx = 0;
+
+  return rawExercises.map((ex: any) => {
+    const name = ex.name || ex.exerciseName || `动作${++idx}`;
+    if (!exerciseNameMap.has(name)) {
+      exerciseNameMap.set(name, `ex_imported_${exerciseNameMap.size + 1}`);
+    }
+    const exerciseId = exerciseNameMap.get(name)!;
+    const dayId = ex.planDayId || ex.dayId || '';
+    const mappedDayId = dayMap.get(dayId) || dayId;
+    const { repMin, repMax } = parseReps(ex.reps);
+    const priority = (ex.orderIndex ?? 1) <= 2 ? 'A' : 'B';
+
+    return {
+      id: ex.id || `pex_imported_${Math.random().toString(36).slice(2, 10)}`,
+      planDayId: mappedDayId,
+      exerciseId,
+      priority,
+      orderIndex: ex.orderIndex ?? 1,
+      sets: ex.sets ?? 3,
+      reps: Math.round((repMin + repMax) / 2),
+      repMin,
+      repMax,
+      intensityType: 'manual',
+      percent1RM: undefined,
+      rpeTarget: undefined,
+      rirTarget: undefined,
+      fixedWeight: undefined,
+      referenceLift: 'none',
+      restSeconds: undefined,
+      progressionRuleId: undefined,
+      notes: ex.notes || undefined,
+    };
+  });
+}
+
+function normalizeExercises(rawPlanExercises: PlanExercise[]): { id: string; name: string }[] {
+  const seen = new Map<string, string>();
+  for (const ex of rawPlanExercises) {
+    if (!seen.has(ex.exerciseId)) {
+      seen.set(ex.exerciseId, ex.exerciseId);
+    }
+  }
+  return Array.from(seen.entries()).map(([id, name]) => ({
+    id,
+    name,
+    source: 'imported',
+    category: 'unknown',
+    movement_pattern: 'unknown',
+    target_muscle: 'unknown',
+    secondary_muscle: null,
+    equipment: 'unknown',
+    difficulty: null,
+    notes: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as any));
+}
+
+function normalizeIntensityType(exercise: PlanExercise): PlanExercise {
   return {
     ...exercise,
     intensityType: exercise.percent1RM ? 'percent_1rm' : exercise.fixedWeight ? 'fixed' : 'manual',
-    rpeTarget: undefined,
-    rirTarget: undefined,
   };
 }
 
@@ -76,7 +146,7 @@ export function validatePlanFile(payload: unknown): LiftMarkPlanFile {
     throw new PlanFileError('计划文件内容为空或格式错误。');
   }
 
-  const candidate = payload as Partial<LiftMarkPlanFile>;
+  const candidate = payload as any;
 
   if (candidate.app !== 'LiftMark' || candidate.format !== 'liftmark-plan') {
     throw new PlanFileError('这不是 LiftMark 计划文件。');
@@ -92,15 +162,51 @@ export function validatePlanFile(payload: unknown): LiftMarkPlanFile {
     throw new PlanFileError('计划文件缺少 PlanTemplate 或 PlanPhase。');
   }
 
-  if (!Array.isArray(candidate.plan.days) || !Array.isArray(candidate.plan.exercises)) {
-    throw new PlanFileError('计划文件缺少 PlanDay 或 PlanExercise。');
+  if (!Array.isArray(candidate.plan.days)) {
+    throw new PlanFileError('计划文件缺少 PlanDay。');
   }
 
-  if (!Array.isArray(candidate.exercises) || !Array.isArray(candidate.alternatives)) {
-    throw new PlanFileError('计划文件缺少动作库或替代动作。');
+  // 兼容两种格式：标准格式和 Codex 生成的自定义格式
+  let planExercises: PlanExercise[];
+
+  if (Array.isArray(candidate.plan.exercises) && candidate.plan.exercises.length > 0) {
+    const firstEx = candidate.plan.exercises[0];
+    // 检查是否是标准格式（有 planDayId 和 exerciseId）
+    if (firstEx.planDayId && firstEx.exerciseId) {
+      planExercises = candidate.plan.exercises;
+    } else {
+      // Codex 自定义格式：需要转换
+      const dayMap = new Map<string, string>(candidate.plan.days.map((d: any) => [d.id, d.id]));
+      planExercises = normalizePlanExercises(candidate.plan.exercises, dayMap);
+    }
+  } else {
+    planExercises = [];
   }
 
-  return candidate as LiftMarkPlanFile;
+  // 兼容缺失的 exercises 和 alternatives 数组
+  const exercises = Array.isArray(candidate.exercises)
+    ? candidate.exercises
+    : normalizeExercises(planExercises);
+
+  const alternatives = Array.isArray(candidate.alternatives)
+    ? candidate.alternatives
+    : [];
+
+  return {
+    app: 'LiftMark',
+    format: 'liftmark-plan',
+    schemaVersion: LIFTMARK_PLAN_SCHEMA_VERSION,
+    exportedAt: candidate.exportedAt || new Date().toISOString(),
+    plan: {
+      template: candidate.plan.template,
+      phases: candidate.plan.phases,
+      days: candidate.plan.days,
+      exercises: planExercises,
+    },
+    exercises,
+    alternatives,
+    progressionRules: candidate.progressionRules || [],
+  };
 }
 
 export async function createCurrentPlanFile(
@@ -133,7 +239,7 @@ export async function createCurrentPlanFile(
       template,
       phases,
       days,
-      exercises: planExercises.map(stripLegacyIntensityTargets),
+      exercises: planExercises.map(normalizeIntensityType),
     },
     exercises,
     alternatives,
@@ -181,7 +287,7 @@ export function createImportedPlanDraft(payload: LiftMarkPlanFile): LiftMarkPlan
         phaseId: phaseIds.get(day.phaseId) ?? day.phaseId,
       })),
       exercises: file.plan.exercises.map((exercise) => ({
-        ...stripLegacyIntensityTargets(exercise),
+        ...normalizeIntensityType(exercise),
         id: planExerciseIds.get(exercise.id) ?? createId('plan_exercise_imported'),
         planDayId: dayIds.get(exercise.planDayId) ?? exercise.planDayId,
         exerciseId: exerciseIds.get(exercise.exerciseId) ?? exercise.exerciseId,
