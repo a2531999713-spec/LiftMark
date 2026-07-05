@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { sync as runSync } from '@/sync/syncOrchestrator';
 
 import { Avatar } from '@/components/avatar';
 import { AppText, Tag } from '@/components/ui';
@@ -495,14 +496,38 @@ function SyncPanel({ onBack, syncLabel }: { onBack: () => void; syncLabel: strin
       <ActionRow
         icon="sync-outline"
         label="立即同步"
-        onPress={() => Alert.alert('同步队列开发中', '当前版本会保留本机训练记录，完整自动同步队列仍在接入。')}
-        value="检查本机队列"
+        onPress={async () => {
+          Alert.alert('开始同步', '正在从云端拉取数据并推送本地变更...');
+          try {
+            const result = await runSync({ fullPull: true });
+            if (result.ok) {
+              Alert.alert('同步完成', result.message || '同步成功完成。');
+            } else {
+              Alert.alert('同步失败', result.message || '未知错误');
+            }
+          } catch (error) {
+            Alert.alert('同步异常', error instanceof Error ? error.message : String(error));
+          }
+        }}
+        value="点击同步"
       />
       <ActionRow
         icon="cloud-download-outline"
         label="从云端恢复"
-        onPress={() => Alert.alert('云端恢复开发中', '正式恢复前会先确认账号、小组和训练记录范围，避免覆盖本机数据。')}
-        value="开发中"
+        onPress={async () => {
+          Alert.alert('开始恢复', '正在从云端全量拉取数据到本地...');
+          try {
+            const result = await runSync({ fullPull: true });
+            if (result.ok) {
+              Alert.alert('恢复完成', '已从云端拉取全部数据。请返回首页查看。');
+            } else {
+              Alert.alert('恢复失败', result.message || '未知错误');
+            }
+          } catch (error) {
+            Alert.alert('恢复异常', error instanceof Error ? error.message : String(error));
+          }
+        }}
+        value="点击恢复"
       />
       <DevelopmentNote text="当前同步面板直接展示状态与操作入口；未完成能力统一提示开发中，不跳空白中转页。" />
     </PanelScroll>
