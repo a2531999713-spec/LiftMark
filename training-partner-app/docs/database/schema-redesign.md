@@ -113,10 +113,24 @@ P0 阶段在现有单库上修复，不做分库（降低风险快速止血）�
 | 修复项 | 实现方式 |
 |--------|----------|
 | owner_user_id 不可变 | repository UPDATE 语句排除 owner_user_id |
-| 归属修复 | migration 16 + ownershipRepairService（云端反查） |
+| 身份结构归属修复 | migration 16 + ownershipRepairService（仅 groups / group_members / member_profiles） |
 | 双向同步 | pullService.ts + syncOrchestrator.ts |
 | 自动同步 | 防抖触发 + 训后立即 + 启动/登录触发 |
-| 同步游标 | sync_state 表（migration 17） |
+| 同步游标 | sync_state 表（migration 17），使用 `last_pull_at:{userId}` 账号级游标 |
+
+### 3.1 2026-07-06 止血校正
+
+本轮 176 / 188 串号恢复确认了一个关键问题：P0 早期的 `ownershipRepairService` 过度修复，会根据小组 owner 批量改训练、计划、体测等业务表归属。这会把 A 账号历史训练错误绑定到 B 账号。
+
+修正后的 P0 策略：
+
+- `ownershipRepairService` 只处理身份结构表：`groups`、`group_members`、`member_profiles`。
+- 训练、计划、体测等业务实体只允许由 `/sync/pull` 返回的当前登录账号云端记录恢复归属。
+- `pullService.upsertWithRemoteId` 会先按 `remote_id` 查找，再按本地 `id` 查找；如果发现同一条当前账号云端记录在本地被旧版本写成其他账号，会重新认领为当前账号。
+- 登录 / 切换账号的 fullPull 顺序固定为：`/sync/groups-pull` → `/sync/pull` → `/sync/push`。
+- App 启动不再自动执行 `syncAllLocalGroupsToServer()`，避免账号切换后把本地旧小组结构上传并绑定给当前账号。
+
+这只是单库阶段的止血，不能替代 P1 物理分库。只要多个账号仍共用一个 SQLite 文件，默认小组、默认计划等确定性本地 ID 仍可能产生跨账号冲突。
 
 ## 4. P1 阶段的分库实施
 
@@ -151,7 +165,7 @@ P1 阶段实施物理分库，彻底消除 SQL 过滤隔离的风险：
 1. **云端是权威数据源**：服务端 PostgreSQL 是 source of truth，本地 SQLite 是缓存。
 2. **本地优先读写**：所有业务读写走本地库，保证离线可用。
 3. **Pull 先于 Push**：每次同步先拉后推，减少冲突。
-4. **owner_user_id 创建后不可变**：INSERT 时设定，UPDATE 时永不修改。
+4. **owner_user_id 创建后不可变**：Repository 常规写入 INSERT 时设定，UPDATE 时永不修改；唯一例外是 `/sync/pull` 用当前登录账号的云端权威记录恢复旧版本错误归属。
 5. **物理隔离优于逻辑过滤**：P1 阶段实施分库，彻底消除泄漏风险。
 6. **前台驱动同步**：不用后台定时任务，靠启动/登录/训后/防抖触发。
 7. **LWW 冲突解决**：健身数据以新增为主，LWW 足够可靠。

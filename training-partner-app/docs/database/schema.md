@@ -1,6 +1,15 @@
 ﻿# SQLite 数据库结构
 
-更新时间：2026-07-03
+更新时间：2026-07-06
+
+## 2026-07-06 补充：账号恢复同步止血
+
+- 本次不新增 migration，修复点在同步和归属修复策略。
+- `sync_state` 的拉取游标从全局 `last_pull_at` 改为账号级 `last_pull_at:{userId}`，避免 188 登录后的游标让 176 跳过云端数据。
+- `ownershipRepairService` 只允许修复 `groups`、`group_members`、`member_profiles` 身份结构表。训练、计划、体测等业务实体不能再按小组 owner 批量改归属，避免把 176 的训练记录误绑定到 188。
+- `/sync/groups-pull` 负责恢复小组和成员身份结构，`/sync/pull` 负责恢复训练、计划、体测等业务数据。
+- `/sync/pull` 遇到当前账号云端记录与本地同 `id` / `remote_id` 的旧错误归属记录冲突时，可以把该本地记录重新认领为当前账号，用于恢复历史串号数据。
+- App 启动不再自动上传本地小组结构，防止旧本地脏数据在账号切换后被绑定到新账号。
 
 ## 2026-07-03 补充：真实成员绑定与本地成员区分
 
@@ -450,19 +459,21 @@ CREATE INDEX IF NOT EXISTS idx_body_metrics_member_date ON body_metrics(member_i
 CREATE INDEX IF NOT EXISTS idx_body_metric_goals_member ON body_metric_goals(member_id);
 ```
 
-## 5. 未来同步字段
+## 5. 云同步字段
 
-开发文档建议后续可增加：
+云同步字段已在 migration v10 落地，不再属于未来规划。可同步业务表统一包含以下字段中的相关子集：
 
-```sql
-ALTER TABLE workout_sessions ADD COLUMN remote_id TEXT;
-ALTER TABLE workout_sessions ADD COLUMN sync_status TEXT DEFAULT 'local';
-ALTER TABLE workout_sessions ADD COLUMN deleted_at TEXT;
+| 字段 | 说明 |
+|------|------|
+| `owner_user_id` | 当前本地账号的数据归属，migration v15 补齐 |
+| `remote_id` | 云端实体 ID |
+| `sync_status` | `local_only` / `pending_create` / `pending_update` / `pending_delete` / `syncing` / `synced` / `sync_failed` / `conflict` |
+| `sync_error` | 最近一次同步失败原因 |
+| `sync_version` / `version` | 云端版本或本地计划版本 |
+| `last_synced_at` | 最近一次服务端确认时间 |
+| `deleted_at` | 软删除时间 |
 
-ALTER TABLE workout_sets ADD COLUMN remote_id TEXT;
-ALTER TABLE workout_sets ADD COLUMN sync_status TEXT DEFAULT 'local';
-ALTER TABLE workout_sets ADD COLUMN deleted_at TEXT;
-```
+`/sync/push` 成功后必须同时更新 `local_sync_queue` 和业务实体表的 `remote_id`、`sync_status`、`last_synced_at`。否则后续 pull 无法通过 `remote_id` 命中本地实体，容易在账号切换后出现重复或冲突。
 
 ## 6. Migration 方案
 
@@ -482,10 +493,15 @@ Sprint 1 已落地 `schema_migrations` 版本表：
 - 当前 v10 为 `cloud_sync_metadata_and_queue`，为可同步实体补云同步元数据并创建 `local_sync_queue`。
 - 当前 v11 为 `group_member_avatar_url_compat`，为旧库补 `group_members.avatar_url`。
 - 当前 v12 为 `group_member_identity_fields`，为 `group_members` 补真实账号绑定和本地成员区分字段。
+- 当前 v13 为 `local_schema_repair`，启动时检查并补齐旧库缺失列。
+- 当前 v14 为 `account_profile_demographics`，为账号资料缓存补年龄、性别、生日等资料字段。
+- 当前 v15 为 `account_data_isolation`，为核心业务表补 `owner_user_id` 和索引。
+- 当前 v16 为 `fix_account_ownership`，按旧策略尝试回填历史归属；运行时修复已收窄，后续不能再按小组 owner 批量改业务数据归属。
+- 当前 v17 为 `sync_state_table`，创建同步游标表。拉取游标写入 `last_pull_at:{userId}`，而不是所有账号共用一个 `last_pull_at`。
 - 后续不能直接改旧 migration 语义，应追加新 migration。
 
-## 7. 需要人工确认的问题
+## 7. 账号恢复注意事项
 
-- 是否在 Sprint 1 就加入外键约束。
-- 是否在 Sprint 1 就加入 `remote_id`、`sync_status`、`deleted_at`。
-- 重建测试数据是否物理删除，真实数据是否软删除。
+- 恢复 176 账号时，应登录 176 后触发一次 fullPull，让云端 176 记录重新写回本地。
+- 不建议通过卸载 App 或清空 SQLite 来恢复；如果本机还有未上云的新训练，清库会造成真正的数据丢失。
+- 旧版本错误归属到 188 的本地记录，只有在 176 云端存在对应记录时才会被当前账号 pull 认领；云端不存在的本地脏数据不会被盲目搬回。

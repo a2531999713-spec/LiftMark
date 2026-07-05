@@ -4,6 +4,35 @@
 
 ---
 
+## v2.3.3 — 2026-07-06
+
+### 🎯 核心修复
+
+#### 账号数据恢复
+- 同步拉取游标改为账号级，避免 188 的同步状态影响 176 从云端恢复。
+- 云端记录应用失败时不推进同步游标，下一次同步会继续重试未落地的数据。
+- 登录 / 切换账号的 fullPull 先同步小组和成员结构，再同步训练、计划、体测等业务数据。
+- 当前账号云端记录可重新认领旧版本误归属到其他账号的本地记录，用于恢复历史串号数据。
+
+#### 防止再次串号
+- 登录后的归属修复收窄到身份结构表，不再批量修改训练、计划、体测数据归属。
+- App 启动不再自动上传本地小组结构，避免把旧本地数据绑定到新账号。
+- 后端 `/sync/push` 只允许更新当前用户已有的服务端记录，不信任跨账号 `serverId`。
+- Push 成功后同步回写业务实体表的同步状态，减少后续 pull 冲突。
+
+### 📦 变更文件
+- 修改移动端同步链路：`pullService.ts`、`syncOrchestrator.ts`、`syncService.ts`、`authStore.ts`、`profileSyncService.ts`、`ownershipRepairService.ts`、`app/_layout.tsx`
+- 修改后端同步接口：`apps/liftmark-api/src/modules/sync/sync.routes.ts`
+- 新增同步恢复测试：`training-partner-app/src/tests/sync-pull.test.ts`
+- 更新数据库和同步架构文档
+
+### 📝 验证
+- 前端：`npm test -- --runInBand`（16 个套件 / 92 个用例）、`npm run typecheck -- --pretty false`、`npm run lint` 通过；lint 仅保留 `LegalDraftPage.tsx` 既有 warning
+- 后端：`npm run typecheck`、`npm run build` 通过
+- 不需要新增数据库 migration
+
+---
+
 ## v2.3.2 — 2026-07-04 `2dd7d3c`
 
 ### 🎯 核心修复

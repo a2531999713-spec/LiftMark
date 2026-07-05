@@ -33,7 +33,7 @@ type PullResponse = {
 
 type DbValue = string | number | null;
 
-const LAST_PULL_AT_KEY = 'last_pull_at';
+const LAST_PULL_AT_KEY_PREFIX = 'last_pull_at';
 const DEVICE_ID = 'liftmark-mobile';
 
 function pick(payload: Record<string, unknown> | null, keys: string[]): unknown {
@@ -100,11 +100,15 @@ function resolveTimestamp(row: ServerRow): string {
   return row.client_updated_at ?? row.updated_at ?? new Date().toISOString();
 }
 
-async function getLastPullAt(db: LocalDatabase): Promise<string> {
+function getLastPullAtKey(userId: string): string {
+  return `${LAST_PULL_AT_KEY_PREFIX}:${userId}`;
+}
+
+async function getLastPullAt(db: LocalDatabase, userId: string): Promise<string> {
   try {
     const row = await db.getFirstAsync<{ value: string }>(
       'SELECT value FROM sync_state WHERE key = ? LIMIT 1',
-      LAST_PULL_AT_KEY,
+      getLastPullAtKey(userId),
     );
     return row?.value ?? new Date(0).toISOString();
   } catch {
@@ -112,13 +116,14 @@ async function getLastPullAt(db: LocalDatabase): Promise<string> {
   }
 }
 
-async function setLastPullAt(db: LocalDatabase, value: string): Promise<void> {
+async function setLastPullAt(db: LocalDatabase, userId: string, value: string): Promise<void> {
   try {
+    const key = getLastPullAtKey(userId);
     await db.runAsync(
       `INSERT INTO sync_state (id, key, value, updated_at) VALUES (?, ?, ?, ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      `sync_state_${LAST_PULL_AT_KEY}`,
-      LAST_PULL_AT_KEY,
+      `sync_state_${key}`,
+      key,
       value,
       new Date().toISOString(),
     );
@@ -129,6 +134,7 @@ async function setLastPullAt(db: LocalDatabase, value: string): Promise<void> {
 
 type RemoteIdUpsertInput = {
   table: string;
+  localId: string;
   remoteId: string;
   serverUpdatedAt: string;
   serverDeletedAt: string | null;
@@ -139,18 +145,36 @@ type RemoteIdUpsertInput = {
   updateValues: DbValue[];
 };
 
-async function upsertWithRemoteId(db: LocalDatabase, input: RemoteIdUpsertInput): Promise<boolean> {
-  const { table, remoteId, serverUpdatedAt, serverDeletedAt, currentUserId } = input;
+type ExistingRemoteRow = {
+  id: string;
+  owner_user_id: string | null;
+  remote_id: string | null;
+  sync_status: string;
+  updated_at: string | null;
+};
 
-  const existing = await db.getFirstAsync<{ id: string; sync_status: string; updated_at: string | null }>(
-    `SELECT id, sync_status, updated_at FROM ${table} WHERE remote_id = ? LIMIT 1`,
+async function upsertWithRemoteId(db: LocalDatabase, input: RemoteIdUpsertInput): Promise<boolean> {
+  const { table, localId, remoteId, serverUpdatedAt, serverDeletedAt, currentUserId } = input;
+
+  const existingByRemoteId = await db.getFirstAsync<ExistingRemoteRow>(
+    `SELECT id, owner_user_id, remote_id, sync_status, updated_at FROM ${table} WHERE remote_id = ? LIMIT 1`,
     remoteId,
   );
+  const existing =
+    existingByRemoteId ??
+    (await db.getFirstAsync<ExistingRemoteRow>(
+      `SELECT id, owner_user_id, remote_id, sync_status, updated_at FROM ${table} WHERE id = ? LIMIT 1`,
+      localId,
+    ));
 
   if (serverDeletedAt) {
     if (existing) {
       await db.runAsync(
-        `UPDATE ${table} SET deleted_at = ?, sync_status = 'synced', last_synced_at = ? WHERE id = ?`,
+        `UPDATE ${table}
+         SET owner_user_id = ?, remote_id = ?, deleted_at = ?, sync_status = 'synced', last_synced_at = ?
+         WHERE id = ?`,
+        currentUserId,
+        remoteId,
         serverDeletedAt,
         serverUpdatedAt,
         existing.id,
@@ -175,7 +199,8 @@ async function upsertWithRemoteId(db: LocalDatabase, input: RemoteIdUpsertInput)
     return true;
   }
 
-  const hasLocalChanges = existing.sync_status !== 'synced';
+  const ownershipMismatch = existing.owner_user_id !== currentUserId;
+  const hasLocalChanges = !ownershipMismatch && existing.sync_status !== 'synced';
   if (hasLocalChanges && existing.updated_at) {
     const localTs = new Date(existing.updated_at).getTime();
     const serverTs = new Date(serverUpdatedAt).getTime();
@@ -189,8 +214,8 @@ async function upsertWithRemoteId(db: LocalDatabase, input: RemoteIdUpsertInput)
     }
   }
 
-  const setColumns = [...input.updateColumns, 'sync_status', 'last_synced_at', 'remote_id'];
-  const setValues: DbValue[] = [...input.updateValues, 'synced', serverUpdatedAt, remoteId];
+  const setColumns = [...input.updateColumns, 'owner_user_id', 'sync_status', 'last_synced_at', 'remote_id'];
+  const setValues: DbValue[] = [...input.updateValues, currentUserId, 'synced', serverUpdatedAt, remoteId];
   const assignments = setColumns.map((column) => `${column} = ?`).join(', ');
   await db.runAsync(`UPDATE ${table} SET ${assignments} WHERE id = ?`, ...setValues, existing.id);
   return true;
@@ -199,6 +224,7 @@ async function upsertWithRemoteId(db: LocalDatabase, input: RemoteIdUpsertInput)
 type IdUpsertInput = {
   table: string;
   id: string;
+  ownerUserId?: string;
   serverDeletedAt: string | null;
   insertColumns: string[];
   insertValues: DbValue[];
@@ -214,8 +240,8 @@ async function upsertById(db: LocalDatabase, input: IdUpsertInput): Promise<bool
     return true;
   }
 
-  const existing = await db.getFirstAsync<{ id: string }>(
-    `SELECT id FROM ${table} WHERE id = ? LIMIT 1`,
+  const existing = await db.getFirstAsync<{ id: string; owner_user_id?: string | null }>(
+    `SELECT * FROM ${table} WHERE id = ? LIMIT 1`,
     id,
   );
 
@@ -228,8 +254,10 @@ async function upsertById(db: LocalDatabase, input: IdUpsertInput): Promise<bool
     return true;
   }
 
-  const assignments = input.updateColumns.map((column) => `${column} = ?`).join(', ');
-  await db.runAsync(`UPDATE ${table} SET ${assignments} WHERE id = ?`, ...input.updateValues, id);
+  const updateColumns = input.ownerUserId ? [...input.updateColumns, 'owner_user_id'] : input.updateColumns;
+  const updateValues = input.ownerUserId ? [...input.updateValues, input.ownerUserId] : input.updateValues;
+  const assignments = updateColumns.map((column) => `${column} = ?`).join(', ');
+  await db.runAsync(`UPDATE ${table} SET ${assignments} WHERE id = ?`, ...updateValues, id);
   return true;
 }
 
@@ -315,6 +343,7 @@ async function applyTrainingPlans(db: LocalDatabase, rows: ServerRow[], currentU
 
     const wrote = await upsertWithRemoteId(db, {
       table: 'plan_templates',
+      localId: insertValues[0] as string,
       remoteId,
       serverUpdatedAt,
       serverDeletedAt: row.deleted_at,
@@ -367,6 +396,7 @@ async function applyPlanDays(db: LocalDatabase, rows: ServerRow[], currentUserId
     const wrote = await upsertById(db, {
       table: 'plan_days',
       id,
+      ownerUserId: currentUserId,
       serverDeletedAt: row.deleted_at,
       insertColumns: ['id', 'owner_user_id', 'plan_id', 'phase_id', 'week', 'weekday', 'title', 'focus', 'notes'],
       insertValues,
@@ -412,6 +442,7 @@ async function applyPlanExercises(db: LocalDatabase, rows: ServerRow[], currentU
     const wrote = await upsertById(db, {
       table: 'plan_exercises',
       id,
+      ownerUserId: currentUserId,
       serverDeletedAt: row.deleted_at,
       insertColumns: [
         'id', 'owner_user_id', 'plan_day_id', 'exercise_id', 'priority', 'order_index', 'sets', 'reps',
@@ -471,6 +502,7 @@ async function applyWorkoutSessions(db: LocalDatabase, rows: ServerRow[], curren
 
     const wrote = await upsertWithRemoteId(db, {
       table: 'workout_sessions',
+      localId: insertValues[0] as string,
       remoteId,
       serverUpdatedAt,
       serverDeletedAt: row.deleted_at,
@@ -525,6 +557,7 @@ async function applyWorkoutExerciseRecords(
 
     const wrote = await upsertWithRemoteId(db, {
       table: 'workout_exercise_records',
+      localId: insertValues[0] as string,
       remoteId,
       serverUpdatedAt,
       serverDeletedAt: row.deleted_at,
@@ -594,6 +627,7 @@ async function applyWorkoutSets(db: LocalDatabase, rows: ServerRow[], currentUse
 
     const wrote = await upsertWithRemoteId(db, {
       table: 'workout_sets',
+      localId: insertValues[0] as string,
       remoteId,
       serverUpdatedAt,
       serverDeletedAt: row.deleted_at,
@@ -656,6 +690,7 @@ async function applyBodyMetrics(db: LocalDatabase, rows: ServerRow[], currentUse
 
     const wrote = await upsertWithRemoteId(db, {
       table: 'body_metrics',
+      localId: insertValues[0] as string,
       remoteId,
       serverUpdatedAt,
       serverDeletedAt: row.deleted_at,
@@ -690,7 +725,7 @@ export async function pullFromServer(
   }
 
   const db = await initializeLocalDatabase();
-  const since = options?.fullPull ? new Date(0).toISOString() : await getLastPullAt(db);
+  const since = options?.fullPull ? new Date(0).toISOString() : await getLastPullAt(db, currentUserId);
   const path = `/sync/pull?since=${encodeURIComponent(since)}&deviceId=${DEVICE_ID}`;
 
   console.log('[sync/pull] calling', path);
@@ -705,7 +740,7 @@ export async function pullFromServer(
 
   let pulled = 0;
 
-  const applySteps: Array<[string, () => Promise<number>]> = [
+  const applySteps: [string, () => Promise<number>][] = [
     ['exercises', () => applyExercises(db, (changes.exercises as ServerRow[] | undefined) ?? [])],
     ['trainingPlans', () => applyTrainingPlans(db, (changes.trainingPlans as ServerRow[] | undefined) ?? [], currentUserId)],
     ['planDays', () => applyPlanDays(db, (changes.planDays as ServerRow[] | undefined) ?? [], currentUserId)],
@@ -716,6 +751,7 @@ export async function pullFromServer(
     ['bodyMetrics', () => applyBodyMetrics(db, (changes.bodyMetrics as ServerRow[] | undefined) ?? [], currentUserId)],
   ];
 
+  const errors: string[] = [];
   for (const step of applySteps) {
     const name = step[0];
     const fn = step[1];
@@ -725,42 +761,20 @@ export async function pullFromServer(
       pulled += n;
     } catch (error) {
       console.error('[sync/pull] ERROR applying', name, ':', error instanceof Error ? error.message : error);
+      errors.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  // Fix group ownership: any group referenced by pulled workout sessions
-  // should have owner_user_id = currentUserId (cloud data belongs to this account)
-  try {
-    const fixResult = await db.runAsync(
-      `UPDATE groups SET owner_user_id = ?
-       WHERE id IN (
-         SELECT DISTINCT group_id FROM workout_sessions
-         WHERE group_id IS NOT NULL AND group_id != ''
-           AND owner_user_id = ?
-       ) AND (owner_user_id IS NULL OR owner_user_id != ?)`,
-      currentUserId, currentUserId, currentUserId,
-    );
-    if (fixResult.changes && fixResult.changes > 0) {
-      console.log('[sync/pull] fixed group ownership for', fixResult.changes, 'groups ->', currentUserId);
-    }
-    // Also fix group_members ownership for members in these groups
-    const fixMembersResult = await db.runAsync(
-      `UPDATE group_members SET owner_user_id = ?
-       WHERE group_id IN (
-         SELECT DISTINCT group_id FROM workout_sessions
-         WHERE group_id IS NOT NULL AND group_id != ''
-           AND owner_user_id = ?
-       ) AND (owner_user_id IS NULL OR owner_user_id != ?)`,
-      currentUserId, currentUserId, currentUserId,
-    );
-    if (fixMembersResult.changes && fixMembersResult.changes > 0) {
-      console.log('[sync/pull] fixed group_members ownership for', fixMembersResult.changes, 'members ->', currentUserId);
-    }
-  } catch (error) {
-    console.error('[sync/pull] group ownership fix failed:', error instanceof Error ? error.message : error);
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      pulled,
+      serverTime: result.serverTime,
+      message: `云端数据拉取未完全应用，已保留上次同步游标：${errors.join('; ')}`,
+    };
   }
 
-  await setLastPullAt(db, result.serverTime);
+  await setLastPullAt(db, currentUserId, result.serverTime);
   console.log('[sync/pull] done, total applied:', pulled);
 
   return { ok: true, pulled, serverTime: result.serverTime };

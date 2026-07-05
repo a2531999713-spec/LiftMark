@@ -1,3 +1,4 @@
+import { initializeLocalDatabase } from '@/data/local/db';
 import { apiRequest } from '@/services/httpClient';
 import { readStoredSession } from '@/services/auth/tokenStorage';
 
@@ -51,6 +52,14 @@ const serverSyncEntityTypes = new Set<SyncEntityType>([
   'settings',
 ]);
 
+const localSyncEntityTableByType: Partial<Record<SyncEntityType, string>> = {
+  bodyMetrics: 'body_metrics',
+  trainingPlans: 'plan_templates',
+  workoutExerciseRecords: 'workout_exercise_records',
+  workoutSessions: 'workout_sessions',
+  workoutSets: 'workout_sets',
+};
+
 function buildServerEntity(item: SyncQueueItem) {
   const payload = item.payload ?? {};
   const ownerPayload = item.ownerUserId
@@ -99,6 +108,24 @@ function filterQueueItemsForUser(items: SyncQueueItem[], userId: string) {
   }
 
   return { owned, otherAccountCount, unboundCount };
+}
+
+async function markLocalEntitySynced(item: SyncQueueItem, remoteId: string | undefined, syncedAt: string) {
+  const tableName = localSyncEntityTableByType[item.entityType];
+  if (!tableName) return;
+
+  const db = await initializeLocalDatabase();
+  await db.runAsync(
+    `UPDATE ${tableName}
+     SET remote_id = COALESCE(?, remote_id),
+         sync_status = 'synced',
+         sync_error = NULL,
+         last_synced_at = ?
+     WHERE id = ?`,
+    remoteId ?? null,
+    syncedAt,
+    item.localId,
+  );
 }
 
 export async function getSyncSnapshot(): Promise<SyncSnapshot & { lastError?: string; serverStatus?: unknown }> {
@@ -193,7 +220,11 @@ export async function requestImmediateSync(): Promise<{ ok: true; message?: stri
 
     const mappings = new Map((result.mappings ?? []).map((mapping) => [mapping.clientId, mapping]));
     await Promise.all(
-      syncableItems.map((item) => markSyncItemSynced(item.id, mappings.get(item.localId)?.serverId)),
+      syncableItems.map(async (item) => {
+        const remoteId = mappings.get(item.localId)?.serverId;
+        await markSyncItemSynced(item.id, remoteId);
+        await markLocalEntitySynced(item, remoteId, result.serverTime);
+      }),
     );
 
     const unsupportedCount = accountFiltered.owned.length - syncableItems.length;

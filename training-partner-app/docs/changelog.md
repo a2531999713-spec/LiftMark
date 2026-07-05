@@ -1,5 +1,23 @@
 # 变更记录
 
+## 2026-07-06 - account-recovery-sync-hardening
+
+### 账号恢复与防串号修复
+- 修复 176 / 188 账号切换后旧本地数据被错误绑定的问题：`ownershipRepairService` 收窄为只修复 `groups`、`group_members`、`member_profiles`，不再按小组 owner 批量改训练、计划、体测等业务数据归属。
+- 修复云端恢复失败：`pullService` 的拉取游标改为账号级 `last_pull_at:{userId}`，避免 188 的同步游标导致 176 全量/增量拉取跳过云端数据。
+- 修复“部分拉取失败但游标已推进”：任一云端变更应用失败时不更新 `last_pull_at:{userId}`，下次同步会继续重试。
+- `pullService` 在应用云端记录时先按 `remote_id` 查找，再按本地 `id` 查找；如果当前账号云端记录撞上旧版本误归属的本地记录，会重新认领为当前账号并写回 `remote_id` / `sync_status` / `last_synced_at`。
+- `syncOrchestrator` 的 fullPull 改为先拉 `/sync/groups-pull`，再拉 `/sync/pull`，最后 push，保证小组和成员身份结构先恢复。
+- `authStore` 登录、注册、恢复登录态后的恢复链路改为 fullPull 优先，再执行身份结构归属修复。
+- `app/_layout.tsx` 移除启动时自动上传本地小组结构，避免账号切换后把旧本地脏数据绑定到当前账号。
+- `syncService` 在 push 成功后同步回写业务实体表，防止队列已 synced 但实体仍缺 `remote_id`。
+- 后端 `/sync/push` 不再信任客户端传入的跨账号 `serverId`；只允许命中当前用户已有记录，否则新建服务端 ID。
+
+### 文档与测试
+- 更新 `docs/sync-architecture.md`、`docs/database/schema.md`、`docs/database/schema-redesign.md`，补充账号级游标、fullPull 顺序、恢复例外和 P1 分库必要性。
+- 新增 `src/tests/sync-pull.test.ts`，覆盖账号级游标和旧误归属记录从当前账号云端数据中恢复。
+- 已通过：`training-partner-app` `npm test -- --runInBand`（16 个套件 / 92 个用例）、`npm run typecheck -- --pretty false`、`npm run lint`（仅 `LegalDraftPage.tsx` 保留既有 warning）；`apps/liftmark-api` `npm run typecheck`、`npm run build`。
+
 ## 2026-07-06 - P0-sync-bidirectional
 
 ### 实现双向数据同步（P0 止血）

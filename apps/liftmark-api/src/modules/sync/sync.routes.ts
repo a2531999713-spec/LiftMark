@@ -84,7 +84,11 @@ async function upsertEntity(userId: string, entityType: EntityType, item: z.infe
   const payload = item.payload ?? {};
   assertPayloadUserMatchesToken(userId, payload);
   const clientUpdatedAt = item.updatedAt ? new Date(item.updatedAt) : new Date();
-  const existing = await db(tableName).where({ user_id: userId, client_id: item.clientId }).first();
+  const existingByClientId = await db(tableName).where({ user_id: userId, client_id: item.clientId }).first();
+  const existingByServerId = item.serverId
+    ? await db(tableName).where({ user_id: userId, id: item.serverId }).first()
+    : null;
+  const existing = existingByClientId ?? existingByServerId;
 
   if (existing && new Date(existing.client_updated_at ?? existing.updated_at) > clientUpdatedAt) {
     return {
@@ -95,7 +99,7 @@ async function upsertEntity(userId: string, entityType: EntityType, item: z.infe
     };
   }
 
-  const serverId = existing?.id ?? item.serverId ?? createId(entityType.toLowerCase());
+  const serverId = existing?.id ?? createId(entityType.toLowerCase());
   const row = {
     id: serverId,
     user_id: userId,

@@ -392,11 +392,11 @@ export async function syncServerDataToLocal(): Promise<void> {
         now
       );
     } else {
-      // 更新小组（不覆盖已有归属，只填充 NULL）
+      // 更新小组归属以云端为准；只处理当前账号可见的云端小组。
       const groupOwnerUserId = serverGroup.ownerUserId ?? currentUserId;
       await db.runAsync(
         `UPDATE groups
-         SET name = ?, owner_user_id = COALESCE(owner_user_id, ?), updated_at = ?
+         SET name = ?, owner_user_id = ?, updated_at = ?
          WHERE id = ?`,
         serverGroup.name,
         groupOwnerUserId,
@@ -440,11 +440,11 @@ export async function syncServerDataToLocal(): Promise<void> {
           now
         );
       } else {
-        // 更新成员（不覆盖已有归属，只填充 NULL，防止跨账号拉取时抢夺归属）
+        // 更新成员归属以成员 userId 为准，避免按当前登录者抢归属。
         const memberOwnerUserId = serverMember.userId ?? currentUserId;
         await db.runAsync(
           `UPDATE group_members
-           SET owner_user_id = COALESCE(owner_user_id, ?), display_name = ?, user_id = ?, member_type = 'real', avatar_url = ?, updated_at = ?
+           SET owner_user_id = ?, display_name = ?, user_id = ?, member_type = 'real', avatar_url = ?, updated_at = ?
            WHERE id = ?`,
           memberOwnerUserId,
           serverMember.displayName ?? serverMember.nickname,
@@ -463,11 +463,11 @@ export async function syncServerDataToLocal(): Promise<void> {
       );
 
       if (existingProfile) {
-        // 更新资料（不覆盖已有归属，只填充 NULL）
+        // 成员资料归属以对应成员 userId 为准。
         const profileOwnerUserId = serverMember.userId ?? currentUserId;
         await db.runAsync(
           `UPDATE member_profiles SET
-            owner_user_id = COALESCE(owner_user_id, ?), bodyweight = ?, bench_1rm = ?, squat_1rm = ?, deadlift_1rm = ?,
+            owner_user_id = ?, bodyweight = ?, bench_1rm = ?, squat_1rm = ?, deadlift_1rm = ?,
             overhead_press_1rm = ?, pullup_reference_weight = ?,
             barbell_increment = ?, dumbbell_increment = ?, updated_at = ?,
             avatar_url = ?, avatar_thumb_url = ?, avatar_local_uri = ?, avatar_updated_at = ?
@@ -480,7 +480,7 @@ export async function syncServerDataToLocal(): Promise<void> {
           serverMember.profile.overheadPress1RM ?? null,
           serverMember.profile.pullupReferenceWeight ?? null,
           serverMember.profile.barbellIncrement ?? 2.5,
-          serverMember.profile.dumbbellIncrement ?? 2,
+          serverMember.profile.dumbbellIncrement ?? 2.5,
           now,
           resolveAvatarUrl(serverMember.avatarUrl) ?? null,
           resolveAvatarUrl(serverMember.avatarThumbUrl ?? serverMember.avatarUrl) ?? null,
@@ -509,7 +509,7 @@ export async function syncServerDataToLocal(): Promise<void> {
           serverMember.profile.overheadPress1RM ?? null,
           serverMember.profile.pullupReferenceWeight ?? null,
           serverMember.profile.barbellIncrement ?? 2.5,
-          serverMember.profile.dumbbellIncrement ?? 2,
+          serverMember.profile.dumbbellIncrement ?? 2.5,
           resolveAvatarUrl(serverMember.avatarUrl) ?? null,
           resolveAvatarUrl(serverMember.avatarThumbUrl ?? serverMember.avatarUrl) ?? null,
           null,

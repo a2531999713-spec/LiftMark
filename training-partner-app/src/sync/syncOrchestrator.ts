@@ -1,3 +1,5 @@
+import { syncServerDataToLocal } from '@/services/profileSyncService';
+
 import { pullFromServer } from './pullService';
 import { requestImmediateSync } from './syncService';
 
@@ -16,8 +18,17 @@ export async function sync(
   console.log('[sync] starting, options:', JSON.stringify(options ?? {}));
   try {
     if (!options?.pushOnly) {
+      if (options?.fullPull) {
+        console.log('[sync] starting group/member pull...');
+        await syncServerDataToLocal();
+        console.log('[sync] group/member pull done');
+      }
       console.log('[sync] starting pull...');
-      await pullFromServer({ fullPull: options?.fullPull });
+      const pullResult = await pullFromServer({ fullPull: options?.fullPull });
+      if (!pullResult.ok) {
+        console.warn('[sync] pull failed:', pullResult.message);
+        return { ok: false, message: pullResult.message ?? 'pull failed' };
+      }
       console.log('[sync] pull done');
     } else {
       console.log('[sync] pushOnly mode, skipping pull');
