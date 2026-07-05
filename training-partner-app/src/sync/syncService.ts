@@ -158,11 +158,11 @@ export async function requestImmediateSync(): Promise<{ ok: true; message?: stri
   if (syncableItems.length === 0) {
     if (accountFiltered.unboundCount > 0 || accountFiltered.otherAccountCount > 0) {
       return {
-        ok: false,
-        message: `Local data from other accounts or unbound data is isolated and will not sync to this account. unbound ${accountFiltered.unboundCount}, otherAccount ${accountFiltered.otherAccountCount}.`,
+        ok: true,
+        message: `No syncable items for current account. ${accountFiltered.unboundCount} unbound and ${accountFiltered.otherAccountCount} other-account items were isolated.`,
       };
     }
-    return { ok: false, message: 'No syncable items for the current account.' };
+    return { ok: true, message: 'No syncable items for the current account.' };
   }
   try {
     await markSyncItemsSyncing(syncableItems.map((item) => item.id));

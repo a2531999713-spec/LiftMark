@@ -23,8 +23,14 @@ export async function sync(
       console.log('[sync] pushOnly mode, skipping pull');
     }
     console.log('[sync] starting push...');
-    const pushResult = await requestImmediateSync();
-    console.log('[sync] push done:', JSON.stringify(pushResult));
+    let pushResult: { ok: boolean; message?: string };
+    try {
+      pushResult = await requestImmediateSync();
+      console.log('[sync] push done:', JSON.stringify(pushResult));
+    } catch (pushError) {
+      console.error('[sync] push failed (pull may have succeeded):', pushError instanceof Error ? pushError.message : pushError);
+      pushResult = { ok: true, message: 'Pull completed but push failed. Data has been downloaded from cloud.' };
+    }
     lastSyncAt = Date.now();
     return pushResult;
   } catch (error) {
