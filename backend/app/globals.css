@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'tailwindcss/utilities';
 @import 'shadcn/tailwind.css';
 
 @source "../**/*.{ts,tsx}";
