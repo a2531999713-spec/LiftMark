@@ -1,10 +1,9 @@
 @import 'tailwindcss';
-@import 'tailwindcss/utilities';
 @import 'shadcn/tailwind.css';
 
-@source '../app/**/*.{ts,tsx}';
-@source '../components/**/*.{ts,tsx}';
-@source '../lib/**/*.{ts,tsx}';
+@source "../app";
+@source "../components";
+@source "../lib";
 
 @custom-variant dark (&:is(.dark *));
 
