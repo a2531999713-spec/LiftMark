@@ -16,6 +16,7 @@ import type {
 import { readStoredSession, saveStoredSession } from '@/services/auth/tokenStorage';
 import { getMembership, type Membership } from '@/services/membershipService';
 import { repairLocalDataOwnership } from '@/services/ownershipRepairService';
+import { sync } from '@/sync/syncOrchestrator';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 
 type AuthStore = {
@@ -134,6 +135,9 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         repairLocalDataOwnership().catch((error) => {
           console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
         });
+        sync({ fullPull: true }).catch((error) => {
+          console.warn('[auth] sync failed', error instanceof Error ? error.message : error);
+        });
       }
     } catch (error) {
       switchRuntimeAccountScope(null);
@@ -200,6 +204,9 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       repairLocalDataOwnership().catch((error) => {
         console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
       });
+      sync({ fullPull: true }).catch((error) => {
+        console.warn('[auth] sync failed', error instanceof Error ? error.message : error);
+      });
       return null;
     } finally {
       set({ isLoading: false });
@@ -233,6 +240,9 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       // 登录后异步修复本地数据归属（不阻塞 UI）
       repairLocalDataOwnership().catch((error) => {
         console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
+      });
+      sync({ fullPull: true }).catch((error) => {
+        console.warn('[auth] sync failed', error instanceof Error ? error.message : error);
       });
       return null;
     } finally {
@@ -289,6 +299,9 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       // 注册后异步修复本地数据归属（不阻塞 UI）
       repairLocalDataOwnership().catch((error) => {
         console.warn('[auth] ownership repair failed', error instanceof Error ? error.message : error);
+      });
+      sync({ fullPull: true }).catch((error) => {
+        console.warn('[auth] sync failed', error instanceof Error ? error.message : error);
       });
       return null;
     } finally {

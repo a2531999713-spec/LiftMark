@@ -1,5 +1,21 @@
 # 变更记录
 
+## 2026-07-06 - P0-sync-bidirectional
+
+### 实现双向数据同步（P0 止血）
+- 新增 `pullService.ts`：从服务端 `/sync/pull` 增量拉取训练数据并写入本地 SQLite，按依赖顺序应用（exercises → plans → workoutSessions → ...），支持 LWW 冲突解决，UPDATE 不覆盖 `owner_user_id`。
+- 新增 `syncOrchestrator.ts`：统一同步入口（pull → push），带防重入锁、30 秒节流、3 秒防抖。提供 `sync()`、`scheduleSyncDebounced()`、`syncAfterWorkout()` 三个触发方式。
+- 新增 migration 17：创建 `sync_state` 表记录同步游标（`last_pull_at`），支持增量 pull。
+- 修改 `authStore.ts`：登录/注册/恢复登录态后触发 `sync({ fullPull: true })`，新设备登录自动全量拉取数据。
+- 修改 `app/_layout.tsx`：App 启动和从后台回前台时触发 `sync()`，30 秒节流避免频繁同步。
+- `owner_user_id` 不可变约束：所有 `upsertFromServer` 的 UPDATE 语句排除 `owner_user_id`，防止跨账号归属篡改。
+- 数据修改自动同步：非训练数据修改后防抖 3 秒触发同步；训练完成后立即 push 优先。
+- 保留手动同步按钮（用于测试），后续 P1 阶段考虑隐藏。
+
+### 新增文档
+- `docs/sync-architecture.md`：完整的数据同步架构文档，包括架构选型、同步时机、冲突解决、分阶段实施。
+- `docs/database/schema-redesign.md`：数据库架构问题分析与重新设计文档，包括物理分库方案。
+
 ## 2026-07-05 - ownership-repair-service
 
 ### 登录后自动修复数据归属

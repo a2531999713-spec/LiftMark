@@ -1,12 +1,23 @@
 import { router, Stack, useSegments } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, AppState, StyleSheet, View } from 'react-native';
 
 import { initializeLocalDatabase } from '@/data/local';
 import { syncAllLocalGroupsToServer } from '@/services/profileSyncService';
 import { useAuthStore } from '@/store/authStore';
-import { requestImmediateSync } from '@/sync/syncService';
+import { sync, getLastSyncAt } from '@/sync/syncOrchestrator';
 import { colors, spacing } from '@/theme';
+
+const SYNC_THROTTLE_MS = 30_000;
+
+function triggerAppSync(): void {
+  if (Date.now() - getLastSyncAt() < SYNC_THROTTLE_MS) {
+    return;
+  }
+  void sync().catch((error) => {
+    console.warn('[app] sync failed', error instanceof Error ? error.message : error);
+  });
+}
 
 export default function RootLayout() {
   const authStatus = useAuthStore((state) => state.authStatus);
@@ -25,17 +36,25 @@ export default function RootLayout() {
             console.warn('本地小组同步失败', result.message);
           }
         });
-        // 自动同步待同步数据
-        void requestImmediateSync().then((result) => {
-          if (!result.ok) {
-            console.warn('自动同步失败', result.message);
-          }
-        });
+        // 启动时触发同步（pull + push），受 30 秒节流控制
+        triggerAppSync();
       }
     }
     void boot().catch((error) => {
       console.error('启动初始化失败', error);
     });
+  }, []);
+
+  // App 从后台回到前台时触发同步（30 秒节流）
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        triggerAppSync();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   useEffect(() => {

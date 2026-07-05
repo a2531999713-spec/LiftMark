@@ -658,6 +658,20 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 17,
+    name: 'sync_state_table',
+    async up(db) {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS sync_state (
+          id TEXT PRIMARY KEY,
+          key TEXT NOT NULL UNIQUE,
+          value TEXT,
+          updated_at TEXT NOT NULL
+        );
+      `);
+    },
+  },
 ];
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {

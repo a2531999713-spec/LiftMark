@@ -1,3 +1,11 @@
+## 2026-07-06 双向数据同步与归属不可变架构补充
+
+- 同步模型从单向 push 升级为双向 pull + push；新增 `src/sync/pullService.ts` 和 `src/sync/syncOrchestrator.ts`。
+- App 启动、从后台回前台、登录、训练完成和数据修改后自动触发同步，不再依赖手动按钮。
+- `owner_user_id` 在 `upsertFromServer` 的 UPDATE 语句中被排除，创建后不可变。
+- 新增 `sync_state` 表（migration 17）记录同步游标 `last_pull_at`，支持增量 pull。
+- 同步架构详见 `docs/sync-architecture.md`；数据库架构问题分析与重新设计见 `docs/database/schema-redesign.md`。
+
 ﻿## 2026-06-30 图表、身体数据、多小组和训练替换架构补充
 
 - 图表组件仍为本地 UI 组件，不引入大体积图表库；`MiniLineChart` / `MultiLineTrendChart` 在组件内完成坐标缩放、绘图区 padding、刻度、单位和空状态。
