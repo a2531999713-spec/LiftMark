@@ -38,15 +38,6 @@ export default function AboutRoute() {
         </View>
       </ProfileSection>
 
-      <ProfileSection title="意见反馈">
-        <ProfileMenuItem
-          description="问题反馈、功能建议和诊断信息"
-          icon="chatbubble-ellipses-outline"
-          label="意见反馈"
-          onPress={() => router.push('/feedback' as never)}
-        />
-      </ProfileSection>
-
       <ProfileSection title="服务条款">
         <ProfileMenuItem
           description="查看用户服务协议"

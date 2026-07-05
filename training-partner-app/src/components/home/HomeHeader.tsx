@@ -28,7 +28,7 @@ export function HomeHeader({
   return (
     <View style={styles.header}>
       <View style={styles.headerText}>
-        <AppText numberOfLines={1} style={styles.title} variant="headline" weight="900">
+        <AppText numberOfLines={1} style={styles.title} variant="title" weight="900">
           {title}
         </AppText>
         <AppText numberOfLines={1} tone="muted" variant="bodySmall">
@@ -45,7 +45,7 @@ export function HomeHeader({
           avatarThumbUrl={avatarThumbUrl}
           avatarUrl={avatarUrl}
           name={displayName}
-          size={40}
+          size={38}
         />
         {showStatusDot ? <View style={styles.statusDot} /> : null}
       </Pressable>
@@ -60,9 +60,9 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
     justifyContent: 'space-between',
-    minHeight: 52,
+    minHeight: 56,
     paddingTop: spacing.xs,
   },
   headerText: {

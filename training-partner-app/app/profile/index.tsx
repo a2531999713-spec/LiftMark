@@ -73,7 +73,7 @@ export default function ProfileIndexRoute() {
       setCurrentProfile(profile);
       setAccountProfile(cachedProfile);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '个人资料加载失败。');
+      setError(loadError instanceof Error ? loadError.message : '账号中心加载失败。');
     } finally {
       setIsLoading(false);
     }
@@ -107,7 +107,7 @@ export default function ProfileIndexRoute() {
           <Ionicons color={colors.textStrong} name="chevron-back" size={25} />
         </Pressable>
         <AppText style={styles.headerTitle} variant="title" weight="900">
-          个人资料
+          账号中心
         </AppText>
         <View style={styles.headerSpacer} />
       </View>
@@ -178,7 +178,8 @@ export default function ProfileIndexRoute() {
           <ProfileGroup title="法务与支持">
             <AccountMenuRow icon="shield-checkmark-outline" label="隐私政策" onPress={() => router.push('/legal/privacy' as never)} />
             <AccountMenuRow icon="document-text-outline" label="用户协议" onPress={() => router.push('/legal/terms' as never)} />
-            <AccountMenuRow icon="chatbubble-ellipses-outline" label="设置与反馈" onPress={() => router.push('/feedback' as never)} />
+            <AccountMenuRow icon="bulb-outline" label="功能建议" onPress={() => router.push('/feedback' as never)} />
+            <AccountMenuRow icon="bug-outline" label="问题反馈" onPress={() => router.push('/feedback' as never)} />
             <AccountMenuRow
               icon="information-circle-outline"
               label="关于练刻"

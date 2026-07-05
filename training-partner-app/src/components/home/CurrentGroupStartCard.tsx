@@ -66,7 +66,7 @@ export function CurrentGroupStartCard({
                 avatarThumbUrl={profiles[member.id]?.avatarThumbUrl}
                 avatarUrl={profiles[member.id]?.avatarUrl ?? member.avatarUrl}
                 name={member.displayName}
-                size={30}
+                size={28}
               />
             </View>
           ))}
@@ -102,8 +102,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: spacing.md,
-    padding: spacing.md,
+    gap: spacing.sm,
+    padding: spacing.sm,
     ...shadows.card,
   },
   groupHeader: {
@@ -115,13 +115,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.primarySoft,
     borderRadius: radius.pill,
-    height: 40,
+    height: 36,
     justifyContent: 'center',
-    width: 40,
+    width: 36,
   },
   groupSide: {
     flex: 1,
-    gap: spacing.sm,
+    gap: spacing.xs,
     minWidth: 0,
   },
   groupText: {
@@ -151,12 +151,12 @@ const styles = StyleSheet.create({
     borderColor: colors.surface,
     borderRadius: radius.pill,
     borderWidth: 2,
-    height: 30,
+    height: 28,
     justifyContent: 'center',
-    width: 30,
+    width: 28,
   },
   startButton: {
-    maxWidth: 168,
-    minWidth: 142,
+    maxWidth: 158,
+    minWidth: 132,
   },
 });

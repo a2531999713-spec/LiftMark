@@ -73,7 +73,7 @@ export function TodayTrainingHero({
 
 const styles = StyleSheet.create({
   background: {
-    minHeight: 168,
+    minHeight: 156,
   },
   card: {
     backgroundColor: colors.dark,
@@ -84,8 +84,8 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'space-between',
-    minHeight: 168,
-    padding: spacing.md,
+    minHeight: 156,
+    padding: spacing.sm,
   },
   image: {
     opacity: 0.9,
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     flexDirection: 'row',
     paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   scrim: {
     backgroundColor: 'rgba(5,14,24,0.64)',
@@ -142,8 +142,8 @@ const styles = StyleSheet.create({
     color: colors.surface,
   },
   titleBlock: {
-    gap: spacing.sm,
-    marginVertical: spacing.md,
+    gap: spacing.xs,
+    marginVertical: spacing.sm,
   },
   topRow: {
     alignItems: 'center',

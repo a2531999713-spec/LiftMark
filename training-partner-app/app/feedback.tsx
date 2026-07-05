@@ -31,10 +31,10 @@ export default function FeedbackRoute() {
   return (
     <Screen contentStyle={styles.screen}>
       <SecondaryPageHeader
-        caption="设置与反馈"
+        caption="反馈与诊断"
         icon="chatbubble-ellipses-outline"
-        subtitle="反馈、诊断信息和低频设置集中在这里。"
-        title="设置与反馈"
+        subtitle="反馈表单已上移到账户面板，这里仅保留开发诊断。"
+        title="反馈与诊断"
       />
 
       <AppCard style={styles.card}>

@@ -47,11 +47,9 @@ export function AccountMenuSheet({
   onLogoutPress,
   onManageGroupPress,
   onMembershipPress,
-  onPlanPress,
   onPreferencesPress,
   onPrivacyPress,
   onProfilePress,
-  onSwitchGroupPress,
   onSyncPress,
   onTermsPress,
   phoneMasked,
@@ -80,18 +78,11 @@ export function AccountMenuSheet({
 
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
               <View style={styles.section}>
-                <AccountMenuRow icon="person-circle-outline" label="个人资料" onPress={onProfilePress} />
-                <AccountMenuRow
-                  icon="swap-horizontal-outline"
-                  label="切换小组"
-                  onPress={onSwitchGroupPress}
-                />
                 <AccountMenuRow
                   icon="people-outline"
-                  label="管理小组与成员"
+                  label="训练小组"
                   onPress={onManageGroupPress}
                 />
-                <AccountMenuRow icon="clipboard-outline" label="我的计划" onPress={onPlanPress} />
               </View>
 
               <View style={styles.section}>
@@ -107,7 +98,8 @@ export function AccountMenuSheet({
               </View>
 
               <View style={styles.section}>
-                <AccountMenuRow icon="chatbubble-ellipses-outline" label="设置与反馈" onPress={onFeedbackPress} />
+                <AccountMenuRow icon="bulb-outline" label="功能建议" onPress={onFeedbackPress} />
+                <AccountMenuRow icon="bug-outline" label="问题反馈" onPress={onFeedbackPress} />
                 <AccountMenuRow icon="shield-checkmark-outline" label="隐私政策" onPress={onPrivacyPress} />
                 <AccountMenuRow icon="document-text-outline" label="用户协议" onPress={onTermsPress} />
                 <AccountMenuRow icon="information-circle-outline" label="关于练刻" onPress={onAboutPress} />

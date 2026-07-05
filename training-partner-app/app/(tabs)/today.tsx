@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -432,33 +432,49 @@ function formatDayChoiceSubtitle(day: PlanDay): string {
   return [day.title, day.focus].filter(Boolean).join(' · ');
 }
 
+const homeHeaderTitlePool = [
+  '今天也别空过',
+  '把训练刻进今天',
+  '完成一组，再说别的',
+  '计划在这，剩下靠你',
+  '今天继续推进',
+  '这一组算数',
+  '慢慢加重，稳定进步',
+  '练完再休息',
+];
+
+function pickDailyHomeTitle() {
+  const key = getLocalDateString();
+  const score = key.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return homeHeaderTitlePool[score % homeHeaderTitlePool.length];
+}
+
 function buildHomeHeaderCopy(input: {
-  activePlanName?: string;
   currentGroupName?: string;
-  focus?: string | null;
-  isRestState: boolean;
   memberCount: number;
-  planDay?: PlanDay | null;
-  selectedWeek: number;
+  syncLabel: string;
 }): { subtitle: string; title: string } {
-  const focus = input.focus?.trim();
-  const title = input.isRestState
-    ? '今日安排恢复'
-    : focus
-      ? `今天刻${focus}`
-      : input.planDay?.title?.trim() || '今天刻下一组';
-  const weekLabel = input.planDay
-    ? `第 ${input.planDay.week} 周 · ${formatDayChoiceTitle(input.planDay)}`
-    : `第 ${input.selectedWeek} 周`;
-  const planLabel = input.activePlanName ? `${input.activePlanName} · ${weekLabel}` : weekLabel;
   const groupLabel = input.currentGroupName
     ? `${input.currentGroupName} · ${input.memberCount} 人`
-    : '尚未选择训练小组';
+    : input.syncLabel;
 
   return {
-    subtitle: `${formatTodayDate()} · ${planLabel} · ${groupLabel}`,
-    title,
+    subtitle: `${formatTodayDate()} · ${groupLabel}`,
+    title: pickDailyHomeTitle(),
   };
+}
+
+async function loadOrDefault<T>(label: string, task: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await task;
+  } catch (error) {
+    console.error(`[home] ${label} failed`, error);
+    return fallback;
+  }
+}
+
+function compactDetails(details: (WorkoutSessionDetail | null)[]): WorkoutSessionDetail[] {
+  return details.filter((detail): detail is WorkoutSessionDetail => Boolean(detail));
 }
 
 function isSameWorkoutSelection(
@@ -563,8 +579,13 @@ export default function TodayRoute() {
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const loadHomeRequestRef = useRef(0);
 
   const loadHome = useCallback(async () => {
+    const requestId = loadHomeRequestRef.current + 1;
+    loadHomeRequestRef.current = requestId;
+    const isLatestRequest = () => requestId === loadHomeRequestRef.current;
+
     setIsLoading(true);
     setError(null);
 
@@ -572,15 +593,18 @@ export default function TodayRoute() {
       await initializeLocalDatabase();
       const latestUser = useAuthStore.getState().user;
       const allGroups = await repositories.groupRepository.listGroups();
+      if (!isLatestRequest()) return;
       setGroups(allGroups);
       const nextGroup = allGroups.find((item) => item.id === selectedGroupId) ?? allGroups[0] ?? null;
       if (!nextGroup) {
+        const nextAccountProfile = latestUser ? await getAccountProfileCache(latestUser.id) : null;
+        if (!isLatestRequest()) return;
         setGroup(null);
         setActivePlan(null);
         setTodayPlan(null);
         setMembers([]);
         setProfiles({});
-        setAccountProfile(latestUser ? await getAccountProfileCache(latestUser.id) : null);
+        setAccountProfile(nextAccountProfile);
         setLastPerformanceByExerciseId({});
         setPlanPhases([]);
         setPlanDays([]);
@@ -594,47 +618,64 @@ export default function TodayRoute() {
         setSelectedGroupId(nextGroup.id);
       }
 
-      // 从服务器同步成员头像
-      await syncGroupMembersAvatar(nextGroup.id);
+      void syncGroupMembersAvatar(nextGroup.id).catch((avatarError) => {
+        console.error('[home] member avatar sync failed', avatarError);
+      });
 
       const [nextActivePlan, nextMembers] = await Promise.all([
-        repositories.planRepository.getPlanById(nextGroup.activePlanId),
-        repositories.memberRepository.listMembers(nextGroup.id),
+        loadOrDefault('active plan load', repositories.planRepository.getPlanById(nextGroup.activePlanId), null),
+        loadOrDefault('member list load', repositories.memberRepository.listMembers(nextGroup.id), []),
       ]);
       const nextProfiles = await Promise.all(
         nextMembers.map(async (member) => [
           member.id,
-          await repositories.memberRepository.getMemberProfile(member.id),
+          await loadOrDefault(
+            `member profile ${member.id}`,
+            repositories.memberRepository.getMemberProfile(member.id),
+            null,
+          ),
         ]),
       );
       const nextProfilesByMemberId = Object.fromEntries(nextProfiles);
       const currentMember = nextMembers.find((member) => member.userId === latestUser?.id) ?? nextMembers[0] ?? null;
       const [weekSessions, recentSessions, nextPhases, nextPlanDays, nextAccountProfile] = await Promise.all([
-        repositories.workoutRepository.listSessions({
-          fromDate: getLocalDateString(getWeekStart()),
-          groupId: nextGroup.id,
-          memberId: currentMember?.id,
-          toDate: getLocalDateString(getWeekEnd()),
-          limit: 80,
-        }),
-        repositories.workoutRepository.listSessions({
-          groupId: nextGroup.id,
-          memberId: currentMember?.id,
-          limit: 80,
-        }),
+        loadOrDefault(
+          'weekly sessions load',
+          repositories.workoutRepository.listSessions({
+            fromDate: getLocalDateString(getWeekStart()),
+            groupId: nextGroup.id,
+            memberId: currentMember?.id,
+            toDate: getLocalDateString(getWeekEnd()),
+            limit: 80,
+          }),
+          [],
+        ),
+        loadOrDefault(
+          'recent sessions load',
+          repositories.workoutRepository.listSessions({
+            groupId: nextGroup.id,
+            memberId: currentMember?.id,
+            limit: 80,
+          }),
+          [],
+        ),
         nextActivePlan
-          ? repositories.planRepository.listPlanPhases(nextActivePlan.id)
+          ? loadOrDefault('plan phases load', repositories.planRepository.listPlanPhases(nextActivePlan.id), [])
           : Promise.resolve([]),
         nextActivePlan
-          ? repositories.planRepository.listPlanDays(nextActivePlan.id)
+          ? loadOrDefault('plan days load', repositories.planRepository.listPlanDays(nextActivePlan.id), [])
           : Promise.resolve([]),
-        latestUser ? getAccountProfileCache(latestUser.id) : Promise.resolve(null),
+        latestUser ? loadOrDefault('account profile load', getAccountProfileCache(latestUser.id), null) : Promise.resolve(null),
       ]);
       const weekDetails = await Promise.all(
-        weekSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)),
+        weekSessions.map((session) =>
+          loadOrDefault(`weekly session detail ${session.id}`, repositories.workoutRepository.getSessionDetail(session.id), null),
+        ),
       );
       const recentDetails = await Promise.all(
-        recentSessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)),
+        recentSessions.map((session) =>
+          loadOrDefault(`recent session detail ${session.id}`, repositories.workoutRepository.getSessionDetail(session.id), null),
+        ),
       );
 
       let result: TodayPlanResult | null = null;
@@ -644,7 +685,8 @@ export default function TodayRoute() {
 
       if (nextActivePlan) {
         const weekOptions = getPlanWeekOptions(nextPlanDays, nextGroup.currentWeek);
-        const completedPlanDayKeys = getCompletedPlanDayKeys(weekDetails, nextActivePlan.id);
+        const safeWeekDetails = compactDetails(weekDetails);
+        const completedPlanDayKeys = getCompletedPlanDayKeys(safeWeekDetails, nextActivePlan.id);
         const autoFollowDay = resolveAutoFollowPlanDay({
           completedKeys: completedPlanDayKeys,
           currentWeek: nextGroup.currentWeek,
@@ -680,24 +722,35 @@ export default function TodayRoute() {
               nextSelectedWeek <= phase.endWeek,
           ) ?? nextPhases.find((phase) => phase.type === nextGroup.currentPhaseType);
 
-        result = await repositories.planRepository.getTodayPlan({
-          currentWeek: nextSelectedWeek,
-          fridayEnabled: true,
-          groupId: nextGroup.id,
-          phaseType: phaseForSelectedWeek?.type ?? nextGroup.currentPhaseType,
-          planId: nextGroup.activePlanId,
-          recoveryMode,
-          weekday: nextSelectedWeekday,
-        });
+        result = await loadOrDefault(
+          'today plan load',
+          repositories.planRepository.getTodayPlan({
+            currentWeek: nextSelectedWeek,
+            fridayEnabled: true,
+            groupId: nextGroup.id,
+            phaseType: phaseForSelectedWeek?.type ?? nextGroup.currentPhaseType,
+            planId: nextGroup.activePlanId,
+            recoveryMode,
+            weekday: nextSelectedWeekday,
+          }),
+          null,
+        );
 
-        const planExerciseIds = result.exercises.map((exercise) => exercise.exerciseId);
+        const planExerciseIds = result?.exercises.map((exercise) => exercise.exerciseId) ?? [];
         const nextExercises =
-          await repositories.exerciseRepository.listExercisesByIds(planExerciseIds);
+          planExerciseIds.length > 0
+            ? await loadOrDefault(
+              'exercise map load',
+              repositories.exerciseRepository.listExercisesByIds(planExerciseIds),
+              [],
+            )
+            : [];
         nextExerciseMap = Object.fromEntries(
           nextExercises.map((exercise) => [exercise.id, exercise]),
         );
       }
 
+      if (!isLatestRequest()) return;
       setGroup(nextGroup);
       setActivePlan(nextActivePlan);
       setTodayPlan(result);
@@ -707,20 +760,27 @@ export default function TodayRoute() {
       setMembers(nextMembers);
       setProfiles(nextProfilesByMemberId);
       setAccountProfile(nextAccountProfile);
-      setLastPerformanceByExerciseId(summarizeLastPerformance(recentDetails, currentMember?.id));
+      setLastPerformanceByExerciseId(summarizeLastPerformance(compactDetails(recentDetails), currentMember?.id));
       setPlanPhases(nextPhases);
       setExerciseMap(nextExerciseMap);
-      setWeeklyOverview(summarizeWeeklyOverview(weekDetails, currentMember?.id));
+      setWeeklyOverview(summarizeWeeklyOverview(compactDetails(weekDetails), currentMember?.id));
     } catch (loadError) {
+      if (!isLatestRequest()) return;
+      console.error('[home] load failed', loadError);
       setError(loadError instanceof Error ? loadError.message : '训练数据加载失败。');
     } finally {
-      setIsLoading(false);
+      if (isLatestRequest()) {
+        setIsLoading(false);
+      }
     }
   }, [isPlanSelectionManual, repositories, recoveryMode, selectedGroupId, selectedWeek, selectedWeekday, setSelectedGroupId, todayWeekday]);
 
   useFocusEffect(
     useCallback(() => {
       void loadHome();
+      return () => {
+        loadHomeRequestRef.current += 1;
+      };
     }, [loadHome]),
   );
 
@@ -1108,13 +1168,9 @@ export default function TodayRoute() {
     planExercises.length > 0,
   );
   const homeHeaderCopy = buildHomeHeaderCopy({
-    activePlanName: activePlan?.name,
     currentGroupName: group?.name,
-    focus: selectedPlanDay?.focus ?? mainFocus,
-    isRestState,
     memberCount: members.length,
-    planDay: selectedPlanDay,
-    selectedWeek: selectedWeekValue,
+    syncLabel,
   });
 
   const syncAccountProfileAvatarToMembers = useCallback(
@@ -1250,7 +1306,19 @@ export default function TodayRoute() {
             />
           ) : null}
 
-          {!error && !activePlan ? (
+          {!error && groups.length === 0 ? (
+            <HomeEmptyState
+              actionLabel="创建小组"
+              description="先建立一个训练小组，再添加计划和成员。"
+              icon="people-outline"
+              onActionPress={() => {
+                if (guardFeature('create_group')) router.push('/profile/groups' as never);
+              }}
+              title="暂无训练小组"
+            />
+          ) : null}
+
+          {!error && groups.length > 0 && !activePlan ? (
             <HomeEmptyState
               actions={[
                 {
@@ -1272,7 +1340,7 @@ export default function TodayRoute() {
             />
           ) : null}
 
-          {!error && activePlan && members.length === 0 ? (
+          {!error && groups.length > 0 && activePlan && members.length === 0 ? (
             <HomeEmptyState
               actionLabel="添加成员"
               description="添加成员后可计算建议重量并记录训练"
@@ -1313,7 +1381,18 @@ export default function TodayRoute() {
                 />
               ) : null}
 
-              {!isRestState ? (
+              {!isRestState && !todayPlan ? (
+                <HomeEmptyState
+                  actionLabel="重新加载"
+                  compact
+                  description="计划结构已保留，今日训练内容暂时未解析成功。"
+                  icon="refresh-outline"
+                  onActionPress={() => void loadHome()}
+                  title="今日计划未就绪"
+                />
+              ) : null}
+
+              {!isRestState && todayPlan ? (
                 <TodayTrainingHero
                   estimatedMinutes={estimatedMinutes}
                   imageSource={liftmarkImages.trainingHero}
@@ -1327,7 +1406,7 @@ export default function TodayRoute() {
                 />
               ) : null}
 
-              {!isRestState ? (
+              {!isRestState && todayPlan ? (
                 <CurrentGroupStartCard
                   buttonLabel={members.length > 0 ? '选择成员并开始' : '添加成员并开始'}
                   currentMemberId={currentMember?.id}
@@ -1340,7 +1419,7 @@ export default function TodayRoute() {
                 />
               ) : null}
 
-              {!isRestState ? (
+              {!isRestState && todayPlan ? (
                 <TodayFocusList
                   items={focusItems}
                   onItemPress={() => router.push('/(tabs)/plan')}
@@ -1370,20 +1449,14 @@ export default function TodayRoute() {
           onAboutPress={() => navigateFromAccountMenu(() => router.push('/about' as never))}
           onAvatarPick={pickAccountAvatar}
           onAvatarRemove={removeAccountAvatar}
-          onBackupPress={() => navigateFromAccountMenu(() => router.push('/backup' as never))}
           onClose={() => setAccountMenuVisible(false)}
           onCreateGroupPress={() => navigateFromAccountMenu(() => router.push('/profile/groups' as never))}
-          onFeedbackPress={() => navigateFromAccountMenu(() => router.push('/feedback' as never))}
           onGroupSettingsPress={() => navigateFromAccountMenu(() => router.push('/profile/groups' as never))}
           onLogoutPress={confirmLogout}
           onManageMembersPress={() => navigateFromAccountMenu(() => router.push('/groups/manage' as never))}
-          onMembershipPress={() => navigateFromAccountMenu(() => router.push('/profile/membership' as never))}
-          onPlanPress={() => navigateFromAccountMenu(() => router.push('/(tabs)/plan'))}
-          onPreferencesPress={() => navigateFromAccountMenu(() => router.push('/preferences' as never))}
           onPrivacyPress={() => navigateFromAccountMenu(() => router.push('/legal/privacy' as never))}
           onSaveProfile={saveAccountProfile}
           onSelectGroup={setSelectedGroupId}
-          onSyncPress={() => navigateFromAccountMenu(() => router.push('/sync' as never))}
           onTermsPress={() => navigateFromAccountMenu(() => router.push('/legal/terms' as never))}
           phoneMasked={phoneMasked}
           syncLabel={syncLabel}

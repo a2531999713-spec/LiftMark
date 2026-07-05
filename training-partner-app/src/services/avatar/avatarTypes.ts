@@ -7,7 +7,7 @@ export type AccountProfileCache = {
   avatarUpdatedAt?: string;
   avatarUrl?: string;
   displayName?: string;
-  gender?: 'female' | 'male' | 'other' | 'unspecified';
+  gender?: 'female' | 'male' | 'other' | 'hidden' | 'unspecified';
   liftmarkId?: string;
   phoneMasked?: string;
   updatedAt: string;

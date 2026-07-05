@@ -62,9 +62,9 @@ const styles = StyleSheet.create({
   iconBox: {
     alignItems: 'center',
     borderRadius: radius.md,
-    height: 32,
+    height: 30,
     justifyContent: 'center',
-    width: 32,
+    width: 30,
   },
   iconBoxDanger: {
     backgroundColor: colors.dangerSoft,
@@ -79,8 +79,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
-    minHeight: 52,
-    paddingHorizontal: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   text: {

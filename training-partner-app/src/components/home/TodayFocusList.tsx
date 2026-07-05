@@ -163,8 +163,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: spacing.sm,
-    minHeight: 70,
-    paddingHorizontal: spacing.md,
+    minHeight: 64,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
   },
   section: {
@@ -179,8 +179,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.md,
-    height: 48,
+    height: 42,
     justifyContent: 'center',
-    width: 48,
+    width: 42,
   },
 });

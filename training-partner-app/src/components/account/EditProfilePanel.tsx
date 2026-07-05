@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
@@ -6,7 +7,7 @@ import { AppText } from '@/components/ui';
 import type { AvatarPickSource } from '@/services/avatar';
 import { colors, radius, spacing, typography } from '@/theme';
 
-export type AccountGender = 'female' | 'male' | 'other' | 'unspecified';
+export type AccountGender = 'female' | 'male' | 'other' | 'hidden' | 'unspecified';
 
 export type EditProfileDraft = {
   ageText: string;
@@ -25,16 +26,26 @@ type EditProfilePanelProps = {
   onAvatarPick: (source: AvatarPickSource) => Promise<void>;
   onAvatarRemove: () => Promise<void>;
   onDraftChange: (draft: EditProfileDraft) => void;
+  onMembershipPress: () => void;
+  onSyncPress: () => void;
   phoneMasked?: string;
   syncLabel: string;
 };
 
 const genderOptions: { label: string; value: AccountGender }[] = [
-  { label: '未设置', value: 'unspecified' },
   { label: '男', value: 'male' },
   { label: '女', value: 'female' },
   { label: '其他', value: 'other' },
+  { label: '不展示', value: 'hidden' },
 ];
+
+const genderLabels: Record<AccountGender, string> = {
+  female: '女',
+  hidden: '不展示',
+  male: '男',
+  other: '其他',
+  unspecified: '选择性别',
+};
 
 export function EditProfilePanel({
   avatarLocalUri,
@@ -47,9 +58,13 @@ export function EditProfilePanel({
   onAvatarPick,
   onAvatarRemove,
   onDraftChange,
+  onMembershipPress,
+  onSyncPress,
   phoneMasked,
   syncLabel,
 }: EditProfilePanelProps) {
+  const [isGenderOpen, setGenderOpen] = useState(false);
+
   const openAvatarActions = () => {
     Alert.alert('头像', '选择头像操作', [
       { text: '从相册选择', onPress: () => void onAvatarPick('library') },
@@ -61,7 +76,7 @@ export function EditProfilePanel({
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.avatarRow}>
+      <View style={styles.identityCard}>
         <Pressable accessibilityRole="button" onPress={openAvatarActions} style={styles.avatarButton}>
           <Avatar
             avatarLocalUri={avatarLocalUri}
@@ -78,73 +93,95 @@ export function EditProfilePanel({
             )}
           </View>
         </Pressable>
-        <View style={styles.avatarText}>
-          <AppText variant="bodySmall" weight="900">
-            点击头像直接更换
+
+        <View style={styles.identityText}>
+          <TextInput
+            maxLength={16}
+            onChangeText={(displayName) => onDraftChange({ ...draft, displayName })}
+            placeholder="练刻用户"
+            placeholderTextColor={colors.textSubtle}
+            style={styles.nameInput}
+            value={draft.displayName}
+          />
+          <AppText numberOfLines={1} tone="muted" variant="caption">
+            {phoneMasked ?? '手机号未绑定'}
           </AppText>
-          <AppText tone="muted" variant="caption">
-            账号头像会同步到当前账号绑定的训练成员。
+          <AppText numberOfLines={1} tone="muted" variant="caption">
+            {liftmarkId ? `LiftMark ID: ${liftmarkId}` : 'LiftMark ID 未生成'}
           </AppText>
         </View>
       </View>
 
       <View style={styles.fieldCard}>
-        <FieldLabel label="昵称" />
+        <FieldLabel label="年龄" />
         <TextInput
-          maxLength={16}
-          onChangeText={(displayName) => onDraftChange({ ...draft, displayName })}
-          placeholder="练刻用户"
+          keyboardType="number-pad"
+          maxLength={3}
+          onChangeText={(ageText) => onDraftChange({ ...draft, ageText: ageText.replace(/[^\d]/g, '') })}
+          placeholder="设置年龄"
           placeholderTextColor={colors.textSubtle}
           style={styles.textInput}
-          value={draft.displayName}
+          value={draft.ageText}
         />
       </View>
 
-      <View style={styles.twoColumn}>
-        <View style={[styles.fieldCard, styles.flexField]}>
-          <FieldLabel label="年龄" />
-          <TextInput
-            keyboardType="number-pad"
-            maxLength={3}
-            onChangeText={(ageText) => onDraftChange({ ...draft, ageText: ageText.replace(/[^\d]/g, '') })}
-            placeholder="未设置"
-            placeholderTextColor={colors.textSubtle}
-            style={styles.textInput}
-            value={draft.ageText}
+      <View style={styles.genderCard}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setGenderOpen((current) => !current)}
+          style={styles.genderRow}
+        >
+          <View>
+            <AppText tone="muted" variant="caption" weight="900">
+              性别
+            </AppText>
+            <AppText variant="bodySmall" weight="900">
+              {genderLabels[draft.gender]}
+            </AppText>
+          </View>
+          <Ionicons
+            color={colors.textSubtle}
+            name={isGenderOpen ? 'chevron-up' : 'chevron-down'}
+            size={18}
           />
-        </View>
-        <View style={[styles.fieldCard, styles.flexField]}>
-          <FieldLabel label="性别" />
-          <View style={styles.genderGrid}>
+        </Pressable>
+        {isGenderOpen ? (
+          <View style={styles.genderOptions}>
             {genderOptions.map((option) => {
               const active = draft.gender === option.value;
               return (
                 <Pressable
                   accessibilityRole="button"
                   key={option.value}
-                  onPress={() => onDraftChange({ ...draft, gender: option.value })}
-                  style={[styles.genderChip, active && styles.genderChipActive]}
+                  onPress={() => {
+                    onDraftChange({ ...draft, gender: option.value });
+                    setGenderOpen(false);
+                  }}
+                  style={({ pressed }) => [
+                    styles.genderOption,
+                    active && styles.genderOptionActive,
+                    pressed && styles.pressed,
+                  ]}
                 >
                   <AppText
-                    numberOfLines={1}
                     style={active ? styles.genderTextActive : styles.genderText}
                     variant="caption"
                     weight="900"
                   >
                     {option.label}
                   </AppText>
+                  {active ? <Ionicons color={colors.surface} name="checkmark" size={15} /> : null}
                 </Pressable>
               );
             })}
           </View>
-        </View>
+        ) : null}
       </View>
 
       <View style={styles.readonlyCard}>
-        <ReadonlyRow label="手机号" value={phoneMasked ?? '未设置'} />
-        <ReadonlyRow label="练刻 ID" value={liftmarkId ?? '未设置'} />
-        <ReadonlyRow label="会员" value={membershipLabel} />
-        <ReadonlyRow label="云同步" value={syncLabel} />
+        <ReadonlyActionRow label="会员状态" onPress={onMembershipPress} value={membershipLabel} />
+        <View style={styles.readonlyDivider} />
+        <ReadonlyActionRow label="云同步状态" onPress={onSyncPress} value={syncLabel} />
       </View>
     </View>
   );
@@ -158,16 +195,27 @@ function FieldLabel({ label }: { label: string }) {
   );
 }
 
-function ReadonlyRow({ label, value }: { label: string; value: string }) {
+function ReadonlyActionRow({
+  label,
+  onPress,
+  value,
+}: {
+  label: string;
+  onPress: () => void;
+  value: string;
+}) {
   return (
-    <View style={styles.readonlyRow}>
-      <AppText tone="muted" variant="caption">
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.readonlyRow, pressed && styles.pressed]}>
+      <AppText tone="muted" variant="caption" weight="900">
         {label}
       </AppText>
-      <AppText numberOfLines={1} variant="caption" weight="900">
-        {value}
-      </AppText>
-    </View>
+      <View style={styles.readonlyValue}>
+        <AppText numberOfLines={1} variant="caption" weight="900">
+          {value}
+        </AppText>
+        <Ionicons color={colors.textSubtle} name="chevron-forward" size={16} />
+      </View>
+    </Pressable>
   );
 }
 
@@ -188,16 +236,6 @@ const styles = StyleSheet.create({
   avatarButton: {
     position: 'relative',
   },
-  avatarRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  avatarText: {
-    flex: 1,
-    gap: 2,
-    minWidth: 0,
-  },
   fieldCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -206,24 +244,41 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     padding: spacing.md,
   },
-  flexField: {
-    flex: 1,
+  genderCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
-  genderChip: {
+  genderOption: {
     alignItems: 'center',
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.pill,
-    minHeight: 26,
+    flexDirection: 'row',
+    gap: spacing.xs,
     justifyContent: 'center',
+    minHeight: 30,
     paddingHorizontal: spacing.sm,
   },
-  genderChipActive: {
+  genderOptionActive: {
     backgroundColor: colors.primary,
   },
-  genderGrid: {
+  genderOptions: {
+    borderTopColor: colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
+    padding: spacing.md,
+  },
+  genderRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 54,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   genderText: {
     color: colors.textMuted,
@@ -231,20 +286,57 @@ const styles = StyleSheet.create({
   genderTextActive: {
     color: colors.surface,
   },
+  identityCard: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 86,
+    padding: spacing.md,
+  },
+  identityText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  nameInput: {
+    color: colors.textStrong,
+    fontSize: typography.sizes.subtitle,
+    fontWeight: '900',
+    minHeight: 34,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  pressed: {
+    opacity: 0.82,
+  },
   readonlyCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: radius.lg,
     borderWidth: 1,
-    paddingHorizontal: spacing.md,
+    overflow: 'hidden',
+  },
+  readonlyDivider: {
+    backgroundColor: colors.border,
+    height: StyleSheet.hairlineWidth,
   },
   readonlyRow: {
     alignItems: 'center',
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    minHeight: 42,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  readonlyValue: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    maxWidth: 160,
   },
   textInput: {
     backgroundColor: colors.backgroundElevated,
@@ -255,10 +347,6 @@ const styles = StyleSheet.create({
     minHeight: 38,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-  },
-  twoColumn: {
-    flexDirection: 'row',
-    gap: spacing.sm,
   },
   wrap: {
     gap: spacing.sm,

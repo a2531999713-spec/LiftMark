@@ -92,7 +92,7 @@ export default function GroupSwitchRoute() {
               </Pressable>
             );
           })}
-          <SettingsRow label="管理入口" value="头像菜单 / 个人资料" />
+          <SettingsRow label="管理入口" value="首页头像菜单 / 训练小组" />
         </AppCard>
       ) : null}
     </Screen>

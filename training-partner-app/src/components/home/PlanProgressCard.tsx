@@ -25,23 +25,23 @@ export function PlanProgressCard({
     <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
       <View style={styles.topRow}>
         <View style={styles.iconBox}>
-          <Ionicons color={colors.primary} name="calendar-outline" size={26} />
+          <Ionicons color={colors.primary} name="calendar-outline" size={22} />
         </View>
         <View style={styles.textBlock}>
-          <AppText numberOfLines={1} style={styles.title} variant="subtitle" weight="900">
+          <AppText numberOfLines={1} style={styles.title} variant="bodySmall" weight="900">
             {planName}
           </AppText>
-          <AppText numberOfLines={1} tone="muted" variant="bodySmall">
+          <AppText numberOfLines={1} tone="muted" variant="caption">
             {subtitle}
           </AppText>
         </View>
-        <Ionicons color={colors.textMuted} name="chevron-forward" size={24} />
+        <Ionicons color={colors.textMuted} name="chevron-forward" size={20} />
       </View>
       <View style={styles.progressHeader}>
-        <AppText tone="muted" variant="bodySmall">
+        <AppText tone="muted" variant="caption">
           本周进度 {progressLabel}
         </AppText>
-        <AppText style={styles.percent} variant="bodySmall" weight="900">
+        <AppText style={styles.percent} variant="caption" weight="900">
           {normalizedPercent}%
         </AppText>
       </View>
@@ -58,17 +58,17 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.lg,
     borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.md,
+    gap: spacing.xs,
+    padding: spacing.sm,
     ...shadows.card,
   },
   iconBox: {
     alignItems: 'center',
     backgroundColor: colors.primarySoft,
     borderRadius: radius.md,
-    height: 46,
+    height: 40,
     justifyContent: 'center',
-    width: 46,
+    width: 40,
   },
   percent: {
     color: colors.primary,
@@ -90,12 +90,12 @@ const styles = StyleSheet.create({
   progressTrack: {
     backgroundColor: colors.primarySoft,
     borderRadius: radius.pill,
-    height: 7,
+    height: 6,
     overflow: 'hidden',
   },
   textBlock: {
     flex: 1,
-    gap: spacing.xs,
+    gap: 2,
     minWidth: 0,
   },
   title: {
@@ -104,6 +104,6 @@ const styles = StyleSheet.create({
   topRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
 });
