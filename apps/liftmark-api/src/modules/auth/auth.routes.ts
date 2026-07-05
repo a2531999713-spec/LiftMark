@@ -328,6 +328,28 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     return { user: toPublicUser(user) };
   });
 
+  app.patch('/auth/me', { preHandler: requireAuth }, async (request) => {
+    const authUser = getAuthUser(request);
+    const body = z.object({ nickname: z.string().min(1).max(32) }).parse(request.body);
+
+    await db('users')
+      .where({ id: authUser.id })
+      .update({ nickname: body.nickname.trim(), updated_at: new Date() });
+
+    // 同步到 member_profiles
+    await db('member_profiles')
+      .join('group_members', 'member_profiles.member_id', 'group_members.id')
+      .where('group_members.user_id', authUser.id)
+      .update({ updated_at: new Date() });
+
+    // 同步到 group_members
+    await db('group_members')
+      .where({ user_id: authUser.id })
+      .update({ display_name: body.nickname.trim(), updated_at: new Date() });
+
+    return { ok: true, nickname: body.nickname.trim() };
+  });
+
   app.post('/auth/logout', { preHandler: requireAuth }, async (request) => {
     const authUser = getAuthUser(request);
     const parsed = refreshSchema.partial().safeParse(request.body ?? {});

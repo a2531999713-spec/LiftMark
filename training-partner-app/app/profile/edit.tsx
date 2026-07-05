@@ -7,6 +7,8 @@ import { AppButton, AppCard, AppText, EmptyState, Screen, SecondaryPageHeader } 
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { GroupMember } from '@/domain/member/member.types';
 import { getAccountProfileCache, upsertAccountProfileCache, type AccountProfileCache } from '@/services/avatar';
+import { apiRequest } from '@/services/httpClient';
+import { readStoredSession } from '@/services/auth/tokenStorage';
 import { updateDisplayNameAcrossLocalProfiles } from '@/services/profileSyncService';
 import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
@@ -107,6 +109,20 @@ export default function ProfileEditRoute() {
         userId: user.id,
       });
       const updatedMember = updatedMembers.find((member) => member.id === currentMember?.id) ?? currentMember;
+
+      // 同步昵称到服务器
+      const session = await readStoredSession();
+      if (session?.accessToken) {
+        try {
+          await apiRequest('/auth/me', {
+            method: 'PATCH',
+            accessToken: session.accessToken,
+            body: { nickname: name },
+          });
+        } catch (syncError) {
+          console.warn('昵称同步到服务器失败', syncError);
+        }
+      }
 
       await loadCurrentUser();
       setAccountProfile(updatedProfile);
