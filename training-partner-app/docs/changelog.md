@@ -1,5 +1,49 @@
 # 变更记录
 
+## 2026-07-07 - history-analytics-axis-calendar-group-fix
+
+### 记录与训练分析
+- `DateRangeSelector` 恢复“自定义”快捷按钮，并改为日历式起止日期点选，不再使用手动日期输入。
+- `ChartCard` 过滤 0 值时间桶，未训练日期不再显示在横轴；点位数值默认隐藏，只在点击有效点位后显示 tooltip 和高亮数值。
+- 训练分析页图表顺序调整为 1RM 趋势、单个动作训练容量趋势、训练量趋势、训练频率趋势。
+- 训练分析页的 1RM 趋势和单个动作容量趋势分别支持动作筛选。
+- `history/manual` 路由继续隐藏原生 header，避免补录页系统标题和返回按钮回归。
+
+### 小组记录与小组分析
+- 记录首页“训练趋势”整张卡片可点击进入个人 / 小组分析。
+- 小组记录视角删除重复的小组分析和出勤率按钮。
+- 小组分析页将动作对比和出勤率入口移动到顶部日期筛选右侧。
+- 成员贡献和小组趋势的训练量 / 完成率 / 活跃度切换控件改为组件内部全宽居中展示。
+- 小组训练记录为空时显示空态，不展示空时间或空计划占位。
+- 小组洞察从数据驱动候选池中随机展示 4 条，覆盖成员贡献、完成率、出勤覆盖、动作样本和训练量峰值。
+
+### 验证
+- `npm run typecheck -- --pretty false`
+- `npm test -- --runInBand`，17 个套件 / 94 个用例
+- `npm run lint`，仅保留 `app/(tabs)/today.tsx` 的既有 hook dependency warning
+- 无后端或服务器 API 变更，无需服务器部署。
+
+## 2026-07-06 - history-analytics-interaction-fix
+
+### 记录与分析交互修复
+- `DateRangeSelector` 去掉快捷筛选区的“自定义”按钮，保留日期行作为唯一自定义日期筛选入口，避免和下方日期选择重复。
+- 记录首页右上角“补录”改为紧凑图标按钮；近期训练日期说明改为“点击日期筛选当天训练”。
+- `MiniLineChart` 点位支持点击选中并显示数据 tooltip；稀疏训练数据跳过 0 空点连接有效训练点，跨空点连接使用弱化线条。
+- 个人训练分析接入 `ExerciseTrendFilterSheet`，可从当前成员真实训练过的动作中筛选 1RM 趋势；未选择时仍展示核心动作。
+- 小组动作对比从前 4 个预设动作改为动作筛选 Sheet，支持搜索、肌群和器械筛选。
+- 小组分析移除重复“成员分析”入口；成员贡献和小组趋势切换训练量 / 完成率 / 活跃度时，主指标、进度条和图表同步变化。
+- 成员分析页右上角新增成员切换 Sheet，切换后图表、出勤和优势动作同步刷新。
+
+### 训练与成员头像
+- `CurrentSetRecorder` 切换 set 时重新挂载重量 / 次数输入，避免草稿值停留在上一组；重量步进继续按成员 profile 的杠铃 / 哑铃加重单位计算。
+- 删除训练中休息结束后需要手动关闭的常驻提示，仅保留成员休息 / 就绪状态。
+- 历史分析相关页面优先读取 `profilesByMemberId` 的本地头像、缩略图和远程头像；账号头像同步补充当前训练成员 fallback，未绑定账号 ID 的本地训练成员也能更新头像。
+
+### 验证
+- 已通过：`npm run typecheck`
+- 已通过：`npm run lint`（仅 `app/(tabs)/today.tsx` 保留既有 hook 依赖 warning）
+- 已通过：`npm test -- --runInBand src/tests/weight.test.ts src/tests/history.test.ts src/tests/chart-scale.test.ts`
+
 ## 2026-07-06 - admin-correction-announcement-backup
 
 ### 后台数据修正中心优化

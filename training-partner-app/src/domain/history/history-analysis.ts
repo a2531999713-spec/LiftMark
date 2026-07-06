@@ -841,23 +841,16 @@ export function getGroupHistoryAnalysis(input: GroupHistoryAnalysisInput): Group
   const sessionCount = normalizedTrend.reduce((sum, point) => sum + point.sessionCount, 0);
   const activeMemberCount = memberContributions.filter((member) => member.completedSets > 0).length;
   const completionRate = getCompletionRate(completedSets, totalSets);
-  const topMember = memberContributions.find((member) => member.completedSets > 0);
-
-  const insights =
-    sessionCount === 0
-      ? ['本周还没有小组训练记录，完成一次训练后会生成小组洞察。']
-      : [
-          `本周小组完成 ${sessionCount} 次训练，总训练量 ${Math.round(totalVolume).toLocaleString('zh-CN')} kg。`,
-          topMember
-            ? `${topMember.memberName} 当前贡献最高，完成 ${topMember.completedSets} 组。`
-            : '成员贡献还在积累，先保证每位成员都有有效记录。',
-          activeMemberCount === input.members.length
-            ? '本周所有成员都有训练记录，节奏稳定。'
-            : `${activeMemberCount}/${input.members.length} 名成员完成本周训练记录。`,
-          completionRate >= 0.8
-            ? '整体完成率较好，可以继续按当前计划推进。'
-            : '整体完成率偏低，下一次训练可减少动作或降低目标重量。',
-        ];
+  const insights = buildGroupInsights({
+    activeMemberCount,
+    completionRate,
+    exerciseAnalyses,
+    memberContributions,
+    members: input.members,
+    sessionCount,
+    totalVolume,
+    trend: normalizedTrend,
+  });
 
   return {
     groupId: input.groupId,
@@ -876,6 +869,91 @@ export function getGroupHistoryAnalysis(input: GroupHistoryAnalysisInput): Group
     recentSessions,
     insights,
   };
+}
+
+function buildGroupInsights({
+  activeMemberCount,
+  completionRate,
+  exerciseAnalyses,
+  memberContributions,
+  members,
+  sessionCount,
+  totalVolume,
+  trend,
+}: {
+  activeMemberCount: number;
+  completionRate: number;
+  exerciseAnalyses: GroupExerciseAnalysis[];
+  memberContributions: GroupMemberContribution[];
+  members: GroupMember[];
+  sessionCount: number;
+  totalVolume: number;
+  trend: GroupHistoryTrendPoint[];
+}): string[] {
+  if (sessionCount === 0) {
+    return ['当前范围还没有小组训练记录，完成一次训练后会生成小组洞察。'];
+  }
+
+  const activeMembers = memberContributions.filter((member) => member.completedSets > 0);
+  const topMember = activeMembers[0];
+  const secondMember = activeMembers[1];
+  const lowCompletionMember = activeMembers
+    .slice()
+    .sort((left, right) => left.completionRate - right.completionRate)[0];
+  const topExercise = exerciseAnalyses[0];
+  const secondExercise = exerciseAnalyses[1];
+  const activeTrend = trend.filter((point) => point.volume > 0 || point.sessionCount > 0);
+  const peakTrend = activeTrend.slice().sort((left, right) => right.volume - left.volume)[0];
+  const latestTrend = activeTrend.at(-1);
+  const averageVolume = sessionCount > 0 ? totalVolume / sessionCount : 0;
+  const inactiveCount = Math.max(0, members.length - activeMemberCount);
+  const stableMembers = activeMembers.filter((member) => member.completionRate >= 0.8).length;
+  const highContributionMembers = activeMembers.filter((member) => member.volume >= averageVolume).length;
+  const candidates = [
+    `当前范围小组完成 ${sessionCount} 次训练，总训练量 ${Math.round(totalVolume).toLocaleString('zh-CN')} kg。`,
+    topMember ? `${topMember.memberName} 当前贡献最高，完成 ${topMember.completedSets} 组。` : null,
+    secondMember ? `${secondMember.memberName} 紧随其后，训练量达到 ${Math.round(secondMember.volume).toLocaleString('zh-CN')} kg。` : null,
+    activeMemberCount === members.length
+      ? '所有成员都有训练记录，小组节奏比较完整。'
+      : `${activeMemberCount}/${members.length} 名成员有训练记录，仍有 ${inactiveCount} 名成员需要跟进。`,
+    completionRate >= 0.85
+      ? `整体完成率 ${Math.round(completionRate * 100)}%，可以维持当前训练安排。`
+      : completionRate >= 0.65
+        ? `整体完成率 ${Math.round(completionRate * 100)}%，下次训练优先保证关键组。`
+        : `整体完成率 ${Math.round(completionRate * 100)}%，建议减少动作或降低目标重量。`,
+    topExercise ? `${topExercise.exerciseName} 是当前最活跃动作，覆盖 ${topExercise.sessionCount} 次训练。` : null,
+    secondExercise ? `${secondExercise.exerciseName} 也有稳定样本，可作为下一步动作对比重点。` : null,
+    peakTrend ? `${peakTrend.label} 是当前范围训练量峰值，单段达到 ${Math.round(peakTrend.volume).toLocaleString('zh-CN')} kg。` : null,
+    latestTrend && latestTrend.volume >= averageVolume
+      ? `${latestTrend.label} 的训练量高于平均值，近期状态在回升。`
+      : latestTrend
+        ? `${latestTrend.label} 训练量低于平均值，可关注恢复和到场情况。`
+        : null,
+    stableMembers > 0 ? `${stableMembers} 名成员完成率达到 80% 以上，小组核心执行力稳定。` : null,
+    highContributionMembers > 1 ? `${highContributionMembers} 名成员训练量高于单次平均，小组负荷分布更均衡。` : null,
+    lowCompletionMember && lowCompletionMember.completionRate < 0.65
+      ? `${lowCompletionMember.memberName} 完成率偏低，适合单独确认重量和动作安排。`
+      : null,
+    inactiveCount > 0 ? `还有 ${inactiveCount} 名成员没有有效记录，下一次训练可优先安排补录或提醒。` : null,
+    exerciseAnalyses.length >= 3 ? `当前范围记录到 ${exerciseAnalyses.length} 个动作，小组训练内容比较丰富。` : null,
+    totalVolume > 0 && averageVolume > 0 ? `单次平均训练量约 ${Math.round(averageVolume).toLocaleString('zh-CN')} kg，可作为下次训练负荷基线。` : null,
+    activeMembers.length === 1 ? '目前只有一名成员有有效记录，建议先把小组数据补齐再做横向比较。' : null,
+  ].filter((insight): insight is string => Boolean(insight));
+
+  return pickInsightSubset(candidates, 4);
+}
+
+function pickInsightSubset(candidates: string[], count: number): string[] {
+  const uniqueCandidates = [...new Set(candidates)];
+  if (uniqueCandidates.length <= count) {
+    return uniqueCandidates;
+  }
+
+  return uniqueCandidates
+    .map((insight) => ({ insight, rank: Math.random() }))
+    .sort((left, right) => left.rank - right.rank)
+    .slice(0, count)
+    .map((item) => item.insight);
 }
 
 function takeRecentFive(entries: HistorySetEntry[]): HistorySetEntry[] {

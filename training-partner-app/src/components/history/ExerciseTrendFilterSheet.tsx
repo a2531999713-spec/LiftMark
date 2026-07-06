@@ -4,21 +4,13 @@ import { FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 're
 
 import { AppModalSheet, AppText, EmptyState, Tag } from '@/components/ui';
 import type { Equipment, ExerciseCategory } from '@/domain/exercise/exercise.types';
+import type { ExerciseTrendOption } from '@/features/history/shared/historyViewModel';
 import { colors, radius, spacing, typography } from '@/theme';
 
-export type ExerciseTrendOption = {
-  category: ExerciseCategory | 'other';
-  equipment: Equipment | 'other';
-  equipmentLabel: string;
-  id: string;
-  isRecent: boolean;
-  name: string;
-  recordCount: number;
-  targetMuscle: string;
-  lastTrainingDate?: string;
-};
-
 type ExerciseTrendFilterSheetProps = {
+  allowAllOption?: boolean;
+  allOptionSubtitle?: string;
+  allOptionTitle?: string;
   onClose: () => void;
   onSelect: (exerciseId: string | null) => void;
   options: ExerciseTrendOption[];
@@ -39,7 +31,7 @@ const categoryFilters: { label: string; value: CategoryFilter }[] = [
   { label: '肩', value: 'shoulder' },
   { label: '手臂', value: 'arms' },
   { label: '核心', value: 'core' },
-  { label: '自定义', value: 'custom' },
+  { label: '其他', value: 'custom' },
 ];
 
 const equipmentFilters: { label: string; value: EquipmentFilter }[] = [
@@ -52,6 +44,9 @@ const equipmentFilters: { label: string; value: EquipmentFilter }[] = [
 ];
 
 export function ExerciseTrendFilterSheet({
+  allowAllOption = true,
+  allOptionSubtitle = '查看整体训练量和单日构成',
+  allOptionTitle = '全部动作',
   onClose,
   onSelect,
   options,
@@ -136,24 +131,26 @@ export function ExerciseTrendFilterSheet({
         </View>
       </ScrollView>
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => choose(null)}
-        style={[styles.optionRow, !selectedExerciseId && styles.optionRowActive]}
-      >
-        <View style={styles.optionIcon}>
-          <Ionicons color={!selectedExerciseId ? colors.surface : colors.primary} name="apps-outline" size={18} />
-        </View>
-        <View style={styles.optionText}>
-          <AppText variant="bodySmall" weight="900">
-            全部动作
-          </AppText>
-          <AppText tone="muted" variant="caption">
-            查看整体训练量和单日构成
-          </AppText>
-        </View>
-        {!selectedExerciseId ? <Ionicons color={colors.primary} name="checkmark-circle" size={20} /> : null}
-      </Pressable>
+      {allowAllOption ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => choose(null)}
+          style={[styles.optionRow, !selectedExerciseId && styles.optionRowActive]}
+        >
+          <View style={styles.optionIcon}>
+            <Ionicons color={!selectedExerciseId ? colors.surface : colors.primary} name="apps-outline" size={18} />
+          </View>
+          <View style={styles.optionText}>
+            <AppText variant="bodySmall" weight="900">
+              {allOptionTitle}
+            </AppText>
+            <AppText tone="muted" variant="caption">
+              {allOptionSubtitle}
+            </AppText>
+          </View>
+          {!selectedExerciseId ? <Ionicons color={colors.primary} name="checkmark-circle" size={20} /> : null}
+        </Pressable>
+      ) : null}
 
       {filteredOptions.length === 0 ? (
         <EmptyState description="换一个肌群、器械或搜索词再试。" title="没有匹配动作" />

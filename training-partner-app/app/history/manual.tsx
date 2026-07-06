@@ -355,18 +355,7 @@ export default function ManualHistoryRoute() {
   };
 
   return (
-    <Screen
-      headerRight={
-        <Pressable accessibilityRole="button" onPress={() => confirmDiscard(() => router.back())} style={styles.backPill}>
-          <Ionicons color={colors.textMuted} name="close" size={16} />
-          <AppText tone="muted" variant="caption" weight="900">
-            返回
-          </AppText>
-        </Pressable>
-      }
-      subtitle="把过去完成的训练保存到历史记录。"
-      title="补录训练"
-    >
+    <Screen>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="补录训练暂时不可用" description={error} /> : null}
 
