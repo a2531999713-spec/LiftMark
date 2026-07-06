@@ -37,6 +37,9 @@ yarn-error.*
 !.env.example
 !**/.env.example
 
+# scripts secrets
+scripts/.env
+
 # typescript
 *.tsbuildinfo
 
@@ -96,3 +99,7 @@ expo-*.err.log
 
 # uploads
 uploads/
+
+# 验证码测试脚本
+验证码核验/
+验证码获取/
