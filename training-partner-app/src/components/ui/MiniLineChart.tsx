@@ -238,11 +238,12 @@ function renderConnectingLines(
   containerWidth: number,
 ) {
   const lines: React.ReactNode[] = [];
+  const activePoints = points.filter((point) => point.value > 0);
   const plotWidth = Math.max(1, containerWidth - PLOT_PADDING * 2);
   const plotHeight = Math.max(1, chartHeight - PLOT_PADDING * 2);
-  for (let index = 0; index < points.length - 1; index++) {
-    const left = points[index];
-    const right = points[index + 1];
+  for (let index = 0; index < activePoints.length - 1; index++) {
+    const left = activePoints[index];
+    const right = activePoints[index + 1];
     const leftX = PLOT_PADDING + left.xPercent * plotWidth;
     const leftY = PLOT_PADDING + (1 - left.yPercent) * plotHeight;
     const rightX = PLOT_PADDING + right.xPercent * plotWidth;
@@ -255,12 +256,13 @@ function renderConnectingLines(
     const midX = (leftX + rightX) / 2;
     const midY = (leftY + rightY) / 2;
 
-    if (length > 0 && (left.value !== 0 || right.value !== 0)) {
+    if (length > 0) {
       lines.push(
         <View
           key={`line-${index}`}
           style={[
             styles.connectingLine,
+            right.index - left.index > 1 ? styles.connectingLineDashed : null,
             {
               height: 2,
               left: (midX - length / 2) as DimensionValue,
@@ -380,6 +382,10 @@ const styles = StyleSheet.create({
   connectingLine: {
     backgroundColor: colors.primary,
     position: 'absolute',
+  },
+  connectingLineDashed: {
+    backgroundColor: colors.primarySoft,
+    opacity: 0.5,
   },
   gridLine: {
     backgroundColor: colors.border,

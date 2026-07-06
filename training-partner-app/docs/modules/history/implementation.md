@@ -1,7 +1,28 @@
 ﻿# History 模块实现文档
 
-更新时间：2026-07-01  
+更新时间：2026-07-07
 对应代码目录：`training-partner-app/`；历史页已从训练流水列表调整为分析导向的个人记录中心，并支持小组汇总、动作筛选、主项成员对比和折线趋势推算。
+
+## 2026-07-07 补充：训练分析图表顺序、日历筛选和小组入口收口
+
+- `src/features/history/shared/DateRangeSelector.tsx` 恢复“自定义”快捷按钮；点击后打开日历式日期范围弹层，通过点选开始 / 结束日期应用筛选，不再使用手动输入起止日期。
+- `src/features/history/shared/HistoryUi.tsx` 的 `ChartCard` 会过滤 0 值时间桶，未训练的日期不再出现在趋势图横轴上；折线图默认不显示点位数值，点击有效点位后才展示 tooltip 和高亮数值。
+- `src/features/history/personalAnalytics/PersonalAnalyticsScreen.tsx` 图表顺序调整为：单个动作 1RM 趋势、单个动作训练容量趋势、训练量趋势、训练频率趋势；前两个图表各自支持动作筛选。
+- `app/_layout.tsx` 将 `history/manual` 配置为 `headerShown: false`，保留补录页无系统标题、无系统返回按钮的设计。
+- `src/features/history/recordHome/RecordHomeScreen.tsx` 的“训练趋势”整张卡片可点击进入个人 / 小组训练分析；小组记录页不再显示重复的小组分析和出勤率入口。
+- `src/features/history/groupAnalytics/GroupAnalyticsScreen.tsx` 将“动作对比”和“出勤率”移动到顶部时间筛选右侧；训练量 / 完成率 / 活跃度切换控件改为组件内部全宽展示，暗色指标组居中。
+- `src/domain/history/history-analysis.ts` 的小组洞察从十余条数据驱动候选文案中抽取 4 条，候选依据包括完成率、活跃成员、成员贡献、动作样本、峰值训练段和平均训练量。
+
+## 2026-07-06 补充：分析筛选、点位交互和小组分析修复
+
+- `src/features/history/shared/DateRangeSelector.tsx` 支持快捷范围和自定义范围入口；2026-07-07 起，自定义范围改为日历式点选。
+- `src/features/history/shared/HistoryUi.tsx` 的 `ChartCard` 保存选中点并展示 `ChartTooltip`，用于训练量、频率、1RM、出勤等趋势卡；2026-07-07 起，未训练时间桶不再进入横轴。
+- `src/features/history/shared/historyViewModel.ts` 新增 `buildExerciseTrendOptions()`，按当前范围和可选成员统计真实训练过的动作，供个人分析和小组动作对比共用。
+- `src/features/history/personalAnalytics/PersonalAnalyticsScreen.tsx` 支持单个动作 1RM 趋势和单个动作容量趋势筛选，并保持 1RM、动作容量、训练量、训练频率的图表顺序。
+- `src/features/history/groupAnalytics/GroupExerciseCompareScreen.tsx` 使用动作筛选 Sheet 替代固定前 4 个动作按钮，支持搜索、肌群和器械筛选。
+- `src/features/history/groupAnalytics/GroupAnalyticsScreen.tsx` 移除重复的“成员分析”入口；训练量、完成率、活跃度切换会同步改变成员排行主指标、进度条和小组趋势柱状图。
+- `src/features/history/groupAnalytics/GroupMemberAnalyticsScreen.tsx` 右上角新增成员切换 Sheet，切换后成员概况、指标、趋势、优势动作和训练列表同步刷新。
+- 历史分析相关头像展示统一优先读取 `profilesByMemberId` 的 `avatarLocalUri`、`avatarThumbUrl`、`avatarUrl`，再回退到 `group_members.avatarUrl`。
 
 ## 2026-07-01 补充：个人记录、补录和详情编辑收口
 
@@ -52,6 +73,12 @@
 | `app/history/manual.tsx` | 补录过去训练。 |
 | `app/history/[sessionId].tsx` | 查看某次训练详情，默认只读；顶部更多菜单进入编辑记录或删除整次训练。 |
 | `app/history/group-exercise/[exerciseId].tsx` | 小组动作详情，按真实 `exerciseId` 汇总成员最好重量、容量、预估 1RM、最近有效组，并提供指标 / 时间范围 / 成员筛选和多成员趋势线。 |
+| `src/features/history/shared/historyViewModel.ts` | 历史分析 view model，统一加载本地数据集、构建个人 / 小组 session 摘要、成员贡献、动作筛选候选项、单动作分析和小组动作对比。 |
+| `src/features/history/shared/DateRangeSelector.tsx` | 历史模块日期范围筛选，快捷范围 + 自定义日历点选，不使用手动输入日期。 |
+| `src/features/history/shared/HistoryUi.tsx` | 历史分析共享 UI，包含图表卡、指标网格、成员头像名称、分段控制和洞察列表。 |
+| `src/features/history/personalAnalytics/PersonalAnalyticsScreen.tsx` | 个人训练分析页，支持最近 4 / 8 周、日期范围和动作筛选。 |
+| `src/features/history/groupAnalytics/*.tsx` | 小组分析、成员分析、动作对比和出勤完成率页面。 |
+| `src/components/history/ExerciseTrendFilterSheet.tsx` | 动作趋势筛选弹层，支持搜索、肌群和器械筛选。 |
 | `src/domain/history/history-analysis.ts` | Epley 预估 1RM、个人趋势、小组汇总、成员贡献、PR 接近度、疲劳提示和中文建议。 |
 | `src/components/ui/MiniLineChart.tsx` | 记录页、训练分析页和计划页共用的轻量折线趋势图。 |
 | `src/components/history/SessionHistoryCard.tsx` | 训练摘要卡。 |
@@ -182,7 +209,7 @@
 
 文件：`src/domain/history/history-analysis.ts`  
 符号：`getGroupHistoryAnalysis()`  
-职责：基于本机训练详情和本地成员列表生成小组总训练量、训练次数、完成率、成员贡献排行、近 7 天折线趋势、最近小组训练记录、小组洞察和真实练过的动作列表。动作分析按 `workout_exercise_records.exercise_id` 聚合，不按旧的固定默认动作或泛化类别聚合入口。  
+职责：基于本机训练详情和本地成员列表生成小组总训练量、训练次数、完成率、成员贡献排行、近 7 天折线趋势、最近小组训练记录、小组洞察和真实练过的动作列表。小组洞察从数据驱动候选池中抽取 4 条，动作分析按 `workout_exercise_records.exercise_id` 聚合，不按旧的固定默认动作或泛化类别聚合入口。
 调用方：`app/(tabs)/history.tsx`  
 依赖：workout, member  
 测试：`src/tests/history.test.ts`

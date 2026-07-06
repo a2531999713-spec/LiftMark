@@ -89,9 +89,13 @@ export default function RootLayout() {
       <Stack.Screen name="workout/summary/[sessionId]" options={{ headerShown: false }} />
       <Stack.Screen name="member/new" options={{ headerShown: false }} />
       <Stack.Screen name="member/[memberId]" options={{ headerShown: false }} />
-      <Stack.Screen name="history/manual" options={{ title: '' }} />
+      <Stack.Screen name="history/manual" options={{ headerShown: false }} />
       <Stack.Screen name="history/analytics" options={{ headerShown: false }} />
       <Stack.Screen name="history/exercise/[exerciseId]" options={{ headerShown: false }} />
+      <Stack.Screen name="history/group" options={{ headerShown: false }} />
+      <Stack.Screen name="history/group/member/[memberId]" options={{ headerShown: false }} />
+      <Stack.Screen name="history/group/exercise-compare" options={{ headerShown: false }} />
+      <Stack.Screen name="history/group/attendance" options={{ headerShown: false }} />
       <Stack.Screen name="history/group-exercise/[exerciseId]" options={{ headerShown: false }} />
       <Stack.Screen name="history/[sessionId]" options={{ title: '' }} />
       <Stack.Screen name="plan/[planId]" options={{ title: '' }} />
