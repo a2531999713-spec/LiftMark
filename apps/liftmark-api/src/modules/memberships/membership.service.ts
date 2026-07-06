@@ -5,7 +5,17 @@ import { createId } from '../../utils/ids';
 import { addDays } from '../../utils/security';
 
 export type MembershipType = 'free' | 'pro' | 'lifetime';
-export type MembershipSource = 'activation_code' | 'admin_grant' | 'payment_reserved';
+export type MembershipSource =
+  | 'activation_code'
+  | 'admin_grant'
+  | 'payment_reserved'
+  | 'manual'
+  | 'beta'
+  | 'campus'
+  | 'partner'
+  | 'compensation'
+  | 'payment_fix'
+  | 'test';
 
 export type MembershipGrant = {
   durationDays?: number | null;
@@ -72,4 +82,3 @@ export function toMembershipDto(row: any) {
     activatedProGroupCount: row.activated_pro_group_count,
   };
 }
-

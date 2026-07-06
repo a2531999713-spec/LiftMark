@@ -12,6 +12,7 @@ import { registerAdminRoutes } from './modules/admin/admin.routes';
 import { registerAnnouncementsRoutes } from './modules/announcements/announcements.routes';
 import { registerAppConfigRoutes } from './modules/app-config/app-config.routes';
 import { registerAuthRoutes } from './modules/auth/auth.routes';
+import { registerCatalogRoutes } from './modules/catalog/catalog.routes';
 import { registerFeedbackRoutes } from './modules/feedback/feedback.routes';
 import { registerGroupRoutes } from './modules/groups/groups.routes';
 import { registerMembershipRoutes } from './modules/memberships/memberships.routes';
@@ -19,6 +20,7 @@ import { registerSyncRoutes } from './modules/sync/sync.routes';
 import { registerProfileSyncRoutes } from './modules/sync/profileSync.routes';
 import { registerInvitationRoutes } from './modules/invitations/invitation.routes';
 import { registerPendingTrainingRoutes } from './modules/pending-training/pendingTraining.routes';
+import { registerTrainingRoomRoutes } from './modules/training-rooms/trainingRooms.routes';
 import { registerWorkoutRoutes } from './modules/workouts/workouts.routes';
 import { ApiError } from './utils/errors';
 
@@ -40,6 +42,14 @@ export async function buildApp() {
 
   // 静态文件服务必须在根作用域注册，不能放在 /api 前缀下
   const uploadRoot = process.env.UPLOAD_ROOT ?? path.resolve('/home/deploy/liftmark/uploads');
+  const uploadDirectoryInfo = {
+    ok: true,
+    directory: 'avatars',
+    message: 'Avatar storage is available. Request a concrete file under /uploads/avatars/{filename}.',
+    root: uploadRoot,
+  };
+  app.get('/uploads/avatars', async () => uploadDirectoryInfo);
+  app.get('/uploads/avatars/', async () => uploadDirectoryInfo);
   await app.register(fastifyStatic, {
     prefix: '/uploads/',
     root: uploadRoot,
@@ -82,6 +92,7 @@ export async function buildApp() {
     });
 
     await registerAuthRoutes(api);
+    await registerCatalogRoutes(api);
     await registerActivationCodeRoutes(api);
     await registerMembershipRoutes(api);
     await registerGroupRoutes(api);
@@ -89,6 +100,7 @@ export async function buildApp() {
     await registerProfileSyncRoutes(api);
     await registerInvitationRoutes(api);
     await registerPendingTrainingRoutes(api);
+    await registerTrainingRoomRoutes(api);
     await registerWorkoutRoutes(api);
     await registerAchievementsRoutes(api);
     await registerAnnouncementsRoutes(api);

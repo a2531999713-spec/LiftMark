@@ -160,7 +160,7 @@ export default function MembershipPage() {
   async function handleGrant() {
     setGrantError(null)
     if (!gUserId.trim()) {
-      setGrantError('请输入用户 ID')
+      setGrantError('请输入用户 ID、手机号、练刻 ID 或邮箱')
       return
     }
     if (gReason.trim().length < 4) {
@@ -228,7 +228,7 @@ export default function MembershipPage() {
         <Field label="搜索">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="用户昵称 / 手机 / 用户 ID" className="pl-8" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="用户昵称 / 手机 / 练刻 ID / 邮箱 / 用户 ID" className="pl-8" />
           </div>
         </Field>
         <Field label="会员类型">
@@ -355,11 +355,11 @@ export default function MembershipPage() {
       >
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
-            <Label>用户 ID（必填）</Label>
+            <Label>用户标识（必填）</Label>
             <Input
               value={gUserId}
               onChange={(e) => setGUserId(e.target.value)}
-              placeholder="输入用户 ID（如 U100234）"
+              placeholder="用户 ID / 手机号 / 练刻 ID / 邮箱"
             />
           </div>
           <div>

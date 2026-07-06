@@ -1,4 +1,10 @@
 import { closeDb, db } from './connection';
+import {
+  SYSTEM_USER_ID,
+  SYSTEM_USER_LIFTMARK_ID,
+  systemExerciseCatalog,
+  systemPlanCatalog,
+} from './systemCatalog';
 import { env } from '../config/env';
 import { createId, createLiftmarkId } from '../utils/ids';
 import { hashPassword } from '../utils/security';
@@ -98,9 +104,117 @@ async function seedAchievements() {
   console.log('成就定义已同步。');
 }
 
+async function seedSystemCatalog() {
+  const now = new Date();
+
+  const systemUser = {
+    id: SYSTEM_USER_ID,
+    phone: null,
+    email: null,
+    password_hash: null,
+    nickname: '练刻系统内置',
+    avatar_url: null,
+    liftmark_id: SYSTEM_USER_LIFTMARK_ID,
+    registration_source: 'system',
+    early_user_tier: 'system',
+    role: 'system',
+    status: 'normal',
+    updated_at: now,
+  };
+
+  const existingUser = await db('users').where({ id: SYSTEM_USER_ID }).first();
+  if (existingUser) {
+    await db('users').where({ id: SYSTEM_USER_ID }).update(systemUser);
+  } else {
+    await db('users').insert({
+      ...systemUser,
+      registered_at: now,
+      created_at: now,
+    });
+  }
+
+  for (const exercise of systemExerciseCatalog) {
+    const row = {
+      id: exercise.id,
+      user_id: SYSTEM_USER_ID,
+      group_id: null,
+      client_id: exercise.id,
+      parent_server_id: null,
+      name: exercise.name,
+      title: exercise.targetMuscle,
+      status: 'system',
+      member_client_id: null,
+      exercise_client_id: null,
+      actual_weight: null,
+      actual_reps: null,
+      sync_version: 1,
+      client_updated_at: now,
+      deleted_at: null,
+      payload: {
+        source: 'system',
+        category: exercise.category,
+        difficulty: exercise.difficulty ?? null,
+        equipment: exercise.equipment,
+        movementPattern: exercise.movementPattern,
+        notes: exercise.notes ?? null,
+        targetMuscle: exercise.targetMuscle,
+      },
+      updated_at: now,
+    };
+
+    await db('exercises')
+      .insert({
+        ...row,
+        created_at: now,
+      })
+      .onConflict('id')
+      .merge(row);
+  }
+
+  for (const plan of systemPlanCatalog) {
+    const row = {
+      id: plan.id,
+      user_id: SYSTEM_USER_ID,
+      group_id: null,
+      client_id: plan.id,
+      parent_server_id: null,
+      name: plan.name,
+      title: plan.title,
+      status: 'system',
+      member_client_id: null,
+      exercise_client_id: null,
+      actual_weight: null,
+      actual_reps: null,
+      sync_version: 1,
+      client_updated_at: now,
+      deleted_at: null,
+      payload: {
+        source: 'system',
+        description: plan.description,
+        durationWeeks: plan.durationWeeks,
+        frequencyPerWeek: plan.frequencyPerWeek,
+        goal: plan.goal,
+        tags: plan.tags,
+      },
+      updated_at: now,
+    };
+
+    await db('training_plans')
+      .insert({
+        ...row,
+        created_at: now,
+      })
+      .onConflict('id')
+      .merge(row);
+  }
+
+  console.log('System exercise and training plan catalog synced.');
+}
+
 export async function seed() {
   await seedAdmin();
   await seedAchievements();
+  await seedSystemCatalog();
 }
 
 if (require.main === module) {
@@ -115,4 +229,3 @@ if (require.main === module) {
       process.exit(1);
     });
 }
-

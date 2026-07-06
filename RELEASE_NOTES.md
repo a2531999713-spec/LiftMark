@@ -4,6 +4,51 @@
 
 ---
 
+## v2.3.5 — 2026-07-06
+
+### 核心更新
+
+#### 后台计划与动作库
+- 后端新增系统内置计划和动作目录。
+- `npm run db:seed` 会写入系统目录数据。
+- 后台计划管理和动作库增加兜底返回，解决新库打开为空的问题。
+
+#### 在线同练房间
+- 新增小组在线房间 API，支持创建、加入、事件上报、离开和结束房间。
+- 后台在线房间列表现在有服务端数据来源，移动端接入后即可看到房间。
+
+#### 会员下发
+- 修复后台发放来源和后端枚举不一致的问题。
+- 支持用用户 ID、手机号、邮箱、练刻 ID 或唯一昵称发放会员。
+- 会员页搜索支持练刻 ID 和邮箱。
+
+#### 数据修正
+- 数据修正从“只写记录”改为真实更新业务表。
+- 服务端自动读取修正前的值，管理员不再需要手填旧值。
+- 支持按 before/after 回滚。
+- 小组成员关系新增 `role`、`user_id`、`left_at` 修正字段，用于处理历史串号成员关系。
+
+#### 公告与头像
+- 明确公告系统已接入，展示受发布状态、时间窗口、已读状态和 Today 页触发限制影响。
+- `/uploads/avatars/` 目录访问返回说明，不再返回 route not found。
+
+### 变更文件
+- `apps/liftmark-api/src/db/systemCatalog.ts`
+- `apps/liftmark-api/src/db/seed.ts`
+- `apps/liftmark-api/src/modules/training-rooms/trainingRooms.routes.ts`
+- `apps/liftmark-api/src/modules/catalog/catalog.routes.ts`
+- `apps/liftmark-api/src/modules/admin/admin.extended.routes.ts`
+- `backend/app/(admin)/membership/page.tsx`
+- `backend/app/(admin)/corrections/page.tsx`
+- `backend/后台管理问题排查与修复说明.md`
+
+### 验证
+- 后端 `npm run typecheck` 已通过。
+- 后端 API `npm run build` 已通过。
+- 后台管理前端 `npm run build` 已通过。
+
+---
+
 ## v2.3.4 — 2026-07-06
 
 ### 🎯 核心修复

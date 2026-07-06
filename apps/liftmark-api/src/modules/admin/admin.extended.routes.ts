@@ -2,8 +2,13 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { db } from '../../db/connection';
+import {
+  SYSTEM_USER_ID,
+  systemExerciseCatalog,
+  systemPlanCatalog,
+} from '../../db/systemCatalog';
 import { requireAdmin } from '../../middlewares/auth';
-import { notFound } from '../../utils/errors';
+import { badRequest, notFound } from '../../utils/errors';
 import { createId } from '../../utils/ids';
 import { grantMembership, toMembershipDto } from '../memberships/membership.service';
 
@@ -69,11 +74,43 @@ const grantMembershipBody = z.object({
   durationDays: z.number().int().positive().optional(),
   isLifetime: z.boolean().optional(),
   proGroupLimit: z.number().int().min(0).optional(),
-  source: z.enum(['activation_code', 'admin_grant', 'payment_reserved']).default('admin_grant'),
+  source: z.enum([
+    'activation_code',
+    'admin_grant',
+    'payment_reserved',
+    'manual',
+    'beta',
+    'campus',
+    'partner',
+    'compensation',
+    'payment_fix',
+    'test',
+  ]).default('admin_grant'),
   reason: z.string().min(4).max(500),
   note: z.string().max(500).optional(),
   notify: z.boolean().default(true),
 });
+
+async function resolveUserIdentifier(identifier: string) {
+  const value = identifier.trim();
+  const users = await db('users')
+    .where({ id: value })
+    .orWhere({ phone: value })
+    .orWhere({ email: value })
+    .orWhere({ liftmark_id: value })
+    .orWhere({ nickname: value })
+    .select('id', 'nickname', 'phone', 'email', 'liftmark_id');
+
+  if (users.length === 0) {
+    throw notFound('User not found. Use user id, phone, email, or LiftMark ID.');
+  }
+
+  if (users.length > 1) {
+    throw badRequest('Multiple users matched this identifier. Use the exact user id.');
+  }
+
+  return users[0];
+}
 
 async function registerMembershipAdminRoutes(app: FastifyInstance) {
   app.get('/admin/memberships', { preHandler: requireAdmin }, async (request) => {
@@ -103,6 +140,8 @@ async function registerMembershipAdminRoutes(app: FastifyInstance) {
       qb = qb.where(function () {
         this.where('users.nickname', 'ilike', `%${query.q}%`)
           .orWhere('users.phone', 'ilike', `%${query.q}%`)
+          .orWhere('users.email', 'ilike', `%${query.q}%`)
+          .orWhere('users.liftmark_id', 'ilike', `%${query.q}%`)
           .orWhere('users.id', 'ilike', `%${query.q}%`);
       });
     }
@@ -120,9 +159,9 @@ async function registerMembershipAdminRoutes(app: FastifyInstance) {
 
   app.post('/admin/memberships/grant', { preHandler: requireAdmin }, async (request) => {
     const body = grantMembershipBody.parse(request.body);
-    const user = await db('users').where({ id: body.userId }).first();
+    const user = await resolveUserIdentifier(body.userId);
     if (!user) throw notFound('用户不存在。');
-    const membership = await grantMembership(body.userId, {
+    const membership = await grantMembership(user.id, {
       type: body.type,
       source: body.source,
       durationDays: body.durationDays,
@@ -141,7 +180,7 @@ async function registerMembershipAdminRoutes(app: FastifyInstance) {
       risk: 'medium',
       reason: body.reason,
       before_snapshot: {},
-      after_snapshot: { type: body.type, isLifetime: body.isLifetime, durationDays: body.durationDays },
+      after_snapshot: { type: body.type, isLifetime: body.isLifetime, durationDays: body.durationDays, source: body.source, userId: user.id },
       ip: request.ip,
       device: request.headers['user-agent'] ?? 'unknown',
       rollbackable: true,
@@ -367,6 +406,69 @@ async function registerTrainingAdminRoutes(app: FastifyInstance) {
 }
 
 // ============ 计划 & 动作 ============
+const systemCatalogDate = new Date('2026-01-01T00:00:00.000Z');
+
+function includesQuery(values: Array<string | null | undefined>, query?: string) {
+  if (!query?.trim()) return true;
+  const q = query.trim().toLowerCase();
+  return values.some((value) => value?.toLowerCase().includes(q));
+}
+
+function toSystemPlanAdminRow(plan: (typeof systemPlanCatalog)[number]) {
+  return {
+    id: plan.id,
+    user_id: SYSTEM_USER_ID,
+    group_id: null,
+    client_id: plan.id,
+    parent_server_id: null,
+    name: plan.name,
+    title: plan.title,
+    status: 'system',
+    sync_version: 1,
+    client_updated_at: systemCatalogDate,
+    deleted_at: null,
+    payload: {
+      source: 'system',
+      description: plan.description,
+      durationWeeks: plan.durationWeeks,
+      frequencyPerWeek: plan.frequencyPerWeek,
+      goal: plan.goal,
+      tags: plan.tags,
+    },
+    created_at: systemCatalogDate,
+    updated_at: systemCatalogDate,
+    owner_name: '练刻系统内置',
+  };
+}
+
+function toSystemExerciseAdminRow(exercise: (typeof systemExerciseCatalog)[number]) {
+  return {
+    id: exercise.id,
+    user_id: SYSTEM_USER_ID,
+    group_id: null,
+    client_id: exercise.id,
+    parent_server_id: null,
+    name: exercise.name,
+    title: exercise.targetMuscle,
+    status: 'system',
+    sync_version: 1,
+    client_updated_at: systemCatalogDate,
+    deleted_at: null,
+    payload: {
+      source: 'system',
+      category: exercise.category,
+      difficulty: exercise.difficulty ?? null,
+      equipment: exercise.equipment,
+      movementPattern: exercise.movementPattern,
+      notes: exercise.notes ?? null,
+      targetMuscle: exercise.targetMuscle,
+    },
+    created_at: systemCatalogDate,
+    updated_at: systemCatalogDate,
+    creator_name: '练刻系统内置',
+  };
+}
+
 async function registerPlanExerciseRoutes(app: FastifyInstance) {
   app.get('/admin/plans', { preHandler: requireAdmin }, async (request) => {
     const query = request.query as { q?: string };
@@ -383,7 +485,12 @@ async function registerPlanExerciseRoutes(app: FastifyInstance) {
       });
     }
     const plans = await qb;
-    return { plans };
+    const existingIds = new Set(plans.map((plan: any) => plan.id));
+    const fallbackPlans = systemPlanCatalog
+      .filter((plan) => !existingIds.has(plan.id))
+      .filter((plan) => includesQuery([plan.name, plan.title, plan.description, plan.goal, ...plan.tags], query.q))
+      .map(toSystemPlanAdminRow);
+    return { plans: [...plans, ...fallbackPlans].slice(0, 500) };
   });
 
   app.get('/admin/exercises', { preHandler: requireAdmin }, async (request) => {
@@ -400,7 +507,18 @@ async function registerPlanExerciseRoutes(app: FastifyInstance) {
       });
     }
     const exercises = await qb;
-    return { exercises };
+    const existingIds = new Set(exercises.map((exercise: any) => exercise.id));
+    const fallbackExercises = systemExerciseCatalog
+      .filter((exercise) => !existingIds.has(exercise.id))
+      .filter((exercise) => includesQuery([
+        exercise.name,
+        exercise.category,
+        exercise.targetMuscle,
+        exercise.equipment,
+        exercise.movementPattern,
+      ], query.q))
+      .map(toSystemExerciseAdminRow);
+    return { exercises: [...exercises, ...fallbackExercises].slice(0, 500) };
   });
 }
 
@@ -782,6 +900,240 @@ const createCorrectionSchema = z.object({
   ticketId: z.string().optional(),
 });
 
+type CorrectionValueKind = 'string' | 'number' | 'boolean' | 'timestamp';
+
+type CorrectionTargetDefinition = {
+  table: string;
+  idColumns: string[];
+  columnFields: Set<string>;
+  payloadFields: Set<string>;
+  valueKinds: Record<string, CorrectionValueKind>;
+  unsupported?: boolean;
+};
+
+const correctionTypeKeys = Object.keys(correctionFieldMap);
+const groupCorrectionFields = correctionFieldMap[correctionTypeKeys[4]];
+for (const field of ['role', 'user_id', 'left_at']) {
+  if (groupCorrectionFields && !groupCorrectionFields.includes(field)) {
+    groupCorrectionFields.push(field);
+  }
+}
+
+const numberFields = new Set([
+  'actual_weight',
+  'actual_reps',
+  'planned_weight',
+  'planned_reps',
+  'amount_cents',
+  'bodyweight',
+  'bench_1rm',
+  'squat_1rm',
+  'deadlift_1rm',
+  'overhead_press_1rm',
+  'pullup_reference_weight',
+  'barbell_increment',
+  'dumbbell_increment',
+  'pro_group_limit',
+  'activated_pro_group_count',
+  'member_limit',
+  'group_limit',
+  'sync_version',
+  'week',
+  'weekday',
+  'current_week',
+]);
+
+const booleanFields = new Set(['completed', 'skipped', 'is_lifetime']);
+const timestampFields = new Set(['expires_at', 'last_pulled_at', 'last_pushed_at', 'disabled_at', 'left_at']);
+
+function correctionValueKind(field: string): CorrectionValueKind {
+  if (numberFields.has(field)) return 'number';
+  if (booleanFields.has(field)) return 'boolean';
+  if (timestampFields.has(field)) return 'timestamp';
+  return 'string';
+}
+
+function correctionTargetDefinition(targetType: string, field: string): CorrectionTargetDefinition {
+  const targetIndex = correctionTypeKeys.indexOf(targetType);
+  const base = (definition: Omit<CorrectionTargetDefinition, 'valueKinds'>): CorrectionTargetDefinition => ({
+    ...definition,
+    valueKinds: { [field]: correctionValueKind(field) },
+  });
+
+  switch (targetIndex) {
+    case 0:
+    case 1:
+    case 2:
+      return base({
+        table: 'users',
+        idColumns: ['id', 'phone', 'email', 'liftmark_id'],
+        columnFields: new Set(['nickname', 'phone', 'email', 'avatar_url', 'liftmark_id', 'status']),
+        payloadFields: new Set(),
+      });
+    case 3:
+      return base({
+        table: 'memberships',
+        idColumns: ['id', 'user_id'],
+        columnFields: new Set(['type', 'is_lifetime', 'expires_at', 'pro_group_limit', 'activated_pro_group_count']),
+        payloadFields: new Set(),
+      });
+    case 4:
+      if (field === 'status' || field === 'role' || field === 'user_id' || field === 'left_at') {
+        return base({
+          table: 'group_members',
+          idColumns: ['id'],
+          columnFields: new Set(['status', 'role', 'user_id', 'left_at']),
+          payloadFields: new Set(),
+        });
+      }
+      return base({
+        table: 'groups',
+        idColumns: ['id', 'invite_code'],
+        columnFields: new Set(['name', 'owner_user_id', 'member_limit', 'group_limit']),
+        payloadFields: new Set(),
+      });
+    case 5:
+      return base({
+        table: 'member_profiles',
+        idColumns: ['id', 'user_id'],
+        columnFields: new Set(['bodyweight', 'bench_1rm', 'squat_1rm', 'deadlift_1rm', 'overhead_press_1rm', 'pullup_reference_weight', 'barbell_increment', 'dumbbell_increment']),
+        payloadFields: new Set(),
+      });
+    case 6:
+      return base({
+        table: 'workout_sessions',
+        idColumns: ['id'],
+        columnFields: new Set(['title', 'status', 'group_id']),
+        payloadFields: new Set(['date', 'week', 'weekday', 'plan_id']),
+      });
+    case 7:
+      return base({
+        table: 'workout_sets',
+        idColumns: ['id'],
+        columnFields: new Set(['actual_weight', 'actual_reps']),
+        payloadFields: new Set(['planned_weight', 'planned_reps', 'completed', 'skipped']),
+      });
+    case 8:
+      return base({
+        table: 'training_plans',
+        idColumns: ['id', 'client_id'],
+        columnFields: new Set(['name', 'title', 'status']),
+        payloadFields: new Set(['current_week']),
+      });
+    case 9:
+      return base({
+        table: 'exercises',
+        idColumns: ['id', 'client_id'],
+        columnFields: new Set(['name']),
+        payloadFields: new Set(['category', 'equipment', 'primary_muscle']),
+      });
+    case 10:
+      return base({
+        table: 'sync_state',
+        idColumns: ['id', 'user_id'],
+        columnFields: new Set(['last_pulled_at', 'last_pushed_at', 'sync_version']),
+        payloadFields: new Set(),
+      });
+    case 11:
+      return base({
+        table: 'payment_orders',
+        idColumns: ['id'],
+        columnFields: new Set(['status', 'amount_cents']),
+        payloadFields: new Set(),
+      });
+    case 12:
+      return base({
+        table: 'activation_codes',
+        idColumns: ['id'],
+        columnFields: new Set(['disabled_at']),
+        payloadFields: new Set(),
+      });
+    default:
+      return base({
+        table: '',
+        idColumns: [],
+        columnFields: new Set(),
+        payloadFields: new Set(),
+        unsupported: true,
+      });
+  }
+}
+
+function parseCorrectionValue(raw: string | null | undefined, kind: CorrectionValueKind) {
+  if (raw === undefined) {
+    throw badRequest('After value is required. Use "null" to clear a nullable field.');
+  }
+  if (raw === null || raw.trim().toLowerCase() === 'null') return null;
+
+  if (kind === 'number') {
+    const value = Number(raw);
+    if (!Number.isFinite(value)) throw badRequest('After value must be a valid number.');
+    return value;
+  }
+
+  if (kind === 'boolean') {
+    const value = raw.trim().toLowerCase();
+    if (['true', '1', 'yes', 'y'].includes(value)) return true;
+    if (['false', '0', 'no', 'n'].includes(value)) return false;
+    throw badRequest('After value must be true or false.');
+  }
+
+  if (kind === 'timestamp') {
+    const value = new Date(raw);
+    if (Number.isNaN(value.getTime())) throw badRequest('After value must be a valid date/time or null.');
+    return value;
+  }
+
+  return raw;
+}
+
+function serializeCorrectionValue(value: any): string | null {
+  if (value === undefined || value === null) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+async function findCorrectionTarget(trx: any, definition: CorrectionTargetDefinition, targetId: string) {
+  const query = trx(definition.table).where(function (this: any) {
+    for (const column of definition.idColumns) {
+      this.orWhere(column, targetId);
+    }
+  }).limit(2);
+  const rows = await query;
+  if (rows.length === 0) throw notFound('Correction target not found.');
+  if (rows.length > 1) throw badRequest('Correction target matched multiple rows. Use the exact row id.');
+  return rows[0];
+}
+
+function inferCorrectionTargetUserId(row: any) {
+  return row.user_id ?? row.owner_user_id ?? row.created_by_user_id ?? null;
+}
+
+async function applyCorrectionPatch(trx: any, definition: CorrectionTargetDefinition, row: any, field: string, value: any) {
+  const now = new Date();
+  if (definition.columnFields.has(field)) {
+    await trx(definition.table).where({ id: row.id }).update({
+      [field]: value,
+      updated_at: now,
+    });
+    return row[field];
+  }
+
+  if (definition.payloadFields.has(field)) {
+    const payload = row.payload && typeof row.payload === 'object' ? { ...row.payload } : {};
+    const beforeValue = payload[field] ?? null;
+    payload[field] = value;
+    await trx(definition.table).where({ id: row.id }).update({
+      payload,
+      updated_at: now,
+    });
+    return beforeValue;
+  }
+
+  throw badRequest(`Field "${field}" is not writable for this correction target.`);
+}
+
 async function registerCorrectionRoutes(app: FastifyInstance) {
   app.get('/admin/corrections/fields', { preHandler: requireAdmin }, async () => {
     return {
@@ -814,56 +1166,116 @@ async function registerCorrectionRoutes(app: FastifyInstance) {
     const user = request.authUser!;
     const id = createId('fix');
     const operatorName = await getOperatorName(user.id);
-    await db('admin_corrections').insert({
-      id,
-      operator_user_id: user.id,
-      operator_name: operatorName,
-      target_type: body.targetType,
-      target_id: body.targetId,
-      target_user_id: body.targetUserId ?? null,
-      field: body.field ?? null,
-      before_value: body.beforeValue ?? null,
-      after_value: body.afterValue ?? null,
-      reason: body.reason,
-      sync_to_device: body.syncToDevice,
-      recompute: body.recompute,
-      ticket_id: body.ticketId ?? null,
-      status: 'done',
-      created_at: new Date(),
-      updated_at: new Date(),
+    if (!body.field) throw badRequest('Correction field is required.');
+    const allowedFields = correctionFieldMap[body.targetType] ?? [];
+    if (!allowedFields.includes(body.field)) {
+      throw badRequest('This field is not allowed for the selected correction type.');
+    }
+
+    const definition = correctionTargetDefinition(body.targetType, body.field);
+    if (definition.unsupported) {
+      throw badRequest('This correction type is only supported as an audit record for now.');
+    }
+    const kind = definition.valueKinds[body.field] ?? correctionValueKind(body.field);
+    const parsedAfterValue = parseCorrectionValue(body.afterValue, kind);
+
+    const result = await db.transaction(async (trx) => {
+      const row = await findCorrectionTarget(trx, definition, body.targetId);
+      const beforeValue = await applyCorrectionPatch(trx, definition, row, body.field!, parsedAfterValue);
+      const serializedBefore = serializeCorrectionValue(beforeValue);
+      const serializedAfter = serializeCorrectionValue(parsedAfterValue);
+      const now = new Date();
+
+      await trx('admin_corrections').insert({
+        id,
+        operator_user_id: user.id,
+        operator_name: operatorName,
+        target_type: body.targetType,
+        target_id: row.id,
+        target_user_id: body.targetUserId ?? inferCorrectionTargetUserId(row),
+        field: body.field,
+        before_value: serializedBefore,
+        after_value: serializedAfter,
+        reason: body.reason,
+        sync_to_device: body.syncToDevice,
+        recompute: body.recompute,
+        ticket_id: body.ticketId ?? null,
+        status: 'done',
+        created_at: now,
+        updated_at: now,
+      });
+
+      await trx('admin_audit_logs').insert({
+        id: createId('log'),
+        operator_user_id: user.id,
+        operator_name: operatorName,
+        module: 'data_corrections',
+        target_type: body.targetType,
+        target_id: row.id,
+        action: `update ${definition.table}.${body.field}`,
+        risk: 'high',
+        reason: body.reason,
+        before_snapshot: { field: body.field, value: serializedBefore },
+        after_snapshot: { field: body.field, value: serializedAfter },
+        ip: request.ip,
+        device: request.headers['user-agent'] ?? 'unknown',
+        rollbackable: true,
+        created_at: now,
+      });
+
+      return { beforeValue: serializedBefore, afterValue: serializedAfter, targetId: row.id };
     });
-    // 同时写审计日志
-    await db('admin_audit_logs').insert({
-      id: createId('log'),
-      operator_user_id: user.id,
-      operator_name: operatorName,
-      module: '数据修正中心',
-      target_type: body.targetType,
-      target_id: body.targetId,
-      action: `修改字段 ${body.field ?? ''}`,
-      risk: 'high',
-      reason: body.reason,
-      before_snapshot: { value: body.beforeValue },
-      after_snapshot: { value: body.afterValue },
-      ip: request.ip,
-      device: request.headers['user-agent'] ?? 'unknown',
-      rollbackable: true,
-      created_at: new Date(),
-    });
-    return { id };
+
+    return { id, ...result };
   });
 
   app.post('/admin/corrections/:id/rollback', { preHandler: requireAdmin }, async (request) => {
     const params = request.params as { id: string };
+    const body = z.object({ reason: z.string().min(4).max(500).optional() }).parse(request.body ?? {});
+    const user = request.authUser!;
     const correction = await db('admin_corrections').where({ id: params.id }).first();
-    if (!correction) throw notFound('修正记录不存在。');
-    await db('admin_corrections').where({ id: params.id }).update({
-      status: 'rolledback',
-      rolled_back_at: new Date(),
-      updated_at: new Date(),
+    if (!correction) throw notFound('Correction record not found.');
+    if (correction.status === 'rolledback') throw badRequest('Correction has already been rolled back.');
+    if (!correction.field) throw badRequest('Correction record has no field to roll back.');
+
+    const definition = correctionTargetDefinition(correction.target_type, correction.field);
+    if (definition.unsupported) throw badRequest('This correction type cannot be rolled back automatically.');
+    const kind = definition.valueKinds[correction.field] ?? correctionValueKind(correction.field);
+    const rollbackValue = parseCorrectionValue(correction.before_value, kind);
+    const operatorName = await getOperatorName(user.id);
+
+    await db.transaction(async (trx) => {
+      const row = await findCorrectionTarget(trx, definition, correction.target_id);
+      const currentValue = await applyCorrectionPatch(trx, definition, row, correction.field, rollbackValue);
+      const now = new Date();
+      await trx('admin_corrections').where({ id: params.id }).update({
+        status: 'rolledback',
+        rolled_back_at: now,
+        updated_at: now,
+      });
+      await trx('admin_audit_logs').insert({
+        id: createId('log'),
+        operator_user_id: user.id,
+        operator_name: operatorName,
+        module: 'data_corrections',
+        target_type: correction.target_type,
+        target_id: correction.target_id,
+        action: `rollback ${definition.table}.${correction.field}`,
+        risk: 'high',
+        reason: body.reason ?? correction.reason,
+        before_snapshot: { field: correction.field, value: serializeCorrectionValue(currentValue) },
+        after_snapshot: { field: correction.field, value: serializeCorrectionValue(rollbackValue) },
+        ip: request.ip,
+        device: request.headers['user-agent'] ?? 'unknown',
+        rollbackable: false,
+        created_at: now,
+      });
     });
+
     return { ok: true };
   });
+
+
 }
 
 // ============ 管理员列表 ============
