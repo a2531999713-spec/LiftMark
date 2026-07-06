@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Search, RotateCcw, Undo2, ShieldAlert, Plus, Loader2, AlertCircle, Wrench } from 'lucide-react'
 import { PageHeader, FilterBar, Field } from '@/components/admin/page-parts'
 import { Card } from '@/components/ui/card'
@@ -37,6 +37,7 @@ type Correction = {
 type CorrectionsResponse = { corrections: Correction[] }
 type CreateCorrectionResponse = { id: string }
 type RollbackResponse = { ok: boolean }
+type CorrectionFieldsResponse = { fields: Record<string, string[]> }
 
 const statusMeta: Record<CorrectionStatus, { label: string; variant: 'success' | 'warning' | 'outline' }> = {
   done: { label: '已生效', variant: 'success' },
@@ -61,6 +62,54 @@ const targetTypeOptions = [
   '文件资源',
 ]
 
+const fieldLabels: Record<string, string> = {
+  nickname: '昵称',
+  phone: '手机号',
+  email: '邮箱',
+  avatar_url: '头像地址',
+  liftmark_id: 'LiftMark ID',
+  status: '状态',
+  type: '会员类型',
+  is_lifetime: '是否永久会员',
+  expires_at: '到期时间',
+  pro_group_limit: 'PRO 小组上限',
+  activated_pro_group_count: '已激活 PRO 小组数',
+  name: '名称',
+  owner_user_id: '所有者用户 ID',
+  member_limit: '成员上限',
+  group_limit: '小组上限',
+  bodyweight: '体重',
+  bench_1rm: '卧推 1RM',
+  squat_1rm: '深蹲 1RM',
+  deadlift_1rm: '硬拉 1RM',
+  overhead_press_1rm: '推举 1RM',
+  pullup_reference_weight: '引体参考重量',
+  barbell_increment: '杠铃递增重量',
+  dumbbell_increment: '哑铃递增重量',
+  title: '标题',
+  date: '日期',
+  week: '周次',
+  weekday: '星期',
+  plan_id: '计划 ID',
+  group_id: '小组 ID',
+  actual_weight: '实际重量',
+  actual_reps: '实际次数',
+  planned_weight: '计划重量',
+  planned_reps: '计划次数',
+  completed: '是否完成',
+  skipped: '是否跳过',
+  current_week: '当前周',
+  category: '分类',
+  equipment: '器械',
+  primary_muscle: '主要肌群',
+  last_pulled_at: '上次拉取时间',
+  last_pushed_at: '上次推送时间',
+  sync_version: '同步版本',
+  amount_cents: '金额（分）',
+  disabled_at: '禁用时间',
+  url: '资源地址',
+}
+
 function buildPath(q: string, status: string): string {
   const params = new URLSearchParams()
   if (q) params.set('q', q)
@@ -78,8 +127,10 @@ export default function CorrectionsPage() {
 
   const path = useMemo(() => buildPath(q, status), [q, status])
   const { data, loading, error, reload } = useFetch<CorrectionsResponse>(path, [path])
+  const { data: fieldsData } = useFetch<CorrectionFieldsResponse>('/admin/corrections/fields', [])
 
   const corrections = data?.corrections ?? []
+  const fieldMap = fieldsData?.fields ?? {}
 
   // 新建修正表单
   const [fTargetType, setFTargetType] = useState(targetTypeOptions[0])
@@ -96,12 +147,25 @@ export default function CorrectionsPage() {
 
   const { mutate: createMutate, loading: creating } = useMutate<CreateCorrectionResponse>()
 
+  useEffect(() => {
+    if (!create) return
+    const fields = fieldMap[fTargetType] ?? []
+    if (fields.length && !fields.includes(fField)) {
+      setFField(fields[0])
+    }
+  }, [create, fTargetType, fieldMap, fField])
+
+  function resetFieldByType(type: string) {
+    const fields = fieldMap[type] ?? []
+    setFField(fields[0] ?? '')
+  }
+
   function openCreate() {
     setCreateError(null)
     setFTargetType(targetTypeOptions[0])
     setFTargetId('')
     setFTargetUserId('')
-    setFField('')
+    resetFieldByType(targetTypeOptions[0])
     setFBefore('')
     setFAfter('')
     setFReason('')
@@ -318,7 +382,7 @@ export default function CorrectionsPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>修正类型</Label>
-              <Select value={fTargetType} onChange={(e) => setFTargetType(e.target.value)}>
+              <Select value={fTargetType} onChange={(e) => { setFTargetType(e.target.value); resetFieldByType(e.target.value) }}>
                 {targetTypeOptions.map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
@@ -358,12 +422,14 @@ export default function CorrectionsPage() {
 
           <div>
             <Label>修正字段</Label>
-            <Input
-              value={fField}
-              onChange={(e) => setFField(e.target.value)}
-              placeholder="如 session.sets[3].weight"
-              className="font-mono"
-            />
+            <Select value={fField} onChange={(e) => setFField(e.target.value)}>
+              {(fieldMap[fTargetType] ?? []).map((field) => (
+                <option key={field} value={field}>{fieldLabels[field] ?? field}</option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              已根据“修正类型”自动列出常用字段，若需其他字段可联系开发补充。
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -752,6 +752,23 @@ async function registerAuditLogRoutes(app: FastifyInstance) {
 }
 
 // ============ 数据修正 ============
+const correctionFieldMap: Record<string, string[]> = {
+  '用户资料': ['nickname', 'phone', 'email', 'avatar_url', 'liftmark_id', 'status'],
+  '手机号': ['phone'],
+  '头像': ['avatar_url'],
+  '会员权益': ['type', 'is_lifetime', 'expires_at', 'pro_group_limit', 'activated_pro_group_count'],
+  '小组关系': ['name', 'owner_user_id', 'member_limit', 'group_limit', 'status'],
+  '成员档案': ['bodyweight', 'bench_1rm', 'squat_1rm', 'deadlift_1rm', 'overhead_press_1rm', 'pullup_reference_weight', 'barbell_increment', 'dumbbell_increment'],
+  '训练 session': ['title', 'status', 'date', 'week', 'weekday', 'plan_id', 'group_id'],
+  '每组训练数据': ['actual_weight', 'actual_reps', 'planned_weight', 'planned_reps', 'completed', 'skipped'],
+  '计划数据': ['name', 'title', 'status', 'current_week'],
+  '动作数据': ['name', 'category', 'equipment', 'primary_muscle'],
+  '同步状态': ['last_pulled_at', 'last_pushed_at', 'sync_version'],
+  '订单权益': ['status', 'amount_cents'],
+  '激活码记录': ['disabled_at'],
+  '文件资源': ['url', 'status'],
+};
+
 const createCorrectionSchema = z.object({
   targetType: z.string().min(1),
   targetId: z.string().min(1),
@@ -766,6 +783,12 @@ const createCorrectionSchema = z.object({
 });
 
 async function registerCorrectionRoutes(app: FastifyInstance) {
+  app.get('/admin/corrections/fields', { preHandler: requireAdmin }, async () => {
+    return {
+      fields: correctionFieldMap,
+    };
+  });
+
   app.get('/admin/corrections', { preHandler: requireAdmin }, async (request) => {
     const query = request.query as { status?: string; targetType?: string; q?: string };
     let qb = db('admin_corrections').orderBy('created_at', 'desc').limit(500);

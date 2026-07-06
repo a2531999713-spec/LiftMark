@@ -38,9 +38,12 @@ export async function buildApp() {
     },
   });
 
+  // 静态文件服务必须在根作用域注册，不能放在 /api 前缀下
+  const uploadRoot = process.env.UPLOAD_ROOT ?? path.resolve('/home/deploy/liftmark/uploads');
   await app.register(fastifyStatic, {
     prefix: '/uploads/',
-    root: process.env.UPLOAD_ROOT ?? path.resolve('/home/deploy/liftmark/uploads'),
+    root: uploadRoot,
+    wildcard: false,
   });
 
   app.setErrorHandler((error, _request, reply) => {

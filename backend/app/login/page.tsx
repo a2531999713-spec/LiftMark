@@ -60,10 +60,12 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           {/* Logo & 标题 */}
           <div className="mb-8 text-center">
-            <div className="mb-5 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 shadow-lg shadow-orange-500/30">
-              <svg className="h-9 w-9 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 5c0-1 .5-2 2-2s2 1 2 2v4l5.5 3c.5.3 1 .9 1 1.6V19a2 2 0 01-2 2H8a2 2 0 01-2-2v-5l-3-1.5v-1L8 13V9" />
-              </svg>
+            <div className="mb-5 inline-flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 p-1 shadow-lg shadow-orange-500/30">
+              <img
+                src="/admin/logo.png"
+                alt="LiftMark Logo"
+                className="h-full w-full rounded-xl object-cover"
+              />
             </div>
             <h1 className="text-3xl font-bold tracking-tight text-white">LiftMark</h1>
             <p className="mt-2 text-sm text-slate-400">健身房训练记录与社交平台 · 管理员控制台</p>
