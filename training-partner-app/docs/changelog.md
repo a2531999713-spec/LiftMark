@@ -1,5 +1,24 @@
 # 变更记录
 
+## 2026-07-06 - admin-correction-announcement-backup
+
+### 后台数据修正中心优化
+- `apps/liftmark-api/src/modules/admin/admin.extended.routes.ts` 新增 `GET /admin/corrections/fields`，按修正类型返回常用数据库字段列表。
+- `backend/app/(admin)/corrections/page.tsx` 将「修正字段」从手动输入改为下拉选择；选择「修正类型」后自动列出对应字段，并显示字段中文说明。
+
+### 移动端公告系统接入
+- 新增 `training-partner-app/src/services/announcementService.ts`：获取当前有效公告、读写本地已读状态（使用 SQLite `sync_state` 表）。
+- 新增 `training-partner-app/src/components/announcement/AnnouncementModal.tsx`：公告弹窗组件。
+- `training-partner-app/app/(tabs)/today.tsx` 首页聚焦时自动拉取公告，未读公告以弹窗形式展示，点击「我知道了」后标记已读；5 分钟内最多请求一次，兼顾省电与及时性。
+
+### 数据库定时备份
+- 新增 `scripts/backup_database.sh`：基于 `pg_dump` 自动备份 PostgreSQL，压缩为 `.gz`，保留最近 14 天备份并记录日志。
+- 服务器已部署该脚本并配置 cron：`0 3 * * * /home/deploy/liftmark/scripts/backup_database.sh`。
+- 测试备份成功，备份文件 `/home/deploy/liftmark/backups/liftmark_20260706_092249.sql.gz`（132K）。
+
+### 文档更新
+- `training-partner-app/docs/backend-deploy-guide.md` 新增「数据库定时备份」章节，含脚本安装、cron 配置、手动执行与恢复说明。
+
 ## 2026-07-06 - home-feedback-group-ux
 
 ### 首页头像红点移除
@@ -696,4 +715,56 @@
 - 修改代码：在 `training-partner-app/android/gradle.properties` 中增加 `org.gradle.java.installations.fromEnv=JAVA_HOME` 和 `org.gradle.java.installations.auto-download=false`，让 Gradle 只使用本机 `JAVA_HOME` 的 JDK 17，不再触发 toolchain 自动下载路径。
 - 更新文档：同步技术架构、AI 开发规则、开发路线图、项目总览、本地数据层相关模块实现说明和 changelog。
 - 测试情况：使用 Node.js v24.16.0 / npm 11.13.0 / Microsoft OpenJDK 17.0.19 运行 `cd android && .\gradlew.bat clean --no-daemon` 成功；`npm run typecheck` 成功；`npx expo run:android` 因当前无 Android 设备未进入编译安装阶段。
-- 风险说明：`
+- 风险说明：`IBM_SEMERU` 相关 Gradle clean 问题已修复；当时 native debug 编译曾受 Windows 中文物理路径和 CMake / Ninja 缓存影响。后续 `android-apk` 条目已将第一阶段验收切换为本地 release APK。
+
+### android-build：切换第一阶段验收到 Android development build
+
+- 影响模块：technical-architecture、database/local、group、member、plan、exercise、workout。
+- 修改代码：新增 `expo-dev-client`；`android` script 改为 `expo run:android`，新增 `start:dev-client` 和 `android:clear`；根布局在 Web 平台跳过 native SQLite 初始化；`initializeLocalDatabase()` 改为可复用初始化 Promise；生成 Android native 工程并补充 Gradle UTF-8、路径检查和下载超时配置。
+- 更新文档：同步技术架构、AI 开发规则、开发路线图、本地数据层相关模块实现说明和 changelog。
+- 测试情况：`npm install` 可完成；当前 Node.js v24.16.0 满足 engine 要求；`npm run typecheck`、`npm run lint`、`npm test -- --runInBand`、`npx expo install --check` 均通过；`npx expo run:android` 需要连接设备或启动模拟器后继续验证。
+- 风险说明：第一阶段不以 Web 预览作为验收标准；Web 端 `expo-sqlite/web` 的 wasm 解析问题不影响 Android 主目标。Android 编译需要 Node.js 22.13.0+、64-bit JDK 17；后续 `android-apk` 条目已将当前验收方式调整为本地 release APK。
+
+## 2026-06-09
+
+### sprint-4：实现训练执行页
+
+- 影响模块：workout、member、plan、exercise、weight、workout-execution-flow。
+- 修改代码：`createSessionFromTodayPlan` 生成 session、动作快照和每位成员 set；Today 页新增开始训练入口；训练执行页按动作轮换展示成员 set 卡，重量/次数 stepper、完成/跳过按钮和完成按钮均即时保存 SQLite；新增训练总结页和 workout 单元测试。
+- 更新文档：同步 workout 模块文档和测试计划、训练执行流程、数据库 schema、Repository API、开发路径图。
+- 测试情况：`npm run typecheck`、`npm run lint`、`npm test -- --runInBand` 均通过。
+- 风险说明：Expo/Android 真机页面烟测未在本环境完成；动作替换、跳过动作和历史页展示仍待后续 Sprint。
+
+### sprint-3：实现默认计划和今日训练
+
+- 影响模块：plan、exercise、weight、recovery、today-training-flow。
+- 修改代码：将旧 Excel 四练兼容模板转为默认 seed；新增 ExerciseRepository；接入 `getTodayPlan` 动作过滤；实现默认周期/周数设置、今日训练页、成员建议重量和动作筛选；新增 plan/weight/recovery 单元测试。
+- 更新文档：同步 plan、exercise、weight、recovery 模块文档和测试计划、今日训练流程、数据库 schema、Repository API、开发路径图。
+- 测试情况：`npm run typecheck`、`npm run lint`、`npm test -- --runInBand` 均通过。
+- 风险说明：Expo/Android 真机页面烟测未在本环境完成；Excel seed 的后续版本迁移和重置策略待 Sprint 7 明确。
+
+### sprint-2：实现成员管理
+
+- 影响模块：member、group、weight、onboarding-flow。
+- 修改代码：新增成员表单校验、成员列表卡片、成员表单、成员列表页、新增成员页、编辑成员页；配置 `jest-expo` 并新增成员单元测试。
+- 更新文档：同步项目总览、技术架构、开发路径、member 模块文档、首次使用流程。
+- 测试情况：`npx expo install --check`、`npm run typecheck`、`npm run lint`、`npm test` 均通过。
+- 风险说明：Android 真机关闭重开后的成员持久化烟测未在本环境验证；成员删除策略仍待确认。
+
+### sprint-1：创建 Expo 项目骨架和本地数据库骨架
+
+- 影响模块：database、group、member、plan、workout、progression、weight、recovery、export、history。
+- 修改代码：创建 `training-partner-app/`，配置 Expo Router、TypeScript、ESLint、Prettier、Jest、Expo SQLite；创建 `src/domain` 基础类型、SQLite schema/migrations、Repository 接口与本地实现骨架、`seedDefaultData` 入口。
+- 更新文档：同步项目总览、技术架构、开发路径、数据库 schema、Repository API 和相关模块实现说明。
+- 测试情况：`npm run typecheck`、`npm run lint`、`npm test` 均通过；当前无测试用例。
+- 风险说明：Android 真机启动未在本环境验证；默认四练 Excel 计划尚未完整导入 seed，且没有硬编码到 React 组件。
+
+## 2026-06-08
+
+### docs：初始化 AI 文档驱动开发文档体系
+
+- 影响模块：全部文档模块。
+- 修改代码：无，本次未写业务代码。
+- 更新文档：创建 `docs/` 下项目总览、产品设计、技术架构、开发路线、模块文档、流程文档、数据库文档、Repository API 文档和 ADR。
+- 测试情况：文件结构检查通过。
+- 风险说明：当前文档基于需求文档、开发文档和 Excel 训练计划，业务源码尚未创建，后续实现时需以代码为准同步更新。

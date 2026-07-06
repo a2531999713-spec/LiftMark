@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sync as runSync } from '@/sync/syncOrchestrator';
 
 import { Avatar } from '@/components/avatar';
-import { AppText, Tag } from '@/components/ui';
+import { AppModalSheet, AppText, Tag } from '@/components/ui';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { AccountProfileCache, AvatarPickSource } from '@/services/avatar';
@@ -33,9 +33,7 @@ type AccountPanelMode =
   | 'sync'
   | 'preferences'
   | 'membership'
-  | 'backup'
-  | 'featureFeedback'
-  | 'issueFeedback';
+  | 'backup';
 
 export type AccountProfileUpdate = {
   age?: number;
@@ -126,6 +124,7 @@ export function AccountPanel({
   const [isSavingProfile, setSavingProfile] = useState(false);
   const [isAvatarWorking, setAvatarWorking] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [isFeedbackSheetOpen, setFeedbackSheetOpen] = useState(false);
 
   const initialDraft = useMemo(
     () => buildDraft(accountProfile, displayName),
@@ -234,6 +233,7 @@ export function AccountPanel({
   const panelTop = insets.top + 76;
 
   return (
+    <>
     <Modal animationType="fade" onRequestClose={requestClose} transparent visible={visible}>
       <View style={styles.backdrop}>
         <Pressable accessibilityRole="button" onPress={requestClose} style={StyleSheet.absoluteFill} />
@@ -264,8 +264,7 @@ export function AccountPanel({
                 setDraft(initialDraft);
                 setMode('editProfile');
               }}
-              onFeatureFeedbackPress={() => setMode('featureFeedback')}
-              onIssueFeedbackPress={() => setMode('issueFeedback')}
+              onFeedbackPress={() => setFeedbackSheetOpen(true)}
               onLogoutPress={onLogoutPress}
               onMembershipPress={() => setMode('membership')}
               onPreferencesPress={() => setMode('preferences')}
@@ -329,12 +328,6 @@ export function AccountPanel({
           {mode === 'membership' ? (
             <MembershipPanel membershipLabel={membershipLabel} onBack={goMain} />
           ) : null}
-          {mode === 'featureFeedback' ? (
-            <FeedbackPanel kind="feature" onBack={goMain} />
-          ) : null}
-          {mode === 'issueFeedback' ? (
-            <FeedbackPanel kind="issue" onBack={goMain} />
-          ) : null}
 
           {feedback ? (
             <View style={styles.feedback}>
@@ -347,6 +340,9 @@ export function AccountPanel({
         </View>
       </View>
     </Modal>
+
+      <FeedbackSheet visible={isFeedbackSheetOpen} onClose={() => setFeedbackSheetOpen(false)} />
+    </>
   );
 }
 
@@ -362,8 +358,7 @@ type MainPanelProps = {
   onAboutPress: () => void;
   onBackupPress: () => void;
   onEditPress: () => void;
-  onFeatureFeedbackPress: () => void;
-  onIssueFeedbackPress: () => void;
+  onFeedbackPress: () => void;
   onLogoutPress: () => void;
   onMembershipPress: () => void;
   onPreferencesPress: () => void;
@@ -387,8 +382,7 @@ function MainPanel({
   onAboutPress,
   onBackupPress,
   onEditPress,
-  onFeatureFeedbackPress,
-  onIssueFeedbackPress,
+  onFeedbackPress,
   onLogoutPress,
   onMembershipPress,
   onPreferencesPress,
@@ -449,9 +443,7 @@ function MainPanel({
       </View>
 
       <View style={styles.section}>
-        <AccountPanelRow icon="bulb-outline" label="功能建议" onPress={onFeatureFeedbackPress} />
-        <Divider />
-        <AccountPanelRow icon="bug-outline" label="问题反馈" onPress={onIssueFeedbackPress} />
+        <AccountPanelRow icon="chatbubble-ellipses-outline" label="反馈与建议" onPress={onFeedbackPress} />
         <Divider />
         <AccountPanelRow icon="shield-checkmark-outline" label="隐私政策" onPress={onPrivacyPress} />
         <Divider />
@@ -656,11 +648,13 @@ function MembershipPanel({
   );
 }
 
-function FeedbackPanel({ kind, onBack }: { kind: 'feature' | 'issue'; onBack: () => void }) {
+function FeedbackSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const [feedbackType, setFeedbackType] = useState<'feature' | 'issue'>('feature');
   const [content, setContent] = useState('');
   const [contact, setContact] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const isFeature = kind === 'feature';
+
+  const isFeature = feedbackType === 'feature';
 
   const submit = () => {
     if (!content.trim()) {
@@ -672,12 +666,35 @@ function FeedbackPanel({ kind, onBack }: { kind: 'feature' | 'issue'; onBack: ()
   };
 
   return (
-    <PanelScroll>
-      <AccountPanelHeader
-        onBack={onBack}
-        subtitle={isFeature ? '告诉我们你想要的训练能力' : '描述现象、步骤和期望结果'}
-        title={isFeature ? '功能建议' : '问题反馈'}
-      />
+    <AppModalSheet
+      onClose={onClose}
+      subtitle="告诉我们你想要的训练能力，或描述遇到的问题"
+      title="反馈与建议"
+      visible={visible}
+    >
+      <View style={styles.feedbackTypeRow}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setFeedbackType('feature')}
+          style={[styles.feedbackTypeChip, isFeature && styles.feedbackTypeChipActive]}
+        >
+          <Ionicons name="bulb-outline" size={16} color={isFeature ? colors.surface : colors.primary} />
+          <AppText tone={isFeature ? 'inverse' : 'muted'} variant="caption" weight="900">
+            功能建议
+          </AppText>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setFeedbackType('issue')}
+          style={[styles.feedbackTypeChip, !isFeature && styles.feedbackTypeChipActive]}
+        >
+          <Ionicons name="bug-outline" size={16} color={!isFeature ? colors.surface : colors.primary} />
+          <AppText tone={!isFeature ? 'inverse' : 'muted'} variant="caption" weight="900">
+            问题反馈
+          </AppText>
+        </Pressable>
+      </View>
+
       <View style={styles.inputCard}>
         <AppText variant="bodySmall" weight="900">
           {isFeature ? '建议内容' : '问题描述'}
@@ -708,7 +725,7 @@ function FeedbackPanel({ kind, onBack }: { kind: 'feature' | 'issue'; onBack: ()
         </Pressable>
       </View>
       <DevelopmentNote text="提交服务接入前，面板会明确提示本机草稿状态，不做无响应按钮。" />
-    </PanelScroll>
+    </AppModalSheet>
   );
 }
 
@@ -888,6 +905,25 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     position: 'absolute',
     right: spacing.sm,
+  },
+  feedbackTypeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  feedbackTypeChip: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  feedbackTypeChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   infoLine: {
     alignItems: 'center',

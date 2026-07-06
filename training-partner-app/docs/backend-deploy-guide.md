@@ -1,6 +1,6 @@
 # 后端部署指南
 
-更新时间：2026-06-28
+更新时间：2026-07-06
 
 ## 0. 服务器信息
 
@@ -425,6 +425,28 @@ sudo ufw allow 443   # HTTPS
 sudo ufw enable
 ```
 
+### 6.4 运维脚本中的敏感信息
+
+`scripts/` 目录下的运维脚本需要 sudo 密码和测试用的管理员账号。
+**这些敏感信息不得写入 Git 仓库**。
+
+已提供示例文件，使用前复制并填写真实值：
+
+```bash
+cp scripts/.env.example scripts/.env
+nano scripts/.env
+```
+
+`scripts/.env` 已被加入 `.gitignore`，不会提交。
+各脚本启动时会自动读取该文件，缺失时会提示错误并退出。
+
+如果历史提交中已泄露过 sudo 密码或管理员密码，建议：
+
+1. 立即修改服务器 sudo 密码和 root 密码
+2. 修改管理员手机号/密码（或重新生成管理员账号）
+3. 轮换 `.env` 中的 `JWT_SECRET` 和 `JWT_REFRESH_SECRET`
+4. 检查服务器日志是否有异常登录
+
 ## 7. 客户端配置
 
 App 端 API 地址配置在 `src/config/api.ts`：
@@ -684,4 +706,88 @@ nginx 没把 `/admin/_next/static/*` 转发到 3001。检查 nginx 配置中 `lo
 #### 9.6.4 切换分支或拉取代码后页面没更新
 
 代码更新了但 standalone 没重新构建。务必执行 `npm run build` 然后复制 `standalone/` 到 `admin-deploy/`，再 `pm2 restart liftmark-admin`。
+
+---
+
+## 10. 数据库定时备份
+
+PostgreSQL 数据每天凌晨 3 点自动备份，保留最近 14 天。
+
+### 10.1 备份脚本
+
+脚本位置：`/home/deploy/liftmark/scripts/backup_database.sh`
+
+主要行为：
+
+- 读取 `apps/liftmark-api/.env` 中的 `DATABASE_URL`。
+- 使用 `pg_dump` 导出数据库为 SQL。
+- `gzip` 压缩后保存到 `/home/deploy/liftmark/backups/`。
+- 删除 14 天前的旧备份。
+- 日志输出到 `/home/deploy/liftmark/logs/backup_YYYYMMDD_HHMMSS.log`。
+
+### 10.2 首次安装
+
+```bash
+# 1. 确保脚本已上传并赋予执行权限
+chmod +x /home/deploy/liftmark/scripts/backup_database.sh
+
+# 2. 创建备份和日志目录
+mkdir -p /home/deploy/liftmark/backups /home/deploy/liftmark/logs
+
+# 3. 确认服务器已安装 postgresql-client
+which pg_dump   # 应输出 /usr/bin/pg_dump
+```
+
+### 10.3 配置 cron
+
+```bash
+crontab -e
+```
+
+添加一行：
+
+```cron
+0 3 * * * /home/deploy/liftmark/scripts/backup_database.sh
+```
+
+查看已配置的定时任务：
+
+```bash
+crontab -l
+```
+
+### 10.4 手动执行备份
+
+```bash
+/home/deploy/liftmark/scripts/backup_database.sh
+```
+
+执行成功后可在 `/home/deploy/liftmark/backups/` 看到类似 `liftmark_20260706_092249.sql.gz` 的文件。
+
+### 10.5 从备份恢复
+
+**注意：恢复会覆盖当前数据库，请先在测试环境验证或备份当前数据。**
+
+```bash
+# 1. 找到要恢复的备份文件
+BACKUP=/home/deploy/liftmark/backups/liftmark_YYYYMMDD_HHMMSS.sql.gz
+
+# 2. 停止 API 服务，避免写入
+pm2 stop liftmark-api
+
+# 3. 解压并恢复
+gunzip -c "$BACKUP" | psql "$(grep '^DATABASE_URL=' /home/deploy/liftmark/apps/liftmark-api/.env | cut -d '=' -f2- | tr -d '\"')"
+
+# 4. 重新启动服务
+pm2 start liftmark-api
+```
+
+### 10.6 故障排查
+
+| 现象 | 排查 |
+|---|---|
+| 备份文件没有生成 | 检查日志 `/home/deploy/liftmark/logs/backup_*.log` 是否有 `DATABASE_URL` 读取错误或 `pg_dump` 连接失败。 |
+| `pg_dump: command not found` | 安装 `postgresql-client`：`sudo apt install -y postgresql-client`。 |
+| cron 未执行 | 检查 `crontab -l` 是否包含条目，确认 cron 服务运行：`sudo systemctl status cron`。 |
+| 备份文件过大 | 数据库增长后建议使用 `pg_dump --format=custom` 结合 `pg_restore`，或增加备份保留策略。 |
 

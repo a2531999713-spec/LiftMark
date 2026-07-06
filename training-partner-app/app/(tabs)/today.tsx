@@ -11,6 +11,7 @@ import {
 
 import { liftmarkImages } from '@/assets/images';
 import { AccountPanel, type AccountProfileUpdate } from '@/components/account';
+import { AnnouncementModal } from '@/components/announcement/AnnouncementModal';
 import { AuthGateSheets } from '@/components/auth';
 import { Avatar } from '@/components/avatar';
 import {
@@ -57,6 +58,11 @@ import {
 } from '@/services/avatar';
 import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { updateDisplayNameAcrossLocalProfiles } from '@/services/profileSyncService';
+import {
+  fetchCurrentAnnouncement,
+  shouldShowAnnouncement,
+  type Announcement,
+} from '@/services/announcementService';
 import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
@@ -644,7 +650,11 @@ export default function TodayRoute() {
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [announcement, setAnnouncement] = useState<Announcement | null>(null);
+  const [announcementVisible, setAnnouncementVisible] = useState(false);
   const loadHomeRequestRef = useRef(0);
+  const lastAnnouncementFetchRef = useRef(0);
+  const ANNOUNCEMENT_FETCH_THROTTLE_MS = 5 * 60 * 1000;
 
   const loadHome = useCallback(async () => {
     const requestId = loadHomeRequestRef.current + 1;
@@ -847,6 +857,28 @@ export default function TodayRoute() {
         loadHomeRequestRef.current += 1;
       };
     }, [loadHome]),
+  );
+
+  const loadAnnouncement = useCallback(async () => {
+    if (authStatus !== 'authenticated' && authStatus !== 'offline_authenticated') {
+      return;
+    }
+    const now = Date.now();
+    if (now - lastAnnouncementFetchRef.current < ANNOUNCEMENT_FETCH_THROTTLE_MS) {
+      return;
+    }
+    lastAnnouncementFetchRef.current = now;
+    const current = await fetchCurrentAnnouncement();
+    if (current && (await shouldShowAnnouncement(current))) {
+      setAnnouncement(current);
+      setAnnouncementVisible(true);
+    }
+  }, [authStatus]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadAnnouncement();
+    }, [loadAnnouncement]),
   );
 
   const resolveSelectedWorkoutPlan = useCallback(async (): Promise<TodayPlanResult | null> => {
@@ -1676,6 +1708,14 @@ export default function TodayRoute() {
       </AppModalSheet>
 
       <AuthGateSheets {...sheets} />
+
+      {announcement ? (
+        <AnnouncementModal
+          announcement={announcement}
+          onClose={() => setAnnouncementVisible(false)}
+          visible={announcementVisible}
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -2604,4 +2644,113 @@ const styles = StyleSheet.create({
   sectionTop: {
     alignItems: 'center',
     flexDirection: 'row',
-    g
+    gap: spacing.md,
+    justifyContent: 'space-between',
+  },
+  startCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  startSection: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.md,
+    ...shadows.card,
+  },
+  summaryContent: {
+    gap: spacing.xs,
+    justifyContent: 'flex-end',
+    minHeight: 122,
+    padding: spacing.md,
+  },
+  summaryImage: {
+    opacity: 0.94,
+  },
+  summaryImageBackground: {
+    borderRadius: radius.lg,
+    minHeight: 122,
+    overflow: 'hidden',
+  },
+  summaryScrim: {
+    backgroundColor: 'rgba(1,12,22,0.58)',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  summarySubtitle: {
+    color: 'rgba(255,255,255,0.86)',
+  },
+  summaryFilterChip: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.68)',
+    borderColor: 'rgba(255, 255, 255, 0.24)',
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xxs,
+    minHeight: 32,
+    paddingHorizontal: spacing.sm,
+  },
+  summaryTitle: {
+    color: colors.surface,
+  },
+  summaryTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+  },
+  todaySummary: {
+    gap: spacing.md,
+  },
+  weekChip: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    justifyContent: 'center',
+    minHeight: 34,
+    paddingHorizontal: spacing.md,
+  },
+  weekChipActive: {
+    backgroundColor: colors.primary,
+  },
+  weekChipText: {
+    color: colors.textMuted,
+  },
+  weekChipTextActive: {
+    color: colors.surface,
+  },
+  weekChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  weekGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+  },
+  weekTile: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexBasis: '47%',
+    flexGrow: 1,
+    gap: spacing.xs,
+    minHeight: 78,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.md,
+    ...shadows.card,
+  },
+  weeklySection: {
+    gap: spacing.md,
+  },
+});
