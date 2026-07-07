@@ -1,5 +1,26 @@
 # 变更记录
 
+## 2026-07-08 - plan-disappear-and-manage-modal-fix
+
+### 重大 bug：重装后计划消失 + 重新导入后训练数据失联
+- **根因**：`createImportedPlanDraft`（`src/services/planFileService.ts`）在生成导入草稿时强制用 `createId('plan_imported')` 生成全新随机 plan ID，丢弃了导出文件中的原始 plan ID。`workout_sessions.plan_id` 是普通 TEXT 列（无外键约束），plan ID 变化后旧训练记录变成悬空引用，表现为「重新导入后之前与计划绑定的训练数据又没了」。
+- **修复 1**：`src/services/planFileService.ts` 的 `createImportedPlanDraft` 改为保留导出文件中的原 plan ID（`const planId = file.plan.template.id`），不再强制生成新 ID。phase / day / exercise 等子节点 ID 仍重新生成（这些不影响 `plan_id` 绑定）。
+- **修复 2**：`src/data/local/repositories/planRepository.ts` 的 `importUserPlan` 在事务内检测 plan ID 是否已存在：
+  - 已存在（同 ID 计划已在本地）→ 生成新 ID（`createId('plan_imported')`）避免覆盖已有计划。
+  - 不存在 → 保留原 ID（用于重装后重新导入时与旧训练记录 `plan_id` 重新关联）。
+  - 事务内所有 INSERT（`plan_templates` / `plan_phases` / `plan_days`）统一使用最终确定的 `planId`；返回的 `importedTemplate.id` 也使用 `finalPlanId`，确保同步入队（`enqueuePlanSync`）使用正确 ID。
+- **说明**：此修复确保「卸载重装 → 云同步恢复训练记录 → 重新导入计划文件」场景下，新导入的计划能与旧训练记录的 `plan_id` 重新关联。重装导致本地 SQLite 数据库被清除是 App 私有存储的固有行为，计划本身的备份/恢复依赖用户提前导出 `.liftmark.json` 文件。
+
+### 管理计划弹窗打不开
+- **根因**：上一轮修复中给 `app/(tabs)/plan.tsx` 的 `manageContent` 样式加了 `flex: 1`，但 `AppModalSheet` 的 content 父容器是普通 `View`（无 flex 布局），导致内部 `ScrollView` 高度塌缩为 0，弹窗内容不可见，表现为「点击管理计划无法打开页面」。
+- **修复**：移除 `manageContent` 中的 `flex: 1`，只保留 `maxHeight: 560`，让 `ScrollView` 在 `maxHeight` 约束下自然撑开。
+
+### 验证
+- `npm run typecheck`：通过（0 错误）。`withExclusiveTransactionAsync` 回调要求返回 `Promise<void>`，采用外部变量 `finalPlanId` 捕获事务内确定的 plan ID 而非直接 return。
+- `npm run lint`：仅 2 条既有 warning（`today.tsx` announcement 依赖、`app/plan/[planId].tsx` 既有 `isDuplicating`），与本次变更无关。
+- 本次均为前端代码变更，无服务器后端 API 或数据库变更，无需服务器部署。
+- 移动端需重新打包 APK 以生效。
+
 ## 2026-07-08 - manage-panel-inline-actions-and-tab-loading-fix
 
 ### 管理计划面板滚动与内联更多操作

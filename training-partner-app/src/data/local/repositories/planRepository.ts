@@ -603,8 +603,18 @@ export class SQLitePlanRepository implements PlanRepository {
     const db = await this.getDb();
     const ownerUserId = await getCurrentAccountUserId();
     const exerciseIdByImportedId = new Map<string, string>();
+    let finalPlanId = input.template.id;
 
     await db.withExclusiveTransactionAsync(async (txn) => {
+      // 检查 plan ID 是否已存在：存在则生成新 ID 避免覆盖已有计划，
+      // 不存在则保留原 ID（用于重装后重新导入时与旧训练记录 plan_id 重新关联）
+      const existing = await txn.getFirstAsync<{ id: string }>(
+        'SELECT id FROM plan_templates WHERE id = ?',
+        input.template.id,
+      );
+      const planId = existing ? createId('plan_imported') : input.template.id;
+      finalPlanId = planId;
+
       for (const exercise of input.exercises) {
         const existingByName = await txn.getFirstAsync<{ id: string }>(
           'SELECT id FROM exercises WHERE lower(name) = lower(?) ORDER BY source ASC LIMIT 1',
@@ -658,7 +668,7 @@ export class SQLitePlanRepository implements PlanRepository {
           id, owner_user_id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
           description, source, origin_scheme_id, version, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        input.template.id,
+        planId,
         ownerUserId,
         input.template.name,
         ownerUserId ?? input.template.creatorId ?? null,
@@ -681,7 +691,7 @@ export class SQLitePlanRepository implements PlanRepository {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           phase.id,
           ownerUserId,
-          phase.planId,
+          planId,
           phase.name,
           phase.type,
           phase.startWeek,
@@ -697,7 +707,7 @@ export class SQLitePlanRepository implements PlanRepository {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           day.id,
           ownerUserId,
-          day.planId,
+          planId,
           day.phaseId,
           day.week,
           day.weekday,
@@ -739,6 +749,7 @@ export class SQLitePlanRepository implements PlanRepository {
 
     const importedTemplate = {
       ...input.template,
+      id: finalPlanId,
       creatorId: ownerUserId ?? input.template.creatorId,
       source: 'imported',
       visibility: 'private',
