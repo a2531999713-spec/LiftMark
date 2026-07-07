@@ -8,6 +8,7 @@ import type { SyncEntityType } from '@/sync/syncTypes';
 import type {
   CreateSessionFromTodayPlanInput,
   CreateManualSessionInput,
+  CreateManualSessionV2Input,
   AddWorkoutExerciseInput,
   AddWorkoutSetInput,
   ManualWorkoutExerciseInput,
@@ -385,6 +386,143 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     return session;
   }
 
+  async createManualSessionV2(input: CreateManualSessionV2Input): Promise<WorkoutSession> {
+    const db = await this.getDb();
+    const ownerUserId = await this.getVisibleGroupOwnerUserId(input.groupId);
+    const now = nowIso();
+    const weekday = (new Date(`${input.date}T12:00:00`).getDay() || 7) as WorkoutSession['weekday'];
+    const participantIds = [...new Set(input.participantMemberIds)];
+
+    if (participantIds.length === 0) {
+      throw new Error('请至少选择一位参与成员。');
+    }
+
+    if (input.exercises.length === 0) {
+      throw new Error('请至少选择一个动作。');
+    }
+
+    const session: WorkoutSession = {
+      id: createId('session'),
+      groupId: input.groupId,
+      planId: input.sourcePlanId ?? input.planId,
+      date: input.date,
+      week: 1,
+      weekday,
+      title: input.title.trim() || '补录训练',
+      status: input.completed === false ? 'in_progress' : 'completed',
+      trainingMode: input.trainingMode,
+      startedAt: now,
+      finishedAt: input.completed === false ? undefined : now,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      const memberRows = await txn.getAllAsync<{ id: string }>(
+        `SELECT id FROM group_members
+         WHERE group_id = ? AND deleted_at IS NULL`,
+        input.groupId,
+      );
+      const visibleMemberIds = new Set(memberRows.map((member) => member.id));
+      const invalidMemberId = participantIds.find((memberId) => !visibleMemberIds.has(memberId));
+      if (invalidMemberId) {
+        throw new Error(`成员不属于当前小组：${invalidMemberId}`);
+      }
+
+      await txn.runAsync(
+        `INSERT INTO workout_sessions (
+          id, owner_user_id, group_id, plan_id, phase_id, date, week, weekday, title,
+          status, training_mode, started_at, finished_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        session.id,
+        ownerUserId,
+        session.groupId,
+        session.planId,
+        null,
+        session.date,
+        session.week,
+        session.weekday,
+        session.title,
+        session.status,
+        session.trainingMode,
+        session.startedAt ?? null,
+        session.finishedAt ?? null,
+        session.createdAt,
+        session.updatedAt,
+      );
+
+      for (const [exerciseIndex, exercise] of input.exercises.entries()) {
+        const recordId = createId('exercise_record');
+        const setsByParticipant = exercise.memberSets.filter((memberSet) => participantIds.includes(memberSet.memberId));
+        const plannedSets =
+          exercise.plannedSets ??
+          setsByParticipant.reduce((max, memberSet) => Math.max(max, memberSet.sets.length), 0);
+        const firstSetWithReps = setsByParticipant.flatMap((memberSet) => memberSet.sets).find((set) => set.reps !== undefined);
+        const plannedReps = exercise.plannedReps ?? firstSetWithReps?.reps ?? null;
+
+        await txn.runAsync(
+          `INSERT INTO workout_exercise_records (
+            id, owner_user_id, session_id, plan_exercise_id, exercise_id, order_index,
+            replaced_from_exercise_id, priority, planned_sets, planned_reps,
+            planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
+            planned_percent_1rm, planned_rest_seconds, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          recordId,
+          ownerUserId,
+          session.id,
+          null,
+          exercise.exerciseId,
+          exerciseIndex + 1,
+          null,
+          exercise.priority ?? (exerciseIndex === 0 ? 'A' : exerciseIndex <= 2 ? 'B' : 'C'),
+          plannedSets || null,
+          plannedReps,
+          exercise.plannedRepMin ?? null,
+          exercise.plannedRepMax ?? null,
+          null,
+          null,
+          null,
+          exercise.plannedRestSeconds ?? null,
+          exercise.notes ?? input.notes ?? '历史补录',
+        );
+
+        for (const memberSet of setsByParticipant) {
+          for (const [setIndex, set] of memberSet.sets.entries()) {
+            const skipped = set.skipped === true;
+            const completed = skipped ? false : set.completed !== false;
+            await txn.runAsync(
+              `INSERT INTO workout_sets (
+                id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
+                planned_weight, actual_weight, planned_reps, actual_reps,
+                rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              createId('set'),
+              ownerUserId,
+              session.id,
+              recordId,
+              memberSet.memberId,
+              set.setIndex ?? setIndex + 1,
+              set.weight ?? null,
+              set.weight ?? null,
+              set.reps ?? null,
+              set.reps ?? null,
+              set.rpe ?? null,
+              set.rir ?? null,
+              null,
+              completed ? 1 : 0,
+              skipped ? 1 : 0,
+              set.notes ?? null,
+              now,
+              now,
+            );
+          }
+        }
+      }
+    });
+
+    return session;
+  }
+
   async createManualSession(input: CreateManualSessionInput): Promise<WorkoutSession> {
     const db = await this.getDb();
     const ownerUserId = await this.getVisibleGroupOwnerUserId(input.groupId);
@@ -460,6 +598,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         );
 
         for (const [setIndex, set] of exercise.sets.entries()) {
+          const skipped = set.skipped === true;
+          const completed = skipped ? false : set.completed !== false;
           await txn.runAsync(
             `INSERT INTO workout_sets (
               id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
@@ -476,11 +616,11 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
             set.weight ?? null,
             set.reps ?? null,
             set.reps ?? null,
+            set.rpe ?? null,
+            set.rir ?? null,
             null,
-            null,
-            null,
-            set.completed === false ? 0 : 1,
-            0,
+            completed ? 1 : 0,
+            skipped ? 1 : 0,
             set.notes ?? null,
             now,
             now,

@@ -139,6 +139,8 @@ export default function PlanEditDayRoute() {
     changeExercise(target.id, {
       priority: previous.priority,
       reps: previous.reps,
+      repMax: previous.repMax,
+      repMin: previous.repMin,
       sets: previous.sets,
     });
   };

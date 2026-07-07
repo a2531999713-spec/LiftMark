@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -187,6 +187,21 @@ export default function WorkoutRoute() {
   const [participantRemovalConfirm, setParticipantRemovalConfirm] =
     useState<ParticipantRemovalConfirm>(null);
   const [error, setError] = useState<string | null>(null);
+  const latestSetByIdRef = useRef<Record<string, WorkoutSet>>({});
+  const pendingSetPatchesRef = useRef<Record<string, Omit<SaveWorkoutSetInput, 'id'>>>({});
+  const setSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    latestSetByIdRef.current = Object.fromEntries((detail?.sets ?? []).map((set) => [set.id, set]));
+  }, [detail?.sets]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(setSaveTimersRef.current).forEach((timer) => clearTimeout(timer));
+      setSaveTimersRef.current = {};
+      pendingSetPatchesRef.current = {};
+    };
+  }, []);
 
   useEffect(() => {
     if (!detail?.session.startedAt) {
@@ -217,12 +232,10 @@ export default function WorkoutRoute() {
 
       await initializeLocalDatabase();
 
-      const tempDetail = await repositories.workoutRepository.getSessionDetail(sessionId);
-      if (tempDetail.session.groupId) {
-        void syncGroupMembersAvatar(tempDetail.session.groupId).catch(() => undefined);
-      }
-
       const nextDetail = await repositories.workoutRepository.getSessionDetail(sessionId);
+      if (nextDetail.session.groupId) {
+        void syncGroupMembersAvatar(nextDetail.session.groupId).catch(() => undefined);
+      }
       const allMembers = await repositories.memberRepository.listMembers(nextDetail.session.groupId);
       const participantIds = new Set(nextDetail.sets.map((set) => set.memberId));
       const nextMembers =
@@ -280,11 +293,18 @@ export default function WorkoutRoute() {
         return null;
       }
 
+      const pendingTimer = setSaveTimersRef.current[set.id];
+      if (pendingTimer) {
+        clearTimeout(pendingTimer);
+        delete setSaveTimersRef.current[set.id];
+      }
+      delete pendingSetPatchesRef.current[set.id];
       const optimisticSet: WorkoutSet = {
         ...set,
         ...patch,
         updatedAt: new Date().toISOString(),
       };
+      latestSetByIdRef.current[set.id] = optimisticSet;
       setDetail((current) => replaceSet(current, optimisticSet));
       setError(null);
       try {
@@ -292,6 +312,7 @@ export default function WorkoutRoute() {
           id: set.id,
           ...patch,
         });
+        latestSetByIdRef.current[saved.id] = saved;
         setDetail((current) => replaceSet(current, saved));
         setLastSavedAt(new Date().toISOString());
         void enqueueSyncCandidate({
@@ -324,6 +345,55 @@ export default function WorkoutRoute() {
       }
     },
     [guardFeature, repositories],
+  );
+
+  const consumePendingSetPatch = useCallback((setId: string): Omit<SaveWorkoutSetInput, 'id'> | null => {
+    const pendingTimer = setSaveTimersRef.current[setId];
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      delete setSaveTimersRef.current[setId];
+    }
+    const patch = pendingSetPatchesRef.current[setId];
+    if (!patch) {
+      return null;
+    }
+    delete pendingSetPatchesRef.current[setId];
+    return patch;
+  }, []);
+
+  const saveSetPatchDebounced = useCallback(
+    (set: WorkoutSet, patch: Omit<SaveWorkoutSetInput, 'id'>) => {
+      const currentSet = latestSetByIdRef.current[set.id] ?? set;
+      const nextPatch = {
+        ...(pendingSetPatchesRef.current[set.id] ?? {}),
+        ...patch,
+      };
+      pendingSetPatchesRef.current[set.id] = nextPatch;
+
+      const optimisticSet: WorkoutSet = {
+        ...currentSet,
+        ...nextPatch,
+        updatedAt: new Date().toISOString(),
+      };
+      latestSetByIdRef.current[set.id] = optimisticSet;
+      setDetail((current) => replaceSet(current, optimisticSet));
+
+      const existingTimer = setSaveTimersRef.current[set.id];
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+      setSaveTimersRef.current[set.id] = setTimeout(() => {
+        const patchToSave = pendingSetPatchesRef.current[set.id];
+        delete pendingSetPatchesRef.current[set.id];
+        delete setSaveTimersRef.current[set.id];
+        if (!patchToSave) {
+          return;
+        }
+        const latestSet = latestSetByIdRef.current[set.id] ?? optimisticSet;
+        void saveSetPatch(latestSet, patchToSave);
+      }, 450);
+    },
+    [saveSetPatch],
   );
 
   useEffect(() => {
@@ -708,20 +778,22 @@ export default function WorkoutRoute() {
       return;
     }
 
+    const pendingPatch = consumePendingSetPatch(targetSet.id);
+    const targetDraft = pendingPatch ? { ...targetSet, ...pendingPatch } : targetSet;
     const previousCompletedWeight = [...activeSets]
       .filter(
         (set) =>
-          set.memberId === targetSet.memberId &&
+          set.memberId === targetDraft.memberId &&
           set.completed &&
-          set.setNumber < targetSet.setNumber &&
+          set.setNumber < targetDraft.setNumber &&
           set.actualWeight !== undefined &&
           Number.isFinite(set.actualWeight),
       )
       .sort((left, right) => right.setNumber - left.setNumber)[0]?.actualWeight;
-    const actualWeight = targetSet.actualWeight ?? targetSet.plannedWeight ?? previousCompletedWeight;
+    const actualWeight = targetDraft.actualWeight ?? targetDraft.plannedWeight ?? previousCompletedWeight;
     const actualReps =
-      targetSet.actualReps ??
-      targetSet.plannedReps ??
+      targetDraft.actualReps ??
+      targetDraft.plannedReps ??
       (activeRecord ? getWorkoutRecordInitialReps(activeRecord) : undefined);
 
     if (actualWeight === undefined || !Number.isFinite(actualWeight)) {
@@ -737,6 +809,7 @@ export default function WorkoutRoute() {
     }
 
     const savedSet = await saveSetPatch(targetSet, {
+      ...(pendingPatch ?? {}),
       actualReps,
       actualWeight,
       completed: true,
@@ -1029,8 +1102,23 @@ export default function WorkoutRoute() {
         ),
       ).catch(() => undefined);
 
+      const addedMember = allGroupMembers.find((member) => member.id === memberId);
+      if (addedMember) {
+        const profile = await repositories.memberRepository.getMemberProfile(memberId).catch(() => null);
+        setMembers((current) => current.some((member) => member.id === memberId) ? current : [...current, addedMember]);
+        setProfiles((current) => ({ ...current, [memberId]: profile }));
+      }
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              sets: [...current.sets, ...addedSets],
+            }
+          : current,
+      );
       setActiveMemberId(memberId);
-      await loadWorkout();
+      setWorkoutReadyToFinish(false);
+      setLastSavedAt(new Date().toISOString());
     } catch (addError) {
       setError(addError instanceof Error ? addError.message : '添加参与成员失败。');
     }
@@ -1058,8 +1146,23 @@ export default function WorkoutRoute() {
     try {
       await repositories.workoutRepository.deleteMemberSetsInSession(detail.session.id, memberId);
       const nextMemberId = members.find((member) => member.id !== memberId)?.id ?? null;
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              sets: current.sets.filter((set) => set.memberId !== memberId),
+            }
+          : current,
+      );
+      setMembers((current) => current.filter((member) => member.id !== memberId));
+      setProfiles((current) => {
+        const next = { ...current };
+        delete next[memberId];
+        return next;
+      });
       setActiveMemberId(nextMemberId);
-      await loadWorkout();
+      setWorkoutReadyToFinish(false);
+      setLastSavedAt(new Date().toISOString());
     } catch (removeError) {
       setError(removeError instanceof Error ? removeError.message : '移除参与成员失败。');
     }
@@ -1513,10 +1616,10 @@ export default function WorkoutRoute() {
                   isWorkoutReadyToFinish={isWorkoutReadyToFinish}
                   memberName={membersById.get(currentDisplaySet.memberId)?.displayName ?? '成员'}
                   onCompleteSet={() => void completeCurrentRound()}
-                  onNotesChange={(v) => void saveSetPatch(currentDisplaySet, { notes: v })}
-                  onRepsChange={(v) => void saveSetPatch(currentDisplaySet, { actualReps: v })}
-                  onRpeChange={(v) => void saveSetPatch(currentDisplaySet, { rpe: v })}
-                  onWeightChange={(v) => void saveSetPatch(currentDisplaySet, { actualWeight: v })}
+                  onNotesChange={(v) => saveSetPatchDebounced(currentDisplaySet, { notes: v })}
+                  onRepsChange={(v) => saveSetPatchDebounced(currentDisplaySet, { actualReps: v })}
+                  onRpeChange={(v) => saveSetPatchDebounced(currentDisplaySet, { rpe: v })}
+                  onWeightChange={(v) => saveSetPatchDebounced(currentDisplaySet, { actualWeight: v })}
                   notes={currentDisplaySet.notes}
                   plannedRestSeconds={currentMemberRest?.plannedSeconds ?? activeRecord.plannedRestSeconds}
                   profile={currentProfile}

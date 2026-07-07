@@ -20,12 +20,14 @@ import {
   type ExerciseAnalyticsView,
   type HistoryDataset,
 } from '@/features/history/shared/historyViewModel';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 
 type ExerciseMetric = 'oneRm' | 'weight' | 'volume';
 
 export function ExerciseAnalyticsScreen() {
   const { exerciseId } = useLocalSearchParams<{ exerciseId: string }>();
   const { range, setRange } = useDateRange('30d');
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const [metric, setMetric] = useState<ExerciseMetric>('oneRm');
   const [dataset, setDataset] = useState<HistoryDataset | null>(null);
   const [view, setView] = useState<ExerciseAnalyticsView | null>(null);
@@ -42,7 +44,7 @@ export function ExerciseAnalyticsScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      const nextDataset = await loadHistoryDataset(range);
+      const nextDataset = await loadHistoryDataset(range, selectedGroupId);
       setDataset(nextDataset);
       setView(buildExerciseAnalytics(nextDataset, exerciseId));
     } catch (loadError) {
@@ -50,7 +52,7 @@ export function ExerciseAnalyticsScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [exerciseId, range]);
+  }, [exerciseId, range, selectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

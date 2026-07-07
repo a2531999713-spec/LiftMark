@@ -12,7 +12,7 @@ type ScreenProps = {
   headerRight?: ReactNode;
   safeTop?: boolean;
   scroll?: boolean;
-  subtitle?: string;
+  subtitle?: ReactNode;
   title?: string;
 };
 
@@ -31,11 +31,11 @@ export function Screen({
         <View style={styles.header}>
           <View style={styles.headerText}>
             <AppText variant="headline">{title}</AppText>
-            {subtitle ? (
+            {typeof subtitle === 'string' ? (
               <AppText tone="muted" variant="bodySmall">
                 {subtitle}
               </AppText>
-            ) : null}
+            ) : subtitle}
           </View>
           {headerRight}
         </View>

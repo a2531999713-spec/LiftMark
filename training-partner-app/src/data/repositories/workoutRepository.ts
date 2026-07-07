@@ -4,6 +4,7 @@ import type {
   AddWorkoutSetInput,
   CreateSessionFromTodayPlanInput,
   CreateManualSessionInput,
+  CreateManualSessionV2Input,
   ListOpenWorkoutSessionsForDateInput,
   ListHistorySessionsByScopeInput,
   ListSessionsInput,
@@ -19,6 +20,7 @@ import type {
 export interface WorkoutRepository {
   createSessionFromTodayPlan(input: CreateSessionFromTodayPlanInput): Promise<WorkoutSession>;
   createManualSession(input: CreateManualSessionInput): Promise<WorkoutSession>;
+  createManualSessionV2(input: CreateManualSessionV2Input): Promise<WorkoutSession>;
   getSession(sessionId: ID): Promise<WorkoutSession | null>;
   getSessionDetail(sessionId: ID): Promise<WorkoutSessionDetail>;
   listOpenSessionsForDate(input: ListOpenWorkoutSessionsForDateInput): Promise<WorkoutSession[]>;

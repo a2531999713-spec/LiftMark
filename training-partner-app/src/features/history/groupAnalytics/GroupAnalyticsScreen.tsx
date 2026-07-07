@@ -24,6 +24,7 @@ import {
   type HistoryDataset,
   type MemberContributionView,
 } from '@/features/history/shared/historyViewModel';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 type SortKey = 'volume' | 'completion' | 'activity';
@@ -31,6 +32,7 @@ type TrendMetric = 'volume' | 'completion' | 'activity';
 
 export function GroupAnalyticsScreen() {
   const { range, setRange } = useDateRange('7d');
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const [sortKey, setSortKey] = useState<SortKey>('volume');
   const [trendMetric, setTrendMetric] = useState<TrendMetric>('volume');
   const [dataset, setDataset] = useState<HistoryDataset | null>(null);
@@ -41,13 +43,13 @@ export function GroupAnalyticsScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      setDataset(await loadHistoryDataset(range));
+      setDataset(await loadHistoryDataset(range, selectedGroupId));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '小组分析加载失败。');
     } finally {
       setIsLoading(false);
     }
-  }, [range]);
+  }, [range, selectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

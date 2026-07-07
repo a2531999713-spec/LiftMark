@@ -7,7 +7,9 @@ import { AppButton, AppModalSheet, EmptyState, Screen } from '@/components/ui';
 import { ProfileMenuItem, ProfileSection } from '@/components/profile';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
+import { resolveSelectedGroup } from '@/domain/group/selected-group';
 import { createCurrentPlanFile, serializePlanFile } from '@/services/planFileService';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, spacing } from '@/theme';
 
 type NoticeState = {
@@ -21,6 +23,8 @@ type ExportPrompt = NoticeState & {
 
 export default function ProfileDataRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
@@ -33,13 +37,17 @@ export default function ProfileDataRoute() {
     setError(null);
     try {
       await initializeLocalDatabase();
-      setGroup(await repositories.groupRepository.getDefaultGroup());
+      const { group: nextGroup } = await resolveSelectedGroup(repositories.groupRepository, selectedGroupId);
+      if (nextGroup && nextGroup.id !== selectedGroupId) {
+        setSelectedGroupId(nextGroup.id);
+      }
+      setGroup(nextGroup);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '计划导出加载失败。');
     } finally {
       setIsLoading(false);
     }
-  }, [repositories]);
+  }, [repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

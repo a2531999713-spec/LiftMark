@@ -7,10 +7,13 @@ import { buildPlanEditDraft, createEmptyPlanDayDraft, toUpdateUserPlanInput } fr
 import type { PlanEditDraft, PlanExerciseMap } from '@/components/plan/planEditTypes';
 import { AppButton, EmptyState, Screen } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
+import type { CreateCustomExerciseInput } from '@/data/repositories/exerciseRepository';
+import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
 import { colors } from '@/theme';
 
 type PlanEditState = {
+  allExercises: Exercise[];
   draft: PlanEditDraft;
   exerciseMap: PlanExerciseMap;
   plan: PlanTemplate;
@@ -43,12 +46,12 @@ export default function PlanEditRoute() {
       }
       const days = await repositories.planRepository.listPlanDays(plan.id);
       const exerciseLists = await Promise.all(days.map((day) => repositories.planRepository.listPlanExercises(day.id)));
-      const exerciseIds = Array.from(new Set(exerciseLists.flatMap((items) => items.map((exercise) => exercise.exerciseId))));
-      const exercises = exerciseIds.length > 0 ? await repositories.exerciseRepository.listExercisesByIds(exerciseIds) : [];
+      const allExercises = await repositories.exerciseRepository.listExercises();
 
       setState({
+        allExercises,
         draft: buildPlanEditDraft(plan, days, exerciseLists),
-        exerciseMap: Object.fromEntries(exercises.map((exercise) => [exercise.id, exercise])),
+        exerciseMap: Object.fromEntries(allExercises.map((exercise) => [exercise.id, exercise])),
         plan,
       });
     } catch (loadError) {
@@ -68,16 +71,25 @@ export default function PlanEditRoute() {
     setState((current) => (current ? { ...current, draft: { ...current.draft, ...patch } } : current));
   };
 
-  const addDay = () => {
+  const addDay = (week: number) => {
     setState((current) =>
       current
-        ? {
+        ? (() => {
+            const sameWeekDays = current.draft.days.filter((day) => day.week === week);
+            const nextWeekday = Math.min(7, sameWeekDays.length + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
+            const nextDay = {
+              ...createEmptyPlanDayDraft(current.draft.days.length),
+              week,
+              weekday: nextWeekday,
+            };
+            return {
             ...current,
             draft: {
               ...current.draft,
-              days: [...current.draft.days, createEmptyPlanDayDraft(current.draft.days.length)],
+                days: [...current.draft.days, nextDay],
             },
-          }
+            };
+          })()
         : current,
     );
   };
@@ -113,6 +125,20 @@ export default function PlanEditRoute() {
     }
   };
 
+  const createCustomExercise = async (input: CreateCustomExerciseInput) => {
+    const exercise = await repositories.exerciseRepository.createCustomExercise(input);
+    setState((current) =>
+      current
+        ? {
+            ...current,
+            allExercises: [exercise, ...current.allExercises],
+            exerciseMap: { ...current.exerciseMap, [exercise.id]: exercise },
+          }
+        : current,
+    );
+    return exercise;
+  };
+
   const isReadonly = state?.plan.source === 'system' || state?.plan.visibility === 'system';
 
   // 复制系统计划为用户副本，然后跳转到副本的编辑页
@@ -133,7 +159,7 @@ export default function PlanEditRoute() {
   };
 
   return (
-    <Screen subtitle="" title="编辑计划">
+    <Screen contentStyle={{ flex: 1, paddingBottom: 12 }} scroll={false}>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="计划编辑暂时不可用" description={error} /> : null}
 
@@ -160,19 +186,14 @@ export default function PlanEditRoute() {
 
       {!isLoading && state && !isReadonly ? (
         <PlanEditOverview
+          allExercises={state.allExercises}
           draft={state.draft}
           exerciseMap={state.exerciseMap}
           isSaving={isSaving}
           onAddDay={addDay}
           onChange={updateDraft}
+          onCreateCustomExercise={createCustomExercise}
           onDeleteDay={deleteDay}
-          onOpenDay={(dayId) => {
-            if (dayId.startsWith('day_')) {
-              Alert.alert('先保存计划', '新增训练日保存后即可进入动作编辑。');
-              return;
-            }
-            router.push({ pathname: '/plan/edit-day/[dayId]', params: { dayId, planId } } as never);
-          }}
           onSave={() => void save()}
           planSource={state.plan.source}
         />

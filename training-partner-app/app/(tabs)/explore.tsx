@@ -9,6 +9,7 @@ import { AppButton, AppCard, AppModalSheet, AppText, Screen, SectionHeader, Tag,
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
+import { resolveSelectedGroup } from '@/domain/group/selected-group';
 import type { PhaseType, PlanTemplate } from '@/domain/plan/plan.types';
 import {
   describeSchemeGoal,
@@ -18,6 +19,7 @@ import {
   type SystemTrainingScheme,
 } from '@/domain/plan/systemSchemes';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
 type NoticeState = {
@@ -48,6 +50,8 @@ function describePlanSource(source: PlanTemplate['source']) {
 export default function ExploreRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const systemSchemes = useMemo(() => listSystemTrainingSchemes(), []);
   const featuredSchemes = useMemo(() => systemSchemes.filter((scheme) => scheme.isAvailable).slice(0, 3), [systemSchemes]);
   const upcomingSchemes = useMemo(() => systemSchemes.filter((scheme) => !scheme.isAvailable), [systemSchemes]);
@@ -64,13 +68,16 @@ export default function ExploreRoute() {
 
   const loadExploreState = useCallback(async () => {
     await initializeLocalDatabase();
-    const [nextGroup, nextUserPlans] = await Promise.all([
-      repositories.groupRepository.getDefaultGroup(),
+    const [{ group: nextGroup }, nextUserPlans] = await Promise.all([
+      resolveSelectedGroup(repositories.groupRepository, selectedGroupId),
       repositories.planRepository.listUserPlans(),
     ]);
+    if (nextGroup && nextGroup.id !== selectedGroupId) {
+      setSelectedGroupId(nextGroup.id);
+    }
     setGroup(nextGroup);
     setUserPlans(nextUserPlans);
-  }, [repositories]);
+  }, [repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

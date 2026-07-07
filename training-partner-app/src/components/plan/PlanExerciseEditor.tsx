@@ -55,7 +55,7 @@ export function PlanExerciseEditor({
 
       <View style={styles.controlGrid}>
         <Stepper label="组数" onChange={(sets) => onChange({ sets })} value={exercise.sets} />
-        <Stepper label="次数" onChange={(reps) => onChange({ reps })} value={exercise.reps} />
+        <Stepper label="次数" onChange={(reps) => onChange({ reps, repMax: null, repMin: null })} value={exercise.reps ?? exercise.repMin ?? 8} />
       </View>
 
       <View style={styles.footer}>
@@ -74,7 +74,7 @@ export function PlanExerciseEditor({
           ))}
         </View>
         <View style={styles.moveRow}>
-          <Tag label={`${exercise.sets}x${exercise.reps}`} tone="neutral" />
+          <Tag label={`${exercise.sets}x${exercise.reps ?? exercise.repMin ?? 8}`} tone="neutral" />
           <AppButton disabled={!canMoveUp} onPress={onMoveUp} size="sm" variant="ghost">
             上移
           </AppButton>

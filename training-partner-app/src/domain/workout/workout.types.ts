@@ -94,8 +94,11 @@ export type CreateManualSessionInput = {
 
 export type ManualWorkoutSetInput = {
   completed?: boolean;
-  notes?: string;
+  notes?: string | null;
   reps?: number;
+  rpe?: number | null;
+  rir?: number | null;
+  skipped?: boolean;
   weight?: number;
 };
 
@@ -105,6 +108,38 @@ export type ManualWorkoutExerciseInput = {
   priority?: ExercisePriority;
   restSeconds?: number | null;
   sets: ManualWorkoutSetInput[];
+};
+
+export type ManualWorkoutMemberSetsInput = {
+  memberId: ID;
+  sets: (ManualWorkoutSetInput & {
+    setIndex?: number;
+  })[];
+};
+
+export type ManualWorkoutExerciseV2Input = {
+  exerciseId: ID;
+  memberSets: ManualWorkoutMemberSetsInput[];
+  notes?: string | null;
+  plannedRepMax?: number | null;
+  plannedRepMin?: number | null;
+  plannedReps?: number | null;
+  plannedRestSeconds?: number | null;
+  plannedSets?: number | null;
+  priority?: ExercisePriority;
+};
+
+export type CreateManualSessionV2Input = {
+  date: string;
+  exercises: ManualWorkoutExerciseV2Input[];
+  groupId: ID;
+  notes?: string | null;
+  participantMemberIds: ID[];
+  planId: ID;
+  sourcePlanId?: ID | null;
+  title: string;
+  trainingMode: WorkoutTrainingMode;
+  completed?: boolean;
 };
 
 export type AddWorkoutExerciseInput = {

@@ -23,6 +23,7 @@ import {
   type GroupExerciseCompareView,
   type HistoryDataset,
 } from '@/features/history/shared/historyViewModel';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 
 function createEightWeekRange(): DateRangeValue {
   const today = new Date();
@@ -36,6 +37,7 @@ function createEightWeekRange(): DateRangeValue {
 
 export function GroupExerciseCompareScreen() {
   const [range, setRange] = useState<DateRangeValue>(createEightWeekRange);
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const [dataset, setDataset] = useState<HistoryDataset | null>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string>('');
   const [view, setView] = useState<GroupExerciseCompareView | null>(null);
@@ -47,7 +49,7 @@ export function GroupExerciseCompareScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      const nextDataset = await loadHistoryDataset(range);
+      const nextDataset = await loadHistoryDataset(range, selectedGroupId);
       const nextOptions = buildExerciseTrendOptions(nextDataset);
       const selectedStillExists = nextOptions.some((option) => option.id === selectedExerciseId);
       const fallbackExerciseId =
@@ -62,7 +64,7 @@ export function GroupExerciseCompareScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [range, selectedExerciseId]);
+  }, [range, selectedExerciseId, selectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

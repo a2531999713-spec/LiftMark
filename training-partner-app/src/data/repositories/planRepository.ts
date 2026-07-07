@@ -3,10 +3,12 @@ import type { Exercise, ExerciseAlternative } from '@/domain/exercise/exercise.t
 import type { SystemTrainingScheme } from '@/domain/plan/systemSchemes';
 import type {
   GetTodayPlanInput,
+  IntensityType,
   PlanDay,
   PlanExercise,
   PlanPhase,
   PlanTemplate,
+  ReferenceLift,
   TodayPlanResult,
 } from '@/domain/plan/plan.types';
 
@@ -22,9 +24,17 @@ export type CreateUserPlanDayInput = {
   weekday: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   exercises: {
     exerciseId: ID;
+    fixedWeight?: number | null;
+    intensityType?: IntensityType;
+    notes?: string | null;
+    percent1RM?: number | null;
     priority?: 'A' | 'B' | 'C';
-    sets: number;
-    reps: number;
+    referenceLift?: ReferenceLift | null;
+    repMax?: number | null;
+    repMin?: number | null;
+    reps?: number | null;
+    restSeconds?: number | null;
+    sets?: number | null;
   }[];
 };
 

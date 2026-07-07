@@ -1,7 +1,14 @@
 ﻿# Group 模块实现文档
 
-更新时间：2026-07-03  
+更新时间：2026-07-07
 对应代码目录：`training-partner-app/`；已实现默认小组、多小组创建/切换、本地成员、邀请码真实成员加入、小组训练记录视图和小组动作详情分析。
+
+## 2026-07-07 补充：统一当前小组作用域
+
+- 新增 `src/domain/group/selected-group.ts`，通过 `resolveSelectedGroup(groupRepository, selectedGroupId)` 统一解析当前小组。
+- 计划页、探索页、记录首页、个人分析、小组分析、动作对比、出勤率、成员分析、补录、补录动作录入、训练偏好和计划导出均优先读取 `selectedGroupStore.selectedGroupId`。
+- 当 `selectedGroupId` 指向的小组已删除或不可见时，页面回落到第一个可见小组，并写回 `selectedGroupStore`，避免 UI 停留在旧小组数据。
+- `getDefaultGroup()` 仍保留给首次初始化和历史兼容，但新 UI 页面不得用它绕过当前小组选择。
 
 ## 2026-07-03 补充：邀请和云端成员同步
 
@@ -21,6 +28,7 @@
 | `src/domain/group/group.types.ts` | Group 类型定义。 |
 | `src/data/local/repositories/groupRepository.ts` | 小组 Repository，支持列出、创建、读取和更新小组。 |
 | `src/store/selectedGroupStore.ts` | 最近选中小组状态。 |
+| `src/domain/group/selected-group.ts` | 当前小组解析工具，封装选中小组优先和失效回落。 |
 | `app/profile/groups.tsx` | 当前小组切换、创建新小组和成员入口。 |
 | `app/group/invitations.tsx` | 小组邀请码管理入口。 |
 | `app/group/join.tsx` | 输入邀请码加入小组。 |
@@ -135,3 +143,4 @@
 - 2026-06-30：小组页支持列出所有本地小组、创建新小组和切换当前小组；今日训练、成员页、记录页、设置页、头像同步和身体数据页均跟随 `selectedGroupStore` 当前小组。
 - 2026-07-02：训练执行页不再允许 UI 选中成员覆盖轮换 cursor；小组成员顺序只作为 workout domain 队列排序输入，休息状态不修改小组或成员数据。
 - 2026-07-03：成员页新增加入小组和邀请成员入口；邀请码加入后同步云端小组成员并绑定真实 `userId`。
+- 2026-07-07：新增 `resolveSelectedGroup()` 并接入计划、探索、记录分析、补录、偏好和导出页面，修复切换小组后内容仍停留默认小组的问题。

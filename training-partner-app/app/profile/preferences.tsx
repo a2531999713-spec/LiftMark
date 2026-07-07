@@ -6,10 +6,12 @@ import { AuthGateSheets } from '@/components/auth';
 import { AppButton, AppCard, AppText, EmptyState, Screen, SecondaryPageHeader, SettingsRow, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
+import { resolveSelectedGroup } from '@/domain/group/selected-group';
 import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { MemberProfile } from '@/domain/member/member.types';
 import type { UserPreferences } from '@/domain/preferences/user-preferences.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, spacing } from '@/theme';
 
 function fridayStrategyLabel(strategy?: Group['fridayStrategy']) {
@@ -21,6 +23,8 @@ function fridayStrategyLabel(strategy?: Group['fridayStrategy']) {
 export default function ProfilePreferencesRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
@@ -32,8 +36,11 @@ export default function ProfilePreferencesRoute() {
     setError(null);
     try {
       await initializeLocalDatabase();
-      const nextGroup = await repositories.groupRepository.getDefaultGroup();
+      const { group: nextGroup } = await resolveSelectedGroup(repositories.groupRepository, selectedGroupId);
       if (!nextGroup) throw new Error('默认小组尚未初始化。');
+      if (nextGroup.id !== selectedGroupId) {
+        setSelectedGroupId(nextGroup.id);
+      }
       const members = await repositories.memberRepository.listMembers(nextGroup.id);
       const member = resolveDefaultTrainingMember(members);
       const [nextProfile, nextPreferences] = await Promise.all([
@@ -48,7 +55,7 @@ export default function ProfilePreferencesRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories]);
+  }, [repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

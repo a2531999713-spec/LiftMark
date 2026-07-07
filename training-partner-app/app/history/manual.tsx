@@ -1,46 +1,41 @@
-import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, BackHandler, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { ExercisePickerSheet, formatExerciseEquipment } from '@/components/exercises/ExercisePickerSheet';
-import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
-import { liftmarkImages } from '@/assets/images';
+import { ExercisePickerSheet } from '@/components/exercises/ExercisePickerSheet';
+import {
+  ManualWorkoutBottomBar,
+  ManualWorkoutExerciseList,
+  ManualWorkoutHero,
+  ManualWorkoutInfoCard,
+  ManualWorkoutModeSwitch,
+  ManualWorkoutParticipantsCard,
+  ManualWorkoutSaveCheckCard,
+} from '@/components/manual-workout/ManualWorkoutHomeCards';
+import {
+  summarizeManualWorkout,
+  toManualSessionV2Exercises,
+} from '@/components/manual-workout/manualWorkoutUtils';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { CreateCustomExerciseInput } from '@/data/repositories/exerciseRepository';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
+import { resolveSelectedGroup } from '@/domain/group/selected-group';
 import { resolveDefaultTrainingMemberId } from '@/domain/member/member-selection';
 import type { GroupMember } from '@/domain/member/member.types';
+import type { PlanTemplate } from '@/domain/plan/plan.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useManualWorkoutDraftStore } from '@/store/manualWorkoutDraftStore';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing, typography } from '@/theme';
 
 type NoticeState = {
-  sessionId?: string;
   message: string;
+  sessionId?: string;
   title: string;
 };
-
-type ManualSetDraft = {
-  id: string;
-  reps: string;
-  weight: string;
-};
-
-type ManualExerciseDraft = {
-  exerciseId: string;
-  id: string;
-  sets: ManualSetDraft[];
-};
-
-function createDraftId(prefix: string) {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function createSetDraft(): ManualSetDraft {
-  return { id: createDraftId('set'), reps: '8', weight: '' };
-}
 
 function getLocalDateString(date = new Date()): string {
   const year = date.getFullYear();
@@ -49,47 +44,21 @@ function getLocalDateString(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-function parseOptionalNumber(value: string): number | undefined {
-  const trimmed = value.trim().replace(',', '.');
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-}
-
-function parseOptionalInteger(value: string): number | undefined {
-  const parsed = parseOptionalNumber(value);
-  if (parsed === undefined || Number.isNaN(parsed)) {
-    return parsed;
-  }
-
-  return Number.isInteger(parsed) ? parsed : Number.NaN;
-}
-
-function assertOptionalRange(label: string, value: number | undefined, min: number, max?: number) {
-  if (value === undefined) {
-    return;
-  }
-
-  if (Number.isNaN(value) || value < min || (max !== undefined && value > max)) {
-    throw new Error(max === undefined ? `${label}不能小于 ${min}。` : `${label}需要在 ${min}-${max} 之间。`);
-  }
-}
-
 export default function ManualHistoryRoute() {
   const params = useLocalSearchParams<{ date?: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const draft = useManualWorkoutDraftStore();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [exerciseDrafts, setExerciseDrafts] = useState<ManualExerciseDraft[]>([]);
+  const [plans, setPlans] = useState<PlanTemplate[]>([]);
   const [isExercisePickerVisible, setExercisePickerVisible] = useState(false);
-  const [date, setDate] = useState(params.date ?? getLocalDateString());
-  const [title, setTitle] = useState('补录训练');
+  const [isPlanPickerVisible, setPlanPickerVisible] = useState(false);
+  const [isTempMemberVisible, setTempMemberVisible] = useState(false);
+  const [tempMemberName, setTempMemberName] = useState('');
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -104,21 +73,39 @@ export default function ManualHistoryRoute() {
 
       try {
         await initializeLocalDatabase();
-        const nextGroup = await repositories.groupRepository.getDefaultGroup();
+        const { group: nextGroup } = await resolveSelectedGroup(repositories.groupRepository, selectedGroupId);
         if (!nextGroup) {
           throw new Error('默认小组尚未初始化。');
         }
+        if (nextGroup.id !== selectedGroupId) {
+          setSelectedGroupId(nextGroup.id);
+        }
 
-        const [nextMembers, nextExercises] = await Promise.all([
+        const [nextMembers, nextExercises, nextPlans] = await Promise.all([
           repositories.memberRepository.listMembers(nextGroup.id),
           repositories.exerciseRepository.listExercises(),
+          repositories.planRepository.listUserPlans(),
         ]);
 
-        if (mounted) {
-          setGroup(nextGroup);
-          setMembers(nextMembers);
-          setExercises(nextExercises);
-          setSelectedMemberId(resolveDefaultTrainingMemberId(nextMembers) ?? '');
+        if (!mounted) return;
+
+        setGroup(nextGroup);
+        setMembers(nextMembers);
+        setExercises(nextExercises);
+        setPlans(nextPlans);
+
+        const currentDraft = useManualWorkoutDraftStore.getState();
+        if (!currentDraft.initialized) {
+          const defaultMemberId = resolveDefaultTrainingMemberId(nextMembers);
+          const participantIds = Array.from(new Set([defaultMemberId].filter(Boolean) as string[]));
+          currentDraft.initialize({
+            date: params.date ?? getLocalDateString(),
+            exerciseIds: [],
+            linkedPlanId: nextGroup.activePlanId || null,
+            participantMemberIds: participantIds,
+            title: '',
+            trainingMode: 'solo_local',
+          });
         }
       } catch (loadError) {
         if (mounted) {
@@ -136,165 +123,64 @@ export default function ManualHistoryRoute() {
     return () => {
       mounted = false;
     };
-  }, [repositories]);
+  }, [params.date, repositories, selectedGroupId, setSelectedGroupId]);
 
-  const exerciseById = useMemo(
+  const exerciseMap = useMemo(
     () => Object.fromEntries(exercises.map((exercise) => [exercise.id, exercise])),
     [exercises],
   ) as Record<string, Exercise | undefined>;
-  const selectedExerciseIds = exerciseDrafts.map((draft) => draft.exerciseId);
-  const selectedMember = members.find((member) => member.id === selectedMemberId) ?? null;
-  const preview = useMemo(() => {
-    const setCount = exerciseDrafts.reduce((sum, draft) => sum + draft.sets.length, 0);
-    const volume = exerciseDrafts.reduce(
-      (exerciseSum, draft) =>
-        exerciseSum +
-        draft.sets.reduce((setSum, set) => {
-          const weight = parseOptionalNumber(set.weight);
-          const reps = parseOptionalInteger(set.reps);
-          if (!Number.isFinite(weight) || !Number.isFinite(reps)) {
-            return setSum;
-          }
-          return setSum + (weight ?? 0) * (reps ?? 0);
-        }, 0),
-      0,
-    );
-
-    return {
-      exerciseCount: exerciseDrafts.length,
-      memberName: selectedMember?.displayName ?? '未选择',
-      setCount,
-      volume,
-    };
-  }, [exerciseDrafts, selectedMember?.displayName]);
-  const hasUnsavedChanges = Boolean(
-    title.trim() !== '补录训练' ||
-      date !== (params.date ?? getLocalDateString()) ||
-      exerciseDrafts.length > 0,
+  const summary = useMemo(
+    () => summarizeManualWorkout(draft.exercises, draft.participantMemberIds),
+    [draft.exercises, draft.participantMemberIds],
   );
-  const currentStep = exerciseDrafts.length > 0 ? 4 : selectedMemberId ? 2 : 1;
-
-  const confirmDiscard = useCallback((onDiscard: () => void) => {
-    if (!hasUnsavedChanges) {
-      onDiscard();
-      return;
-    }
-
-    Alert.alert('放弃本次补录？', '当前填写的动作和组数据尚未保存，离开后会丢失。', [
-      { text: '继续编辑', style: 'cancel' },
-      { text: '放弃补录', style: 'destructive', onPress: onDiscard },
-    ]);
-  }, [hasUnsavedChanges]);
-
-  useFocusEffect(
-    useCallback(() => {
-      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-        if (!hasUnsavedChanges) {
-          return false;
-        }
-        confirmDiscard(() => router.back());
-        return true;
-      });
-
-      return () => subscription.remove();
-    }, [confirmDiscard, hasUnsavedChanges]),
-  );
-
-  const addExerciseDraft = (exercise: Exercise) => {
-    setExerciseDrafts((current) => {
-      if (current.some((draft) => draft.exerciseId === exercise.id)) {
-        setNotice({
-          title: '动作已添加',
-          message: '该动作已经在补录列表中；需要更多训练数据时，直接在该动作下新增组。',
-        });
-        return current;
-      }
-
-      return [
-        ...current,
-        {
-          exerciseId: exercise.id,
-          id: createDraftId('exercise'),
-          sets: [createSetDraft()],
-        },
-      ];
-    });
-  };
-
-  const removeExerciseDraft = (draftId: string) => {
-    setExerciseDrafts((current) => current.filter((draft) => draft.id !== draftId));
-  };
-
-  const addSetDraft = (draftId: string, seed?: ManualSetDraft) => {
-    setExerciseDrafts((current) =>
-      current.map((draft) =>
-        draft.id === draftId
-          ? {
-              ...draft,
-              sets: [
-                ...draft.sets,
-                seed
-                  ? { id: createDraftId('set'), reps: seed.reps, weight: seed.weight }
-                  : createSetDraft(),
-              ],
-            }
-          : draft,
-      ),
-    );
-  };
-
-  const removeSetDraft = (draftId: string, setId: string) => {
-    setExerciseDrafts((current) =>
-      current.map((draft) =>
-        draft.id === draftId && draft.sets.length > 1
-          ? { ...draft, sets: draft.sets.filter((set) => set.id !== setId) }
-          : draft,
-      ),
-    );
-  };
-
-  const updateSetDraft = (draftId: string, setId: string, patch: Partial<ManualSetDraft>) => {
-    setExerciseDrafts((current) =>
-      current.map((draft) =>
-        draft.id === draftId
-          ? {
-              ...draft,
-              sets: draft.sets.map((set) => (set.id === setId ? { ...set, ...patch } : set)),
-            }
-          : draft,
-      ),
-    );
-  };
+  const selectedMemberCount = draft.participantMemberIds.length;
+  const dateLabel = draft.date === getLocalDateString() ? '今天' : draft.date;
+  const selectedPlan = plans.find((plan) => plan.id === draft.linkedPlanId) ?? null;
+  const planLabel = selectedPlan?.name ?? '不关联计划';
 
   const createCustomExercise = async (input: CreateCustomExerciseInput) => {
     if (!guardFeature('manual_history')) {
       throw new Error('请先登录后再创建补录动作。');
     }
-
     const exercise = await repositories.exerciseRepository.createCustomExercise(input);
     setExercises((current) => [exercise, ...current]);
-    addExerciseDraft(exercise);
+    draft.addExercise(exercise.id);
     return exercise;
   };
 
+  const createTempMember = async () => {
+    if (!group) return;
+    const displayName = tempMemberName.trim();
+    if (!displayName) {
+      setNotice({ title: '需要成员名称', message: '请输入临时成员名称后再添加。' });
+      return;
+    }
+
+    const member = await repositories.memberRepository.createMember({
+      displayName,
+      groupId: group.id,
+      memberType: 'local',
+      role: 'member',
+    });
+    setMembers((current) => [...current, member]);
+    draft.toggleParticipant(member.id);
+    setTempMemberName('');
+    setTempMemberVisible(false);
+  };
+
   const saveManualSession = async () => {
-    if (!guardFeature('manual_history')) {
+    if (!guardFeature('manual_history')) return;
+
+    if (!group) {
+      setNotice({ title: '小组未就绪', message: '请稍后再保存补录训练。' });
       return;
     }
-
-    if (!group || !selectedMemberId) {
-      setNotice({
-        title: '信息不完整',
-        message: '请选择成员后再保存。',
-      });
+    if (draft.participantMemberIds.length === 0) {
+      setNotice({ title: '请选择成员', message: '至少选择一位参与成员后再保存。' });
       return;
     }
-
-    if (exerciseDrafts.length === 0) {
-      setNotice({
-        title: '还没有动作',
-        message: '至少添加一个动作，并为动作填写组数据后再保存。',
-      });
+    if (draft.exercises.length === 0) {
+      setNotice({ title: '还没有动作', message: '至少添加一个动作，并录入组数据后再保存。' });
       return;
     }
 
@@ -302,50 +188,23 @@ export default function ManualHistoryRoute() {
     setError(null);
 
     try {
-      const parsedExercises = exerciseDrafts.map((draft, exerciseIndex) => {
-        const exercise = exerciseById[draft.exerciseId];
-        if (!exercise) {
-          throw new Error('存在无效动作，请重新选择。');
-        }
-
-        return {
-          exerciseId: draft.exerciseId,
-          priority: exerciseIndex === 0 ? 'A' as const : exerciseIndex <= 2 ? 'B' as const : 'C' as const,
-          sets: draft.sets.map((set, setIndex) => {
-            const parsedReps = parseOptionalInteger(set.reps);
-            const parsedWeight = parseOptionalNumber(set.weight);
-
-            assertOptionalRange(`${exercise.name} 第 ${setIndex + 1} 组次数`, parsedReps, 0);
-            assertOptionalRange(`${exercise.name} 第 ${setIndex + 1} 组重量`, parsedWeight, 0);
-
-            if (parsedReps === undefined && parsedWeight === undefined) {
-              throw new Error(`${exercise.name} 第 ${setIndex + 1} 组请填写重量或次数。`);
-            }
-
-            return {
-              completed: true,
-              reps: parsedReps,
-              weight: parsedWeight,
-            };
-          }),
-        };
-      });
-
-      const session = await repositories.workoutRepository.createManualSession({
-        completed: true,
-        date,
-        exercises: parsedExercises,
+      const session = await repositories.workoutRepository.createManualSessionV2({
+        date: draft.date,
+        exercises: toManualSessionV2Exercises(draft.exercises, draft.participantMemberIds),
         groupId: group.id,
-        memberId: selectedMemberId,
+        participantMemberIds: draft.participantMemberIds,
         planId: group.activePlanId,
-        restSeconds: null,
-        title,
+        sourcePlanId: draft.linkedPlanId ?? group.activePlanId,
+        title: draft.title,
+        trainingMode: draft.trainingMode,
+        completed: true,
       });
 
+      draft.reset();
       setNotice({
         sessionId: session.id,
-        title: '已保存',
-        message: '历史训练已保存，可在记录详情中查看本次组数、重量和次数。',
+        title: '已保存补录',
+        message: '这次训练已经写入历史记录，不会影响后续训练计划。',
       });
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存补录训练失败。');
@@ -355,166 +214,70 @@ export default function ManualHistoryRoute() {
   };
 
   return (
-    <Screen>
+    <Screen
+      contentStyle={styles.screenContent}
+      scroll={false}
+      subtitle="记录已经完成的个人 / 小组训练"
+      title="补录训练"
+    >
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="补录训练暂时不可用" description={error} /> : null}
 
       {!isLoading && !error ? (
-        <>
-          <VisualHeroCard
-            eyebrow="历史补录"
-            icon="create-outline"
-            imageSource={liftmarkImages.historyHero}
-            minHeight={154}
-            subtitle="补录只修改训练记录，不会改动原训练计划。"
-            title="保存过去完成的训练"
-          />
-
-          <ManualStepStrip currentStep={currentStep} />
-
-          <AppCard style={styles.card}>
-            <SectionHeader title="训练信息" />
-            <Field label="训练日期" onChangeText={setDate} placeholder="YYYY-MM-DD" value={date} />
-            <Field label="训练标题" onChangeText={setTitle} placeholder="例如 胸部训练" value={title} />
-          </AppCard>
-
-          <AppCard style={styles.card}>
-            <SectionHeader title="成员" />
-            <View style={styles.chipRow}>
-              {members.map((member) => (
-                <SelectableChip
-                  key={member.id}
-                  active={member.id === selectedMemberId}
-                  label={member.displayName}
-                  onPress={() => setSelectedMemberId(member.id)}
-                />
-              ))}
-            </View>
-          </AppCard>
-
-          <AppCard style={styles.card}>
-            <SectionHeader
-              actionLabel="添加动作"
-              onActionPress={() => {
-                if (guardFeature('manual_history')) setExercisePickerVisible(true);
-              }}
-              subtitle="每个动作可以记录独立的组、重量和次数。"
-              title="动作与组"
+        <View style={styles.layout}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <ManualWorkoutHero
+              date={draft.date}
+              participantCount={selectedMemberCount}
+              summary={summary}
+              title={draft.title}
             />
-            {exerciseDrafts.length > 0 ? (
-              <View style={styles.draftList}>
-                {exerciseDrafts.map((draft, draftIndex) => {
-                  const exercise = exerciseById[draft.exerciseId];
-                  if (!exercise) {
-                    return null;
-                  }
+            <ManualWorkoutModeSwitch onChange={draft.setTrainingMode} value={draft.trainingMode} />
+            <ManualWorkoutInfoCard
+              date={draft.date}
+              onDateChange={draft.setDate}
+              onPlanPress={() => setPlanPickerVisible(true)}
+              onTitleChange={draft.setTitle}
+              planLabel={planLabel}
+              title={draft.title}
+            />
+            <ManualWorkoutParticipantsCard
+              members={members}
+              onTempMemberPress={() => setTempMemberVisible(true)}
+              onToggle={draft.toggleParticipant}
+              selectedMemberIds={draft.participantMemberIds}
+            />
+            <ManualWorkoutExerciseList
+              exerciseMap={exerciseMap}
+              exercises={draft.exercises}
+              onAddExercise={() => setExercisePickerVisible(true)}
+              onOpenExercise={(draftId) => {
+                draft.setActiveExercise(draftId);
+                router.push({ pathname: '/history/manual-set-editor', params: { draftId } } as never);
+              }}
+              onRemoveExercise={draft.removeExercise}
+              participantCount={selectedMemberCount}
+            />
+            <ManualWorkoutSaveCheckCard
+              participantCount={selectedMemberCount}
+              summary={summary}
+              trainingMode={draft.trainingMode}
+            />
+          </ScrollView>
 
-                  return (
-                    <View key={draft.id} style={styles.draftExerciseCard}>
-                      <View style={styles.draftExerciseHeader}>
-                        <View style={styles.exerciseIcon}>
-                          <Ionicons color={colors.primary} name="barbell-outline" size={20} />
-                        </View>
-                        <View style={styles.exerciseText}>
-                          <AppText variant="bodySmall" weight="900">
-                            {exercise.name}
-                          </AppText>
-                          <AppText tone="muted" variant="caption">
-                            {exercise.targetMuscle} · {formatExerciseEquipment(exercise.equipment)}
-                          </AppText>
-                        </View>
-                        <Tag
-                          label={exercise.source === 'custom' ? '自定义' : `动作 ${draftIndex + 1}`}
-                          tone={exercise.source === 'custom' ? 'brand' : 'neutral'}
-                        />
-                        <Pressable
-                          accessibilityLabel={`移除${exercise.name}`}
-                          accessibilityRole="button"
-                          onPress={() => removeExerciseDraft(draft.id)}
-                          style={styles.iconButton}
-                        >
-                          <Ionicons color={colors.danger} name="trash-outline" size={18} />
-                        </Pressable>
-                      </View>
-
-                      <View style={styles.setList}>
-                        {draft.sets.map((set, setIndex) => (
-                          <View key={set.id} style={styles.setCard}>
-                            <View style={styles.setHeader}>
-                              <AppText tone="muted" variant="caption" weight="900">
-                                第 {setIndex + 1} 组
-                              </AppText>
-                              {draft.sets.length > 1 ? (
-                                <Pressable
-                                  accessibilityLabel={`删除第${setIndex + 1}组`}
-                                  accessibilityRole="button"
-                                  onPress={() => removeSetDraft(draft.id, set.id)}
-                                  style={styles.iconButtonSmall}
-                                >
-                                  <Ionicons color={colors.danger} name="remove-circle-outline" size={18} />
-                                </Pressable>
-                              ) : null}
-                            </View>
-                            <View style={styles.fieldGrid}>
-                              <Field
-                                label="重量 kg"
-                                onChangeText={(value) => updateSetDraft(draft.id, set.id, { weight: value })}
-                                placeholder="可留空"
-                                value={set.weight}
-                              />
-                              <Field
-                                label="次数"
-                                onChangeText={(value) => updateSetDraft(draft.id, set.id, { reps: value })}
-                                value={set.reps}
-                              />
-                            </View>
-                          </View>
-                        ))}
-                      </View>
-
-                      <View style={styles.inlineActions}>
-                        <AppButton icon="add-outline" onPress={() => addSetDraft(draft.id)} size="sm" variant="ghost">
-                          新增一组
-                        </AppButton>
-                        <AppButton
-                          icon="copy-outline"
-                          onPress={() => addSetDraft(draft.id, draft.sets.at(-1))}
-                          size="sm"
-                          variant="secondary"
-                        >
-                          复制上一组
-                        </AppButton>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            ) : (
-              <EmptyState
-                actionLabel="添加动作"
-                description="添加动作后再填写每组重量和次数。"
-                onActionPress={() => {
-                  if (guardFeature('manual_history')) setExercisePickerVisible(true);
-                }}
-                title="还没有添加动作"
-              />
-            )}
-          </AppCard>
-
-          <AppCard style={styles.previewCard} tone="brand">
-            <SectionHeader subtitle="保存前确认数据口径。" title="保存预览" />
-            <View style={styles.previewGrid}>
-              <PreviewMetric label="成员" value={preview.memberName} />
-              <PreviewMetric label="动作" value={`${preview.exerciseCount} 个`} />
-              <PreviewMetric label="组数" value={`${preview.setCount} 组`} />
-              <PreviewMetric label="训练量" value={`${Math.round(preview.volume).toLocaleString('zh-CN')} kg`} />
-            </View>
-          </AppCard>
-
-          <AppButton disabled={isSaving} icon="save-outline" onPress={() => void saveManualSession()} size="lg">
-            {isSaving ? '保存中...' : '保存记录'}
-          </AppButton>
-        </>
+          <ManualWorkoutBottomBar
+            dateLabel={dateLabel}
+            disabled={selectedMemberCount === 0 || draft.exercises.length === 0}
+            isSaving={isSaving}
+            onSave={() => void saveManualSession()}
+            participantCount={selectedMemberCount}
+            summary={summary}
+          />
+        </View>
       ) : null}
 
       <ExercisePickerSheet
@@ -522,13 +285,97 @@ export default function ManualHistoryRoute() {
         onClose={() => setExercisePickerVisible(false)}
         onCreateCustomExercise={createCustomExercise}
         onSelect={(exercise) => {
-          addExerciseDraft(exercise);
+          draft.addExercise(exercise.id);
           setExercisePickerVisible(false);
         }}
-        selectedExerciseIds={selectedExerciseIds}
-        title="选择补录动作"
+        selectedExerciseIds={draft.exercises.map((exercise) => exercise.exerciseId)}
+        title="添加补录动作"
         visible={isExercisePickerVisible}
       />
+
+      <AppModalSheet
+        onClose={() => setTempMemberVisible(false)}
+        position="center"
+        subtitle="会创建一个小组成员，并加入本次补录。"
+        title="临时成员"
+        visible={isTempMemberVisible}
+      >
+        <AppCard style={styles.tempInputCard}>
+          <AppText tone="muted" variant="caption">
+            成员名称
+          </AppText>
+          <TextInput
+            autoFocus
+            onChangeText={setTempMemberName}
+            placeholder="例如 小王"
+            placeholderTextColor={colors.textSubtle}
+            style={styles.tempInput}
+            value={tempMemberName}
+          />
+        </AppCard>
+        <View style={styles.modalButtons}>
+          <AppButton onPress={() => setTempMemberVisible(false)} variant="secondary">
+            取消
+          </AppButton>
+          <AppButton onPress={() => void createTempMember()}>添加成员</AppButton>
+        </View>
+      </AppModalSheet>
+
+      <AppModalSheet
+        onClose={() => setPlanPickerVisible(false)}
+        position="center"
+        subtitle="只用于标记历史记录来源，不会改动当前训练计划。"
+        title="关联计划"
+        visible={isPlanPickerVisible}
+      >
+        <View style={styles.planPickerList}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              draft.setLinkedPlanId(null);
+              setPlanPickerVisible(false);
+            }}
+            style={({ pressed }) => [
+              styles.planPickerRow,
+              draft.linkedPlanId === null && styles.planPickerRowActive,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={styles.planPickerText}>
+              <AppText variant="bodySmall" weight="900">
+                不关联计划
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                作为独立补录保存
+              </AppText>
+            </View>
+          </Pressable>
+          {plans.map((plan) => (
+            <Pressable
+              accessibilityRole="button"
+              key={plan.id}
+              onPress={() => {
+                draft.setLinkedPlanId(plan.id);
+                setPlanPickerVisible(false);
+              }}
+              style={({ pressed }) => [
+                styles.planPickerRow,
+                draft.linkedPlanId === plan.id && styles.planPickerRowActive,
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={styles.planPickerText}>
+                <AppText numberOfLines={1} variant="bodySmall" weight="900">
+                  {plan.name}
+                </AppText>
+                <AppText tone="muted" variant="caption">
+                  {plan.durationWeeks} 周 · 每周 {plan.frequencyPerWeek} 练
+                </AppText>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      </AppModalSheet>
 
       <AppModalSheet
         onClose={() => setNotice(null)}
@@ -560,236 +407,54 @@ export default function ManualHistoryRoute() {
   );
 }
 
-function ManualStepStrip({ currentStep }: { currentStep: number }) {
-  const steps = [
-    { label: '对象', value: 1 },
-    { label: '动作', value: 2 },
-    { label: '组数据', value: 3 },
-    { label: '预览', value: 4 },
-  ];
-
-  return (
-    <View style={styles.stepStrip}>
-      {steps.map((step) => {
-        const active = currentStep >= step.value;
-        return (
-          <View key={step.value} style={[styles.stepItem, active && styles.stepItemActive]}>
-            <AppText tone={active ? 'inverse' : 'muted'} variant="caption" weight="900">
-              {step.value}
-            </AppText>
-            <AppText tone={active ? 'inverse' : 'muted'} variant="caption" weight="900">
-              {step.label}
-            </AppText>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-function PreviewMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.previewMetric}>
-      <AppText variant="bodySmall" weight="900">
-        {value}
-      </AppText>
-      <AppText tone="muted" variant="caption">
-        {label}
-      </AppText>
-    </View>
-  );
-}
-
-function Field({
-  label,
-  onChangeText,
-  placeholder,
-  value,
-}: {
-  label: string;
-  onChangeText: (value: string) => void;
-  placeholder?: string;
-  value: string;
-}) {
-  const isTextField = label.includes('日期') || label.includes('标题');
-
-  return (
-    <View style={styles.field}>
-      <AppText tone="muted" variant="caption">
-        {label}
-      </AppText>
-      <TextInput
-        keyboardType={isTextField ? 'default' : 'decimal-pad'}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textSubtle}
-        style={styles.input}
-        value={value}
-      />
-    </View>
-  );
-}
-
-function SelectableChip({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
-      <AppText tone={active ? 'inverse' : 'default'} variant="bodySmall" weight="900">
-        {label}
-      </AppText>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  backPill: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  card: {
-    gap: spacing.md,
-  },
-  chip: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  chipActive: {
-    backgroundColor: colors.primary,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  draftExerciseCard: {
-    backgroundColor: colors.backgroundElevated,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    gap: spacing.md,
-    padding: spacing.md,
-  },
-  draftExerciseHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  draftList: {
-    gap: spacing.md,
-  },
-  exerciseIcon: {
-    alignItems: 'center',
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.md,
-    height: 42,
-    justifyContent: 'center',
-    width: 42,
-  },
-  exerciseText: {
+  layout: {
     flex: 1,
-    gap: 2,
-  },
-  iconButton: {
-    alignItems: 'center',
-    backgroundColor: colors.dangerSoft,
-    borderRadius: radius.md,
-    height: 38,
-    justifyContent: 'center',
-    width: 38,
-  },
-  iconButtonSmall: {
-    alignItems: 'center',
-    backgroundColor: colors.dangerSoft,
-    borderRadius: radius.sm,
-    height: 32,
-    justifyContent: 'center',
-    width: 32,
-  },
-  inlineActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  field: {
-    backgroundColor: colors.backgroundElevated,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    gap: spacing.xs,
-    minWidth: '47%',
-    padding: spacing.md,
-  },
-  fieldGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  input: {
-    color: colors.text,
-    fontSize: typography.sizes.bodySmall,
-    fontWeight: '800',
-    minHeight: 28,
+    gap: spacing.md,
   },
   modalButtons: {
     gap: spacing.sm,
   },
-  previewCard: {
-    gap: spacing.md,
-  },
-  previewGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  planPickerList: {
     gap: spacing.sm,
   },
-  previewMetric: {
-    backgroundColor: colors.surface,
+  planPickerRow: {
+    backgroundColor: colors.backgroundElevated,
     borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
-    flexGrow: 1,
-    gap: spacing.xs,
-    minWidth: '45%',
+    minHeight: 58,
     padding: spacing.md,
   },
-  setCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.md,
+  planPickerRowActive: {
+    backgroundColor: colors.brandSoft,
+    borderColor: colors.brand,
   },
-  setHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  planPickerText: {
+    gap: 2,
+    minWidth: 0,
   },
-  setList: {
-    gap: spacing.sm,
+  pressed: {
+    opacity: 0.84,
   },
-  stepItem: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
+  screenContent: {
     flex: 1,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    justifyContent: 'center',
+    paddingBottom: spacing.md,
+  },
+  scrollContent: {
+    gap: spacing.lg,
+    paddingBottom: spacing.lg,
+  },
+  tempInput: {
+    color: colors.text,
+    fontSize: typography.sizes.bodySmall,
+    fontWeight: '800',
     minHeight: 34,
+    padding: 0,
   },
-  stepItemActive: {
-    backgroundColor: colors.primary,
-  },
-  stepStrip: {
-    flexDirection: 'row',
+  tempInputCard: {
     gap: spacing.xs,
+    padding: spacing.md,
+    borderRadius: radius.md,
   },
 });

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Modal,
@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sync as runSync } from '@/sync/syncOrchestrator';
-import { countPendingSyncItems } from '@/sync/syncQueue';
+import { countPendingSyncItems, enqueueSyncCandidate } from '@/sync/syncQueue';
 
 import { Avatar } from '@/components/avatar';
 import { AppModalSheet, AppText, Tag } from '@/components/ui';
@@ -28,7 +28,6 @@ import type {
   WeightUnit,
 } from '@/domain/preferences/user-preferences.types';
 import type { AccountProfileCache, AvatarPickSource } from '@/services/avatar';
-import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { colors, radius, shadows, spacing, typography } from '@/theme';
 
 import { AccountPanelHeader } from './AccountPanelHeader';
@@ -474,18 +473,20 @@ function SyncPanel({ onBack, syncLabel }: { onBack: () => void; syncLabel: strin
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
-  const refreshPendingCount = async () => {
+  const refreshPendingCount = useCallback(async () => {
     try {
       const count = await countPendingSyncItems();
       setPendingCount(count);
     } catch {
       setPendingCount(null);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    void refreshPendingCount();
-  }, []);
+    queueMicrotask(() => {
+      void refreshPendingCount();
+    });
+  }, [refreshPendingCount]);
 
   const formatPendingLabel = () => {
     if (pendingCount === null) return '读取中';

@@ -22,9 +22,12 @@ export function createPlanExerciseDraft(exerciseId: string, index: number): Plan
   return {
     exerciseId,
     id: createPlanDraftId('plan_exercise'),
+    intensityType: 'manual',
     orderIndex: index,
     priority: index === 0 ? 'A' : index <= 2 ? 'B' : 'C',
     reps: 8,
+    referenceLift: 'none',
+    restSeconds: 90,
     sets: 3,
   };
 }
@@ -38,10 +41,18 @@ export function buildPlanEditDraft(
     days: days.map((day, index) => ({
       exercises: (exerciseLists[index] ?? []).map((exercise, exerciseIndex) => ({
         exerciseId: exercise.exerciseId,
+        fixedWeight: exercise.fixedWeight ?? null,
         id: exercise.id,
+        intensityType: exercise.intensityType,
+        notes: exercise.notes,
         orderIndex: exerciseIndex,
+        percent1RM: exercise.percent1RM ?? null,
         priority: exercise.priority,
-        reps: exercise.reps ?? exercise.repMin ?? 8,
+        referenceLift: exercise.referenceLift,
+        repMax: exercise.repMax ?? null,
+        repMin: exercise.repMin ?? null,
+        reps: exercise.reps ?? null,
+        restSeconds: exercise.restSeconds ?? 90,
         sets: exercise.sets ?? 3,
       })),
       focus: day.focus,
@@ -62,8 +73,16 @@ export function toUpdateUserPlanInput(planId: string, draft: PlanEditDraft): Upd
     days: draft.days.map((day) => ({
       exercises: day.exercises.map((exercise, index) => ({
         exerciseId: exercise.exerciseId,
+        fixedWeight: exercise.fixedWeight ?? null,
+        intensityType: exercise.intensityType,
+        notes: exercise.notes?.trim() || null,
+        percent1RM: exercise.percent1RM ?? null,
         priority: exercise.priority ?? (index === 0 ? 'A' : index <= 2 ? 'B' : 'C'),
-        reps: Math.max(1, Math.round(exercise.reps)),
+        repMax: exercise.repMax ?? null,
+        repMin: exercise.repMin ?? null,
+        reps: exercise.reps ?? null,
+        referenceLift: exercise.referenceLift,
+        restSeconds: exercise.restSeconds ?? null,
         sets: Math.max(1, Math.round(exercise.sets)),
       })),
       focus: day.focus,

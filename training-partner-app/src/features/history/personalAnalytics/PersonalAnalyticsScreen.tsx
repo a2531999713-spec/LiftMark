@@ -29,6 +29,7 @@ import {
   type HistoryDataset,
   type SessionSummary,
 } from '@/features/history/shared/historyViewModel';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 
 type FastRange = '4w' | '8w' | 'custom';
 type ExerciseChartTarget = 'oneRm' | 'volume';
@@ -46,6 +47,7 @@ function createWeekRange(weeks: 4 | 8): DateRangeValue {
 
 export function PersonalAnalyticsScreen() {
   const { range, setRange } = useDateRange('30d');
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const [fastRange, setFastRange] = useState<FastRange>('4w');
   const [dataset, setDataset] = useState<HistoryDataset | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,13 +65,13 @@ export function PersonalAnalyticsScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      setDataset(await loadHistoryDataset(effectiveRange));
+      setDataset(await loadHistoryDataset(effectiveRange, selectedGroupId));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '训练分析加载失败。');
     } finally {
       setIsLoading(false);
     }
-  }, [effectiveRange]);
+  }, [effectiveRange, selectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

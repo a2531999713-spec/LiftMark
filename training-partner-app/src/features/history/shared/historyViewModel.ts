@@ -1,6 +1,7 @@
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Equipment, Exercise, ExerciseCategory } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
+import { resolveSelectedGroup } from '@/domain/group/selected-group';
 import {
   estimateOneRM,
   getCoreLiftKey,
@@ -358,10 +359,13 @@ function previousRange(range: DateRangeValue): DateRangeValue {
   return { fromDate, preset: 'custom', title: '上期', toDate };
 }
 
-export async function loadHistoryDataset(range: DateRangeValue): Promise<HistoryDataset> {
+export async function loadHistoryDataset(
+  range: DateRangeValue,
+  selectedGroupId?: string | null,
+): Promise<HistoryDataset> {
   const repositories = createLocalRepositories();
   await initializeLocalDatabase();
-  const group = await repositories.groupRepository.getDefaultGroup();
+  const { group } = await resolveSelectedGroup(repositories.groupRepository, selectedGroupId);
   if (!group) {
     return createEmptyDataset(range);
   }

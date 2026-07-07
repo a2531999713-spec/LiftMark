@@ -22,10 +22,12 @@ import {
   summarizeSessions,
   type HistoryDataset,
 } from '@/features/history/shared/historyViewModel';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 
 export function GroupMemberAnalyticsScreen() {
   const { memberId } = useLocalSearchParams<{ memberId: string }>();
   const { range, setRange } = useDateRange('30d');
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const [dataset, setDataset] = useState<HistoryDataset | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [memberPickerVisible, setMemberPickerVisible] = useState(false);
@@ -36,13 +38,13 @@ export function GroupMemberAnalyticsScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      setDataset(await loadHistoryDataset(range));
+      setDataset(await loadHistoryDataset(range, selectedGroupId));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '成员分析加载失败。');
     } finally {
       setIsLoading(false);
     }
-  }, [range]);
+  }, [range, selectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

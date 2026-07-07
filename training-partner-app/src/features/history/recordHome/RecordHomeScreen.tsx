@@ -28,11 +28,13 @@ import {
   type HistoryDataset,
   type SessionSummary,
 } from '@/features/history/shared/historyViewModel';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 
 type RecordScope = 'personal' | 'group';
 
 export function RecordHomeScreen() {
   const { range, setRange } = useDateRange('7d');
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const [scope, setScope] = useState<RecordScope>('personal');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dataset, setDataset] = useState<HistoryDataset | null>(null);
@@ -43,13 +45,13 @@ export function RecordHomeScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      setDataset(await loadHistoryDataset(range));
+      setDataset(await loadHistoryDataset(range, selectedGroupId));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '记录加载失败。');
     } finally {
       setIsLoading(false);
     }
-  }, [range]);
+  }, [range, selectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

@@ -10,6 +10,7 @@ import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
+import { resolveSelectedGroup } from '@/domain/group/selected-group';
 import { DEFAULT_CYCLE_WEEK_COUNT } from '@/domain/plan/defaultCycle';
 import type { PhaseType, PlanDay, PlanTemplate } from '@/domain/plan/plan.types';
 import {
@@ -22,6 +23,7 @@ import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import { pickImportedPlanDocument } from '@/services/planDocumentService';
 import { createCurrentPlanFile, PlanFileError, serializePlanFile } from '@/services/planFileService';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
 type PlanNotice = {
@@ -171,6 +173,8 @@ export default function PlanRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const systemSchemes = useMemo(() => listSystemTrainingSchemes(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
   const [activePlan, setActivePlan] = useState<PlanTemplate | null>(null);
   const [userPlans, setUserPlans] = useState<PlanTemplate[]>([]);
@@ -198,8 +202,10 @@ export default function PlanRoute() {
 
     try {
       await initializeLocalDatabase();
-      const nextGroup = await repositories.groupRepository.getDefaultGroup();
-      const nextUserPlans = await repositories.planRepository.listUserPlans();
+      const [{ group: nextGroup }, nextUserPlans] = await Promise.all([
+        resolveSelectedGroup(repositories.groupRepository, selectedGroupId),
+        repositories.planRepository.listUserPlans(),
+      ]);
       if (!nextGroup) {
         setGroup(null);
         setActivePlan(null);
@@ -207,6 +213,9 @@ export default function PlanRoute() {
         setDaySummaries([]);
         setStats(emptyStats);
         return;
+      }
+      if (nextGroup.id !== selectedGroupId) {
+        setSelectedGroupId(nextGroup.id);
       }
 
       const nextActivePlan = await repositories.planRepository.getPlanById(nextGroup.activePlanId);
@@ -271,7 +280,7 @@ export default function PlanRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories]);
+  }, [repositories, selectedGroupId, setSelectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

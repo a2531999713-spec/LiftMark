@@ -90,6 +90,7 @@ export default function RootLayout() {
       <Stack.Screen name="member/new" options={{ headerShown: false }} />
       <Stack.Screen name="member/[memberId]" options={{ headerShown: false }} />
       <Stack.Screen name="history/manual" options={{ headerShown: false }} />
+      <Stack.Screen name="history/manual-set-editor" options={{ headerShown: false }} />
       <Stack.Screen name="history/analytics" options={{ headerShown: false }} />
       <Stack.Screen name="history/exercise/[exerciseId]" options={{ headerShown: false }} />
       <Stack.Screen name="history/group" options={{ headerShown: false }} />

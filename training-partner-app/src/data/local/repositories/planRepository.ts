@@ -36,6 +36,32 @@ import {
 const LEGACY_FOUR_DAY_DEFAULT_USER_PLAN_ID = 'plan_user_four_day_strength_hypertrophy_default';
 const LEGACY_FOUR_DAY_SCHEME_ID = 'scheme_four_day_strength_hypertrophy';
 
+type UserPlanExerciseInput = CreateUserPlanInput['days'][number]['exercises'][number];
+
+function normalizePlanExerciseInput(exercise: UserPlanExerciseInput, index: number) {
+  const hasRepRange =
+    (exercise.repMin !== null && exercise.repMin !== undefined) ||
+    (exercise.repMax !== null && exercise.repMax !== undefined);
+  const repMin = hasRepRange ? Math.max(1, Math.round(exercise.repMin ?? exercise.reps ?? 8)) : null;
+  const repMax = hasRepRange ? Math.max(repMin ?? 1, Math.round(exercise.repMax ?? exercise.repMin ?? exercise.reps ?? 12)) : null;
+  const reps = hasRepRange ? null : Math.max(1, Math.round(exercise.reps ?? 8));
+  const intensityType = exercise.intensityType ?? (exercise.percent1RM ? 'percent_1rm' : exercise.fixedWeight ? 'fixed' : 'manual');
+
+  return {
+    fixedWeight: intensityType === 'fixed' ? exercise.fixedWeight ?? null : null,
+    intensityType,
+    notes: exercise.notes ?? null,
+    percent1RM: intensityType === 'percent_1rm' ? exercise.percent1RM ?? null : null,
+    priority: exercise.priority ?? (index === 0 ? 'A' : index <= 2 ? 'B' : 'C'),
+    referenceLift: exercise.referenceLift ?? 'none',
+    repMax,
+    repMin,
+    reps,
+    restSeconds: exercise.restSeconds ?? 90,
+    sets: Math.max(1, Math.round(exercise.sets ?? 3)),
+  };
+}
+
 export class SQLitePlanRepository implements PlanRepository {
   constructor(private readonly getDb: DatabaseProvider) {}
 
@@ -185,6 +211,7 @@ export class SQLitePlanRepository implements PlanRepository {
         );
 
         for (const [exerciseIndex, exercise] of day.exercises.entries()) {
+          const normalizedExercise = normalizePlanExerciseInput(exercise, exerciseIndex);
           await txn.runAsync(
             `INSERT INTO plan_exercises (
               id, owner_user_id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
@@ -195,21 +222,21 @@ export class SQLitePlanRepository implements PlanRepository {
             ownerUserId,
             planDayId,
             exercise.exerciseId,
-            exercise.priority ?? 'A',
+            normalizedExercise.priority,
             exerciseIndex + 1,
-            exercise.sets,
-            exercise.reps,
+            normalizedExercise.sets,
+            normalizedExercise.reps,
+            normalizedExercise.repMin,
+            normalizedExercise.repMax,
+            normalizedExercise.intensityType,
+            normalizedExercise.percent1RM,
             null,
             null,
-            'manual',
+            normalizedExercise.fixedWeight,
+            normalizedExercise.referenceLift,
+            normalizedExercise.restSeconds,
             null,
-            null,
-            null,
-            null,
-            'none',
-            90,
-            null,
-            null,
+            normalizedExercise.notes,
           );
         }
       }
@@ -296,6 +323,7 @@ export class SQLitePlanRepository implements PlanRepository {
         );
 
         for (const [exerciseIndex, exercise] of day.exercises.entries()) {
+          const normalizedExercise = normalizePlanExerciseInput(exercise, exerciseIndex);
           await txn.runAsync(
             `INSERT INTO plan_exercises (
               id, owner_user_id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
@@ -306,21 +334,21 @@ export class SQLitePlanRepository implements PlanRepository {
             ownerUserId,
             planDayId,
             exercise.exerciseId,
-            exercise.priority ?? 'A',
+            normalizedExercise.priority,
             exerciseIndex + 1,
-            exercise.sets,
-            exercise.reps,
+            normalizedExercise.sets,
+            normalizedExercise.reps,
+            normalizedExercise.repMin,
+            normalizedExercise.repMax,
+            normalizedExercise.intensityType,
+            normalizedExercise.percent1RM,
             null,
             null,
-            'manual',
+            normalizedExercise.fixedWeight,
+            normalizedExercise.referenceLift,
+            normalizedExercise.restSeconds,
             null,
-            null,
-            null,
-            null,
-            'none',
-            90,
-            null,
-            null,
+            normalizedExercise.notes,
           );
         }
       }

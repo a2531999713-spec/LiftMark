@@ -22,9 +22,11 @@ import {
   type AttendanceView,
   type HistoryDataset,
 } from '@/features/history/shared/historyViewModel';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 
 export function GroupAttendanceScreen() {
   const { range, setRange } = useDateRange('month');
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const [dataset, setDataset] = useState<HistoryDataset | null>(null);
   const [view, setView] = useState<AttendanceView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,7 +36,7 @@ export function GroupAttendanceScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      const nextDataset = await loadHistoryDataset(range);
+      const nextDataset = await loadHistoryDataset(range, selectedGroupId);
       setDataset(nextDataset);
       setView(buildAttendanceView(nextDataset));
     } catch (loadError) {
@@ -42,7 +44,7 @@ export function GroupAttendanceScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [range]);
+  }, [range, selectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {

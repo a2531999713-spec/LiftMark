@@ -89,6 +89,7 @@ describe('SQLitePlanRepository.updateUserPlan', () => {
       runAsync: jest.fn(async () => undefined),
     };
     const db = {
+      getAllAsync: jest.fn(async () => []),
       withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
         await callback(transaction);
       }),
