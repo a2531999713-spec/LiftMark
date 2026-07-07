@@ -317,6 +317,15 @@ export function VerticalBars({
   bars: { label: string; value: number }[];
   formatValue?: (value: number) => string;
 }) {
+  if (bars.length === 0) {
+    return (
+      <View style={styles.verticalBarsEmpty}>
+        <AppText tone="muted" variant="caption">
+          暂无训练数据
+        </AppText>
+      </View>
+    );
+  }
   const max = Math.max(1, ...bars.map((bar) => bar.value));
   return (
     <View style={styles.verticalBars}>
@@ -533,5 +542,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     minHeight: 160,
+  },
+  verticalBarsEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 120,
   },
 });

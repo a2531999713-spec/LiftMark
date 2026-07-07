@@ -48,9 +48,10 @@ export function buildYAxisScale(values: number[], options: YAxisScaleOptions = {
   const finiteValues = sanitizeFiniteValues(values);
   const rawMin = finiteValues.length > 0 ? Math.min(...finiteValues) : 0;
   const rawMax = finiteValues.length > 0 ? Math.max(...finiteValues) : 0;
-  // 即使 includeZero=false，当原始数据全部 >=0 时也不允许出现负数刻度
+  // 尊重 includeZero 设置：为 true 时 Y 轴从 0 开始；为 false 时不强制从 0 开始，
+  // 但非负数据仍不允许出现负数刻度，避免体重等数据折线被压平看不出变化。
   const nonNegativeData = rawMin >= 0;
-  const effectiveIncludeZero = includeZero || nonNegativeData;
+  const effectiveIncludeZero = includeZero;
   const baselineMin = effectiveIncludeZero ? 0 : rawMin;
   const rawRange = rawMax - baselineMin;
   const safeRange = Math.max(rawRange, minRange, Math.abs(rawMax) * paddingRatio, 1);
@@ -58,7 +59,8 @@ export function buildYAxisScale(values: number[], options: YAxisScaleOptions = {
   const paddedMax = rawMax + safeRange * paddingRatio;
   const resolvedTickCount = Math.max(2, tickCount);
   const step = niceStep((paddedMax - paddedMin) / (resolvedTickCount - 1));
-  const minValue = effectiveIncludeZero ? 0 : Math.floor(paddedMin / step) * step;
+  const rawFloorMin = Math.floor(paddedMin / step) * step;
+  const minValue = effectiveIncludeZero ? 0 : (nonNegativeData ? Math.max(0, rawFloorMin) : rawFloorMin);
   const maxValue = Math.max(minValue + step, Math.ceil(paddedMax / step) * step);
   const range = Math.max(maxValue - minValue, step, 1);
   const ticks = Array.from({ length: resolvedTickCount }, (_, index) => maxValue - (range * index) / (resolvedTickCount - 1));

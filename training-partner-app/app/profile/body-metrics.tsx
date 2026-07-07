@@ -646,7 +646,6 @@ function TrendBlock({
   label: string;
   unit: string;
 }) {
-  const max = Math.max(1, ...data.map((point) => point.value));
   return (
     <View style={styles.trendBlock}>
       <View style={styles.cardHeader}>
@@ -662,7 +661,6 @@ function TrendBlock({
         formatValue={(value) => `${Math.round(value * 10) / 10}${unit}`}
         includeZero={false}
         labels={data.map((point) => point.label)}
-        minChartHeight={max}
         valueLabelStrategy="keyPoints"
         unitLabel={unit}
       />

@@ -11,13 +11,14 @@ import { getPresetTitle } from '@/features/history/shared/dateRange';
 import {
   ChartCard,
   IconButton,
+  InsightList,
   MetricGrid,
   PageHeader,
   SectionCard,
   SegmentControl,
 } from '@/features/history/shared/HistoryUi';
 import {
-  buildSessionCountTrend,
+  buildPersonalInsights,
   buildVolumeTrend,
   formatKg,
   formatPercent,
@@ -63,7 +64,9 @@ export function RecordHomeScreen() {
   const allScopeSessions = scope === 'personal' ? dataset?.personalSessions ?? [] : dataset?.groupSessions ?? [];
   const metrics = getSummaryMetrics(allScopeSessions);
   const trend = buildVolumeTrend(allScopeSessions, range);
-  const sessionTrend = buildSessionCountTrend(allScopeSessions, range);
+  const insights = scope === 'personal'
+    ? dataset ? buildPersonalInsights(dataset) : []
+    : dataset?.groupAnalysis.insights ?? [];
   const countsByDate = getCountsByDate(allScopeSessions);
   const analyticsPath = scope === 'personal' ? '/history/analytics' : '/history/group';
 
@@ -121,33 +124,32 @@ export function RecordHomeScreen() {
           />
 
           <ChartCard
-            data={sessionTrend.values}
-            formatValue={(value) => `${Math.round(value)}`}
-            labels={sessionTrend.labels}
-            subtitle={`${range.fromDate} - ${range.toDate}`}
-            title="训练趋势"
-            unit="次"
-          />
-
-          <ChartCard
-            action={
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push(analyticsPath as never)}
-                style={({ pressed }) => [styles.inlineLink, pressed && styles.pressed]}
-              >
-                <AppText tone="brand" variant="caption" weight="900">
-                  查看训练分析
-                </AppText>
-                <Ionicons color={colors.primary} name="chevron-forward" size={16} />
-              </Pressable>
-            }
             data={trend.values}
             formatValue={(value) => `${Math.round(value / 1000)}k`}
             labels={trend.labels}
             subtitle={`${range.fromDate} - ${range.toDate}`}
             title="训练量趋势"
           />
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push(analyticsPath as never)}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <SectionCard
+              action={
+                <View style={styles.inlineLink}>
+                  <AppText tone="brand" variant="caption" weight="900">
+                    查看训练分析
+                  </AppText>
+                  <Ionicons color={colors.textMuted} name="chevron-forward" size={16} />
+                </View>
+              }
+              title={scope === 'group' ? '小组洞察' : '训练趋势'}
+            >
+              <InsightList insights={insights.slice(0, 3)} />
+            </SectionCard>
+          </Pressable>
 
           <SectionCard subtitle="点击日期筛选当天训练。" title="近期训练日期">
             <RecentDateStrip

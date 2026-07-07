@@ -588,7 +588,6 @@ export default function PlanRoute() {
               data={stats.lastFourWeeks}
               emptyMessage="最近 4 周还没有当前计划训练记录"
               labels={stats.lastFourWeekLabels}
-              minChartHeight={Math.max(1, ...stats.lastFourWeeks)}
               valueLabelStrategy="keyPoints"
             />
           </AppCard>
@@ -855,6 +854,22 @@ export default function PlanRoute() {
               );
             })}
           </View>
+
+          {availableSchemes.length > 0 ? (
+            <View style={styles.systemSchemeSection}>
+              <SectionHeader subtitle="系统方案是模板，点击使用后会复制为我的计划。" title="系统内置方案" />
+              <View style={styles.list}>
+                {availableSchemes.map((scheme) => (
+                  <SchemeCard
+                    key={scheme.id}
+                    onPreview={() => setPreviewScheme(scheme)}
+                    onUse={() => openUseScheme(scheme)}
+                    scheme={scheme}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
         </ScrollView>
       </AppModalSheet>
 
@@ -1168,7 +1183,7 @@ const styles = StyleSheet.create({
     maxHeight: 560,
   },
   manageContent: {
-    maxHeight: 520,
+    maxHeight: 560,
   },
   manageActionsCard: {
     gap: spacing.xs,
@@ -1233,6 +1248,10 @@ const styles = StyleSheet.create({
   },
   schemeCard: {
     gap: spacing.md,
+  },
+  systemSchemeSection: {
+    gap: spacing.md,
+    marginTop: spacing.lg,
   },
   schemeIcon: {
     alignItems: 'center',

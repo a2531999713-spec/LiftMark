@@ -7,6 +7,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { AppCard, AppText, Avatar, EmptyState, Screen, Tag } from '@/components/ui';
 import { colors, radius, spacing } from '@/theme';
 import { DateRangeSelector, useDateRange } from '@/features/history/shared/DateRangeSelector';
+import { buildTrendBuckets, getDateSpanDays } from '@/features/history/shared/dateRange';
 import {
   AvatarName,
   BackHeader,
@@ -63,28 +64,61 @@ export function GroupAnalyticsScreen() {
   const maxMemberVolume = Math.max(1, ...members.map((member) => member.volume));
   const maxMemberSessions = Math.max(1, ...members.map((member) => member.sessionCount));
 
-  const trendBars = (dataset?.groupAnalysis.trend ?? []).map((point) => ({
-    label: point.label,
-    value:
-      trendMetric === 'volume'
-        ? point.volume
-        : trendMetric === 'completion'
-          ? Math.round(point.completionRate * 100)
-          : point.sessionCount,
-  }));
+  // 小组趋势柱状图：范围超过 14 天时按周聚合，避免 30 天/本月出现 30 根柱子拥挤不堪。
+  // 聚合后过滤掉全 0 的桶，无训练的日期不再占位。
+  const trendBars = useMemo(() => {
+    const rawTrend = dataset?.groupAnalysis.trend ?? [];
+    if (rawTrend.length === 0) return [];
+
+    const span = getDateSpanDays(range.fromDate, range.toDate);
+    if (span <= 14) {
+      return rawTrend
+        .map((point) => ({
+          label: point.label,
+          value:
+            trendMetric === 'volume'
+              ? point.volume
+              : trendMetric === 'completion'
+                ? Math.round(point.completionRate * 100)
+                : point.sessionCount,
+        }))
+        .filter((bar) => bar.value > 0);
+    }
+
+    const buckets = buildTrendBuckets(range.fromDate, range.toDate);
+    return buckets
+      .map((bucket) => {
+        const pointsInBucket = rawTrend.filter((point) => point.date >= bucket.startDate && point.date <= bucket.endDate);
+        if (pointsInBucket.length === 0) return null;
+        const volume = pointsInBucket.reduce((sum, point) => sum + point.volume, 0);
+        const sessionCount = pointsInBucket.reduce((sum, point) => sum + point.sessionCount, 0);
+        const completedSets = pointsInBucket.reduce((sum, point) => sum + point.completedSets, 0);
+        const totalSets = pointsInBucket.reduce((sum, point) => sum + point.totalSets, 0);
+        const completionRate = totalSets > 0 ? completedSets / totalSets : 0;
+        const value =
+          trendMetric === 'volume'
+            ? volume
+            : trendMetric === 'completion'
+              ? Math.round(completionRate * 100)
+              : sessionCount;
+        if (value === 0) return null;
+        return { label: bucket.label, value };
+      })
+      .filter((bar): bar is { label: string; value: number } => bar !== null);
+  }, [dataset, range.fromDate, range.toDate, trendMetric]);
 
   return (
     <Screen contentStyle={styles.screen}>
       <BackHeader title="小组分析" />
-      <View style={styles.filterAndActions}>
-        <View style={styles.dateSelectorWrap}>
+      <AppCard style={styles.filterCard}>
+        <View style={styles.filterRow}>
           <DateRangeSelector compact onChange={setRange} range={range} subtitle="小组分析范围" />
         </View>
-        <View style={styles.topActions}>
+        <View style={styles.shortcutRow}>
           <AnalyticsShortcut icon="barbell-outline" label="动作对比" onPress={() => router.push('/history/group/exercise-compare' as never)} />
           <AnalyticsShortcut icon="calendar-clear-outline" label="出勤率" onPress={() => router.push('/history/group/attendance' as never)} />
         </View>
-      </View>
+      </AppCard>
 
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState actionLabel="重新加载" description={error} onActionPress={() => void load()} title="小组分析暂时无法加载" /> : null}
@@ -237,7 +271,7 @@ export function GroupAnalyticsScreen() {
 function AnalyticsShortcut({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.shortcut, pressed && styles.pressed]}>
-      <Ionicons color={colors.primary} name={icon} size={18} />
+      <Ionicons color={colors.primary} name={icon} size={16} />
       <AppText numberOfLines={1} tone="brand" variant="caption" weight="900">
         {label}
       </AppText>
@@ -367,10 +401,11 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  filterAndActions: {
-    alignItems: 'stretch',
-    flexDirection: 'row',
-    gap: spacing.sm,
+  filterCard: {
+    gap: spacing.md,
+  },
+  filterRow: {
+    minWidth: 0,
   },
   memberAvatarItem: {
     alignItems: 'center',
@@ -428,18 +463,18 @@ const styles = StyleSheet.create({
   },
   shortcut: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.md,
-    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
     gap: spacing.xs,
     justifyContent: 'center',
-    minHeight: 48,
+    minHeight: 40,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
-  topActions: {
+  shortcutRow: {
+    flexDirection: 'row',
     gap: spacing.sm,
-    width: 86,
   },
 });

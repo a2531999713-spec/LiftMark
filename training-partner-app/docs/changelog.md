@@ -1,5 +1,36 @@
 # 变更记录
 
+## 2026-07-07 - record-trend-chart-plan-manage-group-analytics-fix
+
+### 记录首页训练趋势恢复为文字洞察
+- 恢复记录首页「训练趋势」为 `InsightList` 文字描述形式（先前误改为图表），放在「训练量趋势」ChartCard 下方。
+- 小组 scope 下卡片标题改为「小组洞察」，个人 scope 保持「训练趋势」；整张卡片可点击进入训练分析。
+- 移除上一次错误添加的 `buildSessionCountTrend` 函数。
+
+### 图表 Y 轴机制修复
+- `chartScale.buildYAxisScale` 修正：`includeZero=false` 时不再强制非负数据从 0 开始，尊重设置让 Y 轴从数据附近开始，避免体重等数据折线被压平看不出变化；非负数据仍不允许出现负数刻度。
+- `app/profile/body-metrics.tsx` 的 `TrendBlock` 移除错误的 `minChartHeight={max}`（把体重最大值当成像素高度），改用默认 minRange。
+- `app/(tabs)/plan.tsx` 的最近 4 周图表移除错误的 `minChartHeight={Math.max(1, ...stats.lastFourWeeks)}`（把训练次数当成像素高度）。
+
+### 管理计划弹窗显示系统内置方案
+- `app/(tabs)/plan.tsx` 的「管理计划」弹窗此前只展示 `listUserPlans()` 返回的用户计划（`source != 'system'`），看不到系统方案。
+- 在用户计划列表下方新增「系统内置方案」区块，展示 `availableSchemes` 的 `SchemeCard`（预览 / 使用此方案），与计划库弹窗复用同一套交互。
+
+### 小组分析筛选与快捷入口合并
+- `GroupAnalyticsScreen` 此前日期筛选在左、动作对比/出勤率两个按钮在右，分成两块。
+- 改为放入同一个 `AppCard`：上方日期筛选，下方两个横向快捷按钮，视觉更统一。
+
+### 小组趋势柱状图聚合稀疏化
+- `GroupAnalyticsScreen` 的 `trendBars` 此前直接按天展开 `groupAnalysis.trend`，30 天/本月会出现 30 根柱子且大量无数据占位。
+- 改为：范围 ≤ 14 天按天显示并过滤 0 值；范围 > 14 天用 `buildTrendBuckets` 按周聚合（4-5 根柱子），并过滤全 0 桶。
+- `VerticalBars` 组件新增空数据兜底，bars 为空时显示「暂无训练数据」。
+
+### 验证
+- `npm run typecheck`：仅 `app/history/[sessionId].tsx` 一处既有 Screen subtitle 类型不匹配（与本次变更无关）。
+- `npx jest src/tests/chart-scale.test.ts`：3 个用例全部通过。
+- 本次均为前端代码变更，无服务器后端 API 或数据库变更，无需服务器部署。
+- 移动端需重新打包 APK 以生效。
+
 ## 2026-07-07 - record-chart-sync-preferences-fix
 
 ### 记录首页训练趋势卡片
