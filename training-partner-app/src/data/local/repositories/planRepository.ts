@@ -1,6 +1,7 @@
 import type {
   CopySystemSchemeToUserPlanInput,
   CreateUserPlanInput,
+  DuplicatePlanInput,
   ImportUserPlanInput,
   PlanRepository,
   UpdateUserPlanInput,
@@ -8,6 +9,7 @@ import type {
 import { createId } from '@/domain/common/ids';
 import { nowIso } from '@/domain/common/time';
 import { createUserPlanCopyDraft } from '@/domain/plan/planCopy';
+import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import type {
   GetTodayPlanInput,
   PlanDay,
@@ -213,6 +215,7 @@ export class SQLitePlanRepository implements PlanRepository {
       }
     });
 
+    await this.enqueuePlanSync(plan.id, ownerUserId, 'create');
     return plan;
   }
 
@@ -323,6 +326,7 @@ export class SQLitePlanRepository implements PlanRepository {
       }
     });
 
+    await this.enqueuePlanSync(updated.id, ownerUserId, 'update');
     return updated;
   }
 
@@ -442,6 +446,124 @@ export class SQLitePlanRepository implements PlanRepository {
       }
     });
 
+    await this.enqueuePlanSync(template.id, ownerUserId, 'create');
+    return template;
+  }
+
+  // 复制任意计划（系统方案或用户自建）为当前用户的私有副本
+  // 用于「编辑系统计划」入口：先复制再进入编辑
+  async duplicatePlan(input: DuplicatePlanInput): Promise<PlanTemplate> {
+    const sourceTemplate = await requireRow(
+      await this.getPlanById(input.sourcePlanId),
+      `未找到源计划：${input.sourcePlanId}`,
+    );
+    const phases = await this.listPlanPhases(input.sourcePlanId);
+    const days = await this.listPlanDays(input.sourcePlanId);
+    const exercises = (
+      await Promise.all(days.map((day) => this.listPlanExercises(day.id)))
+    ).flat();
+    const draft = createUserPlanCopyDraft({
+      sourceTemplate,
+      phases,
+      days,
+      exercises,
+      name: input.name ?? `${sourceTemplate.name}（我的）`,
+      originSchemeId: sourceTemplate.originSchemeId ?? sourceTemplate.id,
+    });
+    const ownerUserId = await getCurrentAccountUserId();
+    const template = {
+      ...draft.template,
+      creatorId: ownerUserId ?? draft.template.creatorId,
+      source: 'duplicated' as const,
+    };
+
+    const db = await this.getDb();
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      await txn.runAsync(
+        `INSERT INTO plan_templates (
+          id, owner_user_id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
+          description, source, origin_scheme_id, version, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        template.id,
+        ownerUserId,
+        template.name,
+        template.creatorId ?? null,
+        template.visibility,
+        template.goal,
+        template.durationWeeks,
+        template.frequencyPerWeek,
+        template.description ?? null,
+        template.source,
+        template.originSchemeId ?? null,
+        template.version,
+        template.createdAt,
+        template.updatedAt,
+      );
+
+      for (const phase of draft.phases) {
+        await txn.runAsync(
+          `INSERT INTO plan_phases (
+            id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          phase.id,
+          ownerUserId,
+          phase.planId,
+          phase.name,
+          phase.type,
+          phase.startWeek,
+          phase.endWeek,
+          phase.orderIndex,
+        );
+      }
+
+      for (const day of draft.days) {
+        await txn.runAsync(
+          `INSERT INTO plan_days (
+            id, owner_user_id, plan_id, phase_id, week, weekday, title, focus, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          day.id,
+          ownerUserId,
+          day.planId,
+          day.phaseId,
+          day.week,
+          day.weekday,
+          day.title,
+          day.focus,
+          day.notes ?? null,
+        );
+      }
+
+      for (const exercise of draft.exercises) {
+        await txn.runAsync(
+          `INSERT INTO plan_exercises (
+            id, owner_user_id, plan_day_id, exercise_id, priority, order_index, sets, reps, rep_min, rep_max,
+            intensity_type, percent_1rm, rpe_target, rir_target, fixed_weight, reference_lift,
+            rest_seconds, progression_rule_id, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          exercise.id,
+          ownerUserId,
+          exercise.planDayId,
+          exercise.exerciseId,
+          exercise.priority,
+          exercise.orderIndex,
+          exercise.sets ?? null,
+          exercise.reps ?? null,
+          exercise.repMin ?? null,
+          exercise.repMax ?? null,
+          exercise.percent1RM ? 'percent_1rm' : exercise.fixedWeight ? 'fixed' : 'manual',
+          exercise.percent1RM ?? null,
+          null,
+          null,
+          exercise.fixedWeight ?? null,
+          exercise.referenceLift,
+          exercise.restSeconds ?? null,
+          exercise.progressionRuleId ?? null,
+          exercise.notes ?? null,
+        );
+      }
+    });
+
+    await this.enqueuePlanSync(template.id, ownerUserId, 'create');
     return template;
   }
 
@@ -587,12 +709,87 @@ export class SQLitePlanRepository implements PlanRepository {
       }
     });
 
-    return {
+    const importedTemplate = {
       ...input.template,
       creatorId: ownerUserId ?? input.template.creatorId,
       source: 'imported',
       visibility: 'private',
-    };
+    } as const;
+
+    await this.enqueuePlanSync(importedTemplate.id, ownerUserId, 'create');
+    return importedTemplate;
+  }
+
+  // 将计划及其子节点（阶段/训练日/动作）入队同步
+  private async enqueuePlanSync(planId: string, ownerUserId: string | null, operation: 'create' | 'update'): Promise<void> {
+    const now = nowIso();
+    const db = await this.getDb();
+
+    // 计划本身
+    await enqueueSyncCandidate({
+      entityType: 'trainingPlans',
+      localId: planId,
+      operation,
+      ownerUserId,
+      status: operation === 'create' ? 'pending_create' : 'pending_update',
+      updatedAt: now,
+    }).catch(() => undefined);
+
+    // 阶段
+    const phaseRows = await db.getAllAsync<{ id: string }>(
+      'SELECT id FROM plan_phases WHERE plan_id = ? AND deleted_at IS NULL',
+      planId,
+    );
+    await Promise.all(
+      phaseRows.map((phase) =>
+        enqueueSyncCandidate({
+          entityType: 'planPhases',
+          localId: phase.id,
+          operation,
+          ownerUserId,
+          status: operation === 'create' ? 'pending_create' : 'pending_update',
+          updatedAt: now,
+        }).catch(() => undefined),
+      ),
+    );
+
+    // 训练日
+    const dayRows = await db.getAllAsync<{ id: string }>(
+      'SELECT id FROM plan_days WHERE plan_id = ?',
+      planId,
+    );
+    await Promise.all(
+      dayRows.map((day) =>
+        enqueueSyncCandidate({
+          entityType: 'planDays',
+          localId: day.id,
+          operation,
+          ownerUserId,
+          status: operation === 'create' ? 'pending_create' : 'pending_update',
+          updatedAt: now,
+        }).catch(() => undefined),
+      ),
+    );
+
+    // 训练日下的动作
+    const exerciseRows = await db.getAllAsync<{ id: string }>(
+      `SELECT pe.id FROM plan_exercises pe
+       INNER JOIN plan_days pd ON pd.id = pe.plan_day_id
+       WHERE pd.plan_id = ?`,
+      planId,
+    );
+    await Promise.all(
+      exerciseRows.map((exercise) =>
+        enqueueSyncCandidate({
+          entityType: 'planExercises',
+          localId: exercise.id,
+          operation,
+          ownerUserId,
+          status: operation === 'create' ? 'pending_create' : 'pending_update',
+          updatedAt: now,
+        }).catch(() => undefined),
+      ),
+    );
   }
 
   async deleteUserPlan(planId: string): Promise<void> {
@@ -638,6 +835,17 @@ export class SQLitePlanRepository implements PlanRepository {
       await txn.runAsync('DELETE FROM plan_phases WHERE plan_id = ?', planId);
       await txn.runAsync('DELETE FROM plan_templates WHERE id = ?', planId);
     });
+
+    // 计划删除入队同步
+    const now = nowIso();
+    await enqueueSyncCandidate({
+      entityType: 'trainingPlans',
+      localId: planId,
+      operation: 'delete',
+      ownerUserId: userId,
+      status: 'pending_delete',
+      updatedAt: now,
+    }).catch(() => undefined);
   }
 
   async getTodayPlan(input: GetTodayPlanInput): Promise<TodayPlanResult> {

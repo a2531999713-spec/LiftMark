@@ -8,6 +8,7 @@ import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { MemberProfile } from '@/domain/member/member.types';
+import type { UserPreferences } from '@/domain/preferences/user-preferences.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { colors, spacing } from '@/theme';
 
@@ -22,6 +23,7 @@ export default function ProfilePreferencesRoute() {
   const { guardFeature, sheets } = useAuthGate();
   const [group, setGroup] = useState<Group | null>(null);
   const [profile, setProfile] = useState<MemberProfile | null>(null);
+  const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,8 +36,13 @@ export default function ProfilePreferencesRoute() {
       if (!nextGroup) throw new Error('默认小组尚未初始化。');
       const members = await repositories.memberRepository.listMembers(nextGroup.id);
       const member = resolveDefaultTrainingMember(members);
+      const [nextProfile, nextPreferences] = await Promise.all([
+        member ? repositories.memberRepository.getMemberProfile(member.id) : Promise.resolve(null),
+        repositories.userPreferencesRepository.getPreferences(),
+      ]);
       setGroup(nextGroup);
-      setProfile(member ? await repositories.memberRepository.getMemberProfile(member.id) : null);
+      setProfile(nextProfile);
+      setPreferences(nextPreferences);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '偏好加载失败。');
     } finally {
@@ -48,6 +55,21 @@ export default function ProfilePreferencesRoute() {
       void load();
     }, [load]),
   );
+
+  const weightUnitLabel = preferences?.weightUnit === 'lb' ? 'lb' : 'kg';
+  const recordTargetLabel = preferences?.defaultRecordTarget === 'self_only' ? '仅我记录' : '小组成员';
+  const trainingModeLabel =
+    preferences?.defaultTrainingMode === 'main_only'
+      ? '只做主项'
+      : preferences?.defaultTrainingMode === 'simplified'
+        ? '精简辅助'
+        : '完整动作';
+  const effortLabel =
+    preferences?.effortDisplay === 'rpe'
+      ? '展示 RPE'
+      : preferences?.effortDisplay === 'rir'
+        ? '展示 RIR'
+        : '不展示';
 
   return (
     <Screen safeTop={false}>
@@ -63,12 +85,17 @@ export default function ProfilePreferencesRoute() {
       {!isLoading && !error ? (
         <>
           <AppCard style={styles.card}>
-            <SettingsRow label="默认单位" value="kg" />
+            <SettingsRow label="默认单位" value={weightUnitLabel} />
             <SettingsRow label="杠铃加重单位" value={`${profile?.barbellIncrement ?? 2.5} kg`} />
             <SettingsRow label="哑铃加重单位" value={`${profile?.dumbbellIncrement ?? 2.5} kg`} />
-            <SettingsRow label="默认记录方式" value="重量 / 次数" />
-            <SettingsRow label="休息计时" right={<Tag label="开启" tone="success" />} />
-            <SettingsRow label="默认训练模式" value="小组成员" />
+            <SettingsRow label="加重步进（偏好）" value={preferences?.weightIncrement ?? '2.5kg'} />
+            <SettingsRow label="默认记录对象" value={recordTargetLabel} />
+            <SettingsRow
+              label="休息计时"
+              right={<Tag label={preferences?.restTimerEnabled ? '开启' : '关闭'} tone={preferences?.restTimerEnabled ? 'success' : 'neutral'} />}
+            />
+            <SettingsRow label="默认训练模式" value={trainingModeLabel} />
+            <SettingsRow label="RPE / RIR" value={effortLabel} />
             <SettingsRow label="周五策略" value={fridayStrategyLabel(group?.fridayStrategy)} />
           </AppCard>
 
@@ -83,10 +110,10 @@ export default function ProfilePreferencesRoute() {
 
           <AppCard style={styles.card} tone="soft">
             <AppText variant="bodySmall" weight="900">
-              更多设置即将开放
+              偏好已持久化并支持云同步
             </AppText>
             <AppText tone="muted" variant="caption">
-              外观、语言和通知设置将在后续版本中开放。
+              在「我的 → 训练偏好」面板中切换的选项会即时保存到本机，并在登录后自动上传服务器。
             </AppText>
           </AppCard>
         </>

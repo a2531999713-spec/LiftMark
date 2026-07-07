@@ -392,6 +392,29 @@ cd /home/deploy/liftmark/apps/liftmark-api
 npx tsx src/db/migrate.ts
 ```
 
+### 5.5 同步实体表扩展（2026-07-07）
+
+本次版本新增 `plan_phases`、`recovery_logs`、`progression_suggestions` 三张同步表，对应移动端新增的同步实体类型。升级步骤：
+
+```bash
+cd /home/deploy/liftmark/apps/liftmark-api
+git pull origin main
+npm install            # 如有依赖变更
+npx tsx src/db/migrate.ts   # 执行 009_extend_sync_entity_tables 迁移
+pm2 restart liftmark-api --update-env
+pm2 save --force
+```
+
+验证同步表创建成功：
+
+```bash
+sudo -u postgres psql -d liftmark_prod -c "\dt plan_phases"
+sudo -u postgres psql -d liftmark_prod -c "\dt recovery_logs"
+sudo -u postgres psql -d liftmark_prod -c "\dt progression_suggestions"
+```
+
+三张表应包含 `id`、`user_id`、`client_id`、`payload`、`sync_version`、`created_at`、`updated_at` 等同步标准字段。
+
 ## 6. 安全建议
 
 ### 6.1 生产环境必须修改

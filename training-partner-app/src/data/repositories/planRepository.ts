@@ -58,7 +58,13 @@ export interface PlanRepository {
   createUserPlan(input: CreateUserPlanInput): Promise<PlanTemplate>;
   updateUserPlan(input: UpdateUserPlanInput): Promise<PlanTemplate>;
   copySystemSchemeToUserPlan(input: CopySystemSchemeToUserPlanInput): Promise<PlanTemplate>;
+  duplicatePlan(input: DuplicatePlanInput): Promise<PlanTemplate>;
   importUserPlan(input: ImportUserPlanInput): Promise<PlanTemplate>;
   deleteUserPlan(planId: ID): Promise<void>;
   getTodayPlan(input: GetTodayPlanInput): Promise<TodayPlanResult>;
 }
+
+export type DuplicatePlanInput = {
+  sourcePlanId: ID;
+  name?: string;
+};

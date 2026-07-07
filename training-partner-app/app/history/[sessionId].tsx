@@ -393,10 +393,25 @@ export default function HistoryDetailRoute() {
     ]);
   }, [detail, guardFeature, repositories]);
 
+  // 自定义副标题渲染，包含三个点按钮
+  const renderSubtitle = useCallback(() => {
+    const subtitleText = isPersonalScope ? '只显示并编辑当前成员的数据' : '管理本次训练中所有成员的数据';
+    return (
+      <View style={styles.subtitleRow}>
+        <AppText tone="muted" variant="caption">
+          {subtitleText}
+        </AppText>
+        <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.moreButtonSmall}>
+          <Ionicons color={colors.textStrong} name="ellipsis-horizontal" size={18} />
+        </Pressable>
+      </View>
+    );
+  }, [isPersonalScope]);
+
   return (
     <Screen
       safeTop={false}
-      subtitle={isPersonalScope ? '只显示并编辑当前成员的数据' : '管理本次训练中所有成员的数据'}
+      subtitle={renderSubtitle()}
       title={isPersonalScope ? '我的训练记录' : '小组训练记录'}
     >
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -413,24 +428,6 @@ export default function HistoryDetailRoute() {
 
       {!isLoading && detail ? (
         <>
-          <View style={styles.topBar}>
-            <AppButton
-              icon="create-outline"
-              onPress={() => {
-                if (guardFeature('manual_history')) {
-                  setEditMode(true);
-                }
-              }}
-              size="sm"
-              variant={isEditMode ? 'primary' : 'secondary'}
-            >
-              {isEditMode ? '编辑中' : '编辑'}
-            </AppButton>
-            <Pressable accessibilityRole="button" onPress={() => setActionsVisible(true)} style={styles.moreButton}>
-              <Ionicons color={colors.textStrong} name="ellipsis-horizontal" size={20} />
-            </Pressable>
-          </View>
-
           <AppCard style={styles.card}>
             <SectionHeader title="基础信息" />
             {isEditMode ? (
@@ -743,6 +740,22 @@ function Stepper({
 const styles = StyleSheet.create({
   card: {
     gap: spacing.md,
+  },
+  subtitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  moreButtonSmall: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+    width: 28,
   },
   topBar: {
     alignItems: 'center',

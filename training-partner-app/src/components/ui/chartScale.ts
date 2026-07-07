@@ -48,14 +48,17 @@ export function buildYAxisScale(values: number[], options: YAxisScaleOptions = {
   const finiteValues = sanitizeFiniteValues(values);
   const rawMin = finiteValues.length > 0 ? Math.min(...finiteValues) : 0;
   const rawMax = finiteValues.length > 0 ? Math.max(...finiteValues) : 0;
-  const baselineMin = includeZero && rawMin >= 0 ? 0 : rawMin;
+  // 即使 includeZero=false，当原始数据全部 >=0 时也不允许出现负数刻度
+  const nonNegativeData = rawMin >= 0;
+  const effectiveIncludeZero = includeZero || nonNegativeData;
+  const baselineMin = effectiveIncludeZero ? 0 : rawMin;
   const rawRange = rawMax - baselineMin;
   const safeRange = Math.max(rawRange, minRange, Math.abs(rawMax) * paddingRatio, 1);
-  const paddedMin = includeZero && rawMin >= 0 ? 0 : baselineMin - safeRange * paddingRatio;
+  const paddedMin = effectiveIncludeZero ? 0 : baselineMin - safeRange * paddingRatio;
   const paddedMax = rawMax + safeRange * paddingRatio;
   const resolvedTickCount = Math.max(2, tickCount);
   const step = niceStep((paddedMax - paddedMin) / (resolvedTickCount - 1));
-  const minValue = includeZero && rawMin >= 0 ? 0 : Math.floor(paddedMin / step) * step;
+  const minValue = effectiveIncludeZero ? 0 : Math.floor(paddedMin / step) * step;
   const maxValue = Math.max(minValue + step, Math.ceil(paddedMax / step) * step);
   const range = Math.max(maxValue - minValue, step, 1);
   const ticks = Array.from({ length: resolvedTickCount }, (_, index) => maxValue - (range * index) / (resolvedTickCount - 1));

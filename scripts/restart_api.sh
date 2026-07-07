@@ -1,41 +1,52 @@
 #!/bin/bash
-# 重启 root PM2 的 liftmark-api 进程以加载新代码
+# 重启 deploy 用户的 liftmark-api 进程
+# 注意：不要用 sudo 启动 API！
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-set -a
-source "$SCRIPT_DIR/.env" 2>/dev/null || true
-set +a
+echo "========================================="
+echo "  重启 API 服务（deploy用户）"
+echo "========================================="
 
-if [[ -z "${SUDO_PASSWORD:-}" || -z "${ADMIN_PHONE:-}" || -z "${ADMIN_PASSWORD:-}" ]]; then
-  echo "错误：请在 scripts/.env 中设置 SUDO_PASSWORD、ADMIN_PHONE、ADMIN_PASSWORD" >&2
-  echo "参考：cp scripts/.env.example scripts/.env" >&2
-  exit 1
+echo ""
+echo "步骤1: 停止当前API进程..."
+pm2 stop liftmark-api 2>/dev/null || echo "API未运行"
+
+echo ""
+echo "步骤2: 重新构建（如需要）..."
+cd /home/deploy/liftmark/apps/liftmark-api
+if [ -f "src/server.ts" ]; then
+  echo "检测到源码，执行构建..."
+  npm run build 2>&1 | tail -10
 fi
 
-echo "=== step 1: stop deploy user pm2 liftmark-api (if exists) ==="
-pm2 delete liftmark-api 2>/dev/null || echo "deploy pm2 has no liftmark-api (ok)"
-pm2 save --force 2>/dev/null || true
+echo ""
+echo "步骤3: 启动API服务..."
+pm2 restart liftmark-api || pm2 start ecosystem.config.js
 
-echo "=== step 2: restart root pm2 liftmark-api via login shell ==="
-echo "$SUDO_PASSWORD" | sudo -S -i bash -c '
-  export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.nvm/versions/node/v22.5.1/bin:/home/deploy/.nvm/versions/node/v22.5.1/bin
-  which pm2
-  pm2 restart liftmark-api --update-env 2>&1 | tail -20
-  pm2 save --force 2>&1 | tail -5
-' 2>&1 | tail -30
-
-echo "=== step 3: wait 5s and check status ==="
+echo ""
+echo "步骤4: 等待启动..."
 sleep 5
-echo "$SUDO_PASSWORD" | sudo -S pm2 list 2>&1 | tail -10
 
-echo "=== step 4: check port 3000 ==="
-ss -tlnp 2>/dev/null | grep ':3000' || echo "no listener on 3000"
+echo ""
+echo "步骤5: 检查状态..."
+pm2 list | grep liftmark-api
 
-echo "=== step 5: test admin login endpoint ==="
-curl -s -X POST http://127.0.0.1:3000/api/admin/auth/login \
-  -H "Content-Type: application/json" \
-  -d "{\"account\":\"$ADMIN_PHONE\",\"password\":\"$ADMIN_PASSWORD\"}" \
-  -w "\nHTTP:%{http_code}\n" 2>&1 | tail -5
+echo ""
+echo "步骤6: 检查端口..."
+ss -tlnp 2>/dev/null | grep ':3000' || echo "⚠ 端口3000未监听"
 
-echo "=== done ==="
+echo ""
+echo "步骤7: 测试API..."
+sleep 2
+curl -s http://127.0.0.1:3000/api/health || echo "⚠ API测试失败"
+
+echo ""
+echo "步骤8: 保存PM2配置..."
+pm2 save --force
+
+echo ""
+echo "========================================="
+echo "  重启完成"
+echo "========================================="
+echo ""
+pm2 list

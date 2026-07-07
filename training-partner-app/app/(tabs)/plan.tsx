@@ -542,16 +542,19 @@ export default function PlanRoute() {
                 管理计划
               </AppButton>
               <AppButton
-                disabled={!activePlan || activePlan.source === 'system'}
+                disabled={!activePlan}
                 onPress={() => {
-                  if (activePlan && activePlan.source !== 'system') {
+                  if (!activePlan) return;
+                  if (activePlan.source === 'system') {
+                    router.push({ pathname: '/plan/[planId]', params: { planId: activePlan.id } } as never);
+                  } else {
                     router.push({ pathname: '/plan/edit/[planId]', params: { planId: activePlan.id } } as never);
                   }
                 }}
                 size="sm"
                 variant="secondary"
               >
-                编辑当前计划
+                {activePlan?.source === 'system' ? '查看并复制' : '编辑当前计划'}
               </AppButton>
             </View>
           </VisualHeroCard>
@@ -658,12 +661,15 @@ export default function PlanRoute() {
           }}
         />
         <PlanActionRow
-          disabled={!activePlan || activePlan.source === 'system'}
+          disabled={!activePlan}
           icon="create-outline"
-          label="编辑当前计划"
+          label={activePlan?.source === 'system' ? '查看并复制当前计划' : '编辑当前计划'}
           onPress={() => {
             setActionsVisible(false);
-            if (activePlan && activePlan.source !== 'system') {
+            if (!activePlan) return;
+            if (activePlan.source === 'system') {
+              router.push({ pathname: '/plan/[planId]', params: { planId: activePlan.id } } as never);
+            } else {
               router.push({ pathname: '/plan/edit/[planId]', params: { planId: activePlan.id } } as never);
             }
           }}
@@ -825,15 +831,18 @@ export default function PlanRoute() {
                       查看
                     </AppButton>
                     <AppButton
-                      disabled={plan.source === 'system'}
                       onPress={() => {
                         setManageVisible(false);
-                        router.push({ pathname: '/plan/edit/[planId]', params: { planId: plan.id } } as never);
+                        if (plan.source === 'system') {
+                          router.push({ pathname: '/plan/[planId]', params: { planId: plan.id } } as never);
+                        } else {
+                          router.push({ pathname: '/plan/edit/[planId]', params: { planId: plan.id } } as never);
+                        }
                       }}
                       size="sm"
                       variant="secondary"
                     >
-                      编辑
+                      {plan.source === 'system' ? '查看并复制' : '编辑'}
                     </AppButton>
                     <AppButton disabled={isActive} onPress={() => void setCurrentPlan(plan)} size="sm">
                       设为当前

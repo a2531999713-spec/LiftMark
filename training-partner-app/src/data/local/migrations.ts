@@ -672,6 +672,156 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 18,
+    name: 'user_preferences_table',
+    async up(db) {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS user_preferences (
+          id TEXT PRIMARY KEY,
+          owner_user_id TEXT,
+          weight_unit TEXT NOT NULL DEFAULT 'kg',
+          default_record_target TEXT NOT NULL DEFAULT 'group_members',
+          rest_timer_enabled INTEGER NOT NULL DEFAULT 1,
+          default_training_mode TEXT NOT NULL DEFAULT 'full',
+          weight_increment TEXT NOT NULL DEFAULT '2.5kg',
+          effort_display TEXT NOT NULL DEFAULT 'none',
+          remote_id TEXT,
+          sync_status TEXT NOT NULL DEFAULT 'local_only',
+          sync_error TEXT,
+          version INTEGER NOT NULL DEFAULT 0,
+          last_synced_at TEXT,
+          deleted_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_preferences_owner ON user_preferences(owner_user_id, updated_at);
+      `);
+    },
+  },
+  {
+    version: 19,
+    name: 'body_metric_goals_sync_columns',
+    async up(db) {
+      const columns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(body_metric_goals)',
+      );
+      const columnNames = new Set(columns.map((column) => column.name));
+
+      const columnDefinitions = [
+        'remote_id TEXT',
+        "sync_status TEXT NOT NULL DEFAULT 'local_only'",
+        'sync_error TEXT',
+        'version INTEGER NOT NULL DEFAULT 0',
+        'last_synced_at TEXT',
+        'deleted_at TEXT',
+      ];
+
+      for (const definition of columnDefinitions) {
+        const columnName = definition.split(' ')[0];
+        if (!columnNames.has(columnName)) {
+          await db.execAsync(`ALTER TABLE body_metric_goals ADD COLUMN ${definition};`);
+        }
+      }
+    },
+  },
+  {
+    version: 20,
+    name: 'plan_phases_sync_columns',
+    async up(db) {
+      const columns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(plan_phases)',
+      );
+      const columnNames = new Set(columns.map((column) => column.name));
+
+      const columnDefinitions = [
+        'remote_id TEXT',
+        "sync_status TEXT NOT NULL DEFAULT 'local_only'",
+        'sync_error TEXT',
+        'version INTEGER NOT NULL DEFAULT 0',
+        'last_synced_at TEXT',
+        'deleted_at TEXT',
+        'created_at TEXT',
+        'updated_at TEXT',
+      ];
+
+      for (const definition of columnDefinitions) {
+        const columnName = definition.split(' ')[0];
+        if (!columnNames.has(columnName)) {
+          await db.execAsync(`ALTER TABLE plan_phases ADD COLUMN ${definition};`);
+        }
+      }
+
+      // 回填 created_at/updated_at 默认值
+      await db.execAsync(`
+        UPDATE plan_phases SET created_at = COALESCE(created_at, datetime('now')) WHERE created_at IS NULL;
+        UPDATE plan_phases SET updated_at = COALESCE(updated_at, datetime('now')) WHERE updated_at IS NULL;
+      `);
+    },
+  },
+  {
+    version: 21,
+    name: 'recovery_logs_sync_columns',
+    async up(db) {
+      const columns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(recovery_logs)',
+      );
+      const columnNames = new Set(columns.map((column) => column.name));
+
+      const columnDefinitions = [
+        'remote_id TEXT',
+        "sync_status TEXT NOT NULL DEFAULT 'local_only'",
+        'sync_error TEXT',
+        'version INTEGER NOT NULL DEFAULT 0',
+        'last_synced_at TEXT',
+        'deleted_at TEXT',
+        'updated_at TEXT',
+      ];
+
+      for (const definition of columnDefinitions) {
+        const columnName = definition.split(' ')[0];
+        if (!columnNames.has(columnName)) {
+          await db.execAsync(`ALTER TABLE recovery_logs ADD COLUMN ${definition};`);
+        }
+      }
+
+      await db.execAsync(`
+        UPDATE recovery_logs SET updated_at = COALESCE(updated_at, created_at) WHERE updated_at IS NULL;
+      `);
+    },
+  },
+  {
+    version: 22,
+    name: 'progression_suggestions_sync_columns',
+    async up(db) {
+      const columns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(progression_suggestions)',
+      );
+      const columnNames = new Set(columns.map((column) => column.name));
+
+      const columnDefinitions = [
+        'remote_id TEXT',
+        "sync_status TEXT NOT NULL DEFAULT 'local_only'",
+        'sync_error TEXT',
+        'version INTEGER NOT NULL DEFAULT 0',
+        'last_synced_at TEXT',
+        'deleted_at TEXT',
+        'updated_at TEXT',
+      ];
+
+      for (const definition of columnDefinitions) {
+        const columnName = definition.split(' ')[0];
+        if (!columnNames.has(columnName)) {
+          await db.execAsync(`ALTER TABLE progression_suggestions ADD COLUMN ${definition};`);
+        }
+      }
+
+      await db.execAsync(`
+        UPDATE progression_suggestions SET updated_at = COALESCE(updated_at, created_at) WHERE updated_at IS NULL;
+      `);
+    },
+  },
 ];
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {

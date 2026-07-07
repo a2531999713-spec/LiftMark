@@ -12,9 +12,13 @@ const entityTableByType = {
   workoutExerciseRecords: 'workout_exercise_records',
   workoutSets: 'workout_sets',
   trainingPlans: 'training_plans',
+  planPhases: 'plan_phases',
   planDays: 'plan_days',
   planExercises: 'plan_exercises',
   bodyMetrics: 'body_metrics',
+  bodyMetricGoals: 'body_metric_goals',
+  recoveryLogs: 'recovery_logs',
+  progressionSuggestions: 'progression_suggestions',
   settings: 'settings',
 } as const;
 
@@ -41,9 +45,13 @@ const pushSchema = z.object({
       workoutExerciseRecords: z.array(syncEntitySchema).optional(),
       workoutSets: z.array(syncEntitySchema).optional(),
       trainingPlans: z.array(syncEntitySchema).optional(),
+      planPhases: z.array(syncEntitySchema).optional(),
       planDays: z.array(syncEntitySchema).optional(),
       planExercises: z.array(syncEntitySchema).optional(),
       bodyMetrics: z.array(syncEntitySchema).optional(),
+      bodyMetricGoals: z.array(syncEntitySchema).optional(),
+      recoveryLogs: z.array(syncEntitySchema).optional(),
+      progressionSuggestions: z.array(syncEntitySchema).optional(),
       settings: z.array(syncEntitySchema).optional(),
     }),
 });
@@ -155,9 +163,13 @@ async function listChanges(userId: string, since?: string) {
     workoutExerciseRecords: [],
     workoutSets: [],
     trainingPlans: [],
+    planPhases: [],
     planDays: [],
     planExercises: [],
     bodyMetrics: [],
+    bodyMetricGoals: [],
+    recoveryLogs: [],
+    progressionSuggestions: [],
     settings: [],
   };
 

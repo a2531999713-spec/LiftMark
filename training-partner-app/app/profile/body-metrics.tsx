@@ -17,6 +17,7 @@ import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
+import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { colors, radius, spacing, typography } from '@/theme';
 
 type MetricDraft = {
@@ -200,7 +201,7 @@ export default function BodyMetricsRoute() {
     setIsSaving(true);
     setError(null);
     try {
-      await repositories.bodyMetricsRepository.upsertMetric({
+      const saved = await repositories.bodyMetricsRepository.upsertMetric({
         bicepCm: parseNumber(draft.bicepCm),
         bodyFatPercent: parseNumber(draft.bodyFatPercent),
         calfCm: parseNumber(draft.calfCm),
@@ -213,6 +214,26 @@ export default function BodyMetricsRoute() {
         waistCm: parseNumber(draft.waistCm),
         weightKg: parseNumber(draft.weightKg),
       });
+      void enqueueSyncCandidate({
+        entityType: 'bodyMetrics',
+        localId: saved.id,
+        operation: 'update',
+        payload: {
+          bodyFatPercent: saved.bodyFatPercent,
+          bicepCm: saved.bicepCm,
+          calfCm: saved.calfCm,
+          chestCm: saved.chestCm,
+          date: saved.date,
+          hipCm: saved.hipCm,
+          memberId: saved.memberId,
+          notes: saved.notes,
+          thighCm: saved.thighCm,
+          waistCm: saved.waistCm,
+          weightKg: saved.weightKg,
+        },
+        status: 'pending_update',
+        updatedAt: saved.updatedAt,
+      }).catch(() => undefined);
       await load();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '身体数据保存失败。');
@@ -233,6 +254,21 @@ export default function BodyMetricsRoute() {
         targetDate: goalDraft.targetDate,
         targetWeightKg: parseNumber(goalDraft.targetWeightKg),
       });
+      // 加入云同步队列
+      void enqueueSyncCandidate({
+        entityType: 'bodyMetricGoals',
+        localId: nextGoal.id,
+        operation: 'update',
+        payload: {
+          goalType: nextGoal.goalType,
+          memberId: nextGoal.memberId,
+          notes: nextGoal.notes,
+          targetDate: nextGoal.targetDate,
+          targetWeightKg: nextGoal.targetWeightKg,
+        },
+        status: 'pending_update',
+        updatedAt: nextGoal.updatedAt,
+      }).catch(() => undefined);
       setGoal(nextGoal);
       setGoalDraft(toGoalDraft(nextGoal));
       setIsGoalExpanded(false);

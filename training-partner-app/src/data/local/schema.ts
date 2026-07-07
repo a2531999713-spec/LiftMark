@@ -114,7 +114,15 @@ CREATE TABLE IF NOT EXISTS plan_phases (
   type TEXT NOT NULL,
   start_week INTEGER NOT NULL,
   end_week INTEGER NOT NULL,
-  order_index INTEGER NOT NULL
+  order_index INTEGER NOT NULL,
+  remote_id TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'local_only',
+  sync_error TEXT,
+  version INTEGER NOT NULL DEFAULT 0,
+  last_synced_at TEXT,
+  deleted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS plan_days (
@@ -238,7 +246,14 @@ CREATE TABLE IF NOT EXISTS progression_suggestions (
   suggestion TEXT NOT NULL,
   suggested_weight REAL,
   reason TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  remote_id TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'local_only',
+  sync_error TEXT,
+  version INTEGER NOT NULL DEFAULT 0,
+  last_synced_at TEXT,
+  deleted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS recovery_logs (
@@ -254,7 +269,14 @@ CREATE TABLE IF NOT EXISTS recovery_logs (
   fatigue_score INTEGER NOT NULL,
   total_score INTEGER NOT NULL,
   recommendation TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  remote_id TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'local_only',
+  sync_error TEXT,
+  version INTEGER NOT NULL DEFAULT 0,
+  last_synced_at TEXT,
+  deleted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS body_metrics (
@@ -305,6 +327,12 @@ CREATE TABLE IF NOT EXISTS body_metric_goals (
   target_weight_kg REAL,
   target_date TEXT,
   notes TEXT,
+  remote_id TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'local_only',
+  sync_error TEXT,
+  version INTEGER NOT NULL DEFAULT 0,
+  last_synced_at TEXT,
+  deleted_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -357,4 +385,25 @@ CREATE INDEX IF NOT EXISTS idx_local_sync_queue_owner_status ON local_sync_queue
 CREATE INDEX IF NOT EXISTS idx_progression_member_exercise ON progression_suggestions(member_id, exercise_id);
 CREATE INDEX IF NOT EXISTS idx_body_metrics_member_date ON body_metrics(member_id, date);
 CREATE INDEX IF NOT EXISTS idx_body_metric_goals_member ON body_metric_goals(member_id);
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+  id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
+  weight_unit TEXT NOT NULL DEFAULT 'kg',
+  default_record_target TEXT NOT NULL DEFAULT 'group_members',
+  rest_timer_enabled INTEGER NOT NULL DEFAULT 1,
+  default_training_mode TEXT NOT NULL DEFAULT 'full',
+  weight_increment TEXT NOT NULL DEFAULT '2.5kg',
+  effort_display TEXT NOT NULL DEFAULT 'none',
+  remote_id TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'local_only',
+  sync_error TEXT,
+  version INTEGER NOT NULL DEFAULT 0,
+  last_synced_at TEXT,
+  deleted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_preferences_owner ON user_preferences(owner_user_id, updated_at);
 `;

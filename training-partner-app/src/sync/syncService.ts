@@ -24,9 +24,13 @@ type ServerSyncEntityType =
   | 'workoutExerciseRecords'
   | 'workoutSets'
   | 'trainingPlans'
+  | 'planPhases'
   | 'planDays'
   | 'planExercises'
   | 'bodyMetrics'
+  | 'bodyMetricGoals'
+  | 'recoveryLogs'
+  | 'progressionSuggestions'
   | 'settings';
 
 type SyncPushResponse = {
@@ -46,18 +50,26 @@ const serverSyncEntityTypes = new Set<SyncEntityType>([
   'workoutExerciseRecords',
   'workoutSets',
   'trainingPlans',
+  'planPhases',
   'planDays',
   'planExercises',
   'bodyMetrics',
+  'bodyMetricGoals',
+  'recoveryLogs',
+  'progressionSuggestions',
   'settings',
 ]);
 
 const localSyncEntityTableByType: Partial<Record<SyncEntityType, string>> = {
   bodyMetrics: 'body_metrics',
+  bodyMetricGoals: 'body_metric_goals',
   trainingPlans: 'plan_templates',
+  planPhases: 'plan_phases',
   workoutExerciseRecords: 'workout_exercise_records',
   workoutSessions: 'workout_sessions',
   workoutSets: 'workout_sets',
+  recoveryLogs: 'recovery_logs',
+  progressionSuggestions: 'progression_suggestions',
 };
 
 function buildServerEntity(item: SyncQueueItem) {
@@ -200,9 +212,13 @@ export async function requestImmediateSync(): Promise<{ ok: true; message?: stri
       workoutExerciseRecords: [],
       workoutSets: [],
       trainingPlans: [],
+      planPhases: [],
       planDays: [],
       planExercises: [],
       bodyMetrics: [],
+      bodyMetricGoals: [],
+      recoveryLogs: [],
+      progressionSuggestions: [],
       settings: [],
     };
 

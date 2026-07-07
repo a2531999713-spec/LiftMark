@@ -1,5 +1,40 @@
 # 变更记录
 
+## 2026-07-07 - mobile-ux-fixes-and-cloud-sync-expansion
+
+### 训练记录与图表交互
+- `MiniLineChart` 点击图表点位时数值直接在图表内显示，不再在横坐标轴下方展开。
+- `chartScale.buildYAxisScale` 调整为非负起点，坐标轴不再出现负数。
+- 删除 `ChartTooltip` 组件及点击坐标轴在下方展开日期与重量的功能（该功能无法点击）。
+
+### 体重记录与训练偏好
+- `app/(tabs)/today.tsx` 恢复「记录体重」快捷入口。
+- 新增 `user_preferences` 表与 `useUserPreferences` hook：重量单位、默认训练对象、默认训练模式、重量步进、休息计时器开关、努力展示等字段。
+- `AccountPanel` 的 PreferencesPanel 与 `app/profile/preferences.tsx` 切换偏好后立即写入本地 SQLite 并通过 `settings` 同步通道入队；`app/workout/[sessionId].tsx` 读取偏好实时生效（重量步进与休息计时器）。
+
+### 计划编辑体验
+- 系统方案在计划详情、计划编辑、计划 Tab 中改为「复制并编辑」/「复制为我的计划」流程，原只读 EmptyState 增加复制入口。
+- `SQLitePlanRepository` 新增 `duplicatePlan` 方法，可复制任意计划（系统或用户）为当前用户私有副本。
+
+### 全量数据上云
+- 同步管道扩展：新增 `planPhases`、`recoveryLogs`、`progressionSuggestions` 三种同步实体类型，覆盖本地 SQLite schema、迁移、syncTypes、syncService、syncQueue、服务器 sync.routes、服务器 migrate。
+- `SQLitePlanRepository` 的 `createUserPlan`、`updateUserPlan`、`copySystemSchemeToUserPlan`、`duplicatePlan`、`importUserPlan` 在写入后自动入队 `trainingPlans`/`planPhases`/`planDays`/`planExercises` 同步候选；`deleteUserPlan` 入队删除同步。
+- `body_metric_goals` 完整接入同步管道（本地 schema + 迁移 v19 + syncQueue owner 解析 + 服务器 sync 表 + 迁移 007）。
+- 服务器新增迁移 `009_extend_sync_entity_tables`：创建 `plan_phases`、`recovery_logs`、`progression_suggestions` 同步表及索引。
+
+### 训练趋势与近期日期
+- 训练分析入口移至训练量趋势卡片右上角，替代原个人 / 小组口径切换，可点击进入分析页。
+- `RecentDateStrip` 组件缩小：去除大写数字、小写汉字与红点等冗余显示，仅保留必要日期信息。
+
+### 脚本目录清理
+- 删除 `scripts/` 目录中 39 个一次性调试脚本（check_*、debug_*、test_*、fix_*、rebuild_*、ssh_*、remote_* 等）。
+- 保留 5 个运维脚本：`.env.example`、`backup_database.sh`、`deploy_admin.sh`、`restart_api.sh`、`setup_pm2_startup.sh`。
+
+### 验证
+- `npm run typecheck`：仅 `app/history/[sessionId].tsx` 一处既有 Screen subtitle 类型不匹配（与本次变更无关）。
+- 服务器迁移：`009_extend_sync_entity_tables` 待在服务器执行 `npm run migrate`。
+- 移动端需重新打包 APK 以生效偏好同步与体重入口。
+
 ## 2026-07-07 - history-analytics-axis-calendar-group-fix
 
 ### 记录与训练分析

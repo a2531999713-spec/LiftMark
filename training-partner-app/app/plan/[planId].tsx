@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
@@ -64,7 +64,28 @@ export default function PlanDetailRoute() {
   const [isActionsVisible, setActionsVisible] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isSystemPlan = detail?.plan.source === 'system' || detail?.plan.visibility === 'system';
+
+  // 复制系统计划为用户副本，然后跳转到副本的编辑页
+  const duplicateAndEdit = useCallback(async () => {
+    if (!detail) return;
+    setIsDuplicating(true);
+    try {
+      const copy = await repositories.planRepository.duplicatePlan({
+        sourcePlanId: detail.plan.id,
+        name: `${detail.plan.name}（我的）`,
+      });
+      setActionsVisible(false);
+      router.replace({ pathname: '/plan/edit/[planId]', params: { planId: copy.id } } as never);
+    } catch (dupError) {
+      Alert.alert('复制失败', dupError instanceof Error ? dupError.message : '计划复制失败，请重试。');
+    } finally {
+      setIsDuplicating(false);
+    }
+  }, [detail, repositories]);
 
   const loadPlan = useCallback(async () => {
     if (!planId) {
@@ -132,7 +153,7 @@ export default function PlanDetailRoute() {
                   {detail.plan.description ?? '训练计划'}
                 </AppText>
               </View>
-              <Tag label="只读详情" tone="neutral" />
+              <Tag label={isSystemPlan ? '系统方案' : '可编辑'} tone={isSystemPlan ? 'neutral' : 'success'} />
             </View>
             <View style={styles.metaRow}>
               <Tag label={describePlanSource(detail.plan.source)} tone="brand" />
@@ -199,17 +220,21 @@ export default function PlanDetailRoute() {
       >
         <View style={styles.modalActions}>
           <AppButton
-            icon="create-outline"
+            icon={isSystemPlan ? 'copy-outline' : 'create-outline'}
             onPress={() => {
               if (!detail) {
                 return;
               }
-              setActionsVisible(false);
-              router.push({ pathname: '/plan/edit/[planId]', params: { planId: detail.plan.id } } as never);
+              if (isSystemPlan) {
+                void duplicateAndEdit();
+              } else {
+                setActionsVisible(false);
+                router.push({ pathname: '/plan/edit/[planId]', params: { planId: detail.plan.id } } as never);
+              }
             }}
             variant="secondary"
           >
-            编辑计划
+            {isSystemPlan ? '复制并编辑' : '编辑计划'}
           </AppButton>
           <AppButton
             icon="barbell-outline"

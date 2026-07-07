@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Modal,
@@ -16,9 +16,18 @@ import { sync as runSync } from '@/sync/syncOrchestrator';
 
 import { Avatar } from '@/components/avatar';
 import { AppModalSheet, AppText, Tag } from '@/components/ui';
+import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember } from '@/domain/member/member.types';
+import type {
+  DefaultRecordTarget,
+  DefaultTrainingMode,
+  EffortDisplay,
+  WeightIncrement,
+  WeightUnit,
+} from '@/domain/preferences/user-preferences.types';
 import type { AccountProfileCache, AvatarPickSource } from '@/services/avatar';
+import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { colors, radius, shadows, spacing, typography } from '@/theme';
 
 import { AccountPanelHeader } from './AccountPanelHeader';
@@ -548,21 +557,103 @@ function BackupPanel({ onBack }: { onBack: () => void }) {
 }
 
 function PreferencesPanel({ onBack }: { onBack: () => void }) {
-  const [weightUnit, setWeightUnit] = useState('kg');
-  const [recordMode, setRecordMode] = useState('小组成员');
+  const repositories = useMemo(() => createLocalRepositories(), []);
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>('kg');
+  const [recordTarget, setRecordTarget] = useState<DefaultRecordTarget>('group_members');
   const [restTimer, setRestTimer] = useState(true);
-  const [trainingMode, setTrainingMode] = useState('完整动作');
-  const [increment, setIncrement] = useState('2.5kg');
-  const [effortDisplay, setEffortDisplay] = useState('不展示');
+  const [trainingMode, setTrainingMode] = useState<DefaultTrainingMode>('full');
+  const [increment, setIncrement] = useState<WeightIncrement>('2.5kg');
+  const [effortDisplay, setEffortDisplay] = useState<EffortDisplay>('none');
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // 加载已持久化的偏好
+  useEffect(() => {
+    void (async () => {
+      try {
+        await initializeLocalDatabase();
+        const prefs = await repositories.userPreferencesRepository.getPreferences();
+        setWeightUnit(prefs.weightUnit);
+        setRecordTarget(prefs.defaultRecordTarget);
+        setRestTimer(prefs.restTimerEnabled);
+        setTrainingMode(prefs.defaultTrainingMode);
+        setIncrement(prefs.weightIncrement);
+        setEffortDisplay(prefs.effortDisplay);
+      } catch {
+        // 读取失败时保持默认值
+      } finally {
+        setIsLoaded(true);
+      }
+    })();
+  }, [repositories]);
+
+  // 保存偏好到本地并加入同步队列
+  const savePreferences = async (patch: Partial<{
+    weightUnit: WeightUnit;
+    recordTarget: DefaultRecordTarget;
+    restTimer: boolean;
+    trainingMode: DefaultTrainingMode;
+    increment: WeightIncrement;
+    effortDisplay: EffortDisplay;
+  }>) => {
+    const next = {
+      weightUnit: patch.weightUnit ?? weightUnit,
+      defaultRecordTarget: patch.recordTarget ?? recordTarget,
+      restTimerEnabled: patch.restTimer ?? restTimer,
+      defaultTrainingMode: patch.trainingMode ?? trainingMode,
+      weightIncrement: patch.increment ?? increment,
+      effortDisplay: patch.effortDisplay ?? effortDisplay,
+    };
+    try {
+      const saved = await repositories.userPreferencesRepository.upsertPreferences(next);
+      // 加入 settings 同步通道上云
+      void enqueueSyncCandidate({
+        entityType: 'settings',
+        localId: saved.id,
+        operation: 'update',
+        payload: {
+          type: 'user_preferences',
+          weightUnit: saved.weightUnit,
+          defaultRecordTarget: saved.defaultRecordTarget,
+          restTimerEnabled: saved.restTimerEnabled,
+          defaultTrainingMode: saved.defaultTrainingMode,
+          weightIncrement: saved.weightIncrement,
+          effortDisplay: saved.effortDisplay,
+          updatedAt: saved.updatedAt,
+        },
+        status: 'pending_update',
+        updatedAt: saved.updatedAt,
+      }).catch(() => undefined);
+    } catch {
+      // 保存失败时静默，不影响 UI 切换
+    }
+  };
+
+  const recordTargetLabel = recordTarget === 'group_members' ? '小组成员' : '仅我记录';
+  const trainingModeLabel =
+    trainingMode === 'full' ? '完整动作' : trainingMode === 'simplified' ? '精简辅助' : '只做主项';
+  const effortLabel =
+    effortDisplay === 'none' ? '不展示' : effortDisplay === 'rpe' ? '展示 RPE' : '展示 RIR';
 
   return (
     <PanelScroll>
       <AccountPanelHeader onBack={onBack} subtitle="训练现场默认行为" title="训练偏好" />
-      <PreferenceRow label="重量单位" onPress={() => setWeightUnit(weightUnit === 'kg' ? 'lb' : 'kg')} value={weightUnit} />
+      <PreferenceRow
+        label="重量单位"
+        onPress={() => {
+          const next: WeightUnit = weightUnit === 'kg' ? 'lb' : 'kg';
+          setWeightUnit(next);
+          void savePreferences({ weightUnit: next });
+        }}
+        value={weightUnit}
+      />
       <PreferenceRow
         label="默认记录对象"
-        onPress={() => setRecordMode(recordMode === '小组成员' ? '仅我记录' : '小组成员')}
-        value={recordMode}
+        onPress={() => {
+          const next: DefaultRecordTarget = recordTarget === 'group_members' ? 'self_only' : 'group_members';
+          setRecordTarget(next);
+          void savePreferences({ recordTarget: next });
+        }}
+        value={recordTargetLabel}
       />
       <View style={styles.preferenceCard}>
         <View>
@@ -574,7 +665,10 @@ function PreferencesPanel({ onBack }: { onBack: () => void }) {
           </AppText>
         </View>
         <Switch
-          onValueChange={setRestTimer}
+          onValueChange={(value) => {
+            setRestTimer(value);
+            void savePreferences({ restTimer: value });
+          }}
           thumbColor={colors.surface}
           trackColor={{ false: colors.borderStrong, true: colors.primary }}
           value={restTimer}
@@ -582,20 +676,34 @@ function PreferencesPanel({ onBack }: { onBack: () => void }) {
       </View>
       <PreferenceRow
         label="默认训练模式"
-        onPress={() => setTrainingMode(nextValue(trainingMode, ['完整动作', '精简辅助', '只做主项']))}
-        value={trainingMode}
+        onPress={() => {
+          const next = nextValue(trainingMode, ['full', 'simplified', 'main_only'] as DefaultTrainingMode[]);
+          setTrainingMode(next);
+          void savePreferences({ trainingMode: next });
+        }}
+        value={trainingModeLabel}
       />
       <PreferenceRow
         label="加重步进"
-        onPress={() => setIncrement(nextValue(increment, ['2.5kg', '1.25kg', '5kg']))}
+        onPress={() => {
+          const next = nextValue(increment, ['2.5kg', '1.25kg', '5kg'] as WeightIncrement[]);
+          setIncrement(next);
+          void savePreferences({ increment: next });
+        }}
         value={increment}
       />
       <PreferenceRow
         label="RPE / RIR"
-        onPress={() => setEffortDisplay(nextValue(effortDisplay, ['不展示', '展示 RPE', '展示 RIR']))}
-        value={effortDisplay}
+        onPress={() => {
+          const next = nextValue(effortDisplay, ['none', 'rpe', 'rir'] as EffortDisplay[]);
+          setEffortDisplay(next);
+          void savePreferences({ effortDisplay: next });
+        }}
+        value={effortLabel}
       />
-      <DevelopmentNote text="偏好项已在面板内可直接调整；持久化到账号设置会在后续同步偏好表时接入。" />
+      {isLoaded ? (
+        <DevelopmentNote text="偏好已保存到本机并加入云同步队列，登录后会自动上传服务器。" />
+      ) : null}
     </PanelScroll>
   );
 }

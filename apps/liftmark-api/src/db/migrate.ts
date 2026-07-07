@@ -270,9 +270,13 @@ async function createSyncTables(trx: Knex.Transaction) {
     'workout_exercise_records',
     'workout_sets',
     'training_plans',
+    'plan_phases',
     'plan_days',
     'plan_exercises',
     'body_metrics',
+    'body_metric_goals',
+    'recovery_logs',
+    'progression_suggestions',
     'settings',
   ];
 
@@ -526,6 +530,10 @@ async function ensureCloudSyncCompleteness(trx: Knex.Transaction) {
   for (const tableName of [
     'workout_exercise_records',
     'body_metrics',
+    'body_metric_goals',
+    'recovery_logs',
+    'progression_suggestions',
+    'plan_phases',
     'settings',
   ]) {
     await ensureSyncEntityTable(trx, tableName);
@@ -533,6 +541,10 @@ async function ensureCloudSyncCompleteness(trx: Knex.Transaction) {
 
   await trx.raw('CREATE INDEX IF NOT EXISTS idx_workout_exercise_records_user_updated ON workout_exercise_records(user_id, updated_at DESC)');
   await trx.raw('CREATE INDEX IF NOT EXISTS idx_body_metrics_user_updated ON body_metrics(user_id, updated_at DESC)');
+  await trx.raw('CREATE INDEX IF NOT EXISTS idx_body_metric_goals_user_updated ON body_metric_goals(user_id, updated_at DESC)');
+  await trx.raw('CREATE INDEX IF NOT EXISTS idx_recovery_logs_user_updated ON recovery_logs(user_id, updated_at DESC)');
+  await trx.raw('CREATE INDEX IF NOT EXISTS idx_progression_suggestions_user_updated ON progression_suggestions(user_id, updated_at DESC)');
+  await trx.raw('CREATE INDEX IF NOT EXISTS idx_plan_phases_user_updated ON plan_phases(user_id, updated_at DESC)');
   await trx.raw('CREATE INDEX IF NOT EXISTS idx_settings_user_updated ON settings(user_id, updated_at DESC)');
 }
 
@@ -600,6 +612,17 @@ async function createAdminAuditTables(trx: Knex.Transaction) {
   }
 }
 
+async function extendSyncEntityTables(trx: Knex.Transaction) {
+  // 补充训练计划阶段、恢复日志、进阶建议的云同步表
+  for (const tableName of ['plan_phases', 'recovery_logs', 'progression_suggestions']) {
+    await ensureSyncEntityTable(trx, tableName);
+  }
+
+  await trx.raw('CREATE INDEX IF NOT EXISTS idx_plan_phases_user_updated ON plan_phases(user_id, updated_at DESC)');
+  await trx.raw('CREATE INDEX IF NOT EXISTS idx_recovery_logs_user_updated ON recovery_logs(user_id, updated_at DESC)');
+  await trx.raw('CREATE INDEX IF NOT EXISTS idx_progression_suggestions_user_updated ON progression_suggestions(user_id, updated_at DESC)');
+}
+
 export async function migrate() {
   await ensureMigrationsTable();
   await runMigration('001_initial_cloud_schema', createInitialSchema);
@@ -610,6 +633,7 @@ export async function migrate() {
   await runMigration('006_member_profile_avatar_fields', addMemberProfileAvatarFields);
   await runMigration('007_cloud_sync_completeness', ensureCloudSyncCompleteness);
   await runMigration('008_admin_audit_tables', createAdminAuditTables);
+  await runMigration('009_extend_sync_entity_tables', extendSyncEntityTables);
 }
 
 if (require.main === module) {

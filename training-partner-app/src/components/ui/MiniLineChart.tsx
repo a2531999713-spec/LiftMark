@@ -105,6 +105,10 @@ export function MiniLineChart({
       : effectiveLabelStrategy === 'keyPoints'
         ? new Set(keyPointIndexes ?? getDefaultKeyPointIndexes(sanitizedData, highlightIndex))
         : new Set<number>();
+  const highlightedValue =
+    highlightIndex !== undefined && sanitizedData[highlightIndex] !== undefined && sanitizedData[highlightIndex] > 0
+      ? formatValue(sanitizedData[highlightIndex])
+      : null;
 
   if (!hasData) {
     return (
@@ -142,11 +146,15 @@ export function MiniLineChart({
         </View>
         <ChartArea
           chartHeight={effectiveChartHeight}
+          formatValue={formatValue}
           highlightIndex={highlightIndex}
+          highlightedValue={highlightedValue}
           labels={labels}
           onPointPress={onPointPress}
           points={points}
+          showValuesInline={effectiveLabelStrategy !== 'none'}
           tickCount={tickValues.length}
+          valueLabelIndexes={valueLabelIndexes}
         />
       </View>
       <View style={styles.labelFrame}>
@@ -154,22 +162,8 @@ export function MiniLineChart({
         <View style={styles.labelRow}>
         {labels.map((label, index) => {
           const isAxisLabelVisible = visibleXAxisIndexes.has(index);
-          const isValueVisible = valueLabelIndexes.has(index);
           return (
           <View key={`${label}-${index}`} style={[styles.labelColumn, pointCount === 1 && styles.labelColumnSingle]}>
-            {isValueVisible && sanitizedData[index] > 0 ? (
-              <AppText
-                numberOfLines={1}
-                style={index === highlightIndex && styles.highlightValue}
-                tone={index === highlightIndex ? 'brand' : 'muted'}
-                variant="caption"
-                weight={index === highlightIndex ? '900' : '400'}
-              >
-                {formatValue(sanitizedData[index])}
-              </AppText>
-            ) : (
-              <View style={styles.valuePlaceholder} />
-            )}
             <AppText
               numberOfLines={1}
               style={styles.labelText}
@@ -192,16 +186,31 @@ type ChartPoint = { index: number; value: number; xPercent: number; yPercent: nu
 
 type ChartAreaProps = {
   chartHeight: number;
+  formatValue: (value: number) => string;
   highlightIndex?: number;
+  highlightedValue: string | null;
   labels: string[];
   onPointPress?: (point: { index: number; value: number; label?: string }, index: number) => void;
   points: ChartPoint[];
+  showValuesInline: boolean;
   tickCount: number;
+  valueLabelIndexes: Set<number>;
 };
 
 const PLOT_PADDING = 12;
 
-function ChartArea({ chartHeight, highlightIndex, labels, onPointPress, points, tickCount }: ChartAreaProps) {
+function ChartArea({
+  chartHeight,
+  formatValue,
+  highlightIndex,
+  highlightedValue,
+  labels,
+  onPointPress,
+  points,
+  showValuesInline,
+  tickCount,
+  valueLabelIndexes,
+}: ChartAreaProps) {
   const [containerWidth, setContainerWidth] = useState(0);
 
   function handleLayout(event: LayoutChangeEvent) {
@@ -224,10 +233,61 @@ function ChartArea({ chartHeight, highlightIndex, labels, onPointPress, points, 
       {containerWidth > 0
         ? renderConnectingLines(points, chartHeight, containerWidth).concat(
             points.map((point, arrayIndex) =>
-              renderPoint(point, arrayIndex, chartHeight, containerWidth, highlightIndex, labels, onPointPress),
+              renderPoint(
+                point,
+                arrayIndex,
+                chartHeight,
+                containerWidth,
+                formatValue,
+                highlightIndex,
+                labels,
+                onPointPress,
+                showValuesInline,
+                valueLabelIndexes,
+              ),
             ),
           )
         : null}
+      {containerWidth > 0 && highlightedValue && highlightIndex !== undefined
+        ? renderHighlightLabel(points, highlightIndex, chartHeight, containerWidth, highlightedValue)
+        : null}
+    </View>
+  );
+}
+
+function renderHighlightLabel(
+  points: ChartPoint[],
+  highlightIndex: number,
+  chartHeight: number,
+  containerWidth: number,
+  label: string,
+) {
+  const point = points.find((item) => item.index === highlightIndex);
+  if (!point || point.value <= 0) return null;
+  const plotWidth = Math.max(1, containerWidth - PLOT_PADDING * 2);
+  const plotHeight = Math.max(1, chartHeight - PLOT_PADDING * 2);
+  const leftPx = PLOT_PADDING + point.xPercent * plotWidth;
+  const top = PLOT_PADDING + (1 - point.yPercent) * plotHeight;
+  const bubbleWidth = Math.max(36, label.length * 8 + 12);
+  const halfBubble = bubbleWidth / 2;
+  const clampedLeft = Math.max(halfBubble + 2, Math.min(containerWidth - halfBubble - 2, leftPx));
+  const bubbleTop = Math.max(2, top - 22);
+  return (
+    <View
+      key={`highlight-label-${highlightIndex}`}
+      pointerEvents="none"
+      style={[
+        styles.valueBubble,
+        {
+          left: (clampedLeft - halfBubble) as DimensionValue,
+          top: bubbleTop,
+          width: bubbleWidth,
+        },
+      ]}
+    >
+      <AppText numberOfLines={1} style={styles.valueBubbleText} tone="inverse" variant="caption" weight="900">
+        {label}
+      </AppText>
     </View>
   );
 }
@@ -283,9 +343,12 @@ function renderPoint(
   arrayIndex: number,
   chartHeight: number,
   containerWidth: number,
+  formatValue: (value: number) => string,
   highlightIndex?: number,
   labels?: string[],
   onPointPress?: (point: { index: number; value: number; label?: string }, index: number) => void,
+  showValuesInline?: boolean,
+  valueLabelIndexes?: Set<number>,
 ) {
   const isHighlighted = point.index === highlightIndex;
   const plotWidth = Math.max(1, containerWidth - PLOT_PADDING * 2);
@@ -294,6 +357,8 @@ function renderPoint(
   const top = PLOT_PADDING + (1 - point.yPercent) * plotHeight;
   const dotSize = isHighlighted ? 10 : point.value !== 0 ? 7 : 5;
   const touchSize = 32;
+  const showInlineLabel =
+    showValuesInline && valueLabelIndexes?.has(point.index) && point.value > 0 && !isHighlighted;
 
   return (
     <Pressable
@@ -310,6 +375,13 @@ function renderPoint(
         },
       ]}
     >
+      {showInlineLabel ? (
+        <View style={styles.inlineValueBubble}>
+          <AppText numberOfLines={1} style={styles.inlineValueText} tone="inverse" variant="caption" weight="900">
+            {formatValue(point.value)}
+          </AppText>
+        </View>
+      ) : null}
       <View
         style={[
           styles.point,
@@ -370,14 +442,37 @@ const styles = StyleSheet.create({
   labelColumnSingle: {
     alignItems: 'flex-start',
   },
-  valuePlaceholder: {
-    height: 12,
-  },
   labelText: {
     fontSize: 10,
   },
-  highlightValue: {
+  valueBubble: {
+    alignItems: 'center',
+    backgroundColor: colors.dark,
+    borderRadius: 6,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    position: 'absolute',
+    shadowColor: colors.dark,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  valueBubbleText: {
     fontSize: 10,
+  },
+  inlineValueBubble: {
+    alignItems: 'center',
+    backgroundColor: colors.dark,
+    borderRadius: 4,
+    bottom: 12,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    position: 'absolute',
+  },
+  inlineValueText: {
+    fontSize: 9,
   },
   connectingLine: {
     backgroundColor: colors.primary,

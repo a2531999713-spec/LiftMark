@@ -14,12 +14,16 @@ export type SyncEntityType =
   | 'workoutExerciseRecords'
   | 'workoutSets'
   | 'trainingPlans'
+  | 'planPhases'
   | 'planDays'
   | 'planExercises'
   | 'groups'
   | 'groupMembers'
   | 'memberProfiles'
   | 'bodyMetrics'
+  | 'bodyMetricGoals'
+  | 'recoveryLogs'
+  | 'progressionSuggestions'
   | 'settings';
 
 export type SyncOperation = 'create' | 'update' | 'delete';

@@ -22,6 +22,7 @@ export default function PlanEditRoute() {
   const [state, setState] = useState<PlanEditState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadPlan = useCallback(async () => {
@@ -114,18 +115,47 @@ export default function PlanEditRoute() {
 
   const isReadonly = state?.plan.source === 'system' || state?.plan.visibility === 'system';
 
+  // 复制系统计划为用户副本，然后跳转到副本的编辑页
+  const duplicateAndEdit = async () => {
+    if (!state) return;
+    setIsDuplicating(true);
+    try {
+      const copy = await repositories.planRepository.duplicatePlan({
+        sourcePlanId: state.plan.id,
+        name: `${state.plan.name}（我的）`,
+      });
+      router.replace({ pathname: '/plan/edit/[planId]', params: { planId: copy.id } } as never);
+    } catch (dupError) {
+      Alert.alert('复制失败', dupError instanceof Error ? dupError.message : '计划复制失败，请重试。');
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
+
   return (
-    <Screen subtitle="编辑摘要和训练日；点击训练日再改动作。" title="编辑计划">
+    <Screen subtitle="" title="编辑计划">
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="计划编辑暂时不可用" description={error} /> : null}
 
       {!isLoading && state && isReadonly ? (
-        <EmptyState
-          actionLabel="返回计划页"
-          description="系统计划不可直接编辑。请先复制为我的计划，再调整训练日和动作。"
-          onActionPress={() => router.replace('/(tabs)/plan')}
-          title="先复制为我的计划"
-        />
+        <>
+          <EmptyState
+            description={`“${state.plan.name}”是系统方案，不可直接修改。复制为你的私有计划后即可自由编辑训练日和动作。`}
+            title="系统方案需先复制"
+          />
+          <AppButton
+            onPress={() => void duplicateAndEdit()}
+            variant="primary"
+          >
+            {isDuplicating ? '复制中...' : '复制为我的计划'}
+          </AppButton>
+          <AppButton
+            onPress={() => router.replace('/(tabs)/plan')}
+            variant="ghost"
+          >
+            返回计划页
+          </AppButton>
+        </>
       ) : null}
 
       {!isLoading && state && !isReadonly ? (

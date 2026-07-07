@@ -103,6 +103,16 @@ async function resolveEntityOwnerUserId(
       );
       return row?.owner_user_id ?? null;
     }
+    case 'planPhases': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(pp.owner_user_id, pt.owner_user_id, pt.creator_id) AS owner_user_id
+         FROM plan_phases pp
+         LEFT JOIN plan_templates pt ON pt.id = pp.plan_id
+         WHERE pp.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
     case 'planDays': {
       const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
         `SELECT COALESCE(pd.owner_user_id, pt.owner_user_id, pt.creator_id) AS owner_user_id
@@ -131,6 +141,39 @@ async function resolveEntityOwnerUserId(
          LEFT JOIN group_members gm ON gm.id = bm.member_id
          LEFT JOIN groups ON groups.id = gm.group_id
          WHERE bm.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'bodyMetricGoals': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(bmg.owner_user_id, gm.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM body_metric_goals bmg
+         LEFT JOIN group_members gm ON gm.id = bmg.member_id
+         LEFT JOIN groups ON groups.id = gm.group_id
+         WHERE bmg.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'recoveryLogs': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(rl.owner_user_id, gm.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM recovery_logs rl
+         LEFT JOIN group_members gm ON gm.id = rl.member_id
+         LEFT JOIN groups ON groups.id = gm.group_id
+         WHERE rl.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'progressionSuggestions': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(ps.owner_user_id, ws.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM progression_suggestions ps
+         LEFT JOIN workout_sessions ws ON ws.id = ps.session_id
+         LEFT JOIN groups ON groups.id = ws.group_id
+         WHERE ps.id = ?`,
         entity.localId,
       );
       return row?.owner_user_id ?? null;

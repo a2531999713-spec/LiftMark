@@ -44,6 +44,8 @@ import type {
   WorkoutSet,
 } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useUserPreferences } from '@/hooks/useUserPreferences';
+import { parseIncrementKg } from '@/domain/preferences/user-preferences.types';
 import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { requestImmediateSync } from '@/sync/syncService';
@@ -159,6 +161,7 @@ export default function WorkoutRoute() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { authMode, guardFeature, sheets } = useAuthGate();
+  const { preferences } = useUserPreferences();
   const [detail, setDetail] = useState<WorkoutSessionDetail | null>(null);
   const [allGroupMembers, setAllGroupMembers] = useState<GroupMember[]>([]);
   const [members, setMembers] = useState<GroupMember[]>([]);
@@ -183,7 +186,6 @@ export default function WorkoutRoute() {
     useState<CompletedSetDeletionConfirm>(null);
   const [participantRemovalConfirm, setParticipantRemovalConfirm] =
     useState<ParticipantRemovalConfirm>(null);
-  const [restNotice, setRestNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -366,10 +368,7 @@ export default function WorkoutRoute() {
         setMemberRestState(nextState);
       }
 
-      timersToPersist.forEach(({ memberId, state }) => {
-        const memberName = members.find((member) => member.id === memberId)?.displayName ?? '成员';
-        setRestNotice(`${memberName}休息结束，可以准备下一组`);
-
+      timersToPersist.forEach(({ state, memberId }) => {
         if (!state.sourceSetId || !state.startedAt) {
           return;
         }
@@ -595,7 +594,13 @@ export default function WorkoutRoute() {
   }, [detail, exerciseMap, activeExerciseIndex]);
 
   const currentProfile = currentMemberId ? profiles[currentMemberId] ?? null : null;
-  const currentIncrement = getWeightIncrement(currentProfile, activeExercise);
+  // 用户偏好的重量步进优先于 member profile 的默认值
+  const currentIncrement = useMemo(() => {
+    const profileIncrement = getWeightIncrement(currentProfile, activeExercise);
+    // 仅当用户偏好与 profile 默认值不一致时使用偏好值
+    const prefIncrement = parseIncrementKg(preferences.weightIncrement);
+    return prefIncrement || profileIncrement;
+  }, [currentProfile, activeExercise, preferences.weightIncrement]);
   const previousCompletedWeightForCurrentSet = currentDisplaySet
     ? [...activeSets]
         .filter(
@@ -747,7 +752,8 @@ export default function WorkoutRoute() {
       ? getNextWorkoutSetForRotation(nextActiveSets, memberOrder, activeRecord.id)
       : null;
     const restSeconds = activeRecord?.plannedRestSeconds ?? 0;
-    if (restSeconds > 0) {
+    // 仅当用户偏好启用了休息计时才自动启动
+    if (restSeconds > 0 && preferences.restTimerEnabled) {
       const startedAt = getNowMs();
       setMemberRestState((prev) => ({
         ...prev,
@@ -1541,18 +1547,7 @@ export default function WorkoutRoute() {
                 />
               )}
 
-              {restNotice ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setRestNotice(null)}
-                  style={styles.restNotice}
-                >
-                  <Ionicons color={colors.success} name="checkmark-circle-outline" size={18} />
-                  <AppText variant="bodySmall" weight="900" style={styles.restNoticeText}>
-                    {restNotice}
-                  </AppText>
-                </Pressable>
-              ) : null}
+
 
               <CompletedSetList
                 completedSets={completedActiveSets}
@@ -2334,21 +2329,6 @@ const styles = StyleSheet.create({
   },
   memberDoneText: {
     gap: spacing.xs,
-  },
-  restNotice: {
-    alignItems: 'center',
-    backgroundColor: colors.successSoft,
-    borderColor: colors.success,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  restNoticeText: {
-    color: colors.textStrong,
-    flex: 1,
   },
   bottomBar: {
     alignSelf: 'center',

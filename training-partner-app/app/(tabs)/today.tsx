@@ -652,6 +652,7 @@ export default function TodayRoute() {
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const [announcementVisible, setAnnouncementVisible] = useState(false);
+  const [latestWeightLabel, setLatestWeightLabel] = useState<string | null>(null);
   const loadHomeRequestRef = useRef(0);
   const lastAnnouncementFetchRef = useRef(0);
   const ANNOUNCEMENT_FETCH_THROTTLE_MS = 5 * 60 * 1000;
@@ -839,6 +840,21 @@ export default function TodayRoute() {
       setPlanPhases(nextPhases);
       setExerciseMap(nextExerciseMap);
       setWeeklyOverview(summarizeWeeklyOverview(compactDetails(weekDetails), currentMember?.id));
+      try {
+        if (currentMember) {
+          const metrics = await repositories.bodyMetricsRepository.listMetrics(currentMember.id, 1);
+          const latestMetric = metrics[0];
+          setLatestWeightLabel(
+            latestMetric?.weightKg
+              ? `${latestMetric.weightKg}kg · ${latestMetric.date}`
+              : null,
+          );
+        } else {
+          setLatestWeightLabel(null);
+        }
+      } catch {
+        setLatestWeightLabel(null);
+      }
     } catch (loadError) {
       if (!isLatestRequest()) return;
       console.error('[home] load failed', loadError);
@@ -1391,6 +1407,29 @@ export default function TodayRoute() {
               <AppText variant="bodySmall" weight="800">
                 当前使用训练记录
               </AppText>
+            </View>
+          ) : null}
+
+          {!error && groups.length > 0 ? (
+            <View style={styles.quickActionRow}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push('/profile/body-metrics' as never)}
+                style={({ pressed }) => [styles.quickActionCard, pressed && styles.pressed]}
+              >
+                <View style={styles.quickActionIcon}>
+                  <Ionicons color={colors.primary} name="scale-outline" size={20} />
+                </View>
+                <View style={styles.quickActionText}>
+                  <AppText variant="bodySmall" weight="900">
+                    记录体重
+                  </AppText>
+                  <AppText tone="muted" variant="caption">
+                    {latestWeightLabel ?? '点击快速记录今日体重'}
+                  </AppText>
+                </View>
+                <Ionicons color={colors.textSubtle} name="chevron-forward" size={18} />
+              </Pressable>
             </View>
           ) : null}
 
@@ -2330,6 +2369,33 @@ const styles = StyleSheet.create({
   loadingWrap: {
     alignItems: 'center',
     paddingVertical: spacing.xxxl,
+  },
+  quickActionRow: {
+    gap: spacing.sm,
+  },
+  quickActionCard: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    ...shadows.card,
+  },
+  quickActionIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  quickActionText: {
+    flex: 1,
+    gap: 2,
   },
   offlineBanner: {
     alignItems: 'center',

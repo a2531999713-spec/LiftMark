@@ -6,7 +6,6 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Avatar, AppCard, AppText, MiniLineChart, MultiLineTrendChart, Tag } from '@/components/ui';
 import type { MultiLineTrendSeries } from '@/components/ui/MultiLineTrendChart';
-import { ChartTooltip } from '@/components/history/ChartTooltip';
 import { colors, radius, spacing } from '@/theme';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
@@ -172,7 +171,6 @@ export function ChartCard({
     .filter((point) => point.value > 0);
   const chartLabels = activePoints.map((point) => point.label);
   const chartData = activePoints.map((point) => point.value);
-  const selectedPoint = selectedIndex !== null && selectedIndex < activePoints.length ? activePoints[selectedIndex] : null;
   const fmt = formatValue ?? ((v: number) => `${Math.round(v)}`);
 
   return (
@@ -195,23 +193,16 @@ export function ChartCard({
         data={chartData}
         emptyMessage="当前范围还没有趋势数据"
         formatValue={fmt}
-        highlightIndex={selectedPoint ? selectedIndex ?? undefined : undefined}
-        includeZero={false}
-        keyPointIndexes={selectedPoint && selectedIndex !== null ? [selectedIndex] : []}
+        highlightIndex={selectedIndex ?? undefined}
+        includeZero
+        keyPointIndexes={selectedIndex !== null ? [selectedIndex] : []}
         labels={chartLabels}
         minChartHeight={Math.max(100, ...data)}
         onPointPress={(_, index) => setSelectedIndex((prev) => (prev === index ? null : index))}
         showValues={false}
         unitLabel={unit}
-        valueLabelStrategy={selectedPoint ? 'keyPoints' : 'none'}
+        valueLabelStrategy={selectedIndex !== null ? 'keyPoints' : 'none'}
       />
-      {selectedPoint ? (
-        <ChartTooltip
-          title={selectedPoint.label}
-          subtitle={title}
-          metrics={[{ label: unit, value: fmt(selectedPoint.value) }]}
-        />
-      ) : null}
     </AppCard>
   );
 }
