@@ -42,7 +42,10 @@ export function RecordHomeScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setIsLoading(true);
+    // 已有数据时不强制 loading（避免切 Tab 白屏），只在无数据时显示 loading
+    if (!dataset) {
+      setIsLoading(true);
+    }
     setError(null);
     try {
       setDataset(await loadHistoryDataset(range, selectedGroupId));
@@ -51,7 +54,7 @@ export function RecordHomeScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [range, selectedGroupId]);
+  }, [range, selectedGroupId, dataset]);
 
   useFocusEffect(
     useCallback(() => {
@@ -100,15 +103,15 @@ export function RecordHomeScreen() {
         range={range}
       />
 
-      {isLoading ? (
+      {isLoading && !dataset ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : null}
 
-      {error ? <EmptyState actionLabel="重新加载" description={error} onActionPress={() => void load()} title="记录暂时无法加载" /> : null}
+      {error && !dataset ? <EmptyState actionLabel="重新加载" description={error} onActionPress={() => void load()} title="记录暂时无法加载" /> : null}
 
-      {!isLoading && !error && dataset ? (
+      {dataset ? (
         <>
           <MetricGrid
             items={[
