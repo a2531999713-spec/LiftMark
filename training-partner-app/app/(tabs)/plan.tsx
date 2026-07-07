@@ -171,7 +171,7 @@ export default function PlanRoute() {
   const [isManageVisible, setManageVisible] = useState(false);
   const [isActionsVisible, setActionsVisible] = useState(false);
   const [isSchemeLibraryVisible, setSchemeLibraryVisible] = useState(false);
-  const [isMoreMenuVisible, setMoreMenuVisible] = useState(false);
+  const [moreMenuInlineOpen, setMoreMenuInlineOpen] = useState(false);
   const [deletePromptPlan, setDeletePromptPlan] = useState<PlanTemplate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
@@ -182,7 +182,11 @@ export default function PlanRoute() {
   const upcomingSchemes = useMemo(() => systemSchemes.filter((scheme) => !scheme.isAvailable), [systemSchemes]);
 
   const loadPlans = useCallback(async () => {
-    setIsLoading(true);
+    // 已有数据时不强制 loading（避免切 Tab 白屏），只在无数据时显示 loading
+    const hasData = Boolean(group && activePlan);
+    if (!hasData) {
+      setIsLoading(true);
+    }
     setError(null);
 
     try {
@@ -264,7 +268,7 @@ export default function PlanRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories, selectedGroupId, setSelectedGroupId]);
+  }, [repositories, selectedGroupId, setSelectedGroupId, group, activePlan]);
 
   useFocusEffect(
     useCallback(() => {
@@ -513,11 +517,9 @@ export default function PlanRoute() {
 
   return (
     <Screen>
-      {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-
       {error ? <EmptyState title="计划暂时无法加载" description={error} /> : null}
 
-      {!isLoading && !error && group ? (
+      {!error && group ? (
         <>
           <VisualHeroCard
             eyebrow="当前计划"
@@ -619,6 +621,12 @@ export default function PlanRoute() {
             </AppText>
           ) : null}
         </>
+      ) : null}
+
+      {isLoading && !group ? (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
       ) : null}
 
       <AppModalSheet
@@ -739,182 +747,186 @@ export default function PlanRoute() {
 
       <AppModalSheet
         contentStyle={styles.manageContent}
-        onClose={() => setManageVisible(false)}
+        onClose={() => {
+          setManageVisible(false);
+          setMoreMenuInlineOpen(false);
+        }}
         title="管理计划"
         visible={isManageVisible}
       >
-        {/* 我的计划区域 */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <AppText variant="subtitle" weight="900">
-              我的计划
-            </AppText>
-            <AppText tone="muted" variant="caption">
-              {sortedUserPlans.length} 个
-            </AppText>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setMoreMenuVisible(true)}
-            style={({ pressed }) => [styles.moreButtonSmall, pressed && styles.pressed]}
-          >
-            <Ionicons color={colors.textMuted} name="ellipsis-vertical" size={16} />
-          </Pressable>
-        </View>
-
-        {sortedUserPlans.length === 0 ? (
-          <AppCard style={styles.emptyManageCard} tone="soft">
-            <Ionicons color={colors.textMuted} name="clipboard-outline" size={32} />
-            <AppText variant="bodySmall" weight="900">
-              还没有我的计划
-            </AppText>
-            <AppText tone="muted" variant="caption">
-              点击右上角更多操作新建或导入，或从下方系统方案开始
-            </AppText>
-          </AppCard>
-        ) : (
-          <View style={styles.list}>
-            {sortedUserPlans.map((plan) => {
-              const isActive = plan.id === group?.activePlanId;
-              const canDelete = !isActive && sortedUserPlans.length > 1 && plan.source !== 'system';
-              return (
-                <AppCard key={plan.id} style={[styles.managePlanCard, isActive && styles.activePlanCard]}>
-                  <View style={styles.planRow}>
-                    <View style={styles.planRowText}>
-                      <View style={styles.planTitleRow}>
-                        {isActive ? (
-                          <Ionicons color={colors.primary} name="star" size={14} />
-                        ) : null}
-                        <AppText variant="bodySmall" weight="900">
-                          {plan.name}
-                        </AppText>
-                        {isActive ? (
-                          <View style={styles.currentBadge}>
-                            <AppText tone="brand" variant="caption" weight="900">
-                              当前
-                            </AppText>
-                          </View>
-                        ) : null}
-                      </View>
-                      <AppText tone="muted" variant="caption">
-                        {plan.durationWeeks} 周 · 每周 {plan.frequencyPerWeek} 练
-                      </AppText>
-                    </View>
-                  </View>
-                  <View style={styles.inlineActions}>
-                    {!isActive && (
-                      <AppButton
-                        disabled={isSettingActive === plan.id}
-                        onPress={() => void setCurrentPlan(plan)}
-                        size="sm"
-                        icon={isSettingActive === plan.id ? undefined : 'checkmark-outline'}
-                      >
-                        {isSettingActive === plan.id ? '切换中...' : '设为当前'}
-                      </AppButton>
-                    )}
-                    <AppButton
-                      onPress={() => {
-                        setManageVisible(false);
-                        if (plan.source === 'system') {
-                          router.push({ pathname: '/plan/[planId]', params: { planId: plan.id } } as never);
-                        } else {
-                          router.push({ pathname: '/plan/edit/[planId]', params: { planId: plan.id } } as never);
-                        }
-                      }}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      {plan.source === 'system' ? '查看' : '编辑'}
-                    </AppButton>
-                    <AppButton
-                      onPress={() => void sharePlan(plan)}
-                      size="sm"
-                      variant="secondary"
-                      icon="share-outline"
-                    >
-                      分享
-                    </AppButton>
-                    <AppButton
-                      disabled={!canDelete}
-                      onPress={() => setDeletePromptPlan(plan)}
-                      size="sm"
-                      variant="danger"
-                      icon="trash-outline"
-                    >
-                      删除
-                    </AppButton>
-                  </View>
-                </AppCard>
-              );
-            })}
-          </View>
-        )}
-
-        {/* 系统内置方案 - 探索更多 */}
-        {availableSchemes.length > 0 ? (
-          <View style={styles.systemSchemeSection}>
-            <SectionHeader
-              subtitle="系统内置训练方案，点击使用可复制为我的计划。"
-              title={`探索更多 (${availableSchemes.length} 个方案)`}
-            />
-            <View style={styles.list}>
-              {availableSchemes.slice(0, 3).map((scheme) => (
-                <SchemeCard
-                  key={scheme.id}
-                  onPreview={() => setPreviewScheme(scheme)}
-                  onUse={() => openUseScheme(scheme)}
-                  scheme={scheme}
-                />
-              ))}
-              {availableSchemes.length > 3 && (
-                <AppButton
-                  onPress={() => {
-                    setManageVisible(false);
-                    setSchemeLibraryVisible(true);
-                  }}
-                  variant="secondary"
-                  size="sm"
-                  icon="chevron-forward-outline"
-                >
-                  查看全部 {availableSchemes.length} 个方案 →
-                </AppButton>
-              )}
+        <ScrollView contentContainerStyle={styles.manageScrollContent} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          {/* 我的计划区域 */}
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <AppText variant="subtitle" weight="900">
+                我的计划
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                {sortedUserPlans.length} 个
+              </AppText>
             </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setMoreMenuInlineOpen((prev) => !prev)}
+              style={({ pressed }) => [styles.moreButtonSmall, pressed && styles.pressed]}
+            >
+              <Ionicons color={colors.textMuted} name="ellipsis-vertical" size={16} />
+            </Pressable>
           </View>
-        ) : null}
-      </AppModalSheet>
 
-      {/* 更多操作下拉菜单 */}
-      <AppModalSheet
-        onClose={() => setMoreMenuVisible(false)}
-        position="center"
-        subtitle="新建空白计划或从 .liftmark.json 文件导入。"
-        title="更多操作"
-        visible={isMoreMenuVisible}
-      >
-        <PlanActionRow
-          icon="add-circle-outline"
-          label="新建空白计划"
-          onPress={() => {
-            setMoreMenuVisible(false);
-            setManageVisible(false);
-            if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
-              router.push('/plan/create' as never);
-            }
-          }}
-        />
-        <PlanActionRow
-          icon="download-outline"
-          label="导入计划"
-          onPress={() => {
-            setMoreMenuVisible(false);
-            setManageVisible(false);
-            void importPlan();
-          }}
-        />
-        <AppButton onPress={() => setMoreMenuVisible(false)} variant="secondary">
-          取消
-        </AppButton>
+          {/* 内联展开的更多操作（新建 / 导入） */}
+          {moreMenuInlineOpen ? (
+            <View style={styles.inlineMoreActions}>
+              <AppButton
+                onPress={() => {
+                  setMoreMenuInlineOpen(false);
+                  setManageVisible(false);
+                  if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
+                    router.push('/plan/create' as never);
+                  }
+                }}
+                size="sm"
+                variant="secondary"
+                icon="add-circle-outline"
+              >
+                新建空白计划
+              </AppButton>
+              <AppButton
+                onPress={() => {
+                  setMoreMenuInlineOpen(false);
+                  setManageVisible(false);
+                  void importPlan();
+                }}
+                size="sm"
+                variant="secondary"
+                icon="download-outline"
+              >
+                导入计划
+              </AppButton>
+            </View>
+          ) : null}
+
+          {sortedUserPlans.length === 0 ? (
+            <AppCard style={styles.emptyManageCard} tone="soft">
+              <Ionicons color={colors.textMuted} name="clipboard-outline" size={32} />
+              <AppText variant="bodySmall" weight="900">
+                还没有我的计划
+              </AppText>
+              <AppText tone="muted" variant="caption">
+                点击右上角更多操作新建或导入，或从下方系统方案开始
+              </AppText>
+            </AppCard>
+          ) : (
+            <View style={styles.list}>
+              {sortedUserPlans.map((plan) => {
+                const isActive = plan.id === group?.activePlanId;
+                const canDelete = !isActive && sortedUserPlans.length > 1 && plan.source !== 'system';
+                return (
+                  <AppCard key={plan.id} style={[styles.managePlanCard, isActive && styles.activePlanCard]}>
+                    <View style={styles.planRow}>
+                      <View style={styles.planRowText}>
+                        <View style={styles.planTitleRow}>
+                          {isActive ? (
+                            <Ionicons color={colors.primary} name="star" size={14} />
+                          ) : null}
+                          <AppText variant="bodySmall" weight="900">
+                            {plan.name}
+                          </AppText>
+                          {isActive ? (
+                            <View style={styles.currentBadge}>
+                              <AppText tone="brand" variant="caption" weight="900">
+                                当前
+                              </AppText>
+                            </View>
+                          ) : null}
+                        </View>
+                        <AppText tone="muted" variant="caption">
+                          {plan.durationWeeks} 周 · 每周 {plan.frequencyPerWeek} 练
+                        </AppText>
+                      </View>
+                    </View>
+                    <View style={styles.inlineActions}>
+                      {!isActive && (
+                        <AppButton
+                          disabled={isSettingActive === plan.id}
+                          onPress={() => void setCurrentPlan(plan)}
+                          size="sm"
+                          icon={isSettingActive === plan.id ? undefined : 'checkmark-outline'}
+                        >
+                          {isSettingActive === plan.id ? '切换中...' : '设为当前'}
+                        </AppButton>
+                      )}
+                      <AppButton
+                        onPress={() => {
+                          setManageVisible(false);
+                          if (plan.source === 'system') {
+                            router.push({ pathname: '/plan/[planId]', params: { planId: plan.id } } as never);
+                          } else {
+                            router.push({ pathname: '/plan/edit/[planId]', params: { planId: plan.id } } as never);
+                          }
+                        }}
+                        size="sm"
+                        variant="secondary"
+                      >
+                        {plan.source === 'system' ? '查看' : '编辑'}
+                      </AppButton>
+                      <AppButton
+                        onPress={() => void sharePlan(plan)}
+                        size="sm"
+                        variant="secondary"
+                        icon="share-outline"
+                      >
+                        分享
+                      </AppButton>
+                      <AppButton
+                        disabled={!canDelete}
+                        onPress={() => setDeletePromptPlan(plan)}
+                        size="sm"
+                        variant="danger"
+                        icon="trash-outline"
+                      >
+                        删除
+                      </AppButton>
+                    </View>
+                  </AppCard>
+                );
+              })}
+            </View>
+          )}
+
+          {/* 系统内置方案 - 探索更多 */}
+          {availableSchemes.length > 0 ? (
+            <View style={styles.systemSchemeSection}>
+              <SectionHeader
+                subtitle="系统内置训练方案，点击使用可复制为我的计划。"
+                title={`探索更多 (${availableSchemes.length} 个方案)`}
+              />
+              <View style={styles.list}>
+                {availableSchemes.slice(0, 3).map((scheme) => (
+                  <SchemeCard
+                    key={scheme.id}
+                    onPreview={() => setPreviewScheme(scheme)}
+                    onUse={() => openUseScheme(scheme)}
+                    scheme={scheme}
+                  />
+                ))}
+                {availableSchemes.length > 3 && (
+                  <AppButton
+                    onPress={() => {
+                      setManageVisible(false);
+                      setSchemeLibraryVisible(true);
+                    }}
+                    variant="secondary"
+                    size="sm"
+                    icon="chevron-forward-outline"
+                  >
+                    查看全部 {availableSchemes.length} 个方案 →
+                  </AppButton>
+                )}
+              </View>
+            </View>
+          ) : null}
+        </ScrollView>
       </AppModalSheet>
 
       <AppModalSheet
@@ -1231,9 +1243,25 @@ const styles = StyleSheet.create({
   libraryContent: {
     maxHeight: 560,
   },
+  loadingOverlay: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: spacing.xl,
+  },
   manageContent: {
     maxHeight: 560,
+    flex: 1,
+  },
+  manageScrollContent: {
     gap: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  inlineMoreActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xs,
   },
   managePlanCard: {
     gap: spacing.md,

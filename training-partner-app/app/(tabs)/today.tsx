@@ -22,7 +22,7 @@ import {
   TodayTrainingHero,
   type TodayFocusItem,
 } from '@/components/home';
-import { AppButton, AppCard, AppModalSheet, AppText, Screen, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
@@ -662,7 +662,11 @@ export default function TodayRoute() {
     loadHomeRequestRef.current = requestId;
     const isLatestRequest = () => requestId === loadHomeRequestRef.current;
 
-    setIsLoading(true);
+    // 已有数据时不强制 loading（避免切 Tab 白屏），只在无数据时显示 loading
+    const hasData = Boolean(group && todayPlan);
+    if (!hasData) {
+      setIsLoading(true);
+    }
     setError(null);
 
     try {
@@ -864,7 +868,7 @@ export default function TodayRoute() {
         setIsLoading(false);
       }
     }
-  }, [isPlanSelectionManual, repositories, recoveryMode, selectedGroupId, selectedWeek, selectedWeekday, setSelectedGroupId, todayWeekday]);
+  }, [isPlanSelectionManual, repositories, recoveryMode, selectedGroupId, selectedWeek, selectedWeekday, setSelectedGroupId, todayWeekday, group, todayPlan]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1382,13 +1386,17 @@ export default function TodayRoute() {
 
   return (
     <Screen contentStyle={styles.screenContent}>
-      {isLoading ? (
+      {isLoading && !group ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : null}
 
-      {!isLoading ? (
+      {error ? (
+        <EmptyState title="首页暂时无法加载" description={error} />
+      ) : null}
+
+      {!error ? (
         <>
           <HomeHeader
             avatarLocalUri={avatarDisplay.avatarLocalUri}

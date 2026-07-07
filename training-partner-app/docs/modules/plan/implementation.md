@@ -3,6 +3,42 @@
 更新时间：2026-07-08
 对应代码目录：`training-partner-app/`
 
+## 2026-07-08 管理面板滚动与内联更多操作 + Tab 切换白屏修复
+
+- `app/(tabs)/plan.tsx` 管理计划弹窗内容用 `ScrollView` 包裹（`manageScrollContent` 样式：`gap: spacing.md, paddingBottom: spacing.sm`），`manageContent` 样式改为 `maxHeight: 560 + flex: 1`（移除原 `gap: spacing.md`，gap 移到 scrollContent），解决计划数量多时超出屏幕无法滚动的问题。
+- `app/(tabs)/plan.tsx` 「更多操作」从独立 `AppModalSheet`（position=center）改为内联展开：
+  - 新增 `moreMenuInlineOpen` state（替换 `isMoreMenuVisible`）。
+  - 点击 ⋮ 按钮切换 `moreMenuInlineOpen`，true 时在「我的计划」标题下方渲染 `inlineMoreActions` View（`flexDirection: row, flexWrap: wrap, gap: spacing.sm`）内含「新建空白计划」「导入计划」两个 `AppButton`。
+  - 移除原独立的「更多操作」`AppModalSheet` 及其 `PlanActionRow` / 取消按钮。
+  - 管理弹窗 `onClose` 回调同步重置 `moreMenuInlineOpen`。
+- `app/(tabs)/plan.tsx` Tab 切换白屏修复：
+  - `loadPlans` 开头改为 `const hasData = Boolean(group && activePlan); if (!hasData) setIsLoading(true);`，已有数据时跳过 loading。
+  - `useCallback` 依赖数组补充 `group, activePlan`。
+  - 渲染条件从 `{!isLoading && !error && group ? <子树> : null}` 改为 `{!error && group ? <子树> : null}`，保留旧数据不卸载。
+  - loading overlay 条件改为 `{isLoading && !group ? <ActivityIndicator/> : null}`，新增 `loadingOverlay` 样式。
+- `app/(tabs)/today.tsx` Tab 切换白屏修复：
+  - `loadHome` 开头改为 `const hasData = Boolean(group && todayPlan); if (!hasData) setIsLoading(true);`。
+  - `useCallback` 依赖数组补充 `group, todayPlan`。
+  - 渲染条件从 `{!isLoading ? <子树> : null}` 改为 `{!error ? <子树> : null}`，新增 `EmptyState` 导入用于 error 展示。
+  - loading overlay 条件改为 `{isLoading && !group ? <ActivityIndicator/> : null}`。
+- `src/features/history/recordHome/RecordHomeScreen.tsx` Tab 切换白屏修复：
+  - `load` 开头改为 `if (!dataset) setIsLoading(true);`，`useCallback` 依赖数组补充 `dataset`。
+  - 渲染条件从 `{!isLoading && !error && dataset ? <子树> : null}` 改为 `{dataset ? <子树> : null}`。
+  - loading overlay 条件改为 `{isLoading && !dataset ? <ActivityIndicator/> : null}`，error 条件改为 `{error && !dataset ? <EmptyState/> : null}`。
+- `app/(tabs)/members.tsx` Tab 切换白屏修复：
+  - `loadMembers` 开头改为 `if (!group) setIsLoading(true);`，`useCallback` 依赖数组补充 `group`。
+  - 渲染条件从 `{!isLoading && !error ? <子树> : null}` 改为 `{group ? <子树> : null}`。
+  - loading overlay 条件改为 `{isLoading && !group ? <ActivityIndicator/> : null}`，error 条件改为 `{error && !group ? <EmptyState/> : null}`。
+- `app/(tabs)/settings.tsx` Tab 切换白屏修复：
+  - `loadProfile` 开头改为 `if (!group) setIsLoading(true);`，`useCallback` 依赖数组补充 `group`。
+  - 渲染条件从 `{!isLoading && !error ? <子树> : null}` 改为 `{group ? <子树> : null}`。
+  - loading overlay 条件改为 `{(isLoading || isAuthLoading) && !group ? <ActivityIndicator/> : null}`，error 条件改为 `{error && !group ? <EmptyState/> : null}`。
+- `app/plan/edit/[planId].tsx` 编辑计划页顶部间距修复：
+  - `Screen` 从默认 `safeTop={true}` 改为 `safeTop={false}`，避免与 expo-router Stack header（「编辑计划」标题）的双重顶部空间叠加。
+  - `contentStyle` 新增 `paddingTop: spacing.sm`，保持紧凑间距。
+  - 新增 `spacing` 导入（从 `@/theme`）。
+- 注意：Tab 白屏修复只解决「白屏闪烁」感知问题，不解决 N+1 查询性能问题（today 最多 160+ 次 getSessionDetail、history 最多 800+800 次），N+1 优化留待后续。
+
 ## 2026-07-08 管理计划面板重设计与最近训练图表改造
 
 - `app/(tabs)/plan.tsx` 管理计划弹窗按用户设计方案重构：

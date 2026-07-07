@@ -1,5 +1,40 @@
 # 变更记录
 
+## 2026-07-08 - manage-panel-inline-actions-and-tab-loading-fix
+
+### 管理计划面板滚动与内联更多操作
+- `app/(tabs)/plan.tsx` 管理计划弹窗内容用 `ScrollView` 包裹（`manageScrollContent` 样式），`manageContent` 改为 `maxHeight: 560 + flex: 1`，解决计划数量多时超出屏幕无法滚动的问题。
+- 「更多操作」从独立 `AppModalSheet`（position=center）改为内联展开：点击 ⋮ 按钮后在「我的计划」标题下方直接展开「新建空白计划」「导入计划」两个按钮（`inlineMoreActions` 样式），不再弹独立界面，避免空旷感。
+- 新增 `moreMenuInlineOpen` state 替换 `isMoreMenuVisible`；关闭管理弹窗时同步重置 `moreMenuInlineOpen`。
+- 探索更多区域的「查看全部 N 个方案 →」按钮保留，点击跳转计划库弹窗显示全部系统方案。
+
+### Tab 切换白屏加载修复（之前只分析未改）
+- 根因：五个 Tab 屏幕（today / plan / RecordHomeScreen / members / settings）均在 `useFocusEffect` 进入即 `setIsLoading(true)`，并用 `{isLoading ? <ActivityIndicator/> : null}` + `{!isLoading ? <子树> : null}` 双条件渲染，每次切 Tab 都把整棵内容子树卸载再重挂，表现为白屏闪烁。
+- 修复策略（最小改动）：保留旧数据展示，loading 改为仅在无数据时显示 overlay。
+  - `load` 函数开头改为 `if (!hasData) setIsLoading(true)`，已有数据时跳过 loading 状态。
+  - 渲染条件从 `{!isLoading && !error ? <子树> : null}` 改为 `{hasData ? <子树> : null}`，保留旧数据不卸载。
+  - loading overlay 条件改为 `{isLoading && !hasData ? <ActivityIndicator/> : null}`。
+  - error 显示条件改为 `{error && !hasData ? <EmptyState/> : null}`，避免已有数据时被错误态覆盖。
+- 套用文件：
+  - `app/(tabs)/plan.tsx`：hasData = `Boolean(group && activePlan)`
+  - `app/(tabs)/today.tsx`：hasData = `Boolean(group && todayPlan)`，新增 `EmptyState` 导入
+  - `src/features/history/recordHome/RecordHomeScreen.tsx`：hasData = `Boolean(dataset)`
+  - `app/(tabs)/members.tsx`：hasData = `Boolean(group)`
+  - `app/(tabs)/settings.tsx`：hasData = `Boolean(group)`
+- 各 `useCallback` 依赖数组补充对应 hasData 依赖（group/todayPlan/dataset）。
+- 注意：此修复只解决「白屏闪烁」感知问题，不解决 N+1 查询性能问题（today 最多 160+ 次 getSessionDetail、history 最多 800+800 次），N+1 优化留待后续。
+
+### 编辑计划页顶部间距修复
+- `app/plan/edit/[planId].tsx` 的 `Screen` 从默认 `safeTop={true}` 改为 `safeTop={false}`，避免与 expo-router Stack header（「编辑计划」标题）的双重顶部空间叠加。
+- `contentStyle` 新增 `paddingTop: spacing.sm`，计划名称与顶部标题保持紧凑间距。
+- 新增 `spacing` 导入。
+
+### 验证
+- `npm run typecheck`：仅 `src/features/history/shared/DateRangeSelector.tsx(98,12): error TS2304: Cannot find name 'subtitle'` 一条既有错误（与本次变更无关，本次未修改该文件）。
+- `npm run lint`：仅 2 条既有 warning（`today.tsx` announcement 依赖、`app/plan/[planId].tsx` 既有 `isDuplicating`），与本次变更无关。
+- 本次均为前端代码变更，无服务器后端 API 或数据库变更，无需服务器部署。
+- 移动端需重新打包 APK 以生效。
+
 ## 2026-07-08 - manage-plan-panel-and-chart-fixes
 
 ### 管理计划面板重设计

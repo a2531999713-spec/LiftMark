@@ -33,7 +33,10 @@ export default function MembersRoute() {
   const [error, setError] = useState<string | null>(null);
 
   const loadMembers = useCallback(async () => {
-    setIsLoading(true);
+    // 已有数据时不强制 loading（避免切 Tab 白屏），只在无数据时显示 loading
+    if (!group) {
+      setIsLoading(true);
+    }
     setError(null);
 
     try {
@@ -65,7 +68,7 @@ export default function MembersRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [repositories, selectedGroupId, setSelectedGroupId]);
+  }, [repositories, selectedGroupId, setSelectedGroupId, group]);
 
   useFocusEffect(
     useCallback(() => {
@@ -101,11 +104,11 @@ export default function MembersRoute() {
       subtitle="管理当前设备用于训练记录的小组成员"
       title="搭子"
     >
-      {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
+      {isLoading && !group ? <ActivityIndicator color={colors.primary} /> : null}
 
-      {error ? <EmptyState title="搭子暂时无法加载" description={error} /> : null}
+      {error && !group ? <EmptyState title="搭子暂时无法加载" description={error} /> : null}
 
-      {!isLoading && !error ? (
+      {group ? (
         <>
           <AppCard style={styles.summaryCard}>
             <View style={styles.summaryHeader}>

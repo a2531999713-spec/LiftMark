@@ -44,7 +44,10 @@ export default function SettingsRoute() {
   });
 
   const loadProfile = useCallback(async () => {
-    setIsLoading(true);
+    // 已有数据时不强制 loading（避免切 Tab 白屏），只在无数据时显示 loading
+    if (!group) {
+      setIsLoading(true);
+    }
     setError(null);
 
     try {
@@ -82,7 +85,7 @@ export default function SettingsRoute() {
     } finally {
       setIsLoading(false);
     }
-  }, [loadCurrentUser, repositories, selectedGroupId, setSelectedGroupId]);
+  }, [loadCurrentUser, repositories, selectedGroupId, setSelectedGroupId, group]);
 
   useFocusEffect(
     useCallback(() => {
@@ -119,13 +122,13 @@ export default function SettingsRoute() {
 
   return (
     <Screen contentStyle={styles.screen}>
-      {isLoading || isAuthLoading ? (
+      {(isLoading || isAuthLoading) && !group ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : null}
 
-      {error ? (
+      {error && !group ? (
         <EmptyState
           actionLabel="重新加载"
           description={error}
@@ -134,7 +137,7 @@ export default function SettingsRoute() {
         />
       ) : null}
 
-      {!isLoading && !error ? (
+      {group ? (
         <>
           <ProfileHeroCard
             avatarLocalUri={avatarDisplay.avatarLocalUri}

@@ -10,7 +10,7 @@ import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { CreateCustomExerciseInput } from '@/data/repositories/exerciseRepository';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
-import { colors } from '@/theme';
+import { colors, spacing } from '@/theme';
 
 type PlanEditState = {
   allExercises: Exercise[];
@@ -206,7 +206,7 @@ export default function PlanEditRoute() {
   };
 
   return (
-    <Screen contentStyle={{ flex: 1, paddingBottom: 12 }} scroll={false}>
+    <Screen contentStyle={{ flex: 1, paddingBottom: 12, paddingTop: spacing.sm }} scroll={false} safeTop={false}>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {error ? <EmptyState title="计划编辑暂时不可用" description={error} /> : null}
 
