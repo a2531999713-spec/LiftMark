@@ -250,7 +250,9 @@ export async function createCurrentPlanFile(
 export function createImportedPlanDraft(payload: LiftMarkPlanFile): LiftMarkPlanFile {
   const file = validatePlanFile(payload);
   const now = new Date().toISOString();
-  const planId = createId('plan_imported');
+  // 保留原 plan ID，以便重装后重新导入能与旧训练记录的 plan_id 重新关联。
+  // 冲突检测（本地已存在同 ID 计划）由 PlanRepository.importUserPlan 在写入时处理。
+  const planId = file.plan.template.id;
   const phaseIds = new Map(file.plan.phases.map((phase) => [phase.id, createId('phase_imported')]));
   const dayIds = new Map(file.plan.days.map((day) => [day.id, createId('day_imported')]));
   const exerciseIds = new Map(file.exercises.map((exercise) => [exercise.id, createId('exercise_imported')]));

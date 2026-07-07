@@ -3,6 +3,33 @@
 更新时间：2026-07-08
 对应代码目录：`training-partner-app/`
 
+## 2026-07-08 计划消失与训练数据失联修复 + 管理弹窗打不开修复
+
+### 计划消失 + 训练数据失联（重大 bug）
+- `src/services/planFileService.ts` 的 `createImportedPlanDraft`：
+  - 原实现 `const planId = createId('plan_imported')` 强制生成全新随机 plan ID，丢弃导出文件中的原 ID。
+  - 改为 `const planId = file.plan.template.id`，保留导出文件中的原 plan ID，以便重装后重新导入能与旧训练记录的 `plan_id` 重新关联。
+  - phase / day / exercise / alternative / planExercise 等子节点 ID 仍用 `createId('xxx_imported')` 重新生成（这些不影响 `plan_id` 绑定）。
+  - 注释说明冲突检测由 `PlanRepository.importUserPlan` 在写入时处理。
+- `src/data/local/repositories/planRepository.ts` 的 `importUserPlan`：
+  - 事务外新增 `let finalPlanId = input.template.id` 变量。
+  - 事务内首步检测 plan ID 是否已存在：`SELECT id FROM plan_templates WHERE id = ?`。
+    - 已存在 → `planId = createId('plan_imported')`（避免覆盖已有计划）。
+    - 不存在 → `planId = input.template.id`（保留原 ID 用于重装后重新关联）。
+  - `finalPlanId = planId` 赋值给外部变量（`withExclusiveTransactionAsync` 回调要求返回 `Promise<void>`，不能直接 return string）。
+  - 事务内所有 INSERT（`plan_templates` / `plan_phases` / `plan_days`）的 `plan_id` 列统一使用 `planId` 替代原来的 `input.template.id` / `phase.planId` / `day.planId`。
+  - 事务后 `importedTemplate` 的 `id` 字段使用 `finalPlanId`，确保 `enqueuePlanSync(importedTemplate.id, ...)` 入队同步使用正确 ID。
+- 根因说明：`workout_sessions.plan_id` 是普通 TEXT 列（无外键约束），plan ID 是训练记录与计划关联的唯一纽带。重装清库后云同步恢复训练记录（带原 plan_id），重新导入保留原 ID 的计划，训练数据才能重新绑定到计划。
+
+### 管理计划弹窗打不开
+- `app/(tabs)/plan.tsx` 的 `manageContent` 样式移除 `flex: 1`，只保留 `maxHeight: 560`。
+- 根因：`AppModalSheet` 的 content 父容器是普通 `View`（无 flex 布局），`flex: 1` 在无 flex 父容器时导致内部 `ScrollView` 高度塌缩为 0，弹窗内容不可见。
+
+### 验证
+- `npm run typecheck`：通过（0 错误）。
+- `npm run lint`：仅 2 条既有 warning，与本次变更无关。
+- 本次均为前端代码变更，无服务器后端 API 或数据库变更，无需服务器部署。
+
 ## 2026-07-08 管理面板滚动与内联更多操作 + Tab 切换白屏修复
 
 - `app/(tabs)/plan.tsx` 管理计划弹窗内容用 `ScrollView` 包裹（`manageScrollContent` 样式：`gap: spacing.md, paddingBottom: spacing.sm`），`manageContent` 样式改为 `maxHeight: 560 + flex: 1`（移除原 `gap: spacing.md`，gap 移到 scrollContent），解决计划数量多时超出屏幕无法滚动的问题。

@@ -2,6 +2,12 @@
 
 更新时间：2026-07-08
 
+## 2026-07-08 计划消失与训练数据失联修复 + 管理弹窗打不开修复
+
+- 重大 bug：`createImportedPlanDraft` 强制重新生成 plan ID，导致重装后重新导入计划时旧训练记录的 `plan_id` 变成悬空引用。修复为保留导出文件中的原 plan ID，由 `importUserPlan` 在事务内检测 ID 冲突：冲突时生成新 ID，不冲突时保留原 ID。
+- `workout_sessions.plan_id` 是普通 TEXT 列无外键约束，plan ID 是训练记录与计划关联的唯一纽带；重装后云同步恢复训练记录 + 重新导入保留原 ID 的计划，才能让训练数据重新绑定到计划。
+- 管理计划弹窗打不开：`manageContent` 的 `flex: 1` 在 `AppModalSheet` 普通 View 父容器中导致 ScrollView 高度塌缩为 0，移除 `flex: 1` 只保留 `maxHeight: 560` 即可。
+
 ## 2026-07-08 管理面板滚动与内联更多操作 + Tab 切换白屏修复
 
 - 管理计划弹窗内容用 `ScrollView` 包裹，`manageContent` 设 `maxHeight: 560 + flex: 1`，解决计划数量多时超出屏幕无法滚动的问题；「查看全部 N 个方案 →」按钮跳转计划库弹窗显示全部系统方案。

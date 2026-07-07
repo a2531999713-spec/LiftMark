@@ -1,6 +1,6 @@
-﻿# 计划导入导出流程
+# 计划导入导出流程
 
-更新时间：2026-06-29
+更新时间：2026-07-08
 
 ## 1. 支持格式
 
@@ -57,9 +57,10 @@
 -> 解析 JSON
 -> 校验 format
 -> 校验 schemaVersion
--> 重新生成本地 id
--> 生成新的 UserTrainingPlan
--> 写入 SQLite
+-> 保留原 plan ID（用于重装后与旧训练记录 plan_id 重新关联）
+-> 重新生成 phase / day / exercise 等子节点 ID
+-> 生成 UserTrainingPlan 草稿
+-> 写入 SQLite（事务内检测 plan ID 冲突：冲突则生成新 ID）
 -> 不覆盖已有计划
 -> 用户可设为当前计划
 ```
@@ -67,9 +68,9 @@
 ## 5. 当前实现
 
 - `parsePlanFile` 已支持 JSON 解析和 schema 校验。
-- `createImportedPlanDraft` 已支持重新生成本地 ID。
+- `createImportedPlanDraft` 保留导出文件中的原 plan ID（`file.plan.template.id`），仅重新生成 phase / day / exercise 等子节点 ID；冲突检测（本地已存在同 ID 计划）由 `PlanRepository.importUserPlan` 在写入时处理。
 - `planDocumentService` 已接入 Expo DocumentPicker，支持选择 `.liftmark.json` 并读取文件内容。
-- `PlanRepository.importUserPlan()` 已支持导入草稿落库，导入结果为 `source: "imported"`、`visibility: "private"` 的用户计划。
+- `PlanRepository.importUserPlan()` 在事务内检测 plan ID 是否已存在：已存在则生成新 ID 避免覆盖已有计划，不存在则保留原 ID（用于重装后与旧训练记录 `plan_id` 重新关联）。导入结果为 `source: "imported"`、`visibility: "private"` 的用户计划。
 - 导入动作按名称复用本机已有动作；缺失动作才写入 SQLite，用户自定义动作保留 `source: "custom"`。
 - 用户可见入口统一命名为“导入计划”；`.liftmark.json` 只作为文件格式说明。
 - 计划页和设置页导入成功后都会询问“是否设为当前训练计划？”，确认后只更新当前本地小组的 current plan。

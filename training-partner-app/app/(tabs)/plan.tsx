@@ -1251,7 +1251,6 @@ const styles = StyleSheet.create({
   },
   manageContent: {
     maxHeight: 560,
-    flex: 1,
   },
   manageScrollContent: {
     gap: spacing.md,
