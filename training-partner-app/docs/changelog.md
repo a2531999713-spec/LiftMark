@@ -1,5 +1,36 @@
 # 变更记录
 
+## 2026-07-07 - record-chart-sync-preferences-fix
+
+### 记录首页训练趋势卡片
+- 恢复记录首页「训练趋势」ChartCard，显示训练频次（按时间桶统计训练次数）。
+- 「查看训练分析」入口移至「训练量趋势」卡片右上角，训练趋势卡片只展示数据不提供入口。
+- `historyViewModel` 新增 `buildSessionCountTrend` 函数，按时间桶统计训练次数。
+
+### 图表数值气泡样式与常显修复
+- `MiniLineChart` 点击高亮数值气泡从黑底白字改为品牌色（`colors.brand`）背景白字，并增加品牌色阴影。
+- 内联数值标签从黑底白字改为白底品牌色边框 + 品牌色文字，避免在体重记录、计划等页面常显造成「一团黑」。
+- `app/profile/body-metrics.tsx`、`app/(tabs)/plan.tsx` 的 `MiniLineChart` 由 `showValues`（全显）改为 `valueLabelStrategy="keyPoints"`（仅关键点）。
+
+### 云同步待同步计数修复
+- `AccountPanel.SyncPanel` 此前硬编码「待同步数据 0 条」，与实际同步结果不符。
+- 改为进入面板时调用 `countPendingSyncItems()` 读取真实待同步计数，同步完成后刷新计数并展示最近同步时间。
+
+### 训练偏好切换实时生效
+- `useUserPreferences` 由 `useEffect`（仅挂载时加载一次）改为 `useFocusEffect`，每次训练页获得焦点时重新读取最新偏好，解决切换重量步进 / 默认训练对象 / 重量单位 / RPE 显示后训练中不生效的问题。
+- `CurrentSetRecorder` 新增 `effortDisplay`、`weightUnit` props：RPE 选择器根据 `effortDisplay !== 'none'` 显隐，重量 `NumberStepper` 单位跟随 `weightUnit`。
+- `app/workout/[sessionId].tsx` 将 `preferences.effortDisplay` 与 `preferences.weightUnit` 透传给 `CurrentSetRecorder`。
+
+### 其他
+- `AnnouncementModal` 将 `AppButton` 的 `title` prop 改为 children 写法，修复既有类型错误。
+- `avatarService.syncAccountAvatarToLocalMemberProfiles` 新增 `fallbackMemberId` 兜底：当前训练身份未绑定账号 ID 时也能同步账号头像到当前训练成员。
+- 更新 `docs/modules/member/implementation.md`、`docs/modules/member/test-plan.md`、`docs/modules/training/implementation.md` 中相关说明。
+
+### 验证
+- `npm run typecheck`：仅 `app/history/[sessionId].tsx` 一处既有 Screen subtitle 类型不匹配（与本次变更无关，stash 前后均存在）。
+- 本次变更均为前端代码，无服务器后端 API 或数据库变更，无需服务器部署。
+- 移动端需重新打包 APK 以生效。
+
 ## 2026-07-07 - mobile-ux-fixes-and-cloud-sync-expansion
 
 ### 训练记录与图表交互

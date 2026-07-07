@@ -1,6 +1,13 @@
 ﻿# Training 模块实现文档
 
-更新时间：2026-06-14
+更新时间：2026-07-06
+
+## 2026-07-06 补充：休息结束提示和重量步进
+
+- `app/workout/[sessionId].tsx` 不再渲染休息结束后需要手动关闭的常驻提示；休息计时归零后只把对应成员状态更新为 `ready`，训练现场由当前记录卡和成员状态展示下一组准备情况。
+- `src/components/workout/CurrentSetRecorder.tsx` 的重量 / 次数 `NumberStepper` 按当前 `WorkoutSet.id` 重新挂载，切换成员、动作或组时不会保留上一组输入草稿。
+- 重量加减按钮继续通过 `getWeightIncrement(profile, exercise)` 读取成员 profile：哑铃动作使用 `dumbbellIncrement`，其他动作使用 `barbellIncrement`；异常步进值兜底为 1，避免无效设置导致按钮不可用。
+- 自定义加重单位仍由成员资料的 `barbellIncrement` / `dumbbellIncrement` 保存，不在训练页写死固定 2.5kg。
 
 ## 本次实现
 

@@ -381,7 +381,14 @@ export async function syncAccountAvatarToLocalMemberProfiles(input: {
 
   for (const group of groups) {
     const members = await repositories.memberRepository.listMembers(group.id);
-    const targetMembers = members.filter((member) => member.userId === input.userId);
+    let targetMembers = members.filter((member) => member.userId === input.userId);
+
+    if (targetMembers.length === 0 && input.fallbackMemberId) {
+      const fallback = members.find((member) => member.id === input.fallbackMemberId);
+      if (fallback) {
+        targetMembers = [fallback];
+      }
+    }
 
     for (const member of targetMembers) {
       const updatedProfile = await repositories.memberRepository.updateProfile(member.id, {

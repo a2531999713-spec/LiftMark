@@ -663,7 +663,7 @@ function TrendBlock({
         includeZero={false}
         labels={data.map((point) => point.label)}
         minChartHeight={max}
-        showValues
+        valueLabelStrategy="keyPoints"
         unitLabel={unit}
       />
     </View>

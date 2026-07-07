@@ -377,7 +377,7 @@ function renderPoint(
     >
       {showInlineLabel ? (
         <View style={styles.inlineValueBubble}>
-          <AppText numberOfLines={1} style={styles.inlineValueText} tone="inverse" variant="caption" weight="900">
+          <AppText numberOfLines={1} style={styles.inlineValueText} variant="caption" weight="900">
             {formatValue(point.value)}
           </AppText>
         </View>
@@ -447,31 +447,34 @@ const styles = StyleSheet.create({
   },
   valueBubble: {
     alignItems: 'center',
-    backgroundColor: colors.dark,
+    backgroundColor: colors.brand,
     borderRadius: 6,
     justifyContent: 'center',
     paddingHorizontal: 6,
     paddingVertical: 2,
     position: 'absolute',
-    shadowColor: colors.dark,
+    shadowColor: colors.brand,
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
   },
   valueBubbleText: {
     fontSize: 10,
   },
   inlineValueBubble: {
     alignItems: 'center',
-    backgroundColor: colors.dark,
+    backgroundColor: colors.surface,
+    borderColor: colors.brand,
     borderRadius: 4,
     bottom: 12,
+    borderWidth: 1,
     justifyContent: 'center',
     paddingHorizontal: 4,
     paddingVertical: 1,
     position: 'absolute',
   },
   inlineValueText: {
+    color: colors.brand,
     fontSize: 9,
   },
   connectingLine: {

@@ -5,6 +5,7 @@ import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { AppCard, AppText } from '@/components/ui';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { MemberProfile } from '@/domain/member/member.types';
+import type { EffortDisplay, WeightUnit } from '@/domain/preferences/user-preferences.types';
 import { addWeightStep, formatWeight, subtractWeightStep } from '@/domain/weight/weight-calculator';
 import type { WorkoutExerciseRecord } from '@/domain/workout/workout.types';
 import { colors, radius, spacing } from '@/theme';
@@ -60,6 +61,7 @@ function NumberStepper({
 }: NumberStepperProps) {
   const [draft, setDraft] = useState(formatNumber(value, ''));
   const current = value !== undefined && Number.isFinite(value) ? value : min;
+  const effectiveStep = Number.isFinite(step) && step > 0 ? step : 1;
 
   function commitDraft() {
     const parsed = parseNumericInput(draft, integer);
@@ -100,10 +102,10 @@ function NumberStepper({
 
   function changeByStep(direction: 1 | -1) {
     const next = integer
-      ? current + step * direction
+      ? current + effectiveStep * direction
       : direction === 1
-        ? addWeightStep(current, step)
-        : subtractWeightStep(current, step);
+        ? addWeightStep(current, effectiveStep)
+        : subtractWeightStep(current, effectiveStep);
     const lowerBounded = Math.max(min, next);
     const bounded = max === undefined ? lowerBounded : Math.min(max, lowerBounded);
     setDraft(formatNumber(bounded, ''));
@@ -154,6 +156,7 @@ function NumberStepper({
 
 type CurrentSetRecorderProps = {
   exercise: Exercise | null;
+  effortDisplay?: EffortDisplay;
   isResting: boolean;
   isWorkoutReadyToFinish: boolean;
   memberName: string;
@@ -175,6 +178,7 @@ type CurrentSetRecorderProps = {
   weight: number | undefined;
   reps: number | undefined;
   weightIncrement: number;
+  weightUnit?: WeightUnit;
 };
 
 export function CurrentSetRecorder({
@@ -190,6 +194,7 @@ export function CurrentSetRecorder({
   onRepsChange,
   notes,
   plannedRestSeconds,
+  record,
   restElapsedSeconds,
   setNumber,
   restSeconds,
@@ -197,9 +202,14 @@ export function CurrentSetRecorder({
   weight,
   reps,
   weightIncrement,
+  effortDisplay = 'none',
+  weightUnit = 'kg',
 }: CurrentSetRecorderProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const hasAdvancedValues = rpe !== undefined || Boolean(notes);
+  // 当偏好关闭 RPE/RIR 显示时，不展示高级面板中的努力度选择器
+  const effortEnabled = effortDisplay !== 'none';
+  const hasAdvancedValues = (effortEnabled && rpe !== undefined) || Boolean(notes);
+  const showAdvancedPanel = showAdvanced || hasAdvancedValues;
 
   return (
     <AppCard padded={false} style={styles.card}>
@@ -221,14 +231,16 @@ export function CurrentSetRecorder({
 
       <View style={styles.inputRow}>
         <NumberStepper
+          key={`weight-${record.id}`}
           label="重量"
           onChange={(v) => { if (v !== undefined) onWeightChange(v); }}
           step={weightIncrement}
-          unit="kg"
+          unit={weightUnit}
           value={weight}
         />
         <NumberStepper
           integer
+          key={`reps-${record.id}`}
           label="次数"
           onChange={(v) => { if (v !== undefined) onRepsChange(v); }}
           step={1}
@@ -245,15 +257,17 @@ export function CurrentSetRecorder({
         <View style={styles.advancedToggleText}>
           <Ionicons color={colors.textMuted} name="options-outline" size={16} />
           <AppText tone="muted" variant="caption" weight="800">
-            RPE / 备注
+            {effortEnabled ? `${effortDisplay.toUpperCase()} / 备注` : '备注'}
           </AppText>
         </View>
         <Ionicons color={colors.textMuted} name={showAdvanced ? 'chevron-up' : 'chevron-down'} size={16} />
       </Pressable>
 
-      {showAdvanced || hasAdvancedValues ? (
+      {showAdvancedPanel ? (
         <View style={styles.advancedPanel}>
-          <RpeSelector onChange={(value) => onRpeChange?.(value)} value={rpe} />
+          {effortEnabled ? (
+            <RpeSelector onChange={(value) => onRpeChange?.(value)} value={rpe} />
+          ) : null}
           <SetNotesInput onChange={(value) => onNotesChange?.(value)} value={notes} />
         </View>
       ) : null}

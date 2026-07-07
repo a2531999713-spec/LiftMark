@@ -589,7 +589,7 @@ export default function PlanRoute() {
               emptyMessage="最近 4 周还没有当前计划训练记录"
               labels={stats.lastFourWeekLabels}
               minChartHeight={Math.max(1, ...stats.lastFourWeeks)}
-              showValues
+              valueLabelStrategy="keyPoints"
             />
           </AppCard>
 

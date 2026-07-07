@@ -1508,6 +1508,7 @@ export default function WorkoutRoute() {
                 <CurrentSetRecorder
                   key={currentDisplaySet.id}
                   exercise={activeExercise}
+                  effortDisplay={preferences.effortDisplay}
                   isResting={isCurrentMemberResting}
                   isWorkoutReadyToFinish={isWorkoutReadyToFinish}
                   memberName={membersById.get(currentDisplaySet.memberId)?.displayName ?? '成员'}
@@ -1529,6 +1530,7 @@ export default function WorkoutRoute() {
                   setNumber={currentDisplaySet.setNumber}
                   weight={currentDisplaySet.actualWeight ?? currentDisplaySet.plannedWeight ?? previousCompletedWeightForCurrentSet}
                   weightIncrement={currentIncrement}
+                  weightUnit={preferences.weightUnit}
                 />
               ) : (
                 <MemberExerciseCompleteCard

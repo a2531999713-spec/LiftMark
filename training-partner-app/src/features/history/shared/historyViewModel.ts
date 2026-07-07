@@ -340,6 +340,20 @@ export function buildVolumeTrend(sessions: SessionSummary[], range: DateRangeVal
   };
 }
 
+// 训练频次趋势：按时间桶统计训练次数，用于"训练趋势"卡片
+export function buildSessionCountTrend(sessions: SessionSummary[], range: DateRangeValue): { labels: string[]; values: number[] } {
+  const buckets = buildTrendBuckets(range.fromDate, range.toDate);
+  const countsByBucket = new Map(buckets.map((bucket) => [bucket.key, 0]));
+  sessions.forEach((session) => {
+    const bucket = findBucketForDate(buckets, session.date);
+    if (bucket) countsByBucket.set(bucket.key, (countsByBucket.get(bucket.key) ?? 0) + 1);
+  });
+  return {
+    labels: buckets.map((bucket) => bucket.label),
+    values: buckets.map((bucket) => countsByBucket.get(bucket.key) ?? 0),
+  };
+}
+
 export function getCountsByDate(sessions: SessionSummary[]): Record<string, number> {
   return sessions.reduce<Record<string, number>>((acc, session) => {
     acc[session.date] = (acc[session.date] ?? 0) + 1;

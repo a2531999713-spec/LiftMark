@@ -17,6 +17,7 @@ import {
   SegmentControl,
 } from '@/features/history/shared/HistoryUi';
 import {
+  buildSessionCountTrend,
   buildVolumeTrend,
   formatKg,
   formatPercent,
@@ -62,6 +63,7 @@ export function RecordHomeScreen() {
   const allScopeSessions = scope === 'personal' ? dataset?.personalSessions ?? [] : dataset?.groupSessions ?? [];
   const metrics = getSummaryMetrics(allScopeSessions);
   const trend = buildVolumeTrend(allScopeSessions, range);
+  const sessionTrend = buildSessionCountTrend(allScopeSessions, range);
   const countsByDate = getCountsByDate(allScopeSessions);
   const analyticsPath = scope === 'personal' ? '/history/analytics' : '/history/group';
 
@@ -116,6 +118,15 @@ export function RecordHomeScreen() {
               { icon: 'barbell-outline', label: '完成组数', unit: '组', value: `${metrics.completedSets}` },
               { icon: 'radio-button-on-outline', label: '完成率', value: formatPercent(metrics.completionRate) },
             ]}
+          />
+
+          <ChartCard
+            data={sessionTrend.values}
+            formatValue={(value) => `${Math.round(value)}`}
+            labels={sessionTrend.labels}
+            subtitle={`${range.fromDate} - ${range.toDate}`}
+            title="训练趋势"
+            unit="次"
           />
 
           <ChartCard

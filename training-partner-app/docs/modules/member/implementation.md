@@ -1,7 +1,13 @@
 ﻿# Member 模块实现文档
 
-更新时间：2026-07-03  
+更新时间：2026-07-06  
 对应代码目录：`training-partner-app/`；已实现成员列表、新增成员、编辑成员、MemberProfile 表单、1RM 输入、加重单位设置、真实成员 / 本地成员区分和成员头像展示。
+
+## 2026-07-06 补充：当前训练身份头像 fallback
+
+- `src/services/avatar/avatarService.ts` 的 `syncAccountAvatarToLocalMemberProfiles()` 现在会先按 `userId` 同步真实成员头像；如果没有命中真实成员，会使用 `fallbackMemberId` 同步当前训练成员 profile。
+- 这个 fallback 用于“我的”页面头像更新后，同步到小组内当前训练身份，覆盖未绑定账号 ID 的本地训练成员场景。
+- 历史分析相关页面通过 `profilesByMemberId` 优先读取 `avatarLocalUri`、`avatarThumbUrl`、`avatarUrl`，再回退 `GroupMember.avatarUrl`。
 
 ## 2026-07-03 补充：成员身份和头像同步
 
@@ -9,7 +15,7 @@
 - `src/services/profileSyncService.ts` 从云端拉取小组成员时写入 `memberType='real'` 和 `user_id`。
 - `src/services/memberSyncService.ts` 只做轻量头像刷新，兼容后端 `avatarUrl` / `avatar_url` 返回。
 - `src/utils/avatarUrl.ts` 统一解析相对头像 URL，`Avatar` 组件全局使用该逻辑。
-- 账号头像上传、删除和 `/sync/avatar` 会同步当前账号在所有小组中的真实成员 profile；本地成员不会自动继承账号头像。
+- 账号头像上传、删除和 `/sync/avatar` 会同步当前账号在所有小组中的真实成员 profile；若当前训练身份尚未绑定账号 ID，则通过 `fallbackMemberId` 同步当前训练成员。
 
 ## 2026-06-30 补充：成员表单保存状态
 

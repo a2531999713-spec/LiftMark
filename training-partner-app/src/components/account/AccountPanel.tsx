@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sync as runSync } from '@/sync/syncOrchestrator';
+import { countPendingSyncItems } from '@/sync/syncQueue';
 
 import { Avatar } from '@/components/avatar';
 import { AppModalSheet, AppText, Tag } from '@/components/ui';
@@ -470,13 +471,61 @@ function MainPanel({
 
 function SyncPanel({ onBack, syncLabel }: { onBack: () => void; syncLabel: string }) {
   const [syncEnabled, setSyncEnabled] = useState(true);
+  const [pendingCount, setPendingCount] = useState<number | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+
+  const refreshPendingCount = async () => {
+    try {
+      const count = await countPendingSyncItems();
+      setPendingCount(count);
+    } catch {
+      setPendingCount(null);
+    }
+  };
+
+  useEffect(() => {
+    void refreshPendingCount();
+  }, []);
+
+  const formatPendingLabel = () => {
+    if (pendingCount === null) return '读取中';
+    if (pendingCount === 0) return '0 条';
+    return `${pendingCount} 条`;
+  };
+
+  const handleSync = async () => {
+    Alert.alert('开始同步', '正在从云端拉取数据并推送本地变更...');
+    try {
+      const result = await runSync({ fullPull: true });
+      const now = new Date().toISOString();
+      setLastSyncedAt(now);
+      void refreshPendingCount();
+      if (result.ok) {
+        Alert.alert('同步完成', result.message || '同步成功完成。');
+      } else {
+        Alert.alert('同步失败', result.message || '未知错误');
+      }
+    } catch (error) {
+      Alert.alert('同步异常', error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const formatLastSynced = () => {
+    if (!lastSyncedAt) return '尚未同步';
+    const date = new Date(lastSyncedAt);
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    const hours = `${date.getHours()}`.padStart(2, '0');
+    const minutes = `${date.getMinutes()}`.padStart(2, '0');
+    return `${month}/${day} ${hours}:${minutes}`;
+  };
 
   return (
     <PanelScroll>
       <AccountPanelHeader onBack={onBack} subtitle={syncLabel} title="云同步" />
       <StatusCard icon="cloud-outline" title="当前状态" value={syncLabel}>
-        <InfoLine label="最近同步" value="刚刚" />
-        <InfoLine label="待同步数据" value="0 条" />
+        <InfoLine label="最近同步" value={formatLastSynced()} />
+        <InfoLine label="待同步数据" value={formatPendingLabel()} />
         <View style={styles.settingLine}>
           <View>
             <AppText variant="bodySmall" weight="900">
@@ -497,19 +546,7 @@ function SyncPanel({ onBack, syncLabel }: { onBack: () => void; syncLabel: strin
       <ActionRow
         icon="sync-outline"
         label="立即同步"
-        onPress={async () => {
-          Alert.alert('开始同步', '正在从云端拉取数据并推送本地变更...');
-          try {
-            const result = await runSync({ fullPull: true });
-            if (result.ok) {
-              Alert.alert('同步完成', result.message || '同步成功完成。');
-            } else {
-              Alert.alert('同步失败', result.message || '未知错误');
-            }
-          } catch (error) {
-            Alert.alert('同步异常', error instanceof Error ? error.message : String(error));
-          }
-        }}
+        onPress={handleSync}
         value="点击同步"
       />
       <ActionRow
@@ -519,6 +556,9 @@ function SyncPanel({ onBack, syncLabel }: { onBack: () => void; syncLabel: strin
           Alert.alert('开始恢复', '正在从云端全量拉取数据到本地...');
           try {
             const result = await runSync({ fullPull: true });
+            const now = new Date().toISOString();
+            setLastSyncedAt(now);
+            void refreshPendingCount();
             if (result.ok) {
               Alert.alert('恢复完成', '已从云端拉取全部数据。请返回首页查看。');
             } else {

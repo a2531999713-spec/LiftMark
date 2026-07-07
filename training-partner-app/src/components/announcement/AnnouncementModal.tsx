@@ -27,12 +27,9 @@ export function AnnouncementModal({ announcement, onClose, visible }: Announceme
     <AppModalSheet
       contentStyle={styles.content}
       footer={
-        <AppButton
-          disabled={dismissing}
-          onPress={handleClose}
-          title="我知道了"
-          variant="primary"
-        />
+        <AppButton disabled={dismissing} onPress={handleClose} variant="primary">
+          我知道了
+        </AppButton>
       }
       onClose={handleClose}
       position="center"
