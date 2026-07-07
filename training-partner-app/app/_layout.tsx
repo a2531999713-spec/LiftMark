@@ -1,6 +1,7 @@
 import { router, Stack, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, AppState, StyleSheet, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { initializeLocalDatabase } from '@/data/local';
 import { useAuthStore } from '@/store/authStore';
@@ -77,65 +78,67 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerBackButtonDisplayMode: 'minimal',
-        headerBackTitle: '',
-        headerTitleAlign: 'center',
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="workout/[sessionId]" options={{ headerShown: false }} />
-      <Stack.Screen name="workout/summary/[sessionId]" options={{ headerShown: false }} />
-      <Stack.Screen name="member/new" options={{ headerShown: false }} />
-      <Stack.Screen name="member/[memberId]" options={{ headerShown: false }} />
-      <Stack.Screen name="history/manual" options={{ headerShown: false }} />
-      <Stack.Screen name="history/manual-set-editor" options={{ headerShown: false }} />
-      <Stack.Screen name="history/analytics" options={{ headerShown: false }} />
-      <Stack.Screen name="history/exercise/[exerciseId]" options={{ headerShown: false }} />
-      <Stack.Screen name="history/group" options={{ headerShown: false }} />
-      <Stack.Screen name="history/group/member/[memberId]" options={{ headerShown: false }} />
-      <Stack.Screen name="history/group/exercise-compare" options={{ headerShown: false }} />
-      <Stack.Screen name="history/group/attendance" options={{ headerShown: false }} />
-      <Stack.Screen name="history/group-exercise/[exerciseId]" options={{ headerShown: false }} />
-      <Stack.Screen name="history/[sessionId]" options={{ title: '' }} />
-      <Stack.Screen name="plan/[planId]" options={{ title: '' }} />
-      <Stack.Screen name="plan/edit/[planId]" options={{ title: '' }} />
-      <Stack.Screen name="plan/edit-day/[dayId]" options={{ title: '' }} />
-      <Stack.Screen name="plan/create" options={{ title: '' }} />
-      <Stack.Screen name="account/index" options={{ title: '' }} />
-      <Stack.Screen name="account/login" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding/training-profile" options={{ headerShown: false }} />
-      <Stack.Screen name="account/settings" options={{ headerShown: false }} />
-      <Stack.Screen name="account/security" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/avatar" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/index" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/nickname" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/account" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/body-metrics" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/training-identity" options={{ title: '' }} />
-      <Stack.Screen name="profile/groups" options={{ title: '' }} />
-      <Stack.Screen name="profile/preferences" options={{ title: '' }} />
-      <Stack.Screen name="profile/data" options={{ title: '' }} />
-      <Stack.Screen name="profile/privacy" options={{ title: '' }} />
-      <Stack.Screen name="profile/sync" options={{ title: '' }} />
-      <Stack.Screen name="profile/membership" options={{ headerShown: false }} />
-      <Stack.Screen name="groups/switch" options={{ headerShown: false }} />
-      <Stack.Screen name="groups/manage" options={{ title: '管理小组与成员' }} />
-      <Stack.Screen name="sync/index" options={{ title: '' }} />
-      <Stack.Screen name="backup/index" options={{ headerShown: false }} />
-      <Stack.Screen name="preferences/index" options={{ title: '' }} />
-      <Stack.Screen name="legal/privacy" options={{ headerShown: false }} />
-      <Stack.Screen name="legal/terms" options={{ headerShown: false }} />
-      <Stack.Screen name="feedback" options={{ headerShown: false }} />
-      <Stack.Screen name="settings/members" options={{ title: '' }} />
-      <Stack.Screen name="settings/member-units" options={{ title: '' }} />
-      <Stack.Screen name="activation" options={{ headerShown: false }} />
-      <Stack.Screen name="about" options={{ headerShown: false }} />
-      <Stack.Screen name="terms" options={{ title: '' }} />
-      <Stack.Screen name="privacy" options={{ title: '' }} />
-    </Stack>
+    <GestureHandlerRootView style={styles.root}>
+      <Stack
+        screenOptions={{
+          headerBackButtonDisplayMode: 'minimal',
+          headerBackTitle: '',
+          headerTitleAlign: 'center',
+        }}
+      >
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="workout/[sessionId]" options={{ headerShown: false }} />
+        <Stack.Screen name="workout/summary/[sessionId]" options={{ headerShown: false }} />
+        <Stack.Screen name="member/new" options={{ headerShown: false }} />
+        <Stack.Screen name="member/[memberId]" options={{ headerShown: false }} />
+        <Stack.Screen name="history/manual" options={{ headerShown: false }} />
+        <Stack.Screen name="history/manual-set-editor" options={{ headerShown: false }} />
+        <Stack.Screen name="history/analytics" options={{ headerShown: false }} />
+        <Stack.Screen name="history/exercise/[exerciseId]" options={{ headerShown: false }} />
+        <Stack.Screen name="history/group" options={{ headerShown: false }} />
+        <Stack.Screen name="history/group/member/[memberId]" options={{ headerShown: false }} />
+        <Stack.Screen name="history/group/exercise-compare" options={{ headerShown: false }} />
+        <Stack.Screen name="history/group/attendance" options={{ headerShown: false }} />
+        <Stack.Screen name="history/group-exercise/[exerciseId]" options={{ headerShown: false }} />
+        <Stack.Screen name="history/[sessionId]" options={{ title: '' }} />
+        <Stack.Screen name="plan/[planId]" options={{ title: '' }} />
+        <Stack.Screen name="plan/edit/[planId]" options={{ title: '编辑计划' }} />
+        <Stack.Screen name="plan/edit-day/[dayId]" options={{ title: '' }} />
+        <Stack.Screen name="plan/create" options={{ title: '创建计划' }} />
+        <Stack.Screen name="account/index" options={{ title: '' }} />
+        <Stack.Screen name="account/login" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding/training-profile" options={{ headerShown: false }} />
+        <Stack.Screen name="account/settings" options={{ headerShown: false }} />
+        <Stack.Screen name="account/security" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/avatar" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/index" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/nickname" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/account" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/body-metrics" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/training-identity" options={{ title: '' }} />
+        <Stack.Screen name="profile/groups" options={{ title: '' }} />
+        <Stack.Screen name="profile/preferences" options={{ title: '' }} />
+        <Stack.Screen name="profile/data" options={{ title: '' }} />
+        <Stack.Screen name="profile/privacy" options={{ title: '' }} />
+        <Stack.Screen name="profile/sync" options={{ title: '' }} />
+        <Stack.Screen name="profile/membership" options={{ headerShown: false }} />
+        <Stack.Screen name="groups/switch" options={{ headerShown: false }} />
+        <Stack.Screen name="groups/manage" options={{ title: '管理小组与成员' }} />
+        <Stack.Screen name="sync/index" options={{ title: '' }} />
+        <Stack.Screen name="backup/index" options={{ headerShown: false }} />
+        <Stack.Screen name="preferences/index" options={{ title: '' }} />
+        <Stack.Screen name="legal/privacy" options={{ headerShown: false }} />
+        <Stack.Screen name="legal/terms" options={{ headerShown: false }} />
+        <Stack.Screen name="feedback" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/members" options={{ title: '' }} />
+        <Stack.Screen name="settings/member-units" options={{ title: '' }} />
+        <Stack.Screen name="activation" options={{ headerShown: false }} />
+        <Stack.Screen name="about" options={{ headerShown: false }} />
+        <Stack.Screen name="terms" options={{ title: '' }} />
+        <Stack.Screen name="privacy" options={{ title: '' }} />
+      </Stack>
+    </GestureHandlerRootView>
   );
 }
 
@@ -146,5 +149,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: spacing.xl,
+  },
+  root: {
+    flex: 1,
   },
 });

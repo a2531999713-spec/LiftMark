@@ -1,5 +1,39 @@
 # 变更记录
 
+## 2026-07-07 - plan-editor-and-dashboard-redesign
+
+### 编辑计划页面改造（任务 1.1–1.7）
+- `app/_layout.tsx` 为 `plan/edit/[planId]`、`plan/create` 路由补充标题（`编辑计划` / `创建计划`），并用 `GestureHandlerRootView` 包裹 `Stack` 以支持长按拖拽手势。
+- `PlanEditOverview.tsx` 完全重写：
+  - 顶部「计划概览」改为单行紧凑布局（计划名称 `flex:1` + 周期/频率紧凑字段 + 目标横向滚动），整体变小不再错乱。
+  - 训练日新增周几选择器（一二三四五六日 chip，点击设置 `weekday`）；活动训练日支持内联编辑 `focus` / `title`。
+  - 训练日列表用嵌套 `ScrollView` (`nestedScrollEnabled`, `maxHeight: 320`) 支持纵向滑动，超出部分可滑出；周次 tab 横向滑动。
+  - 「复制到下一周」「添加训练日」从按钮改为图标（`copy-outline` / `add-circle-outline` 圆形品牌色背景）。
+  - 删除「调整顺序」按钮，训练日与训练动作均改用 `DraggableRow`（`Gesture.Pan().activateAfterLongPress(350)` + `Gesture.Race(pan, tap)`）实现长按拖拽排序，点击切换激活。
+- `app/plan/edit/[planId].tsx` 新增返回退出保存提示：监听 `navigation.beforeRemove`，通过 `serializeDraftForDiff` 与基准 draft 对比判断 dirty，未保存时弹 `Alert`「放弃修改 / 继续编辑」。
+
+### 计划页面改造（任务 2、3、4）
+- `app/(tabs)/plan.tsx` 「本周执行」卡片重命名为「最近执行」，副标题改为「最近 4 周训练量与完成训练」，避免周一没数据时显示突兀。
+- 新建 `src/components/ui/MiniBarLineChart.tsx` 柱状图+折线图组合组件：柱子表示训练量（品牌色），折线表示完成训练次数（accent 色），关键点（最大值、最近值）显示数值气泡（品牌色/accent 色背景白字 + 阴影），符合图表样式约定。
+- `buildLastFourWeeks` 同步返回 `lastFourWeeksSessions` 与 `lastFourWeeksVolume` 两个序列。
+- StatTile 缩小：`minHeight: 56 → 44`，`padding: spacing.sm → 横 spacing.sm / 纵 spacing.xs`，`gap: 2 → 1`。
+- 去除「上一周 / 下一周」按钮及其 `saveWeek` / `clampPlanWeek` 实现，保留 `setCurrentPlan` 等其他流程。
+- `VisualHeroCard` 新增可选 `actionIcon` / `onActionPress` props：传入后顶部右上角 `iconBubble` 变为可点击按钮；计划页用 `actionIcon="settings-outline"` + `onActionPress={() => setManageVisible(true)}` 替代原「管理计划 / 编辑当前计划」两个按钮，点击弹出管理计划弹窗。
+- 「编辑当前计划」入口收回管理弹窗内（既有 `PlanActionRow` 已支持）。
+
+### 切换界面白屏分析（任务 5，仅分析未改动）
+- 主因：四个 Tab 屏幕均使用 `useFocusEffect` 进入即 `setIsLoading(true)` 并用 `{isLoading ? <ActivityIndicator/> : null}` + `{!isLoading ? (...) : null}` 双条件渲染，每次切 Tab 都把整棵内容子树卸载再重挂，表现为短暂白屏。
+- 次因：`today.tsx` / `plan.tsx` 的加载是串行瀑布 + N+1 详情查询（`today.tsx` 最多 160+ 次 `getSessionDetail`，`plan.tsx` 最多 120 次），加载耗时被拉长。
+- 第三：无数据缓存 / 骨架屏 / Suspense / `startTransition`，每次 focus 从零重拉；`Screen` 默认 `SafeAreaView + ScrollView` 包裹，整树卸载会触发重新布局放大感知白屏。
+- `expo-splash-screen` 仅在原生启动阶段显示，JS 侧未调用 `preventAutoHideAsync` / `hideAsync`，对 Tab 切换白屏无遮蔽。
+- 后续修复方向：保留旧数据 + 后台刷新、加骨架屏、聚合 SQL 干掉 N+1、`useFocusEffect` 加时间戳节流。
+
+### 验证
+- `npm run typecheck`：通过（0 错误）。
+- `npm run lint`：仅 2 条既有 warning（`today.tsx` announcement 依赖、`app/plan/[planId].tsx` 既有 `isDuplicating`），与本次变更无关。
+- 本次均为前端代码变更，无服务器后端 API 或数据库变更，无需服务器部署。
+- 移动端需重新打包 APK 以生效。
+
 ## 2026-07-07 - record-trend-chart-plan-manage-group-analytics-fix
 
 ### 记录首页训练趋势恢复为文字洞察
