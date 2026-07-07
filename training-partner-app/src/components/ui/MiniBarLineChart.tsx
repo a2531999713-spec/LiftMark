@@ -16,6 +16,8 @@ type MiniBarLineChartProps = {
   emptyMessage?: string;
   barUnitLabel?: string;
   lineUnitLabel?: string;
+  /** 是否显示左侧 Y 轴刻度，默认 false（两组数据量纲不同，刻度反而干扰） */
+  showYAxis?: boolean;
 };
 
 const PLOT_PADDING_X = 14;
@@ -24,15 +26,6 @@ const PLOT_PADDING_BOTTOM = 6;
 
 function sanitize(value: number): number {
   return Number.isFinite(value) ? value : 0;
-}
-
-function getDefaultKeyPointIndexes(data: number[]): number[] {
-  const active = data.map((value, index) => ({ index, value })).filter((point) => point.value > 0);
-  if (active.length === 0) return [];
-  const set = new Set<number>();
-  set.add(active.at(-1)!.index);
-  set.add(active.reduce((max, point) => (point.value > max.value ? point : max), active[0]).index);
-  return [...set];
 }
 
 export function MiniBarLineChart({
@@ -45,6 +38,7 @@ export function MiniBarLineChart({
   emptyMessage = '暂无数据',
   barUnitLabel = 'kg',
   lineUnitLabel = '次',
+  showYAxis = false,
 }: MiniBarLineChartProps) {
   const sanitizedBars = barData.map(sanitize);
   const sanitizedLines = lineData.map(sanitize);
@@ -71,8 +65,6 @@ export function MiniBarLineChart({
     includeZero: true,
     tickCount: 3,
   });
-  const barKeyIndexes = new Set(getDefaultKeyPointIndexes(sanitizedBars));
-  const lineKeyIndexes = new Set(getDefaultKeyPointIndexes(sanitizedLines));
 
   return (
     <View style={styles.container}>
@@ -86,35 +78,35 @@ export function MiniBarLineChart({
         <View style={styles.legendItem}>
           <View style={[styles.legendBar, styles.legendLine]} />
           <AppText tone="muted" variant="caption">
-            完成训练 ({lineUnitLabel})
+            完成组数 ({lineUnitLabel})
           </AppText>
         </View>
       </View>
       <View style={styles.chartFrame}>
-        <View style={[styles.yAxis, { height: chartHeight }]}>
-          <AppText numberOfLines={1} style={styles.unitLabel} tone="muted" variant="caption">
-            {barUnitLabel}
-          </AppText>
-          {barScale.ticks.map((tick, index) => (
-            <AppText key={`bar-tick-${index}`} numberOfLines={1} style={styles.yAxisLabel} tone="muted" variant="caption">
-              {barFormatValue(tick)}
+        {showYAxis ? (
+          <View style={[styles.yAxis, { height: chartHeight }]}>
+            <AppText numberOfLines={1} style={styles.unitLabel} tone="muted" variant="caption">
+              {barUnitLabel}
             </AppText>
-          ))}
-        </View>
+            {barScale.ticks.map((tick, index) => (
+              <AppText key={`bar-tick-${index}`} numberOfLines={1} style={styles.yAxisLabel} tone="muted" variant="caption">
+                {barFormatValue(tick)}
+              </AppText>
+            ))}
+          </View>
+        ) : null}
         <ChartArea
           chartHeight={chartHeight}
           barData={sanitizedBars}
           lineData={sanitizedLines}
           barScale={barScale}
           lineScale={lineScale}
-          barKeyIndexes={barKeyIndexes}
-          lineKeyIndexes={lineKeyIndexes}
           barFormatValue={barFormatValue}
           lineFormatValue={lineFormatValue}
         />
       </View>
       <View style={styles.labelFrame}>
-        <View style={styles.axisSpacer} />
+        {showYAxis ? <View style={styles.axisSpacer} /> : null}
         <View style={styles.labelRow}>
           {labels.map((label, index) => (
             <View key={`${label}-${index}`} style={styles.labelColumn}>
@@ -135,8 +127,6 @@ type ChartAreaProps = {
   lineData: number[];
   barScale: ReturnType<typeof buildYAxisScale>;
   lineScale: ReturnType<typeof buildYAxisScale>;
-  barKeyIndexes: Set<number>;
-  lineKeyIndexes: Set<number>;
   barFormatValue: (value: number) => string;
   lineFormatValue: (value: number) => string;
 };
@@ -147,12 +137,12 @@ function ChartArea({
   lineData,
   barScale,
   lineScale,
-  barKeyIndexes,
-  lineKeyIndexes,
   barFormatValue,
   lineFormatValue,
 }: ChartAreaProps) {
   const [containerWidth, setContainerWidth] = useState(0);
+  // 当前选中点：null 表示无选中，点击柱子或折线点切换；坐标统一用 index。
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   function handleLayout(event: LayoutChangeEvent) {
     setContainerWidth(event.nativeEvent.layout.width);
@@ -160,7 +150,7 @@ function ChartArea({
 
   const pointCount = Math.max(barData.length, lineData.length, 1);
   const slotWidth = pointCount > 0 ? 1 / pointCount : 1;
-  const barWidthRatio = 0.55;
+  const barWidthRatio = 0.5;
 
   return (
     <View style={[styles.chartArea, { height: chartHeight }]} onLayout={handleLayout}>
@@ -184,12 +174,13 @@ function ChartArea({
             const yPercent = normalizeYAxisValue(value, barScale);
             const barHeight = yPercent * plotHeight;
             const top = PLOT_PADDING_TOP + (plotHeight - barHeight);
-            const showLabel = barKeyIndexes.has(index) && value > 0;
+            const showLabel = value > 0 && activeIndex === index;
             return (
-              <View
+              <Pressable
                 key={`bar-${index}`}
+                onPress={() => setActiveIndex((prev) => (prev === index ? null : index))}
                 style={[
-                  styles.bar,
+                  styles.barTouchable,
                   {
                     left: (slotCenterX - barWidth / 2) as DimensionValue,
                     top,
@@ -198,6 +189,7 @@ function ChartArea({
                   },
                 ]}
               >
+                <View style={[styles.bar, { width: '100%', height: '100%' }, activeIndex === index && styles.barActive]} />
                 {showLabel ? (
                   <View style={styles.barLabelBubble}>
                     <AppText numberOfLines={1} style={styles.barLabelText} variant="caption" weight="900">
@@ -205,12 +197,12 @@ function ChartArea({
                     </AppText>
                   </View>
                 ) : null}
-              </View>
+              </Pressable>
             );
           })
         : null}
       {containerWidth > 0
-        ? renderLine(lineData, lineScale, lineKeyIndexes, lineFormatValue, chartHeight, containerWidth, pointCount)
+        ? renderLine(lineData, lineScale, lineFormatValue, chartHeight, containerWidth, pointCount, activeIndex, setActiveIndex)
         : null}
     </View>
   );
@@ -219,11 +211,12 @@ function ChartArea({
 function renderLine(
   data: number[],
   scale: ReturnType<typeof buildYAxisScale>,
-  keyIndexes: Set<number>,
   formatValue: (value: number) => string,
   chartHeight: number,
   containerWidth: number,
   pointCount: number,
+  activeIndex: number | null,
+  setActiveIndex: (next: number | null) => void,
 ) {
   const plotWidth = Math.max(1, containerWidth - PLOT_PADDING_X * 2);
   const plotHeight = Math.max(1, chartHeight - PLOT_PADDING_TOP - PLOT_PADDING_BOTTOM);
@@ -267,12 +260,13 @@ function renderLine(
   }
 
   const dots = activePoints.map((point) => {
-    const showLabel = keyIndexes.has(point.index);
-    const touchSize = 24;
+    const showLabel = activeIndex === point.index;
+    const touchSize = 28;
     return (
       <Pressable
         accessibilityRole="button"
         key={`line-dot-${point.index}`}
+        onPress={() => setActiveIndex(activeIndex === point.index ? null : point.index)}
         style={[
           styles.lineDotWrapper,
           {
@@ -290,7 +284,7 @@ function renderLine(
             </AppText>
           </View>
         ) : null}
-        <View style={styles.lineDot} />
+        <View style={[styles.lineDot, activeIndex === point.index && styles.lineDotActive]} />
       </Pressable>
     );
   });
@@ -305,7 +299,14 @@ const styles = StyleSheet.create({
   bar: {
     backgroundColor: colors.brand,
     borderRadius: 4,
+  },
+  barActive: {
+    backgroundColor: colors.brandDark ?? colors.brand,
+    opacity: 0.88,
+  },
+  barTouchable: {
     position: 'absolute',
+    justifyContent: 'center',
   },
   barLabelBubble: {
     alignItems: 'center',
@@ -405,6 +406,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 3,
     width: 10,
+  },
+  lineDotActive: {
+    height: 12,
+    width: 12,
+    borderRadius: 6,
   },
   lineDotWrapper: {
     alignItems: 'center',

@@ -1,5 +1,38 @@
 # 变更记录
 
+## 2026-07-08 - manage-plan-panel-and-chart-fixes
+
+### 管理计划面板重设计
+- `app/(tabs)/plan.tsx` 管理计划弹窗按用户设计方案重构：
+  - 「我的计划」标题旁新增 ⋮ 更多操作按钮，点击弹出更多操作菜单（新建空白计划 / 导入计划）。
+  - 当前计划高亮显示 ⭐ 图标 + 「当前」徽章；非当前计划提供「设为当前 / 编辑 / 分享 / 删除」按钮；当前计划提供「编辑 / 分享」按钮。
+  - 移除原「快捷操作」卡片（计划库 / 新建 / 导入三按钮），其功能分别由「更多操作」和「探索更多」承担。
+  - 新增「探索更多」区域：展示前 3 个可用系统方案卡片，超过 3 个时显示「查看全部 N 个方案 →」按钮跳转计划库弹窗。
+  - 空状态文案改为引导用户使用右上角更多操作或下方系统方案。
+
+### 最近执行图表改造
+- `app/(tabs)/plan.tsx` 「最近执行」改名「最近训练」，副标题改为「最近 6 次训练量与完成组数」。
+- 数据获取从「按自然周聚合最近 4 周」改为「最近 6 个完成训练 session」，避免周一没数据时图表空白；查询窗口从 28 天扩展到 90 天以确保能拿到 6 次训练。
+- `buildLastFourWeeks` 重命名为 `buildRecentSessions`，返回 `recentSessionsVolume`（柱：训练量 kg）、`recentSessionsCompletedSets`（折线：完成组数）、`recentSessionsLabels`（每次训练日期）。
+- StatTile 文案改为「本周训练 / 本周组数 / 本周训练量」，与图表「最近训练」语义区分。
+- `MiniBarLineChart.tsx` 改造：
+  - 新增 `showYAxis` prop（默认 false）：因训练量（kg）与组数量纲不同，默认不显示 Y 轴刻度，避免视觉干扰。
+  - 移除「关键点常显数值」机制，改为点击柱子或折线点后才显示数值气泡，再次点击关闭；柱子/折线点选中时高亮（柱子使用 `brandDark` 色 + 透明度，折线点放大）。
+  - 柱宽比从 0.55 调整为 0.5，适配 6 个数据点。
+
+### 分享计划错误修复
+- `app/(tabs)/plan.tsx` 修复 `property "filesystem" doesn't exist` 错误：`sharePlan` 中使用了 `FileSystem.documentDirectory` / `writeAsStringAsync` / `deleteAsync`，但未导入 `expo-file-system`。
+- 新增 `import * as FileSystem from 'expo-file-system/legacy'`，与项目其他模块（avatarUploadService、planDocumentService）保持一致的 legacy 导入方式。
+
+### VisualHeroCard 类型修复
+- 移除 `app/(tabs)/plan.tsx` 中传给 `VisualHeroCard` 的不存在 prop `actionIconSize={22}`（`VisualHeroCard` 组件未声明该 prop）。
+
+### 验证
+- `npm run typecheck`：通过（0 错误）。
+- `npm run lint`：仅 2 条既有 warning（`today.tsx` announcement 依赖、`app/plan/[planId].tsx` 既有 `isDuplicating`），与本次变更无关。
+- 本次均为前端代码变更，无服务器后端 API 或数据库变更，无需服务器部署。
+- 移动端需重新打包 APK 以生效。
+
 ## 2026-07-07 - plan-editor-and-dashboard-redesign
 
 ### 编辑计划页面改造（任务 1.1–1.7）
