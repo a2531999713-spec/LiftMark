@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { ExercisePickerSheet } from '@/components/exercises/ExercisePickerSheet';
 import { PlanExerciseSettingsSheet } from '@/components/plan-editor/PlanExerciseSettingsSheet';
-import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, SectionHeader, Tag } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, SectionHeader } from '@/components/ui';
 import type { CreateCustomExerciseInput } from '@/data/repositories/exerciseRepository';
 import type { Exercise } from '@/domain/exercise/exercise.types';
-import type { PlanTemplate } from '@/domain/plan/plan.types';
+import type { PlanTemplate, Weekday } from '@/domain/plan/plan.types';
 import { colors, radius, spacing, typography } from '@/theme';
 
 import { createPlanDraftId, createPlanExerciseDraft } from './planEditDraft';
@@ -44,6 +46,11 @@ const goalOptions: { label: string; value: PlanTemplate['goal'] }[] = [
   { label: '自定义', value: 'custom' },
 ];
 
+const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
+
+const DAY_ROW_STRIDE = 66;
+const EXERCISE_ROW_STRIDE = 66;
+
 export function PlanEditOverview({
   allExercises,
   draft,
@@ -58,7 +65,6 @@ export function PlanEditOverview({
 }: PlanEditOverviewProps) {
   const [activeDayId, setActiveDayId] = useState(draft.days[0]?.id ?? '');
   const [selectedWeek, setSelectedWeek] = useState(draft.days[0]?.week ?? 1);
-  const [isOrdering, setOrdering] = useState(false);
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
   const [settingsTarget, setSettingsTarget] = useState<{ dayId: string; exerciseDraftId: string } | null>(null);
   const [deleteExerciseTarget, setDeleteExerciseTarget] = useState<{ dayId: string; exerciseDraftId: string } | null>(null);
@@ -128,37 +134,43 @@ export function PlanEditOverview({
     );
   };
 
-  const moveDayInWeek = (dayId: string, direction: -1 | 1) => {
-    const currentIndex = visibleDays.findIndex((day) => day.id === dayId);
-    const targetIndex = currentIndex + direction;
-    const targetDay = visibleDays[targetIndex];
-    const currentDay = visibleDays[currentIndex];
-    if (!currentDay || !targetDay) return;
+  const reorderDays = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    updateDraftDays((days) => {
+      const weekDays = days
+        .filter((d) => d.week === effectiveSelectedWeek)
+        .sort((a, b) => a.weekday - b.weekday);
+      const otherDays = days.filter((d) => d.week !== effectiveSelectedWeek);
+      const sortedWeekdays = weekDays.map((d) => d.weekday);
+      const [moved] = weekDays.splice(fromIndex, 1);
+      weekDays.splice(toIndex, 0, moved);
+      const updatedWeekDays = weekDays.map((d, i) => ({
+        ...d,
+        weekday: sortedWeekdays[i],
+      }));
+      return [...otherDays, ...updatedWeekDays];
+    });
+  };
 
+  const reorderExercises = (dayId: string, fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
     updateDraftDays((days) =>
       days.map((day) => {
-        if (day.id === currentDay.id) return { ...day, weekday: targetDay.weekday };
-        if (day.id === targetDay.id) return { ...day, weekday: currentDay.weekday };
-        return day;
+        if (day.id !== dayId) return day;
+        const exercises = [...day.exercises];
+        const [moved] = exercises.splice(fromIndex, 1);
+        exercises.splice(toIndex, 0, moved);
+        return {
+          ...day,
+          exercises: exercises.map((ex, i) => ({ ...ex, orderIndex: i })),
+        };
       }),
     );
   };
 
-  const moveExerciseInDay = (dayId: string, exerciseDraftId: string, direction: -1 | 1) => {
+  const updateDayWeekday = (dayId: string, weekday: Weekday) => {
     updateDraftDays((days) =>
-      days.map((day) => {
-        if (day.id !== dayId) return day;
-        const currentIndex = day.exercises.findIndex((exercise) => exercise.id === exerciseDraftId);
-        const targetIndex = currentIndex + direction;
-        if (currentIndex < 0 || targetIndex < 0 || targetIndex >= day.exercises.length) return day;
-        const nextExercises = [...day.exercises];
-        const [moved] = nextExercises.splice(currentIndex, 1);
-        nextExercises.splice(targetIndex, 0, moved);
-        return {
-          ...day,
-          exercises: nextExercises.map((exercise, orderIndex) => ({ ...exercise, orderIndex })),
-        };
-      }),
+      days.map((day) => (day.id === dayId ? { ...day, weekday } : day)),
     );
   };
 
@@ -227,20 +239,34 @@ export function PlanEditOverview({
   return (
     <View style={styles.layout}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={styles.stateTags}>
-          <Tag label="未保存修改" tone="warning" />
-          <Tag label="历史记录不受影响" tone="brand" />
-          <Tag label={planSource === 'system' ? '只读副本' : '可编辑'} tone={planSource === 'system' ? 'neutral' : 'success'} />
-        </View>
-
         <PlanOverviewCard draft={draft} onChange={onChange} />
 
         <AppCard style={styles.card}>
-          <SectionHeader
-            actionLabel="+ 训练日"
-            onActionPress={() => onAddDay(effectiveSelectedWeek)}
-            title="训练日列表"
-          />
+          <View style={styles.dayListHeader}>
+            <View style={styles.dayListTitle}>
+              <AppText variant="subtitle">训练日</AppText>
+              <AppText tone="muted" variant="caption">
+                长按可拖拽排序
+              </AppText>
+            </View>
+            <View style={styles.dayListActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={copySelectedWeekToNextWeek}
+                style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}
+              >
+                <Ionicons color={colors.primary} name="copy-outline" size={19} />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => onAddDay(effectiveSelectedWeek)}
+                style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}
+              >
+                <Ionicons color={colors.primary} name="add-circle-outline" size={20} />
+              </Pressable>
+            </View>
+          </View>
+
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.weekTabs}>
               {weekOptions.map((week) => {
@@ -260,42 +286,117 @@ export function PlanEditOverview({
               })}
             </View>
           </ScrollView>
-          <View style={styles.dayToolbar}>
-            <AppButton icon="copy-outline" onPress={copySelectedWeekToNextWeek} size="sm" variant="secondary">
-              复制到下一周
-            </AppButton>
-            <AppButton icon="swap-vertical-outline" onPress={() => setOrdering((current) => !current)} size="sm" variant={isOrdering ? 'primary' : 'secondary'}>
-              {isOrdering ? '完成排序' : '调整顺序'}
-            </AppButton>
-          </View>
-          <ScrollView style={styles.dayListScroll} showsVerticalScrollIndicator={false}>
-            <View style={styles.dayList}>
-              {visibleDays.map((day) => (
-                <PlanDayRow
-                  active={day.id === activeDay?.id}
-                  canMoveDown={visibleDays.findIndex((item) => item.id === day.id) < visibleDays.length - 1}
-                  canMoveUp={visibleDays.findIndex((item) => item.id === day.id) > 0}
-                  day={day}
-                  isOrdering={isOrdering}
-                  key={day.id}
-                  onDelete={() => setDeleteDayTarget(day.id)}
-                  onMoveDown={() => moveDayInWeek(day.id, 1)}
-                  onMoveUp={() => moveDayInWeek(day.id, -1)}
-                  onPress={() => setActiveDayId(day.id)}
-                />
-              ))}
-            </View>
-          </ScrollView>
+
+          {visibleDays.length === 0 ? (
+            <EmptyState
+              actionLabel="添加训练日"
+              description="点击右上角 + 添加第一个训练日。"
+              onActionPress={() => onAddDay(effectiveSelectedWeek)}
+              title="本周还没有训练日"
+            />
+          ) : (
+            <ScrollView nestedScrollEnabled style={styles.dayListScroll} showsVerticalScrollIndicator={false}>
+              <View style={styles.dayList}>
+                {visibleDays.map((day, index) => (
+                  <DraggableRow
+                    itemId={day.id}
+                    index={index}
+                    itemCount={visibleDays.length}
+                    itemStride={DAY_ROW_STRIDE}
+                    key={day.id}
+                    onReorder={(from, to) => reorderDays(from, to)}
+                    onPress={() => setActiveDayId(day.id)}
+                    style={styles.draggableRowWrap}
+                  >
+                    <PlanDayRow
+                      active={day.id === activeDay?.id}
+                      day={day}
+                      onDelete={() => setDeleteDayTarget(day.id)}
+                    />
+                  </DraggableRow>
+                ))}
+              </View>
+            </ScrollView>
+          )}
         </AppCard>
 
         {activeDay ? (
           <>
             <AppCard style={styles.card}>
-              <SectionHeader
-                actionLabel="+ 动作"
-                onActionPress={() => setPickerTarget({ dayId: activeDay.id })}
-                title={`W${activeDay.week} D${activeDay.weekday} · ${activeDay.title}`}
-              />
+              <View style={styles.activeDayHeader}>
+                <View style={styles.activeDayTitle}>
+                  <AppText variant="subtitle">{activeDay.title}</AppText>
+                  <AppText tone="muted" variant="caption">
+                    W{activeDay.week} · {activeDay.exercises.length} 动作 · {activeDaySetCount} 组
+                  </AppText>
+                </View>
+                <AppButton
+                  icon="add-outline"
+                  onPress={() => setPickerTarget({ dayId: activeDay.id })}
+                  size="sm"
+                  variant="secondary"
+                >
+                  动作
+                </AppButton>
+              </View>
+
+              <View style={styles.weekdaySection}>
+                <AppText tone="muted" variant="caption">
+                  执行日
+                </AppText>
+                <View style={styles.weekdayRow}>
+                  {WEEKDAY_LABELS.map((label, i) => {
+                    const wd = (i + 1) as Weekday;
+                    const isActive = wd === activeDay.weekday;
+                    return (
+                      <Pressable
+                        accessibilityRole="button"
+                        key={wd}
+                        onPress={() => updateDayWeekday(activeDay.id, wd)}
+                        style={[styles.weekdayChip, isActive && styles.weekdayChipActive]}
+                      >
+                        <AppText
+                          tone={isActive ? 'inverse' : 'muted'}
+                          variant="caption"
+                          weight="900"
+                        >
+                          {label}
+                        </AppText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.focusRow}>
+                <AppText tone="muted" variant="caption">
+                  重点
+                </AppText>
+                <TextInput
+                  onChangeText={(focus) =>
+                    updateDraftDays((days) =>
+                      days.map((d) => (d.id === activeDay.id ? { ...d, focus } : d)),
+                    )
+                  }
+                  style={styles.focusInput}
+                  value={activeDay.focus}
+                />
+              </View>
+              <View style={styles.focusRow}>
+                <AppText tone="muted" variant="caption">
+                  名称
+                </AppText>
+                <TextInput
+                  onChangeText={(title) =>
+                    updateDraftDays((days) =>
+                      days.map((d) => (d.id === activeDay.id ? { ...d, title } : d)),
+                    )
+                  }
+                  style={styles.focusInput}
+                  value={activeDay.title}
+                />
+              </View>
+
               {activeDay.exercises.length === 0 ? (
                 <EmptyState
                   actionLabel="添加动作"
@@ -306,17 +407,22 @@ export function PlanEditOverview({
               ) : (
                 <View style={styles.exerciseList}>
                   {activeDay.exercises.map((exerciseDraft, index) => (
-                    <PlanExerciseRow
-                      draft={exerciseDraft}
-                      exercise={exerciseMap[exerciseDraft.exerciseId]}
+                    <DraggableRow
+                      itemId={exerciseDraft.id}
+                      index={index}
+                      itemCount={activeDay.exercises.length}
+                      itemStride={EXERCISE_ROW_STRIDE}
                       key={exerciseDraft.id}
-                      orderLabel={String.fromCharCode(65 + index)}
-                      orderIndex={index}
-                      isOrdering={isOrdering}
-                      onMoveDown={() => moveExerciseInDay(activeDay.id, exerciseDraft.id, 1)}
-                      onMoveUp={() => moveExerciseInDay(activeDay.id, exerciseDraft.id, -1)}
+                      onReorder={(from, to) => reorderExercises(activeDay.id, from, to)}
                       onPress={() => setSettingsTarget({ dayId: activeDay.id, exerciseDraftId: exerciseDraft.id })}
-                    />
+                      style={styles.draggableExerciseWrap}
+                    >
+                      <PlanExerciseRow
+                        draft={exerciseDraft}
+                        exercise={exerciseMap[exerciseDraft.exerciseId]}
+                        orderLabel={String.fromCharCode(65 + index)}
+                      />
+                    </DraggableRow>
                   ))}
                 </View>
               )}
@@ -336,12 +442,9 @@ export function PlanEditOverview({
             {activeDay?.exercises.length ?? 0} 动作 · {activeDaySetCount} 计划组
           </AppText>
           <AppText tone="muted" variant="caption">
-            {activeDay ? `W${activeDay.week} D${activeDay.weekday} · ${activeDay.title}` : '选择训练日'}
+            {activeDay ? `W${activeDay.week} · 周${WEEKDAY_LABELS[activeDay.weekday - 1]} · ${activeDay.title}` : '选择训练日'}
           </AppText>
         </View>
-        <AppButton onPress={() => setNotice({ title: '放弃修改', message: '当前版本请使用系统返回后重新进入计划编辑；未保存草稿不会写入历史。' })} variant="secondary">
-          放弃修改
-        </AppButton>
         <AppButton disabled={!validation.isValid} icon="save-outline" loading={isSaving} onPress={saveWithValidation}>
           保存计划
         </AppButton>
@@ -425,6 +528,83 @@ export function PlanEditOverview({
   );
 }
 
+function DraggableRow({
+  itemId,
+  index,
+  itemCount,
+  itemStride,
+  onReorder,
+  onPress,
+  children,
+  style,
+}: {
+  itemId: string;
+  index: number;
+  itemCount: number;
+  itemStride: number;
+  onReorder: (fromIndex: number, toIndex: number) => void;
+  onPress?: () => void;
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const isDragging = useSharedValue(false);
+  const translateY = useSharedValue(0);
+  const dragStartIndex = useSharedValue(index);
+  const currentIndex = useSharedValue(index);
+
+  const handlePress = () => {
+    onPress?.();
+  };
+
+  const pan = Gesture.Pan()
+    .activateAfterLongPress(350)
+    .onStart(() => {
+      isDragging.value = true;
+      dragStartIndex.value = index;
+      currentIndex.value = index;
+    })
+    .onUpdate((e) => {
+      const offset = Math.round(e.translationY / itemStride);
+      let target = dragStartIndex.value + offset;
+      target = Math.max(0, Math.min(itemCount - 1, target));
+      if (target !== currentIndex.value) {
+        const from = currentIndex.value;
+        currentIndex.value = target;
+        runOnJS(onReorder)(from, target);
+      }
+      translateY.value = e.translationY - (currentIndex.value - dragStartIndex.value) * itemStride;
+    })
+    .onEnd(() => {
+      isDragging.value = false;
+      translateY.value = withSpring(0);
+    });
+
+  const tap = Gesture.Tap().onEnd(() => {
+    runOnJS(handlePress)();
+  });
+
+  const gesture = Gesture.Race(pan, tap);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: isDragging.value ? translateY.value : 0 }],
+    zIndex: isDragging.value ? 1000 : 0,
+    elevation: isDragging.value ? 10 : 0,
+    opacity: isDragging.value ? 0.95 : 1,
+    shadowColor: '#000',
+    shadowOpacity: isDragging.value ? 0.2 : 0,
+    shadowRadius: isDragging.value ? 8 : 0,
+    shadowOffset: { width: 0, height: 4 },
+  }));
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <Animated.View style={[style, animatedStyle]}>
+        {children}
+      </Animated.View>
+    </GestureDetector>
+  );
+}
+
 function PlanOverviewCard({
   draft,
   onChange,
@@ -434,118 +614,129 @@ function PlanOverviewCard({
 }) {
   return (
     <AppCard style={styles.card}>
-      <SectionHeader title="计划概览" />
-      <View style={styles.overviewGrid}>
-        <TextField
-          icon="document-text-outline"
-          label="计划名称"
-          onChangeText={(name) => onChange({ name })}
-          value={draft.name}
-          wide
-        />
-        <NumberField label="周期" onChange={(durationWeeks) => onChange({ durationWeeks })} suffix="周" value={draft.durationWeeks} />
-        <NumberField label="频率" onChange={(frequencyPerWeek) => onChange({ frequencyPerWeek })} suffix="天/周" value={draft.frequencyPerWeek} />
-      </View>
-      <View style={styles.goalRow}>
-        {goalOptions.map((goal) => (
-          <Pressable
-            accessibilityRole="button"
-            key={goal.value}
-            onPress={() => onChange({ goal: goal.value })}
-            style={[styles.goalChip, draft.goal === goal.value && styles.goalChipActive]}
-          >
-            <AppText tone={draft.goal === goal.value ? 'brand' : 'muted'} variant="caption" weight="900">
-              {goal.label}
+      <View style={styles.overviewRow}>
+        <View style={styles.nameField}>
+          <AppText tone="muted" variant="caption">
+            计划名称
+          </AppText>
+          <TextInput
+            onChangeText={(name) => onChange({ name })}
+            style={styles.compactInput}
+            value={draft.name}
+          />
+        </View>
+        <View style={styles.compactField}>
+          <AppText tone="muted" variant="caption">
+            周期
+          </AppText>
+          <View style={styles.numberRow}>
+            <TextInput
+              keyboardType="number-pad"
+              onChangeText={(text) => {
+                const parsed = Number.parseInt(text, 10);
+                if (Number.isFinite(parsed)) {
+                  onChange({ durationWeeks: Math.max(1, parsed) });
+                }
+              }}
+              style={styles.compactNumberInput}
+              value={`${draft.durationWeeks}`}
+            />
+            <AppText tone="muted" variant="caption">
+              周
             </AppText>
-          </Pressable>
-        ))}
+          </View>
+        </View>
+        <View style={styles.compactField}>
+          <AppText tone="muted" variant="caption">
+            频率
+          </AppText>
+          <View style={styles.numberRow}>
+            <TextInput
+              keyboardType="number-pad"
+              onChangeText={(text) => {
+                const parsed = Number.parseInt(text, 10);
+                if (Number.isFinite(parsed)) {
+                  onChange({ frequencyPerWeek: Math.max(1, parsed) });
+                }
+              }}
+              style={styles.compactNumberInput}
+              value={`${draft.frequencyPerWeek}`}
+            />
+            <AppText tone="muted" variant="caption">
+              天
+            </AppText>
+          </View>
+        </View>
       </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={styles.goalRow}>
+          {goalOptions.map((goal) => (
+            <Pressable
+              accessibilityRole="button"
+              key={goal.value}
+              onPress={() => onChange({ goal: goal.value })}
+              style={[styles.goalChip, draft.goal === goal.value && styles.goalChipActive]}
+            >
+              <AppText tone={draft.goal === goal.value ? 'brand' : 'muted'} variant="caption" weight="900">
+                {goal.label}
+              </AppText>
+            </Pressable>
+          ))}
+        </View>
+      </ScrollView>
     </AppCard>
   );
 }
 
 function PlanDayRow({
   active,
-  canMoveDown,
-  canMoveUp,
   day,
-  isOrdering,
   onDelete,
-  onMoveDown,
-  onMoveUp,
-  onPress,
 }: {
   active: boolean;
-  canMoveDown: boolean;
-  canMoveUp: boolean;
   day: PlanDayDraft;
-  isOrdering: boolean;
   onDelete: () => void;
-  onMoveDown: () => void;
-  onMoveUp: () => void;
-  onPress: () => void;
 }) {
   const setCount = day.exercises.reduce((sum, exercise) => sum + exercise.sets, 0);
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.dayRow, active && styles.dayRowActive, pressed && styles.pressed]}>
-      <View style={[styles.timelineDot, active && styles.timelineDotActive]} />
-      <AppText style={styles.dayCode} tone={active ? 'brand' : 'default'} variant="bodySmall" weight="900">
-        W{day.week} D{day.weekday}
-      </AppText>
+    <View style={[styles.dayRow, active && styles.dayRowActive]}>
+      <View style={[styles.dayBadge, active && styles.dayBadgeActive]}>
+        <AppText tone={active ? 'inverse' : 'muted'} variant="caption" weight="900">
+          {WEEKDAY_LABELS[day.weekday - 1]}
+        </AppText>
+      </View>
       <View style={styles.dayText}>
         <AppText numberOfLines={1} variant="bodySmall" weight="900">
           {day.title}
         </AppText>
         <AppText numberOfLines={1} tone="muted" variant="caption">
-          {day.focus}
+          {day.focus} · {day.exercises.length} 动作 · {setCount} 组
         </AppText>
       </View>
-      <AppText tone="muted" variant="caption">
-        {day.exercises.length} 动作 · {setCount} 计划组
-      </AppText>
-      {isOrdering ? (
-        <View style={styles.orderButtons}>
-          <Pressable accessibilityRole="button" disabled={!canMoveUp} onPress={onMoveUp} style={[styles.iconButton, !canMoveUp && styles.disabledButton]}>
-            <Ionicons color={colors.textMuted} name="chevron-up" size={16} />
-          </Pressable>
-          <Pressable accessibilityRole="button" disabled={!canMoveDown} onPress={onMoveDown} style={[styles.iconButton, !canMoveDown && styles.disabledButton]}>
-            <Ionicons color={colors.textMuted} name="chevron-down" size={16} />
-          </Pressable>
-        </View>
-      ) : (
-        <Pressable accessibilityRole="button" onPress={onDelete} style={styles.iconButton}>
-          <Ionicons color={colors.textMuted} name="trash-outline" size={16} />
-        </Pressable>
-      )}
-    </Pressable>
+      <Pressable accessibilityRole="button" onPress={onDelete} style={styles.iconButton}>
+        <Ionicons color={colors.textMuted} name="trash-outline" size={16} />
+      </Pressable>
+      <Ionicons color={colors.textSubtle} name="menu-outline" size={18} />
+    </View>
   );
 }
 
 function PlanExerciseRow({
   draft,
   exercise,
-  isOrdering,
-  onMoveDown,
-  onMoveUp,
-  onPress,
   orderLabel,
-  orderIndex,
 }: {
   draft: PlanExerciseDraft;
   exercise?: Exercise;
-  isOrdering: boolean;
-  onMoveDown: () => void;
-  onMoveUp: () => void;
-  onPress: () => void;
   orderLabel: string;
-  orderIndex: number;
 }) {
   const badgeStyles = [styles.exercisePriorityA, styles.exercisePriorityB, styles.exercisePriorityC, styles.exercisePriorityD];
   const textStyles = [styles.exercisePriorityTextA, styles.exercisePriorityTextB, styles.exercisePriorityTextC, styles.exercisePriorityTextD];
+  const badgeIndex = (orderLabel.charCodeAt(0) - 65) % badgeStyles.length;
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.exerciseRow, pressed && styles.pressed]}>
-      <View style={[styles.exercisePriority, badgeStyles[orderIndex % badgeStyles.length]]}>
-        <AppText style={textStyles[orderIndex % textStyles.length]} variant="bodySmall" weight="900">
+    <View style={styles.exerciseRow}>
+      <View style={[styles.exercisePriority, badgeStyles[badgeIndex]]}>
+        <AppText style={textStyles[badgeIndex]} variant="bodySmall" weight="900">
           {orderLabel}
         </AppText>
       </View>
@@ -558,21 +749,10 @@ function PlanExerciseRow({
         {formatReps(draft)}
       </AppText>
       <AppText style={styles.exerciseCell} tone="muted" variant="caption">
-        休息 {draft.restSeconds ?? 90} 秒
+        休息 {draft.restSeconds ?? 90}s
       </AppText>
-      {isOrdering ? (
-        <View style={styles.orderButtons}>
-          <Pressable accessibilityRole="button" onPress={onMoveUp} style={styles.iconButton}>
-            <Ionicons color={colors.textMuted} name="chevron-up" size={15} />
-          </Pressable>
-          <Pressable accessibilityRole="button" onPress={onMoveDown} style={styles.iconButton}>
-            <Ionicons color={colors.textMuted} name="chevron-down" size={15} />
-          </Pressable>
-        </View>
-      ) : (
-        <Ionicons color={colors.textMuted} name="menu-outline" size={18} />
-      )}
-    </Pressable>
+      <Ionicons color={colors.textSubtle} name="menu-outline" size={18} />
+    </View>
   );
 }
 
@@ -618,68 +798,6 @@ function ConfirmSheet({
         </AppButton>
       </View>
     </AppModalSheet>
-  );
-}
-
-function TextField({
-  icon,
-  label,
-  onChangeText,
-  value,
-  wide = false,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onChangeText: (value: string) => void;
-  value: string;
-  wide?: boolean;
-}) {
-  return (
-    <View style={[styles.inputCard, wide && styles.inputCardWide]}>
-      <View style={styles.inlineLabel}>
-        <Ionicons color={colors.accent} name={icon} size={17} />
-        <AppText tone="muted" variant="caption">
-          {label}
-        </AppText>
-      </View>
-      <TextInput onChangeText={onChangeText} style={styles.input} value={value} />
-    </View>
-  );
-}
-
-function NumberField({
-  label,
-  onChange,
-  suffix,
-  value,
-}: {
-  label: string;
-  onChange: (value: number) => void;
-  suffix: string;
-  value: number;
-}) {
-  return (
-    <View style={styles.inputCardCompact}>
-      <AppText tone="muted" variant="caption">
-        {label}
-      </AppText>
-      <View style={styles.numberInputRow}>
-        <TextInput
-          keyboardType="number-pad"
-          onChangeText={(text) => {
-            const parsed = Number.parseInt(text, 10);
-            if (Number.isFinite(parsed)) {
-              onChange(Math.max(1, parsed));
-            }
-          }}
-          style={styles.numberInput}
-          value={`${value}`}
-        />
-        <AppText tone="muted" variant="caption">
-          {suffix}
-        </AppText>
-      </View>
-    </View>
   );
 }
 
@@ -738,14 +856,52 @@ const styles = StyleSheet.create({
   card: {
     gap: spacing.md,
   },
-  dayCode: {
-    minWidth: 48,
+  compactField: {
+    minWidth: 72,
+  },
+  compactInput: {
+    color: colors.text,
+    fontSize: typography.sizes.bodySmall,
+    fontWeight: '900',
+    minHeight: 28,
+    padding: 0,
+  },
+  compactNumberInput: {
+    color: colors.text,
+    fontSize: typography.sizes.bodySmall,
+    fontWeight: '900',
+    minWidth: 28,
+    padding: 0,
+  },
+  dayBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.sm,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  dayBadgeActive: {
+    backgroundColor: colors.brand,
   },
   dayList: {
     gap: spacing.sm,
   },
+  dayListActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  dayListHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   dayListScroll: {
-    maxHeight: 286,
+    maxHeight: 320,
+  },
+  dayListTitle: {
+    gap: 2,
   },
   dayRow: {
     alignItems: 'center',
@@ -767,13 +923,12 @@ const styles = StyleSheet.create({
     gap: 2,
     minWidth: 0,
   },
-  dayToolbar: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
+  draggableRowWrap: {
+    marginBottom: spacing.sm,
   },
+  draggableExerciseWrap: {},
   exerciseCell: {
-    minWidth: 68,
+    minWidth: 64,
     textAlign: 'right',
   },
   exerciseList: {
@@ -827,13 +982,31 @@ const styles = StyleSheet.create({
     minHeight: 58,
     padding: spacing.md,
   },
+  focusInput: {
+    color: colors.text,
+    fontSize: typography.sizes.bodySmall,
+    fontWeight: '800',
+    minHeight: 28,
+    padding: 0,
+  },
+  focusRow: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundElevated,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
   goalChip: {
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
     borderRadius: radius.pill,
     borderWidth: 1,
-    minHeight: 32,
     justifyContent: 'center',
+    minHeight: 30,
     paddingHorizontal: spacing.md,
   },
   goalChipActive: {
@@ -842,8 +1015,16 @@ const styles = StyleSheet.create({
   },
   goalRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
+    paddingRight: spacing.sm,
+  },
+  iconAction: {
+    alignItems: 'center',
+    backgroundColor: colors.brandSoft,
+    borderRadius: radius.pill,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
   },
   iconButton: {
     alignItems: 'center',
@@ -852,48 +1033,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 34,
   },
-  disabledButton: {
-    opacity: 0.35,
-  },
-  inlineLabel: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  input: {
-    color: colors.text,
-    fontSize: typography.sizes.bodySmall,
-    fontWeight: '800',
-    minHeight: 30,
-    padding: 0,
-  },
-  inputCard: {
-    backgroundColor: colors.backgroundElevated,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flex: 1,
-    gap: spacing.xs,
-    minHeight: 64,
-    minWidth: '46%',
-    padding: spacing.md,
-  },
-  inputCardCompact: {
-    backgroundColor: colors.backgroundElevated,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexGrow: 1,
-    flexShrink: 1,
-    gap: spacing.xs,
-    minHeight: 64,
-    minWidth: 92,
-    padding: spacing.md,
-  },
-  inputCardWide: {
-    flexBasis: '54%',
-    flexGrow: 2,
-  },
   layout: {
     flex: 1,
     gap: spacing.md,
@@ -901,69 +1040,35 @@ const styles = StyleSheet.create({
   modalButtons: {
     gap: spacing.sm,
   },
-  numberInput: {
-    color: colors.text,
+  nameField: {
     flex: 1,
-    fontSize: typography.sizes.bodySmall,
-    fontWeight: '900',
-    minHeight: 30,
-    padding: 0,
   },
-  numberInputRow: {
+  numberRow: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.xs,
   },
-  orderButtons: {
-    alignItems: 'center',
+  overviewRow: {
+    alignItems: 'flex-end',
     flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  overviewGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.md,
   },
-  pressed: {
-    opacity: 0.84,
-    transform: [{ scale: 0.99 }],
-  },
-  scrollContent: {
-    gap: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  stateTags: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    justifyContent: 'center',
-  },
-  stepButton: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 32,
-    justifyContent: 'center',
-    width: 32,
-  },
-  stepperRow: {
+  activeDayHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  timelineDot: {
-    backgroundColor: colors.surface,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.pill,
-    borderWidth: 2,
-    height: 20,
-    width: 20,
+  activeDayTitle: {
+    flex: 1,
+    gap: 2,
   },
-  timelineDotActive: {
-    backgroundColor: colors.brand,
-    borderColor: colors.brand,
+  pressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.97 }],
+  },
+  scrollContent: {
+    gap: spacing.lg,
+    paddingBottom: spacing.md,
   },
   validationBox: {
     backgroundColor: colors.backgroundElevated,
@@ -977,6 +1082,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  weekdayChip: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  weekdayChipActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
+  weekdayRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  weekdaySection: {
+    gap: spacing.xs,
   },
   weekTab: {
     backgroundColor: colors.surfaceMuted,

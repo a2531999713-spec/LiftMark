@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps, ReactNode } from 'react';
 import {
   ImageBackground,
+  Pressable,
   StyleSheet,
   View,
   type ImageSourcePropType,
@@ -24,6 +25,10 @@ type VisualHeroCardProps = {
   style?: StyleProp<ViewStyle>;
   subtitle?: string;
   title: string;
+  /** 顶部右上角操作按钮图标；传入后 iconBubble 会变为可点击按钮 */
+  actionIcon?: IconName;
+  /** 顶部右上角操作按钮回调；不传则 iconBubble 仅作装饰 */
+  onActionPress?: () => void;
 };
 
 export function VisualHeroCard({
@@ -35,7 +40,11 @@ export function VisualHeroCard({
   style,
   subtitle,
   title,
+  actionIcon,
+  onActionPress,
 }: VisualHeroCardProps) {
+  const effectiveIcon = actionIcon ?? icon;
+  const interactive = Boolean(onActionPress);
   return (
     <View style={[styles.card, { minHeight }, style]}>
       {imageSource ? (
@@ -74,9 +83,19 @@ export function VisualHeroCard({
         </View>
         {children}
       </View>
-      <View style={styles.iconBubble}>
-        <Ionicons color={colors.surface} name={icon} size={28} />
-      </View>
+      {interactive ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onActionPress}
+          style={({ pressed }) => [styles.iconBubble, pressed && styles.iconBubblePressed]}
+        >
+          <Ionicons color={colors.surface} name={effectiveIcon} size={24} />
+        </Pressable>
+      ) : (
+        <View style={styles.iconBubble}>
+          <Ionicons color={colors.surface} name={effectiveIcon} size={28} />
+        </View>
+      )}
     </View>
   );
 }
@@ -192,5 +211,9 @@ const styles = StyleSheet.create({
     right: spacing.lg,
     top: spacing.lg,
     width: 48,
+  },
+  iconBubblePressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.94 }],
   },
 });

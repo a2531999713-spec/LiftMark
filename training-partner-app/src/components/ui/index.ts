@@ -8,6 +8,7 @@ export type { AvatarProps } from './Avatar';
 export { DangerZone } from './DangerZone';
 export { EmptyState } from './EmptyState';
 export { MetricCard } from './MetricCard';
+export { MiniBarLineChart } from './MiniBarLineChart';
 export { MiniLineChart } from './MiniLineChart';
 export { MultiLineTrendChart } from './MultiLineTrendChart';
 export { Screen } from './Screen';

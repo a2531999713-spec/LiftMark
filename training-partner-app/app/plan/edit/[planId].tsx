@@ -1,5 +1,5 @@
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert } from 'react-native';
 
 import { PlanEditOverview } from '@/components/plan/PlanEditOverview';
@@ -17,7 +17,22 @@ type PlanEditState = {
   draft: PlanEditDraft;
   exerciseMap: PlanExerciseMap;
   plan: PlanTemplate;
+  baselineDraftJson: string;
 };
+
+function serializeDraftForDiff(draft: PlanEditDraft): string {
+  // 稳定序列化：按 id 排序后再 JSON，避免顺序变化造成误报
+  const normalized = {
+    ...draft,
+    days: [...draft.days]
+      .sort((a, b) => a.week - b.week || a.weekday - b.weekday || a.id.localeCompare(b.id))
+      .map((day) => ({
+        ...day,
+        exercises: [...day.exercises].sort((a, b) => a.orderIndex - b.orderIndex || a.id.localeCompare(b.id)),
+      })),
+  };
+  return JSON.stringify(normalized);
+}
 
 export default function PlanEditRoute() {
   const { planId } = useLocalSearchParams<{ planId: string }>();
@@ -27,6 +42,8 @@ export default function PlanEditRoute() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const navigation = useNavigation();
+  const isDirtyRef = useRef(false);
 
   const loadPlan = useCallback(async () => {
     if (!planId) {
@@ -47,19 +64,48 @@ export default function PlanEditRoute() {
       const days = await repositories.planRepository.listPlanDays(plan.id);
       const exerciseLists = await Promise.all(days.map((day) => repositories.planRepository.listPlanExercises(day.id)));
       const allExercises = await repositories.exerciseRepository.listExercises();
+      const draft = buildPlanEditDraft(plan, days, exerciseLists);
 
       setState({
         allExercises,
-        draft: buildPlanEditDraft(plan, days, exerciseLists),
+        draft,
         exerciseMap: Object.fromEntries(allExercises.map((exercise) => [exercise.id, exercise])),
         plan,
+        baselineDraftJson: serializeDraftForDiff(draft),
       });
+      isDirtyRef.current = false;
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '计划编辑加载失败。');
     } finally {
       setIsLoading(false);
     }
   }, [planId, repositories]);
+
+  // 拦截返回/退出，提示未保存修改
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (!isDirtyRef.current) {
+        return;
+      }
+      e.preventDefault();
+      Alert.alert(
+        '有未保存的修改',
+        '当前编辑尚未保存，确认离开会丢失改动。是否放弃修改？',
+        [
+          { text: '继续编辑', style: 'cancel' },
+          {
+            text: '放弃修改',
+            style: 'destructive',
+            onPress: () => {
+              isDirtyRef.current = false;
+              navigation.dispatch(e.data.action);
+            },
+          },
+        ],
+      );
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   useFocusEffect(
     useCallback(() => {
@@ -68,44 +114,43 @@ export default function PlanEditRoute() {
   );
 
   const updateDraft = (patch: Partial<PlanEditDraft>) => {
-    setState((current) => (current ? { ...current, draft: { ...current.draft, ...patch } } : current));
+    setState((current) => {
+      if (!current) return current;
+      const nextDraft = { ...current.draft, ...patch };
+      isDirtyRef.current = serializeDraftForDiff(nextDraft) !== current.baselineDraftJson;
+      return { ...current, draft: nextDraft };
+    });
   };
 
   const addDay = (week: number) => {
-    setState((current) =>
-      current
-        ? (() => {
-            const sameWeekDays = current.draft.days.filter((day) => day.week === week);
-            const nextWeekday = Math.min(7, sameWeekDays.length + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
-            const nextDay = {
-              ...createEmptyPlanDayDraft(current.draft.days.length),
-              week,
-              weekday: nextWeekday,
-            };
-            return {
-            ...current,
-            draft: {
-              ...current.draft,
-                days: [...current.draft.days, nextDay],
-            },
-            };
-          })()
-        : current,
-    );
+    setState((current) => {
+      if (!current) return current;
+      const sameWeekDays = current.draft.days.filter((day) => day.week === week);
+      const nextWeekday = Math.min(7, sameWeekDays.length + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
+      const nextDay = {
+        ...createEmptyPlanDayDraft(current.draft.days.length),
+        week,
+        weekday: nextWeekday,
+      };
+      const nextDraft = {
+        ...current.draft,
+        days: [...current.draft.days, nextDay],
+      };
+      isDirtyRef.current = serializeDraftForDiff(nextDraft) !== current.baselineDraftJson;
+      return { ...current, draft: nextDraft };
+    });
   };
 
   const deleteDay = (dayId: string) => {
-    setState((current) =>
-      current
-        ? {
-            ...current,
-            draft: {
-              ...current.draft,
-              days: current.draft.days.filter((day) => day.id !== dayId),
-            },
-          }
-        : current,
-    );
+    setState((current) => {
+      if (!current) return current;
+      const nextDraft = {
+        ...current.draft,
+        days: current.draft.days.filter((day) => day.id !== dayId),
+      };
+      isDirtyRef.current = serializeDraftForDiff(nextDraft) !== current.baselineDraftJson;
+      return { ...current, draft: nextDraft };
+    });
   };
 
   const save = async () => {
@@ -116,6 +161,8 @@ export default function PlanEditRoute() {
     setIsSaving(true);
     try {
       const plan = await repositories.planRepository.updateUserPlan(toUpdateUserPlanInput(planId, state.draft));
+      // 保存成功后立即重置 dirty，避免 beforeRemove 在 loadPlan 完成前误拦截
+      isDirtyRef.current = false;
       Alert.alert('已保存', `“${plan.name}”已更新，后续训练会读取新结构。`);
       await loadPlan();
     } catch (saveError) {

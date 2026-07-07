@@ -4,7 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MiniLineChart, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
+import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, MiniBarLineChart, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { AuthGateSheets } from '@/components/auth';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
@@ -50,7 +50,8 @@ type DaySummary = {
 };
 
 type PlanDashboardStats = {
-  lastFourWeeks: number[];
+  lastFourWeeksSessions: number[];
+  lastFourWeeksVolume: number[];
   lastFourWeekLabels: string[];
   recentSessionDate?: string;
   weeklyCompletedSets: number;
@@ -59,7 +60,8 @@ type PlanDashboardStats = {
 };
 
 const emptyStats: PlanDashboardStats = {
-  lastFourWeeks: [0, 0, 0, 0],
+  lastFourWeeksSessions: [0, 0, 0, 0],
+  lastFourWeeksVolume: [0, 0, 0, 0],
   lastFourWeekLabels: ['', '', '', ''],
   weeklyCompletedSets: 0,
   weeklySessionCount: 0,
@@ -76,11 +78,6 @@ function describePlanSource(source: PlanTemplate['source']) {
     duplicated: '复制计划',
   };
   return labels[source];
-}
-
-function clampPlanWeek(week: number, plan: PlanTemplate | null) {
-  const maxWeek = plan?.durationWeeks ?? DEFAULT_CYCLE_WEEK_COUNT;
-  return Math.min(maxWeek, Math.max(1, Math.round(week)));
 }
 
 function getLocalDateString(date = new Date()): string {
@@ -125,13 +122,20 @@ function summarizeWorkoutDetails(details: WorkoutSessionDetail[]): Pick<PlanDash
   };
 }
 
-function buildLastFourWeeks(details: WorkoutSessionDetail[]): Pick<PlanDashboardStats, 'lastFourWeeks' | 'lastFourWeekLabels'> {
+function buildLastFourWeeks(details: WorkoutSessionDetail[]): Pick<
+  PlanDashboardStats,
+  'lastFourWeeksSessions' | 'lastFourWeeksVolume' | 'lastFourWeekLabels'
+> {
   const completedDetails = details
     .filter((detail) => detail.sets.some((set) => set.completed))
     .sort((left, right) => left.session.date.localeCompare(right.session.date));
 
   if (completedDetails.length === 0) {
-    return { lastFourWeeks: [0, 0, 0, 0], lastFourWeekLabels: ['', '', '', ''] };
+    return {
+      lastFourWeeksSessions: [0, 0, 0, 0],
+      lastFourWeeksVolume: [0, 0, 0, 0],
+      lastFourWeekLabels: ['', '', '', ''],
+    };
   }
 
   const firstWeekStart = getNaturalWeekStart(parseLocalDate(completedDetails[0].session.date));
@@ -150,6 +154,7 @@ function buildLastFourWeeks(details: WorkoutSessionDetail[]): Pick<PlanDashboard
     count: 0,
     label: formatMonthDay(start),
     start,
+    volume: 0,
   }));
 
   completedDetails.forEach((detail) => {
@@ -160,12 +165,19 @@ function buildLastFourWeeks(details: WorkoutSessionDetail[]): Pick<PlanDashboard
     });
     if (bucket) {
       bucket.count += 1;
+      bucket.volume += detail.sets
+        .filter((set) => set.completed)
+        .reduce(
+          (sum, set) => sum + (set.actualWeight ?? set.plannedWeight ?? 0) * (set.actualReps ?? set.plannedReps ?? 0),
+          0,
+        );
     }
   });
 
   return {
     lastFourWeekLabels: buckets.map((bucket) => bucket.label),
-    lastFourWeeks: buckets.map((bucket) => bucket.count),
+    lastFourWeeksSessions: buckets.map((bucket) => bucket.count),
+    lastFourWeeksVolume: buckets.map((bucket) => bucket.volume),
   };
 }
 
@@ -294,27 +306,6 @@ export default function PlanRoute() {
       return phases.find((phase) => week >= phase.startWeek && week <= phase.endWeek)?.type ?? phases[0]?.type ?? 'custom';
     },
     [repositories],
-  );
-
-  const saveWeek = useCallback(
-    async (week: number) => {
-      if (!group) {
-        return;
-      }
-
-      if (!guardFeature('edit_plan')) {
-        return;
-      }
-
-      const currentWeek = clampPlanWeek(week, activePlan);
-      const updated = await repositories.groupRepository.updateGroup(group.id, {
-        currentPhaseType: await resolvePhaseTypeForWeek(group.activePlanId, currentWeek),
-        currentWeek,
-      });
-      setGroup(updated);
-      await loadPlans();
-    },
-    [activePlan, group, guardFeature, loadPlans, repositories, resolvePhaseTypeForWeek],
   );
 
   const setCurrentPlan = useCallback(
@@ -537,6 +528,8 @@ export default function PlanRoute() {
             minHeight={188}
             subtitle={`第 ${group.currentWeek}/${activePlanWeeks} 周 · ${describePlanSource(activePlan?.source ?? 'blank_created')}`}
             title={activePlan?.name ?? '还没有当前计划'}
+            actionIcon="settings-outline"
+            onActionPress={() => setManageVisible(true)}
           >
             <View style={styles.planMetaRow}>
               <Tag label={`${activePlan?.frequencyPerWeek ?? 0} 天/周`} tone="dark" />
@@ -546,43 +539,14 @@ export default function PlanRoute() {
             <View style={styles.progressTrackDark}>
               <View style={[styles.progressFill, { width: `${activePlanProgress}%` }]} />
             </View>
-            <View style={styles.inlineActions}>
-              <AppButton onPress={() => setManageVisible(true)} size="sm">
-                管理计划
-              </AppButton>
-              <AppButton
-                disabled={!activePlan}
-                onPress={() => {
-                  if (!activePlan) return;
-                  if (activePlan.source === 'system') {
-                    router.push({ pathname: '/plan/[planId]', params: { planId: activePlan.id } } as never);
-                  } else {
-                    router.push({ pathname: '/plan/edit/[planId]', params: { planId: activePlan.id } } as never);
-                  }
-                }}
-                size="sm"
-                variant="secondary"
-              >
-                {activePlan?.source === 'system' ? '查看并复制' : '编辑当前计划'}
-              </AppButton>
-            </View>
           </VisualHeroCard>
-
-          <View style={styles.weekControls}>
-            <AppButton disabled={group.currentWeek <= 1} onPress={() => void saveWeek(group.currentWeek - 1)} size="sm" variant="secondary">
-              上一周
-            </AppButton>
-            <AppButton disabled={group.currentWeek >= activePlanWeeks} onPress={() => void saveWeek(group.currentWeek + 1)} size="sm">
-              下一周
-            </AppButton>
-          </View>
 
           <AppCard style={styles.dashboardCard}>
             <View style={styles.dashboardHeader}>
               <View>
-                <AppText variant="subtitle">本周执行</AppText>
+                <AppText variant="subtitle">最近执行</AppText>
                 <AppText tone="muted" variant="caption">
-                  当前计划下的训练记录
+                  最近 4 周训练量与完成训练
                 </AppText>
               </View>
               <Tag label={stats.recentSessionDate ? `最近 ${stats.recentSessionDate}` : '暂无训练'} tone={stats.recentSessionDate ? 'success' : 'neutral'} />
@@ -592,12 +556,16 @@ export default function PlanRoute() {
               <StatTile label="完成组数" value={`${stats.weeklyCompletedSets} 组`} />
               <StatTile label="训练量" value={formatKg(stats.weeklyVolume)} wide />
             </View>
-            <MiniLineChart
-              chartHeight={92}
-              data={stats.lastFourWeeks}
-              emptyMessage="最近 4 周还没有当前计划训练记录"
+            <MiniBarLineChart
+              chartHeight={104}
+              barData={stats.lastFourWeeksVolume}
+              lineData={stats.lastFourWeeksSessions}
               labels={stats.lastFourWeekLabels}
-              valueLabelStrategy="keyPoints"
+              barUnitLabel="kg"
+              lineUnitLabel="次"
+              emptyMessage="最近 4 周还没有当前计划训练记录"
+              barFormatValue={(value) => (value >= 1000 ? `${(value / 1000).toFixed(1)}k` : `${Math.round(value)}`)}
+              lineFormatValue={(value) => `${Math.round(value)}`}
             />
           </AppCard>
 
@@ -1280,15 +1248,16 @@ const styles = StyleSheet.create({
   },
   statGrid: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   statTile: {
     backgroundColor: colors.backgroundElevated,
     borderRadius: radius.sm,
     flex: 1,
-    gap: 2,
-    minHeight: 56,
-    padding: spacing.sm,
+    gap: 1,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   statTileWide: {
     flex: 1.5,
@@ -1300,9 +1269,5 @@ const styles = StyleSheet.create({
   },
   upcomingCard: {
     gap: spacing.md,
-  },
-  weekControls: {
-    flexDirection: 'row',
-    gap: spacing.sm,
   },
 });

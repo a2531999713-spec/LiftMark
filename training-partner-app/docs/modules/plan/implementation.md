@@ -1,14 +1,31 @@
-﻿# Plan 模块实现文档
+# Plan 模块实现文档
 
 更新时间：2026-07-07
 对应代码目录：`training-partner-app/`
+
+## 2026-07-07 补充（二）：编辑计划页面与仪表盘重设计
+
+- `app/_layout.tsx` 为 `plan/edit/[planId]`、`plan/create` 路由补充标题（`编辑计划` / `创建计划`），并用 `GestureHandlerRootView` 包裹 `Stack` 以支持长按拖拽手势。
+- `src/components/plan/PlanEditOverview.tsx` 完全重写：
+  - 顶部「计划概览」改为单行紧凑布局（计划名称 `flex:1` + 周期/频率紧凑字段 + 目标横向滚动）。
+  - 训练日新增周几选择器（一二三四五六日 chip，点击设置 `weekday`）；活动训练日支持内联编辑 `focus` / `title`。
+  - 训练日列表用嵌套 `ScrollView`（`nestedScrollEnabled`、`maxHeight: 320`）支持纵向滑动，超出部分可滑出；周次 tab 横向滑动。
+  - 「复制到下一周」「添加训练日」从按钮改为图标（`copy-outline` / `add-circle-outline` 圆形品牌色背景）。
+  - 删除「调整顺序」按钮，训练日与训练动作均改用 `DraggableRow`（`Gesture.Pan().activateAfterLongPress(350)` + `Gesture.Race(pan, tap)`）实现长按拖拽排序，点击切换激活。
+- `app/plan/edit/[planId].tsx` 新增返回退出保存提示：监听 `navigation.beforeRemove`，通过 `serializeDraftForDiff` 与基准 draft 对比判断 dirty，未保存时弹 `Alert`「放弃修改 / 继续编辑」。
+- `app/(tabs)/plan.tsx` 「本周执行」卡片重命名为「最近执行」，副标题改为「最近 4 周训练量与完成训练」，避免周一没数据时显示突兀。
+- 新建 `src/components/ui/MiniBarLineChart.tsx` 柱状图+折线图组合组件：柱子表示训练量（品牌色），折线表示完成训练次数（accent 色），关键点显示数值气泡（品牌色/accent 色背景白字 + 阴影），符合图表样式约定。
+- `buildLastFourWeeks` 同步返回 `lastFourWeeksSessions` 与 `lastFourWeeksVolume` 两个序列；`MiniLineChart` 在计划页被 `MiniBarLineChart` 替换。
+- StatTile 缩小：`minHeight: 56 → 44`，`padding` 改为横 `spacing.sm` / 纵 `spacing.xs`，`gap: 2 → 1`。
+- 去除「上一周 / 下一周」按钮及其 `saveWeek` / `clampPlanWeek` 实现；保留 `setCurrentPlan` 等其他流程。
+- `VisualHeroCard` 新增可选 `actionIcon` / `onActionPress` props：传入后顶部右上角 `iconBubble` 变为可点击按钮。计划页用 `actionIcon="settings-outline"` + `onActionPress={() => setManageVisible(true)}` 替代原「管理计划 / 编辑当前计划」两个按钮，点击弹出管理计划弹窗；「编辑当前计划」入口收回管理弹窗内（既有 `PlanActionRow` 已支持）。
 
 ## 2026-07-07 补充：计划编辑器周视图和当前小组作用域
 
 - `app/(tabs)/plan.tsx` 改为通过 `selectedGroupStore` 读取当前小组；切换小组后当前计划、当前周、本周安排和执行统计都会跟随刷新。
 - `src/components/plan/PlanEditOverview.tsx` 将训练日列表改为“训练周 Tab + 当前周训练日列表”，列表固定高度并支持内部滚动，避免八周所有训练日一次性铺满页面。
 - “复制到下一周”已从占位提示改成真实草稿操作：复制当前周训练日和动作到下一周，并替换目标周已有草稿。
-- “调整顺序”已从占位提示改成排序模式，可调整当前周训练日顺序和当前训练日内动作顺序。
+- “调整顺序”已从占位提示改成排序模式，可调整当前周训练日顺序和当前训练日内动作顺序（注：本次已被「长按拖拽」替代，详见上方「2026-07-07 补充（二）」）。
 - 计划概览不再用加减按钮调整周期和频率；计划名称输入区域更宽，周期/频率使用紧凑数字输入。
 - 计划动作行去掉“手动重量”显示，为动作名称留出空间；动作序号按 A/B/C/D 循环使用不同颜色。
 
@@ -55,8 +72,9 @@
 | `src/domain/onboarding/trainingProfile.types.ts` | 首次训练信息表单类型。 |
 | `app/(tabs)/plan.tsx` | 计划页展示当前计划仪表盘、本周安排、我的计划管理、计划库入口和收纳式计划操作弹层。 |
 | `app/onboarding/training-profile.tsx` | 首次训练信息完善和推荐计划选择流程。 |
-| `src/components/plan/PlanEditOverview.tsx` | 用户计划编辑器，支持周视图、复制下一周、训练日排序和动作排序。 |
-| `src/components/ui/MiniLineChart.tsx` | 计划页本周执行趋势使用的轻量折线图。 |
+| `src/components/plan/PlanEditOverview.tsx` | 用户计划编辑器，支持周视图、复制下一周、训练日长按拖拽排序和动作长按拖拽排序、周几选择、返回退出未保存提示。 |
+| `src/components/ui/MiniLineChart.tsx` | 轻量折线图（仍用于其他页面，计划页已替换为 `MiniBarLineChart`）。 |
+| `src/components/ui/MiniBarLineChart.tsx` | 计划页「最近执行」使用的柱状图+折线图组合组件：柱=训练量、折线=完成训练次数。 |
 | `app/(tabs)/today.tsx` | 训练页当前计划卡和计划切换弹层。 |
 | `app/plan/create.tsx` | 第一版创建计划页面，接入统一动作选择器。 |
 | `src/tests/plan.test.ts` | 系统方案复制、PPL 和动作库 seed 测试。 |
@@ -167,3 +185,4 @@ app: LiftMark
 - 2026-07-01：计划首页新增显式切换/编辑入口；执行趋势 X 轴改为周起始日期并支持短数据靠左展示。
 - 2026-07-02：训练总结页可将本次替换、加做、跳过和临时动作投射回当前用户计划；系统方案仍由 `updateUserPlan()` 拒绝直接编辑，训练执行页本身不写计划表。
 - 2026-07-07：计划页接入当前小组；编辑器改为周视图，复制到下一周和顺序调整落地，概览和动作行改为紧凑布局。
+- 2026-07-07（二）：编辑计划页面与仪表盘重设计。`PlanEditOverview.tsx` 改为紧凑单行概览 + 周几选择 + 训练日/动作长按拖拽排序（替代「调整顺序」按钮）+ 复制/添加图标 + 嵌套滚动；`app/plan/edit/[planId].tsx` 加返回退出未保存提示；计划页「本周执行」改「最近执行」并用新建 `MiniBarLineChart` 同时显示训练量与完成训练次数；StatTile 缩小；去除「上一周 / 下一周」按钮；`VisualHeroCard` 新增 `actionIcon` / `onActionPress` props，计划页改用顶部右上角图标弹出管理计划弹窗。
