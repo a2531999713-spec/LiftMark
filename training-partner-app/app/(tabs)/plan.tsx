@@ -1,5 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -13,13 +15,13 @@ import type { Group } from '@/domain/group/group.types';
 import { resolveSelectedGroup } from '@/domain/group/selected-group';
 import { DEFAULT_CYCLE_WEEK_COUNT } from '@/domain/plan/defaultCycle';
 import type { PhaseType, PlanDay, PlanTemplate } from '@/domain/plan/plan.types';
+import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import {
   describeSchemeGoal,
   describeSchemeLevel,
   listSystemTrainingSchemes,
   type SystemTrainingScheme,
 } from '@/domain/plan/systemSchemes';
-import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import { pickImportedPlanDocument } from '@/services/planDocumentService';
 import { createCurrentPlanFile, PlanFileError, serializePlanFile } from '@/services/planFileService';
 import { useAuthGate } from '@/hooks/useAuthGate';
@@ -31,7 +33,7 @@ type PlanNotice = {
   title: string;
 };
 
-type ExportPrompt = {
+type SharePrompt = {
   content: string;
   message: string;
   title: string;
@@ -50,19 +52,21 @@ type DaySummary = {
 };
 
 type PlanDashboardStats = {
-  lastFourWeeksSessions: number[];
-  lastFourWeeksVolume: number[];
-  lastFourWeekLabels: string[];
+  recentSessionsCompletedSets: number[];
+  recentSessionsVolume: number[];
+  recentSessionsLabels: string[];
   recentSessionDate?: string;
   weeklyCompletedSets: number;
   weeklySessionCount: number;
   weeklyVolume: number;
 };
 
+const RECENT_SESSION_CHART_LIMIT = 6;
+
 const emptyStats: PlanDashboardStats = {
-  lastFourWeeksSessions: [0, 0, 0, 0],
-  lastFourWeeksVolume: [0, 0, 0, 0],
-  lastFourWeekLabels: ['', '', '', ''],
+  recentSessionsCompletedSets: [],
+  recentSessionsVolume: [],
+  recentSessionsLabels: [],
   weeklyCompletedSets: 0,
   weeklySessionCount: 0,
   weeklyVolume: 0,
@@ -101,12 +105,6 @@ function parseLocalDate(date: string): Date {
   return new Date(`${date}T12:00:00`);
 }
 
-function getNaturalWeekStart(date: Date): Date {
-  const day = date.getDay();
-  const mondayOffset = day === 0 ? 6 : day - 1;
-  return addDays(date, -mondayOffset);
-}
-
 function formatKg(value: number): string {
   return `${Math.round(value).toLocaleString('zh-CN')} kg`;
 }
@@ -122,9 +120,9 @@ function summarizeWorkoutDetails(details: WorkoutSessionDetail[]): Pick<PlanDash
   };
 }
 
-function buildLastFourWeeks(details: WorkoutSessionDetail[]): Pick<
+function buildRecentSessions(details: WorkoutSessionDetail[]): Pick<
   PlanDashboardStats,
-  'lastFourWeeksSessions' | 'lastFourWeeksVolume' | 'lastFourWeekLabels'
+  'recentSessionsCompletedSets' | 'recentSessionsVolume' | 'recentSessionsLabels' | 'recentSessionDate'
 > {
   const completedDetails = details
     .filter((detail) => detail.sets.some((set) => set.completed))
@@ -132,52 +130,25 @@ function buildLastFourWeeks(details: WorkoutSessionDetail[]): Pick<
 
   if (completedDetails.length === 0) {
     return {
-      lastFourWeeksSessions: [0, 0, 0, 0],
-      lastFourWeeksVolume: [0, 0, 0, 0],
-      lastFourWeekLabels: ['', '', '', ''],
+      recentSessionsCompletedSets: [],
+      recentSessionsLabels: [],
+      recentSessionsVolume: [],
     };
   }
 
-  const firstWeekStart = getNaturalWeekStart(parseLocalDate(completedDetails[0].session.date));
-  const currentWeekStart = getNaturalWeekStart(new Date());
-  const bucketStarts: Date[] = [];
-  for (
-    let cursor = firstWeekStart;
-    getLocalDateString(cursor) <= getLocalDateString(currentWeekStart);
-    cursor = addDays(cursor, 7)
-  ) {
-    bucketStarts.push(cursor);
-  }
-
-  const visibleBucketStarts = bucketStarts.slice(-4);
-  const buckets = visibleBucketStarts.map((start) => ({
-    count: 0,
-    label: formatMonthDay(start),
-    start,
-    volume: 0,
-  }));
-
-  completedDetails.forEach((detail) => {
-    const sessionDate = parseLocalDate(detail.session.date);
-    const bucket = buckets.find((item, index) => {
-      const nextStart = buckets[index + 1]?.start ?? addDays(item.start, 7);
-      return sessionDate >= item.start && sessionDate < nextStart;
-    });
-    if (bucket) {
-      bucket.count += 1;
-      bucket.volume += detail.sets
+  const recent = completedDetails.slice(-RECENT_SESSION_CHART_LIMIT);
+  return {
+    recentSessionDate: recent[recent.length - 1]?.session.date,
+    recentSessionsCompletedSets: recent.map((detail) => detail.sets.filter((set) => set.completed).length),
+    recentSessionsLabels: recent.map((detail) => formatMonthDay(parseLocalDate(detail.session.date))),
+    recentSessionsVolume: recent.map((detail) =>
+      detail.sets
         .filter((set) => set.completed)
         .reduce(
           (sum, set) => sum + (set.actualWeight ?? set.plannedWeight ?? 0) * (set.actualReps ?? set.plannedReps ?? 0),
           0,
-        );
-    }
-  });
-
-  return {
-    lastFourWeekLabels: buckets.map((bucket) => bucket.label),
-    lastFourWeeksSessions: buckets.map((bucket) => bucket.count),
-    lastFourWeeksVolume: buckets.map((bucket) => bucket.volume),
+        ),
+    ),
   };
 }
 
@@ -195,14 +166,16 @@ export default function PlanRoute() {
   const [selectedScheme, setSelectedScheme] = useState<SystemTrainingScheme | null>(null);
   const [previewScheme, setPreviewScheme] = useState<SystemTrainingScheme | null>(null);
   const [activationPrompt, setActivationPrompt] = useState<ActivationPrompt | null>(null);
-  const [exportPrompt, setExportPrompt] = useState<ExportPrompt | null>(null);
+  const [sharePrompt, setSharePrompt] = useState<SharePrompt | null>(null);
   const [notice, setNotice] = useState<PlanNotice | null>(null);
   const [isManageVisible, setManageVisible] = useState(false);
   const [isActionsVisible, setActionsVisible] = useState(false);
   const [isSchemeLibraryVisible, setSchemeLibraryVisible] = useState(false);
+  const [isMoreMenuVisible, setMoreMenuVisible] = useState(false);
   const [deletePromptPlan, setDeletePromptPlan] = useState<PlanTemplate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
+  const [isSettingActive, setIsSettingActive] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const availableSchemes = useMemo(() => systemSchemes.filter((scheme) => scheme.isAvailable), [systemSchemes]);
@@ -264,7 +237,7 @@ export default function PlanRoute() {
         const sessions = (
           await repositories.workoutRepository.listSessions({
             groupId: nextGroup.id,
-            fromDate: getLocalDateString(addDays(new Date(), -27)),
+            fromDate: getLocalDateString(addDays(new Date(), -89)),
             toDate: today,
             limit: 120,
           })
@@ -272,12 +245,11 @@ export default function PlanRoute() {
         const details = await Promise.all(sessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)));
         const weeklyDetails = details.filter((detail) => detail.session.date >= weekStart && detail.session.date <= today);
         const weeklySummary = summarizeWorkoutDetails(weeklyDetails);
-        const lastFourWeekStats = buildLastFourWeeks(details);
+        const recentStats = buildRecentSessions(details);
 
         nextStats = {
           ...weeklySummary,
-          ...lastFourWeekStats,
-          recentSessionDate: sessions[0]?.date,
+          ...recentStats,
           weeklySessionCount: weeklyDetails.filter((detail) => detail.sets.some((set) => set.completed)).length,
         };
       }
@@ -318,7 +290,7 @@ export default function PlanRoute() {
         return;
       }
 
-      setIsWorking(true);
+      setIsSettingActive(plan.id);
       try {
         const updated = await repositories.groupRepository.updateGroup(group.id, {
           activePlanId: plan.id,
@@ -341,13 +313,13 @@ export default function PlanRoute() {
           message: setError instanceof Error ? setError.message : '设置当前计划失败。',
         });
       } finally {
-        setIsWorking(false);
+        setIsSettingActive(null);
       }
     },
     [group, guardFeature, loadPlans, repositories, resolvePhaseTypeForWeek],
   );
 
-  const exportPlan = useCallback(
+  const sharePlan = useCallback(
     async (plan: PlanTemplate) => {
       if (!guardFeature('share_plan')) {
         return;
@@ -357,17 +329,33 @@ export default function PlanRoute() {
       try {
         const planFile = await createCurrentPlanFile(repositories, plan.id);
         const json = serializePlanFile(planFile);
-        setExportPrompt({
-          content: json,
-          title: '计划内容已生成',
-          message: `当前版本暂未保存到文件。你可以复制 .liftmark.json 内容，后续版本会接入保存和分享。大小约 ${Math.ceil(
-            json.length / 1024,
-          )} KB。`,
-        });
-      } catch (exportError) {
+        
+        // 尝试直接分享
+        const shareAvailable = await Sharing.isAvailableAsync();
+        if (shareAvailable) {
+          const fileName = `${plan.name.replace(/\s+/g, '_')}_${getLocalDateString()}.liftmark.json`;
+          const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+          await FileSystem.writeAsStringAsync(fileUri, json);
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'application/json',
+            dialogTitle: `分享 "${plan.name}"`,
+          });
+          // 清理临时文件
+          await FileSystem.deleteAsync(fileUri);
+        } else {
+          // 降级方案：复制到剪贴板
+          setSharePrompt({
+            content: json,
+            title: '计划内容已生成',
+            message: `当前版本暂未保存到文件。你可以复制 .liftmark.json 内容分享给好友。大小约 ${Math.ceil(
+              json.length / 1024,
+            )} KB。`,
+          });
+        }
+      } catch (shareError) {
         setNotice({
-          title: '导出失败',
-          message: exportError instanceof Error ? exportError.message : '导出计划失败。',
+          title: '分享失败',
+          message: shareError instanceof Error ? shareError.message : '分享计划失败。',
         });
       } finally {
         setIsWorking(false);
@@ -498,21 +486,31 @@ export default function PlanRoute() {
     }
   }, [deletePromptPlan, guardFeature, loadPlans, repositories]);
 
-  const copyExportContent = useCallback(async () => {
-    if (!exportPrompt) {
+  const copyShareContent = useCallback(async () => {
+    if (!sharePrompt) {
       return;
     }
 
-    await Clipboard.setStringAsync(exportPrompt.content);
-    setExportPrompt(null);
+    await Clipboard.setStringAsync(sharePrompt.content);
+    setSharePrompt(null);
     setNotice({
       title: '已复制内容',
-      message: '计划 JSON 内容已复制到剪贴板。当前版本还不会自动保存文件。',
+      message: '计划 JSON 内容已复制到剪贴板，可以粘贴分享给好友。',
     });
-  }, [exportPrompt]);
+  }, [sharePrompt]);
 
   const activePlanWeeks = activePlan?.durationWeeks ?? DEFAULT_CYCLE_WEEK_COUNT;
   const activePlanProgress = Math.min(100, Math.round(((group?.currentWeek ?? 1) / activePlanWeeks) * 100));
+  
+  // 按最近使用排序（当前计划排第一）
+  const sortedUserPlans = useMemo(() => {
+    return [...userPlans].sort((a, b) => {
+      if (a.id === group?.activePlanId) return -1;
+      if (b.id === group?.activePlanId) return 1;
+      return 0;
+    });
+  }, [userPlans, group?.activePlanId]);
+
   return (
     <Screen>
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -544,26 +542,27 @@ export default function PlanRoute() {
           <AppCard style={styles.dashboardCard}>
             <View style={styles.dashboardHeader}>
               <View>
-                <AppText variant="subtitle">最近执行</AppText>
+                <AppText variant="subtitle">最近训练</AppText>
                 <AppText tone="muted" variant="caption">
-                  最近 4 周训练量与完成训练
+                  最近 {RECENT_SESSION_CHART_LIMIT} 次训练量与完成组数
                 </AppText>
               </View>
               <Tag label={stats.recentSessionDate ? `最近 ${stats.recentSessionDate}` : '暂无训练'} tone={stats.recentSessionDate ? 'success' : 'neutral'} />
             </View>
             <View style={styles.statGrid}>
-              <StatTile label="完成训练" value={`${stats.weeklySessionCount} 次`} />
-              <StatTile label="完成组数" value={`${stats.weeklyCompletedSets} 组`} />
-              <StatTile label="训练量" value={formatKg(stats.weeklyVolume)} wide />
+              <StatTile label="本周训练" value={`${stats.weeklySessionCount} 次`} />
+              <StatTile label="本周组数" value={`${stats.weeklyCompletedSets} 组`} />
+              <StatTile label="本周训练量" value={formatKg(stats.weeklyVolume)} wide />
             </View>
             <MiniBarLineChart
-              chartHeight={104}
-              barData={stats.lastFourWeeksVolume}
-              lineData={stats.lastFourWeeksSessions}
-              labels={stats.lastFourWeekLabels}
+              chartHeight={120}
+              barData={stats.recentSessionsVolume}
+              lineData={stats.recentSessionsCompletedSets}
+              labels={stats.recentSessionsLabels}
               barUnitLabel="kg"
-              lineUnitLabel="次"
-              emptyMessage="最近 4 周还没有当前计划训练记录"
+              lineUnitLabel="组"
+              showYAxis={false}
+              emptyMessage="最近还没有当前计划的训练记录"
               barFormatValue={(value) => (value >= 1000 ? `${(value / 1000).toFixed(1)}k` : `${Math.round(value)}`)}
               lineFormatValue={(value) => `${Math.round(value)}`}
             />
@@ -679,11 +678,11 @@ export default function PlanRoute() {
         <PlanActionRow
           disabled={!activePlan}
           icon="share-outline"
-          label="导出当前计划"
+          label="分享当前计划"
           onPress={() => {
             setActionsVisible(false);
             if (activePlan) {
-              void exportPlan(activePlan);
+              void sharePlan(activePlan);
             }
           }}
         />
@@ -741,71 +740,78 @@ export default function PlanRoute() {
       <AppModalSheet
         contentStyle={styles.manageContent}
         onClose={() => setManageVisible(false)}
-        subtitle="切换、创建、导入和删除计划都在这里；编辑当前计划走独立编辑流程。"
         title="管理计划"
         visible={isManageVisible}
       >
-        <AppCard style={styles.manageActionsCard} tone="soft">
-          <PlanActionRow
-            icon="library-outline"
-            label="主流计划库"
-            onPress={() => {
-              setManageVisible(false);
-              setSchemeLibraryVisible(true);
-            }}
-          />
-          <PlanActionRow
-            icon="add-outline"
-            label="创建空白计划"
-            onPress={() => {
-              setManageVisible(false);
-              if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
-                router.push('/plan/create' as never);
-              }
-            }}
-          />
-          <PlanActionRow
-            icon="download-outline"
-            label="导入计划"
-            onPress={() => {
-              setManageVisible(false);
-              void importPlan();
-            }}
-          />
-          <PlanActionRow
-            disabled={!activePlan}
-            icon="share-outline"
-            label="导出当前计划"
-            onPress={() => {
-              if (activePlan) {
-                setManageVisible(false);
-                void exportPlan(activePlan);
-              }
-            }}
-          />
-        </AppCard>
-        <ScrollView showsVerticalScrollIndicator={false}>
+        {/* 我的计划区域 */}
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionTitleRow}>
+            <AppText variant="subtitle" weight="900">
+              我的计划
+            </AppText>
+            <AppText tone="muted" variant="caption">
+              {sortedUserPlans.length} 个
+            </AppText>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setMoreMenuVisible(true)}
+            style={({ pressed }) => [styles.moreButtonSmall, pressed && styles.pressed]}
+          >
+            <Ionicons color={colors.textMuted} name="ellipsis-vertical" size={16} />
+          </Pressable>
+        </View>
+
+        {sortedUserPlans.length === 0 ? (
+          <AppCard style={styles.emptyManageCard} tone="soft">
+            <Ionicons color={colors.textMuted} name="clipboard-outline" size={32} />
+            <AppText variant="bodySmall" weight="900">
+              还没有我的计划
+            </AppText>
+            <AppText tone="muted" variant="caption">
+              点击右上角更多操作新建或导入，或从下方系统方案开始
+            </AppText>
+          </AppCard>
+        ) : (
           <View style={styles.list}>
-            {userPlans.map((plan) => {
+            {sortedUserPlans.map((plan) => {
               const isActive = plan.id === group?.activePlanId;
-              const canDelete = !isActive && userPlans.length > 1 && plan.source !== 'system';
+              const canDelete = !isActive && sortedUserPlans.length > 1 && plan.source !== 'system';
               return (
-                <AppCard key={plan.id} style={styles.managePlanCard}>
+                <AppCard key={plan.id} style={[styles.managePlanCard, isActive && styles.activePlanCard]}>
                   <View style={styles.planRow}>
                     <View style={styles.planRowText}>
-                      <AppText variant="bodySmall" weight="900">
-                        {plan.name}
-                      </AppText>
+                      <View style={styles.planTitleRow}>
+                        {isActive ? (
+                          <Ionicons color={colors.primary} name="star" size={14} />
+                        ) : null}
+                        <AppText variant="bodySmall" weight="900">
+                          {plan.name}
+                        </AppText>
+                        {isActive ? (
+                          <View style={styles.currentBadge}>
+                            <AppText tone="brand" variant="caption" weight="900">
+                              当前
+                            </AppText>
+                          </View>
+                        ) : null}
+                      </View>
                       <AppText tone="muted" variant="caption">
                         {plan.durationWeeks} 周 · 每周 {plan.frequencyPerWeek} 练
                       </AppText>
                     </View>
-                    <Tag label={isActive ? '当前计划' : '我的计划'} tone={isActive ? 'success' : 'neutral'} />
                   </View>
                   <View style={styles.inlineActions}>
-                    <AppButton onPress={() => router.push({ pathname: '/plan/[planId]', params: { planId: plan.id } })} size="sm" variant="secondary">
-                      查看
-                    </AppButton>
+                    {!isActive && (
+                      <AppButton
+                        disabled={isSettingActive === plan.id}
+                        onPress={() => void setCurrentPlan(plan)}
+                        size="sm"
+                        icon={isSettingActive === plan.id ? undefined : 'checkmark-outline'}
+                      >
+                        {isSettingActive === plan.id ? '切换中...' : '设为当前'}
+                      </AppButton>
+                    )}
                     <AppButton
                       onPress={() => {
                         setManageVisible(false);
@@ -818,12 +824,23 @@ export default function PlanRoute() {
                       size="sm"
                       variant="secondary"
                     >
-                      {plan.source === 'system' ? '查看并复制' : '编辑'}
+                      {plan.source === 'system' ? '查看' : '编辑'}
                     </AppButton>
-                    <AppButton disabled={isActive} onPress={() => void setCurrentPlan(plan)} size="sm">
-                      设为当前
+                    <AppButton
+                      onPress={() => void sharePlan(plan)}
+                      size="sm"
+                      variant="secondary"
+                      icon="share-outline"
+                    >
+                      分享
                     </AppButton>
-                    <AppButton disabled={!canDelete} onPress={() => setDeletePromptPlan(plan)} size="sm" variant="danger">
+                    <AppButton
+                      disabled={!canDelete}
+                      onPress={() => setDeletePromptPlan(plan)}
+                      size="sm"
+                      variant="danger"
+                      icon="trash-outline"
+                    >
                       删除
                     </AppButton>
                   </View>
@@ -831,23 +848,73 @@ export default function PlanRoute() {
               );
             })}
           </View>
+        )}
 
-          {availableSchemes.length > 0 ? (
-            <View style={styles.systemSchemeSection}>
-              <SectionHeader subtitle="系统方案是模板，点击使用后会复制为我的计划。" title="系统内置方案" />
-              <View style={styles.list}>
-                {availableSchemes.map((scheme) => (
-                  <SchemeCard
-                    key={scheme.id}
-                    onPreview={() => setPreviewScheme(scheme)}
-                    onUse={() => openUseScheme(scheme)}
-                    scheme={scheme}
-                  />
-                ))}
-              </View>
+        {/* 系统内置方案 - 探索更多 */}
+        {availableSchemes.length > 0 ? (
+          <View style={styles.systemSchemeSection}>
+            <SectionHeader
+              subtitle="系统内置训练方案，点击使用可复制为我的计划。"
+              title={`探索更多 (${availableSchemes.length} 个方案)`}
+            />
+            <View style={styles.list}>
+              {availableSchemes.slice(0, 3).map((scheme) => (
+                <SchemeCard
+                  key={scheme.id}
+                  onPreview={() => setPreviewScheme(scheme)}
+                  onUse={() => openUseScheme(scheme)}
+                  scheme={scheme}
+                />
+              ))}
+              {availableSchemes.length > 3 && (
+                <AppButton
+                  onPress={() => {
+                    setManageVisible(false);
+                    setSchemeLibraryVisible(true);
+                  }}
+                  variant="secondary"
+                  size="sm"
+                  icon="chevron-forward-outline"
+                >
+                  查看全部 {availableSchemes.length} 个方案 →
+                </AppButton>
+              )}
             </View>
-          ) : null}
-        </ScrollView>
+          </View>
+        ) : null}
+      </AppModalSheet>
+
+      {/* 更多操作下拉菜单 */}
+      <AppModalSheet
+        onClose={() => setMoreMenuVisible(false)}
+        position="center"
+        subtitle="新建空白计划或从 .liftmark.json 文件导入。"
+        title="更多操作"
+        visible={isMoreMenuVisible}
+      >
+        <PlanActionRow
+          icon="add-circle-outline"
+          label="新建空白计划"
+          onPress={() => {
+            setMoreMenuVisible(false);
+            setManageVisible(false);
+            if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
+              router.push('/plan/create' as never);
+            }
+          }}
+        />
+        <PlanActionRow
+          icon="download-outline"
+          label="导入计划"
+          onPress={() => {
+            setMoreMenuVisible(false);
+            setManageVisible(false);
+            void importPlan();
+          }}
+        />
+        <AppButton onPress={() => setMoreMenuVisible(false)} variant="secondary">
+          取消
+        </AppButton>
       </AppModalSheet>
 
       <AppModalSheet
@@ -976,16 +1043,16 @@ export default function PlanRoute() {
       </AppModalSheet>
 
       <AppModalSheet
-        onClose={() => setExportPrompt(null)}
-        subtitle={exportPrompt?.message}
-        title={exportPrompt?.title ?? '计划内容已生成'}
-        visible={Boolean(exportPrompt)}
+        onClose={() => setSharePrompt(null)}
+        subtitle={sharePrompt?.message}
+        title={sharePrompt?.title ?? '计划内容已生成'}
+        visible={Boolean(sharePrompt)}
       >
         <View style={styles.modalButtons}>
-          <AppButton disabled={isWorking} onPress={() => void copyExportContent()}>
+          <AppButton disabled={isWorking} onPress={() => void copyShareContent()}>
             复制内容
           </AppButton>
-          <AppButton onPress={() => setExportPrompt(null)} variant="secondary">
+          <AppButton onPress={() => setSharePrompt(null)} variant="secondary">
             知道了
           </AppButton>
         </View>
@@ -1134,6 +1201,11 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     padding: spacing.md,
   },
+  emptyManageCard: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.xl,
+  },
   iconButton: {
     alignItems: 'center',
     backgroundColor: colors.surface,
@@ -1151,7 +1223,7 @@ const styles = StyleSheet.create({
   inlineActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   list: {
     gap: spacing.sm,
@@ -1161,14 +1233,29 @@ const styles = StyleSheet.create({
   },
   manageContent: {
     maxHeight: 560,
-  },
-  manageActionsCard: {
-    gap: spacing.xs,
-    padding: spacing.md,
+    gap: spacing.md,
   },
   managePlanCard: {
     gap: spacing.md,
     padding: spacing.md,
+  },
+  activePlanCard: {
+    borderColor: colors.primary,
+    borderWidth: 1.5,
+  },
+  planTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  currentBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    gap: 2,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 1,
   },
   modalButtons: {
     gap: spacing.sm,
@@ -1228,7 +1315,7 @@ const styles = StyleSheet.create({
   },
   systemSchemeSection: {
     gap: spacing.md,
-    marginTop: spacing.lg,
+    marginTop: spacing.sm,
   },
   schemeIcon: {
     alignItems: 'center',
@@ -1245,6 +1332,17 @@ const styles = StyleSheet.create({
     height: 42,
     justifyContent: 'center',
     width: 42,
+  },
+  sectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+  },
+  sectionTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   statGrid: {
     flexDirection: 'row',
@@ -1269,5 +1367,15 @@ const styles = StyleSheet.create({
   },
   upcomingCard: {
     gap: spacing.md,
+  },
+  moreButtonSmall: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
   },
 });

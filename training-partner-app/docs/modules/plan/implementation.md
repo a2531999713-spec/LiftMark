@@ -1,7 +1,36 @@
 # Plan 模块实现文档
 
-更新时间：2026-07-07
+更新时间：2026-07-08
 对应代码目录：`training-partner-app/`
+
+## 2026-07-08 管理计划面板重设计与最近训练图表改造
+
+- `app/(tabs)/plan.tsx` 管理计划弹窗按用户设计方案重构：
+  - 「我的计划」标题旁新增 ⋮ 更多操作按钮（Pressable），点击弹出 `AppModalSheet`（position=center）的「更多操作」菜单，包含「新建空白计划」「导入计划」两个 `PlanActionRow`。
+  - 当前计划高亮显示：⭐ 图标 + 「当前」徽章；当前计划提供「编辑 / 分享」按钮，非当前计划提供「设为当前 / 编辑 / 分享 / 删除」按钮。
+  - 移除 `QuickActionButton` 组件定义和 `quickActionsCard` / `quickActionsRow` / `quickActionButton` / `emptyActions` 样式；快捷操作三按钮（计划库 / 新建 / 导入）功能由「更多操作」菜单 + 「探索更多」区域承担。
+  - 新增 `sectionTitleRow` 样式用于「我的计划 (N 个)」标题与 ⋮ 按钮的横向布局；`sectionHeader` 改为 `space-between`。
+  - 「探索更多」区域展示前 3 个可用系统方案（`availableSchemes.slice(0, 3)`，原为 slice(0, 2)），超过 3 个时显示「查看全部 N 个方案 →」按钮跳转计划库弹窗。
+  - 空状态文案改为引导用户使用右上角更多操作或下方系统方案，移除原「浏览计划库 / 创建计划」按钮。
+- `app/(tabs)/plan.tsx` 「最近执行」改名「最近训练」，副标题改为「最近 6 次训练量与完成组数」。
+  - `buildLastFourWeeks` 重命名为 `buildRecentSessions`，返回 `recentSessionsVolume`（柱：训练量 kg）、`recentSessionsCompletedSets`（折线：完成组数）、`recentSessionsLabels`（每次训练日期）、`recentSessionDate`。
+  - 数据获取从「按自然周聚合最近 4 周」改为「最近 6 个完成训练 session」（`completedDetails.slice(-6)`），避免周一没数据时图表空白。
+  - 训练 session 查询窗口从 `addDays(new Date(), -27)` 扩展到 `addDays(new Date(), -89)`，确保能拿到 6 次训练。
+  - StatTile 文案改为「本周训练 / 本周组数 / 本周训练量」，与图表「最近训练」语义区分。
+  - `PlanDashboardStats` 类型字段 `lastFourWeeksSessions` / `lastFourWeeksVolume` / `lastFourWeekLabels` 替换为 `recentSessionsCompletedSets` / `recentSessionsVolume` / `recentSessionsLabels`；`emptyStats` 对应改为空数组。
+  - 移除不再使用的 `getNaturalWeekStart` 函数。
+- `src/components/ui/MiniBarLineChart.tsx` 改造：
+  - 新增 `showYAxis` prop（默认 false）：因训练量（kg）与组数量纲不同，默认不显示 Y 轴刻度，避免视觉干扰；传入 `showYAxis` 时才渲染左侧 Y 轴和对应 `axisSpacer`。
+  - `ChartArea` 新增 `activeIndex` state（`number | null`），点击柱子或折线点切换选中；选中时显示数值气泡，再次点击关闭。
+  - 柱子从 `View` 改为 `Pressable` 包裹（`barTouchable` 样式），选中时使用 `barActive` 样式（`brandDark` 色 + 透明度 0.88）。
+  - 折线点 `onPress` 改为切换 `activeIndex`，选中时使用 `lineDotActive` 样式（放大到 12x12）。
+  - 移除 `getDefaultKeyPointIndexes` 函数和 `barKeyIndexes` / `lineKeyIndexes` Set（不再使用关键点常显）。
+  - 柱宽比从 0.55 调整为 0.5，适配 6 个数据点。
+  - `renderLine` 函数签名新增 `activeIndex` 和 `setActiveIndex` 参数。
+- `app/(tabs)/plan.tsx` 修复分享计划错误：`sharePlan` 中使用了 `FileSystem.documentDirectory` / `writeAsStringAsync` / `deleteAsync`，但未导入 `expo-file-system`。
+  - 新增 `import * as FileSystem from 'expo-file-system/legacy'`，与项目其他模块（avatarUploadService、planDocumentService）保持一致的 legacy 导入方式。
+- `app/(tabs)/plan.tsx` 移除传给 `VisualHeroCard` 的不存在 prop `actionIconSize={22}`（`VisualHeroCard` 组件未声明该 prop，TypeScript 之前会报错）。
+- 新增 `WorkoutSessionDetail` 类型导入（来自 `@/domain/workout/workout.types`），用于 `buildRecentSessions` 函数签名。
 
 ## 2026-07-07 补充（二）：编辑计划页面与仪表盘重设计
 
