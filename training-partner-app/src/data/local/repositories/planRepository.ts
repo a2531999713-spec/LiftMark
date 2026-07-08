@@ -12,6 +12,8 @@ import { createUserPlanCopyDraft } from '@/domain/plan/planCopy';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import type {
   GetTodayPlanInput,
+  PlanCycle,
+  PlanCycleSummary,
   PlanDay,
   PlanExercise,
   PlanPhase,
@@ -26,7 +28,11 @@ import {
   mapPlanDay,
   mapPlanExercise,
   mapPlanPhase,
+  mapPlanCycle,
+  mapPlanCycleSummary,
   mapPlanTemplate,
+  type PlanCycleRow,
+  type PlanCycleSummaryRow,
   type PlanDayRow,
   type PlanExerciseRow,
   type PlanPhaseRow,
@@ -98,6 +104,207 @@ export class SQLitePlanRepository implements PlanRepository {
     return rows.map(mapPlanTemplate);
   }
 
+  async getActivePlanCycle(input: { groupId: string; planId: string }): Promise<PlanCycle | null> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+    const row = await db.getFirstAsync<PlanCycleRow>(
+      `SELECT pc.* FROM plan_cycles pc
+       INNER JOIN groups ON groups.id = pc.group_id
+       WHERE pc.group_id = ?
+         AND pc.plan_id = ?
+         AND pc.status = 'active'
+         AND pc.deleted_at IS NULL
+         AND ${scope.where}
+       ORDER BY pc.cycle_index DESC, pc.created_at DESC
+       LIMIT 1`,
+      input.groupId,
+      input.planId,
+      ...scope.params,
+    );
+    return row ? mapPlanCycle(row) : null;
+  }
+
+  async listPlanCycles(input: { groupId?: string; planId?: string; status?: PlanCycle['status'] }): Promise<PlanCycle[]> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+    const clauses = [`pc.deleted_at IS NULL`, scope.where];
+    const params: (number | string)[] = [...scope.params];
+    if (input.groupId) {
+      clauses.push('pc.group_id = ?');
+      params.push(input.groupId);
+    }
+    if (input.planId) {
+      clauses.push('pc.plan_id = ?');
+      params.push(input.planId);
+    }
+    if (input.status) {
+      clauses.push('pc.status = ?');
+      params.push(input.status);
+    }
+    const rows = await db.getAllAsync<PlanCycleRow>(
+      `SELECT pc.* FROM plan_cycles pc
+       INNER JOIN groups ON groups.id = pc.group_id
+       WHERE ${clauses.join(' AND ')}
+       ORDER BY pc.start_date DESC, pc.cycle_index DESC`,
+      ...params,
+    );
+    return rows.map(mapPlanCycle);
+  }
+
+  async getPlanCycleSummary(planCycleId: string): Promise<PlanCycleSummary | null> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+    const row = await db.getFirstAsync<PlanCycleSummaryRow>(
+      `SELECT pcs.* FROM plan_cycle_summaries pcs
+       INNER JOIN groups ON groups.id = pcs.group_id
+       WHERE pcs.plan_cycle_id = ?
+         AND pcs.deleted_at IS NULL
+         AND ${scope.where}
+       ORDER BY pcs.created_at DESC
+       LIMIT 1`,
+      planCycleId,
+      ...scope.params,
+    );
+    return row ? mapPlanCycleSummary(row) : null;
+  }
+
+  async archivePlanCycle(input: { planCycleId: string }): Promise<PlanCycleSummary> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+    const cycle = await db.getFirstAsync<PlanCycleRow>(
+      `SELECT pc.* FROM plan_cycles pc
+       INNER JOIN groups ON groups.id = pc.group_id
+       WHERE pc.id = ?
+         AND pc.deleted_at IS NULL
+         AND ${scope.where}
+       LIMIT 1`,
+      input.planCycleId,
+      ...scope.params,
+    );
+    if (!cycle) {
+      throw new Error(`Plan cycle not visible for current account: ${input.planCycleId}`);
+    }
+
+    const now = nowIso();
+    const stats = await db.getFirstAsync<{
+      completed_workout_count: number;
+      total_duration_seconds: number;
+      total_sets: number;
+      total_reps: number;
+      total_volume: number;
+      estimated_calories: number;
+    }>(
+      `SELECT
+         COUNT(DISTINCT CASE WHEN ws.status = 'completed' THEN ws.id END) AS completed_workout_count,
+         COALESCE(SUM(CASE WHEN tr.id IS NOT NULL THEN tr.duration_seconds ELSE 0 END), 0) AS total_duration_seconds,
+         COALESCE(SUM(CASE WHEN wset.completed = 1 THEN 1 ELSE 0 END), 0) AS total_sets,
+         COALESCE(SUM(CASE WHEN wset.completed = 1 THEN COALESCE(wset.actual_reps, 0) ELSE 0 END), 0) AS total_reps,
+         COALESCE(SUM(CASE WHEN wset.completed = 1 THEN COALESCE(wset.actual_weight, 0) * COALESCE(wset.actual_reps, 0) ELSE 0 END), 0) AS total_volume,
+         COALESCE(SUM(COALESCE(tr.estimated_calories, 0)), 0) AS estimated_calories
+       FROM workout_sessions ws
+       LEFT JOIN workout_sets wset ON wset.session_id = ws.id AND wset.deleted_at IS NULL
+       LEFT JOIN training_reports tr ON tr.workout_session_id = ws.id AND tr.deleted_at IS NULL
+       WHERE ws.plan_cycle_id = ?
+         AND ws.deleted_at IS NULL`,
+      cycle.id,
+    );
+
+    const plannedWorkoutCount = Math.max(1, cycle.planned_weeks);
+    const completedWorkoutCount = stats?.completed_workout_count ?? 0;
+    const summary: PlanCycleSummary = {
+      id: createId('cycle_summary'),
+      ownerUserId: cycle.owner_user_id ?? undefined,
+      groupId: cycle.group_id,
+      planId: cycle.plan_id,
+      planCycleId: cycle.id,
+      plannedWorkoutCount,
+      completedWorkoutCount,
+      skippedWorkoutCount: Math.max(0, plannedWorkoutCount - completedWorkoutCount),
+      completionRate: completedWorkoutCount / plannedWorkoutCount,
+      totalVolume: stats?.total_volume ?? 0,
+      totalSets: stats?.total_sets ?? 0,
+      totalReps: stats?.total_reps ?? 0,
+      totalDurationSeconds: stats?.total_duration_seconds ?? 0,
+      estimatedCalories: stats?.estimated_calories ?? 0,
+      summaryText: 'Cycle summary generated.',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      await txn.runAsync(
+        `UPDATE plan_cycles
+         SET status = 'archived', archived_at = ?, actual_end_date = COALESCE(actual_end_date, ?),
+             sync_status = 'pending_update', updated_at = ?
+         WHERE id = ?`,
+        now,
+        now.slice(0, 10),
+        now,
+        cycle.id,
+      );
+      await txn.runAsync(
+        `INSERT INTO plan_cycle_summaries (
+          id, owner_user_id, group_id, plan_id, plan_cycle_id, planned_workout_count,
+          completed_workout_count, skipped_workout_count, completion_rate, total_volume,
+          total_sets, total_reps, total_duration_seconds, estimated_calories,
+          top_progress_exercises_json, weak_exercises_json, muscle_group_distribution_json,
+          summary_text, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        summary.id,
+        summary.ownerUserId ?? null,
+        summary.groupId,
+        summary.planId,
+        summary.planCycleId,
+        summary.plannedWorkoutCount,
+        summary.completedWorkoutCount,
+        summary.skippedWorkoutCount,
+        summary.completionRate,
+        summary.totalVolume,
+        summary.totalSets,
+        summary.totalReps,
+        summary.totalDurationSeconds,
+        summary.estimatedCalories,
+        summary.topProgressExercisesJson ?? null,
+        summary.weakExercisesJson ?? null,
+        summary.muscleGroupDistributionJson ?? null,
+        summary.summaryText ?? null,
+        summary.createdAt,
+        summary.updatedAt,
+      );
+    });
+
+    await enqueueSyncCandidate({
+      entityType: 'planCycles',
+      localId: cycle.id,
+      operation: 'update',
+      ownerUserId: cycle.owner_user_id,
+      payload: {
+        id: cycle.id,
+        groupId: cycle.group_id,
+        planId: cycle.plan_id,
+        status: 'archived',
+        archivedAt: now,
+      },
+      status: 'pending_update',
+      updatedAt: now,
+    });
+    await enqueueSyncCandidate({
+      entityType: 'planCycleSummaries',
+      localId: summary.id,
+      operation: 'create',
+      ownerUserId: summary.ownerUserId,
+      payload: summary,
+      status: 'pending_create',
+      updatedAt: summary.updatedAt,
+    });
+
+    return summary;
+  }
+
   async listPlanPhases(planId: string): Promise<PlanPhase[]> {
     const plan = await this.getPlanById(planId);
     if (!plan) return [];
@@ -151,6 +358,7 @@ export class SQLitePlanRepository implements PlanRepository {
       frequencyPerWeek: Math.max(1, Math.round(input.frequencyPerWeek)),
       description: '用户创建的训练计划',
       source: 'blank_created',
+      status: 'draft',
       version: 1,
       createdAt: now,
       updatedAt: now,
@@ -386,6 +594,7 @@ export class SQLitePlanRepository implements PlanRepository {
     const template = {
       ...draft.template,
       creatorId: ownerUserId ?? draft.template.creatorId,
+      status: 'active' as const,
     };
 
     const db = await this.getDb();
@@ -503,6 +712,7 @@ export class SQLitePlanRepository implements PlanRepository {
       ...draft.template,
       creatorId: ownerUserId ?? draft.template.creatorId,
       source: 'duplicated' as const,
+      status: 'draft' as const,
     };
 
     const db = await this.getDb();

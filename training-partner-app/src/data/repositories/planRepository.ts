@@ -4,6 +4,8 @@ import type { SystemTrainingScheme } from '@/domain/plan/systemSchemes';
 import type {
   GetTodayPlanInput,
   IntensityType,
+  PlanCycle,
+  PlanCycleSummary,
   PlanDay,
   PlanExercise,
   PlanPhase,
@@ -61,7 +63,10 @@ export type ImportUserPlanInput = {
 
 export interface PlanRepository {
   getPlanById(planId: ID): Promise<PlanTemplate | null>;
+  getActivePlanCycle(input: GetActivePlanCycleInput): Promise<PlanCycle | null>;
+  getPlanCycleSummary(planCycleId: ID): Promise<PlanCycleSummary | null>;
   listUserPlans(): Promise<PlanTemplate[]>;
+  listPlanCycles(input: ListPlanCyclesInput): Promise<PlanCycle[]>;
   listPlanPhases(planId: ID): Promise<PlanPhase[]>;
   listPlanDays(planId: ID): Promise<PlanDay[]>;
   listPlanExercises(planDayId: ID): Promise<PlanExercise[]>;
@@ -70,6 +75,7 @@ export interface PlanRepository {
   copySystemSchemeToUserPlan(input: CopySystemSchemeToUserPlanInput): Promise<PlanTemplate>;
   duplicatePlan(input: DuplicatePlanInput): Promise<PlanTemplate>;
   importUserPlan(input: ImportUserPlanInput): Promise<PlanTemplate>;
+  archivePlanCycle(input: ArchivePlanCycleInput): Promise<PlanCycleSummary>;
   deleteUserPlan(planId: ID): Promise<void>;
   getTodayPlan(input: GetTodayPlanInput): Promise<TodayPlanResult>;
 }
@@ -77,4 +83,19 @@ export interface PlanRepository {
 export type DuplicatePlanInput = {
   sourcePlanId: ID;
   name?: string;
+};
+
+export type GetActivePlanCycleInput = {
+  groupId: ID;
+  planId: ID;
+};
+
+export type ListPlanCyclesInput = {
+  groupId?: ID;
+  planId?: ID;
+  status?: PlanCycle['status'];
+};
+
+export type ArchivePlanCycleInput = {
+  planCycleId: ID;
 };

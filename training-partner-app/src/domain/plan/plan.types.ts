@@ -8,6 +8,10 @@ export type ExercisePriority = 'A' | 'B' | 'C';
 
 export type IntensityType = 'percent_1rm' | 'fixed' | 'manual' | 'rpe' | 'rir';
 
+export type PlanStatus = 'draft' | 'active' | 'paused' | 'completed' | 'archived' | 'abandoned';
+
+export type PlanCycleStatus = 'draft' | 'active' | 'completed' | 'archived' | 'abandoned';
+
 export type ReferenceLift =
   | 'bench'
   | 'squat'
@@ -27,7 +31,50 @@ export type PlanTemplate = {
   description?: string;
   source: 'system' | 'user' | 'system_copy' | 'blank_created' | 'imported' | 'duplicated';
   originSchemeId?: ID;
+  status?: PlanStatus;
   version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PlanCycle = {
+  id: ID;
+  ownerUserId?: ID;
+  groupId: ID;
+  planId: ID;
+  cycleIndex: number;
+  name: string;
+  startDate: string;
+  endDate?: string;
+  plannedWeeks: number;
+  actualStartDate?: string;
+  actualEndDate?: string;
+  status: PlanCycleStatus;
+  completedAt?: string;
+  archivedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PlanCycleSummary = {
+  id: ID;
+  ownerUserId?: ID;
+  groupId: ID;
+  planId: ID;
+  planCycleId: ID;
+  plannedWorkoutCount: number;
+  completedWorkoutCount: number;
+  skippedWorkoutCount: number;
+  completionRate: number;
+  totalVolume: number;
+  totalSets: number;
+  totalReps: number;
+  totalDurationSeconds: number;
+  estimatedCalories: number;
+  topProgressExercisesJson?: string;
+  weakExercisesJson?: string;
+  muscleGroupDistributionJson?: string;
+  summaryText?: string;
   createdAt: string;
   updatedAt: string;
 };

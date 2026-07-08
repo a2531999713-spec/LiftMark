@@ -40,7 +40,11 @@ export const useSelectedGroupStore = create<SelectedGroupState>((set) => ({
       const activeUserScope = getScopeKey(userId);
       return {
         activeUserScope,
-        selectedGroupId: state.selectedGroupIdsByScope[activeUserScope],
+        selectedGroupId: undefined,
+        selectedGroupIdsByScope: {
+          ...state.selectedGroupIdsByScope,
+          [activeUserScope]: undefined,
+        },
       };
     }),
 }));

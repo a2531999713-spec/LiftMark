@@ -498,7 +498,11 @@ export default function WorkoutRoute() {
             payload: {
               date: detail.session.date,
               groupId: detail.session.groupId,
+              planCycleId: detail.session.planCycleId,
+              planDayId: detail.session.planDayId,
               planId: detail.session.planId,
+              recordedByUserId: detail.session.recordedByUserId,
+              sourceDeviceId: detail.session.sourceDeviceId,
               status: 'completed',
               title: detail.session.title,
               trainingMode: detail.session.trainingMode,

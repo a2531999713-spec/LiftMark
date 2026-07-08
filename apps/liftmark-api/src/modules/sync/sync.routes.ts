@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { Knex } from 'knex';
 import { z } from 'zod';
 
 import { db } from '../../db/connection';
@@ -12,9 +13,13 @@ const entityTableByType = {
   workoutExerciseRecords: 'workout_exercise_records',
   workoutSets: 'workout_sets',
   trainingPlans: 'training_plans',
+  planCycles: 'plan_cycles',
+  planCycleSummaries: 'plan_cycle_summaries',
   planPhases: 'plan_phases',
   planDays: 'plan_days',
   planExercises: 'plan_exercises',
+  trainingReports: 'training_reports',
+  trainingReminders: 'training_reminders',
   bodyMetrics: 'body_metrics',
   bodyMetricGoals: 'body_metric_goals',
   recoveryLogs: 'recovery_logs',
@@ -23,6 +28,7 @@ const entityTableByType = {
 } as const;
 
 type EntityType = keyof typeof entityTableByType;
+type SyncDb = typeof db | Knex.Transaction;
 
 const syncEntitySchema = z.object({
   clientId: z.string().min(1),
@@ -45,9 +51,13 @@ const pushSchema = z.object({
       workoutExerciseRecords: z.array(syncEntitySchema).optional(),
       workoutSets: z.array(syncEntitySchema).optional(),
       trainingPlans: z.array(syncEntitySchema).optional(),
+      planCycles: z.array(syncEntitySchema).optional(),
+      planCycleSummaries: z.array(syncEntitySchema).optional(),
       planPhases: z.array(syncEntitySchema).optional(),
       planDays: z.array(syncEntitySchema).optional(),
       planExercises: z.array(syncEntitySchema).optional(),
+      trainingReports: z.array(syncEntitySchema).optional(),
+      trainingReminders: z.array(syncEntitySchema).optional(),
       bodyMetrics: z.array(syncEntitySchema).optional(),
       bodyMetricGoals: z.array(syncEntitySchema).optional(),
       recoveryLogs: z.array(syncEntitySchema).optional(),
@@ -87,14 +97,14 @@ function assertPayloadUserMatchesToken(userId: string, payload: Record<string, u
   }
 }
 
-async function upsertEntity(userId: string, entityType: EntityType, item: z.infer<typeof syncEntitySchema>) {
+async function upsertEntity(conn: SyncDb, userId: string, entityType: EntityType, item: z.infer<typeof syncEntitySchema>) {
   const tableName = entityTableByType[entityType];
   const payload = item.payload ?? {};
   assertPayloadUserMatchesToken(userId, payload);
   const clientUpdatedAt = item.updatedAt ? new Date(item.updatedAt) : new Date();
-  const existingByClientId = await db(tableName).where({ user_id: userId, client_id: item.clientId }).first();
+  const existingByClientId = await conn(tableName).where({ user_id: userId, client_id: item.clientId }).first();
   const existingByServerId = item.serverId
-    ? await db(tableName).where({ user_id: userId, id: item.serverId }).first()
+    ? await conn(tableName).where({ user_id: userId, id: item.serverId }).first()
     : null;
   const existing = existingByClientId ?? existingByServerId;
 
@@ -130,12 +140,12 @@ async function upsertEntity(userId: string, entityType: EntityType, item: z.infe
   };
 
   if (existing) {
-    await db(tableName).where({ id: serverId }).update(row);
+    await conn(tableName).where({ id: serverId }).update(row);
   } else {
-    await db(tableName).insert(row);
+    await conn(tableName).insert(row);
   }
 
-  await db('sync_mappings')
+  await conn('sync_mappings')
     .insert({
       id: createId('map'),
       user_id: userId,
@@ -163,9 +173,13 @@ async function listChanges(userId: string, since?: string) {
     workoutExerciseRecords: [],
     workoutSets: [],
     trainingPlans: [],
+    planCycles: [],
+    planCycleSummaries: [],
     planPhases: [],
     planDays: [],
     planExercises: [],
+    trainingReports: [],
+    trainingReminders: [],
     bodyMetrics: [],
     bodyMetricGoals: [],
     recoveryLogs: [],
@@ -188,34 +202,36 @@ export async function registerSyncRoutes(app: FastifyInstance) {
   app.post('/sync/push', { preHandler: requireAuth }, async (request) => {
     const authUser = getAuthUser(request);
     const body = pushSchema.parse(request.body);
-    const mappings = [];
+    const mappings: Awaited<ReturnType<typeof upsertEntity>>[] = [];
 
-    for (const entityType of Object.keys(entityTableByType) as EntityType[]) {
-      const items = body.changes[entityType] ?? [];
-      for (const item of items) {
-        mappings.push(await upsertEntity(authUser.id, entityType, item));
+    await db.transaction(async (trx) => {
+      for (const entityType of Object.keys(entityTableByType) as EntityType[]) {
+        const items = body.changes[entityType] ?? [];
+        for (const item of items) {
+          mappings.push(await upsertEntity(trx, authUser.id, entityType, item));
+        }
       }
-    }
 
-    if (body.deviceId) {
-      const now = new Date();
-      await db('sync_state')
-        .insert({
-          id: createId('syncstate'),
-          user_id: authUser.id,
-          device_id: body.deviceId,
-          last_pushed_at: now,
-          sync_version: 1,
-          created_at: now,
-          updated_at: now,
-        })
-        .onConflict(['user_id', 'device_id'])
-        .merge({
-          last_pushed_at: now,
-          updated_at: now,
-          sync_version: db.raw('sync_state.sync_version + 1'),
-        });
-    }
+      if (body.deviceId) {
+        const now = new Date();
+        await trx('sync_state')
+          .insert({
+            id: createId('syncstate'),
+            user_id: authUser.id,
+            device_id: body.deviceId,
+            last_pushed_at: now,
+            sync_version: 1,
+            created_at: now,
+            updated_at: now,
+          })
+          .onConflict(['user_id', 'device_id'])
+          .merge({
+            last_pushed_at: now,
+            updated_at: now,
+            sync_version: trx.raw('sync_state.sync_version + 1'),
+          });
+      }
+    });
 
     return {
       ok: true,

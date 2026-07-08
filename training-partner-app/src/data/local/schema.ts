@@ -65,13 +65,40 @@ CREATE TABLE IF NOT EXISTS member_profiles (
 CREATE TABLE IF NOT EXISTS exercises (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  source_id TEXT,
+  name_zh TEXT,
+  name_en TEXT,
+  aliases TEXT,
   source TEXT NOT NULL DEFAULT 'system',
   category TEXT NOT NULL,
   movement_pattern TEXT NOT NULL,
+  force_type TEXT,
   target_muscle TEXT NOT NULL,
+  primary_muscle TEXT,
   secondary_muscle TEXT,
+  secondary_muscles TEXT,
   equipment TEXT NOT NULL,
   difficulty TEXT,
+  is_unilateral INTEGER NOT NULL DEFAULT 0,
+  is_bodyweight INTEGER NOT NULL DEFAULT 0,
+  default_unit TEXT,
+  instructions_zh TEXT,
+  instructions_en TEXT,
+  tips TEXT,
+  thumbnail_url TEXT,
+  gif_url TEXT,
+  video_url TEXT,
+  local_asset_path TEXT,
+  media_source TEXT,
+  media_license TEXT,
+  media_attribution TEXT,
+  media_usage_status TEXT,
+  icon_key TEXT,
+  heatmap_key TEXT,
+  muscle_activation_json TEXT,
+  is_system INTEGER NOT NULL DEFAULT 1,
+  is_custom INTEGER NOT NULL DEFAULT 0,
+  created_by_user_id TEXT,
   notes TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -97,9 +124,64 @@ CREATE TABLE IF NOT EXISTS plan_templates (
   description TEXT,
   source TEXT NOT NULL DEFAULT 'system',
   version INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'active',
   sync_status TEXT NOT NULL DEFAULT 'local_only',
   sync_error TEXT,
   sync_version INTEGER NOT NULL DEFAULT 0,
+  last_synced_at TEXT,
+  deleted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS plan_cycles (
+  id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
+  group_id TEXT NOT NULL,
+  plan_id TEXT NOT NULL,
+  cycle_index INTEGER NOT NULL DEFAULT 1,
+  name TEXT NOT NULL,
+  start_date TEXT NOT NULL,
+  end_date TEXT,
+  planned_weeks INTEGER NOT NULL DEFAULT 1,
+  actual_start_date TEXT,
+  actual_end_date TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  completed_at TEXT,
+  archived_at TEXT,
+  remote_id TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'local_only',
+  sync_error TEXT,
+  version INTEGER NOT NULL DEFAULT 0,
+  last_synced_at TEXT,
+  deleted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS plan_cycle_summaries (
+  id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
+  group_id TEXT NOT NULL,
+  plan_id TEXT NOT NULL,
+  plan_cycle_id TEXT NOT NULL,
+  planned_workout_count INTEGER NOT NULL DEFAULT 0,
+  completed_workout_count INTEGER NOT NULL DEFAULT 0,
+  skipped_workout_count INTEGER NOT NULL DEFAULT 0,
+  completion_rate REAL NOT NULL DEFAULT 0,
+  total_volume REAL NOT NULL DEFAULT 0,
+  total_sets INTEGER NOT NULL DEFAULT 0,
+  total_reps INTEGER NOT NULL DEFAULT 0,
+  total_duration_seconds INTEGER NOT NULL DEFAULT 0,
+  estimated_calories REAL NOT NULL DEFAULT 0,
+  top_progress_exercises_json TEXT,
+  weak_exercises_json TEXT,
+  muscle_group_distribution_json TEXT,
+  summary_text TEXT,
+  remote_id TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'local_only',
+  sync_error TEXT,
+  version INTEGER NOT NULL DEFAULT 0,
   last_synced_at TEXT,
   deleted_at TEXT,
   created_at TEXT NOT NULL,
@@ -165,6 +247,8 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
   owner_user_id TEXT,
   group_id TEXT NOT NULL,
   plan_id TEXT NOT NULL,
+  plan_cycle_id TEXT,
+  plan_day_id TEXT,
   phase_id TEXT,
   date TEXT NOT NULL,
   week INTEGER NOT NULL,
@@ -172,6 +256,8 @@ CREATE TABLE IF NOT EXISTS workout_sessions (
   title TEXT NOT NULL,
   status TEXT NOT NULL,
   training_mode TEXT NOT NULL DEFAULT 'group_local',
+  recorded_by_user_id TEXT,
+  source_device_id TEXT,
   started_at TEXT,
   finished_at TEXT,
   sync_status TEXT NOT NULL DEFAULT 'local_only',
@@ -188,6 +274,8 @@ CREATE TABLE IF NOT EXISTS workout_exercise_records (
   remote_id TEXT,
   owner_user_id TEXT,
   session_id TEXT NOT NULL,
+  plan_cycle_id TEXT,
+  plan_day_id TEXT,
   plan_exercise_id TEXT,
   exercise_id TEXT NOT NULL,
   order_index INTEGER NOT NULL,
@@ -217,6 +305,8 @@ CREATE TABLE IF NOT EXISTS workout_sets (
   session_id TEXT NOT NULL,
   exercise_record_id TEXT NOT NULL,
   member_id TEXT NOT NULL,
+  recorded_by_user_id TEXT,
+  source_device_id TEXT,
   set_number INTEGER NOT NULL,
   planned_weight REAL,
   actual_weight REAL,
@@ -228,6 +318,64 @@ CREATE TABLE IF NOT EXISTS workout_sets (
   completed INTEGER NOT NULL DEFAULT 0,
   skipped INTEGER NOT NULL DEFAULT 0,
   notes TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'local_only',
+  sync_error TEXT,
+  version INTEGER NOT NULL DEFAULT 0,
+  last_synced_at TEXT,
+  deleted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS training_reports (
+  id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
+  group_id TEXT NOT NULL,
+  member_id TEXT,
+  plan_id TEXT NOT NULL,
+  plan_cycle_id TEXT,
+  workout_session_id TEXT NOT NULL,
+  report_date TEXT NOT NULL,
+  duration_seconds INTEGER NOT NULL DEFAULT 0,
+  total_volume REAL NOT NULL DEFAULT 0,
+  total_sets INTEGER NOT NULL DEFAULT 0,
+  total_reps INTEGER NOT NULL DEFAULT 0,
+  exercise_count INTEGER NOT NULL DEFAULT 0,
+  estimated_calories REAL NOT NULL DEFAULT 0,
+  estimated_calories_min REAL NOT NULL DEFAULT 0,
+  estimated_calories_max REAL NOT NULL DEFAULT 0,
+  intensity_level TEXT NOT NULL DEFAULT 'medium',
+  muscle_group_summary_json TEXT,
+  exercise_summary_json TEXT,
+  personal_records_json TEXT,
+  notes TEXT,
+  remote_id TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'local_only',
+  sync_error TEXT,
+  version INTEGER NOT NULL DEFAULT 0,
+  last_synced_at TEXT,
+  deleted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS training_reminders (
+  id TEXT PRIMARY KEY,
+  owner_user_id TEXT,
+  group_id TEXT,
+  plan_id TEXT,
+  plan_cycle_id TEXT,
+  type TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  weekday INTEGER,
+  remind_time TEXT,
+  minutes_before INTEGER,
+  timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+  title_template TEXT NOT NULL,
+  body_template TEXT NOT NULL,
+  last_scheduled_at TEXT,
+  last_fired_at TEXT,
+  remote_id TEXT,
   sync_status TEXT NOT NULL DEFAULT 'local_only',
   sync_error TEXT,
   version INTEGER NOT NULL DEFAULT 0,
@@ -371,17 +519,24 @@ CREATE INDEX IF NOT EXISTS idx_member_profiles_member_id ON member_profiles(memb
 CREATE INDEX IF NOT EXISTS idx_member_profiles_owner ON member_profiles(owner_user_id, group_id);
 CREATE INDEX IF NOT EXISTS idx_exercises_source_name ON exercises(source, name);
 CREATE INDEX IF NOT EXISTS idx_plan_templates_owner ON plan_templates(owner_user_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_plan_cycles_owner_group ON plan_cycles(owner_user_id, group_id, status);
+CREATE INDEX IF NOT EXISTS idx_plan_cycle_summaries_cycle ON plan_cycle_summaries(plan_cycle_id);
 CREATE INDEX IF NOT EXISTS idx_plan_phases_plan_id ON plan_phases(plan_id);
 CREATE INDEX IF NOT EXISTS idx_plan_days_phase_weekday ON plan_days(phase_id, week, weekday);
 CREATE INDEX IF NOT EXISTS idx_plan_exercises_day_id ON plan_exercises(plan_day_id);
 CREATE INDEX IF NOT EXISTS idx_workout_sessions_group_date ON workout_sessions(group_id, date);
 CREATE INDEX IF NOT EXISTS idx_workout_sessions_owner_date ON workout_sessions(owner_user_id, date);
+CREATE INDEX IF NOT EXISTS idx_workout_sessions_cycle ON workout_sessions(plan_cycle_id, date);
 CREATE INDEX IF NOT EXISTS idx_workout_sets_session_id ON workout_sets(session_id);
 CREATE INDEX IF NOT EXISTS idx_workout_sets_member_exercise ON workout_sets(member_id, exercise_record_id);
 CREATE INDEX IF NOT EXISTS idx_workout_sets_owner ON workout_sets(owner_user_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_local_sync_queue_status ON local_sync_queue(status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_local_sync_queue_entity ON local_sync_queue(entity_type, local_id);
 CREATE INDEX IF NOT EXISTS idx_local_sync_queue_owner_status ON local_sync_queue(owner_user_id, status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_training_reports_session ON training_reports(workout_session_id);
+CREATE INDEX IF NOT EXISTS idx_training_reports_owner_date ON training_reports(owner_user_id, report_date);
+CREATE INDEX IF NOT EXISTS idx_training_reports_cycle ON training_reports(plan_cycle_id, report_date);
+CREATE INDEX IF NOT EXISTS idx_training_reminders_owner_enabled ON training_reminders(owner_user_id, enabled);
 CREATE INDEX IF NOT EXISTS idx_progression_member_exercise ON progression_suggestions(member_id, exercise_id);
 CREATE INDEX IF NOT EXISTS idx_body_metrics_member_date ON body_metrics(member_id, date);
 CREATE INDEX IF NOT EXISTS idx_body_metric_goals_member ON body_metric_goals(member_id);

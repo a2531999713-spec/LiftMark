@@ -554,6 +554,7 @@ function isSameWorkoutSelection(
 ): boolean {
   return (
     session.planId === input.planId &&
+    (!session.planDayId || !input.planDayId || session.planDayId === input.planDayId) &&
     session.week === input.week &&
     session.weekday === input.weekday &&
     session.trainingMode === (input.trainingMode ?? 'group_local')
@@ -1000,6 +1001,7 @@ export default function TodayRoute() {
       groupId: group.id,
       phaseId: resolvedPlan.phase.id,
       planExerciseIds: resolvedPlan.exercises.map((exercise) => exercise.id),
+      planDayId: resolvedPlan.day.id,
       planId: resolvedPlan.plan.id,
       participantMemberIds,
       title: resolvedPlan.day.title,
@@ -1046,8 +1048,12 @@ export default function TodayRoute() {
         payload: {
           date: session.date,
           groupId: session.groupId,
+          planCycleId: session.planCycleId,
+          planDayId: session.planDayId,
           phaseId: session.phaseId,
           planId: session.planId,
+          recordedByUserId: session.recordedByUserId,
+          sourceDeviceId: session.sourceDeviceId,
           status: session.status,
           title: session.title,
           trainingMode: session.trainingMode,
@@ -1070,6 +1076,8 @@ export default function TodayRoute() {
               notes: record.notes,
               orderIndex: record.orderIndex,
               parentServerId: session.id,
+              planCycleId: record.planCycleId,
+              planDayId: record.planDayId,
               planExerciseId: record.planExerciseId,
               plannedPercent1RM: record.plannedPercent1RM,
               plannedRepMax: record.plannedRepMax,
@@ -1130,6 +1138,7 @@ export default function TodayRoute() {
         groupId: group.id,
         phaseId: resolvedPlan.phase.id,
         planExerciseIds: resolvedPlan.exercises.map((exercise) => exercise.id),
+        planDayId: resolvedPlan.day.id,
         planId: resolvedPlan.plan.id,
         participantMemberIds,
         title: resolvedPlan.day.title,

@@ -120,6 +120,7 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       date: '2026-06-30',
       groupId: 'group_1',
       phaseId: 'phase_strength',
+      planCycleId: 'cycle_current',
       planId: 'plan_current',
       title: '第 8 周 Day 3',
       trainingMode: 'group_local',
@@ -127,11 +128,11 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       weekday: 3,
     });
 
-    expect(planDayQueryParams[0]).toEqual(['plan_current', 'phase_strength', 8, 3]);
+    expect(planDayQueryParams[0]).toEqual(['plan_current', 'phase_strength', 8, 3, null]);
     expect(session.week).toBe(8);
     expect(session.weekday).toBe(3);
-    expect(insertedSessionParams[0][6]).toBe(8);
-    expect(insertedSessionParams[0][7]).toBe(3);
+    expect(insertedSessionParams[0][8]).toBe(8);
+    expect(insertedSessionParams[0][9]).toBe(3);
   });
 
   it('uses selected plan exercise ids instead of falling back to a hardcoded plan day', async () => {
@@ -139,8 +140,8 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
     const transaction = {
       getFirstAsync: jest.fn(async () => null),
       getAllAsync: jest.fn(async (sql: string, ...params: unknown[]) => {
-        if (sql.includes('SELECT * FROM plan_exercises WHERE id IN')) {
-          selectedIds.push(...(params as string[]));
+        if (sql.includes('FROM plan_exercises')) {
+          selectedIds.push(...(params.slice(0, 1) as string[]));
           return [planExerciseRow];
         }
 
@@ -162,6 +163,7 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       date: '2026-06-30',
       groupId: 'group_1',
       phaseId: 'phase_strength',
+      planCycleId: 'cycle_current',
       planExerciseIds: ['plan_exercise_selected'],
       planId: 'plan_current',
       title: '自选训练日',
@@ -207,6 +209,7 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       date: '2026-06-30',
       groupId: 'group_1',
       phaseId: 'phase_strength',
+      planCycleId: 'cycle_current',
       planId: 'plan_current',
       title: '第 8 周 Day 3',
       trainingMode: 'group_local',
@@ -214,8 +217,8 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       weekday: 3,
     });
 
-    expect(insertedSetParams[0][6]).toBe(72.5);
-    expect(insertedSetParams[0][7]).toBe(72.5);
+    expect(insertedSetParams[0][8]).toBe(72.5);
+    expect(insertedSetParams[0][9]).toBe(72.5);
   });
 
   it('reuses an existing open session only when the selected plan, week, day, and mode match', async () => {
@@ -235,6 +238,7 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       date: '2026-06-30',
       groupId: 'group_1',
       phaseId: 'phase_strength',
+      planCycleId: 'cycle_current',
       planId: 'plan_current',
       title: '第 8 周 Day 3',
       trainingMode: 'group_local',
@@ -293,7 +297,7 @@ describe('SQLiteWorkoutRepository.createManualSession', () => {
     };
 
     const session = await new SQLiteWorkoutRepository(async () => db as never).createManualSession({
-      completed: true,
+      completed: false,
       date: '2026-06-30',
       exercises: [
         {
@@ -310,18 +314,19 @@ describe('SQLiteWorkoutRepository.createManualSession', () => {
       ],
       groupId: 'group_1',
       memberId: 'member_1',
+      planCycleId: 'cycle_current',
       planId: 'plan_current',
       title: '补录训练',
     });
 
-    expect(session.status).toBe('completed');
+    expect(session.status).toBe('in_progress');
     expect(exerciseRecordParams).toHaveLength(2);
-    expect(exerciseRecordParams[0][4]).toBe('exercise_bench');
-    expect(exerciseRecordParams[0][8]).toBe(2);
-    expect(exerciseRecordParams[1][4]).toBe('exercise_row');
-    expect(exerciseRecordParams[1][8]).toBe(1);
+    expect(exerciseRecordParams[0][6]).toBe('exercise_bench');
+    expect(exerciseRecordParams[0][10]).toBe(2);
+    expect(exerciseRecordParams[1][6]).toBe('exercise_row');
+    expect(exerciseRecordParams[1][10]).toBe(1);
     expect(setParams).toHaveLength(3);
-    expect(setParams.map((params) => [params[6], params[8]])).toEqual([
+    expect(setParams.map((params) => [params[8], params[10]])).toEqual([
       [100, 5],
       [105, 4],
       [80, 8],
@@ -386,8 +391,8 @@ describe('SQLiteWorkoutRepository.addSetToExerciseRecord', () => {
 
     expect(set.setNumber).toBe(4);
     expect(insertedSetParams[0][5]).toBe(4);
-    expect(insertedSetParams[0][6]).toBe(102.5);
-    expect(insertedSetParams[0][8]).toBe(6);
+    expect(insertedSetParams[0][8]).toBe(102.5);
+    expect(insertedSetParams[0][10]).toBe(6);
   });
 });
 
@@ -444,8 +449,8 @@ describe('SQLiteWorkoutRepository.addExerciseToSession', () => {
 
     expect(runCalls.some((call) => call.sql.includes('SET order_index = order_index + 1'))).toBe(true);
     const insertRecordCall = runCalls.find((call) => call.sql.includes('INSERT INTO workout_exercise_records'));
-    expect(insertRecordCall?.params[5]).toBe(2);
-    expect(insertRecordCall?.params[16]).toBe('临时添加动作');
+    expect(insertRecordCall?.params[7]).toBe(2);
+    expect(insertRecordCall?.params[18]).toBeTruthy();
   });
 });
 

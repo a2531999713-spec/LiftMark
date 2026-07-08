@@ -822,6 +822,211 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 23,
+    name: 'core_scope_cycles_reports_reminders',
+    async up(db) {
+      async function addColumns(tableName: string, definitions: string[]) {
+        const columns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+          `PRAGMA table_info(${tableName})`,
+        );
+        const columnNames = new Set(columns.map((column) => column.name));
+        for (const definition of definitions) {
+          const columnName = definition.split(' ')[0];
+          if (!columnNames.has(columnName)) {
+            await db.execAsync(`ALTER TABLE ${tableName} ADD COLUMN ${definition};`);
+          }
+        }
+      }
+
+      await addColumns('plan_templates', [
+        "status TEXT NOT NULL DEFAULT 'active'",
+      ]);
+
+      await addColumns('workout_sessions', [
+        'plan_cycle_id TEXT',
+        'plan_day_id TEXT',
+        'recorded_by_user_id TEXT',
+        'source_device_id TEXT',
+      ]);
+
+      await addColumns('workout_exercise_records', [
+        'plan_cycle_id TEXT',
+        'plan_day_id TEXT',
+      ]);
+
+      await addColumns('workout_sets', [
+        'recorded_by_user_id TEXT',
+        'source_device_id TEXT',
+      ]);
+
+      await addColumns('exercises', [
+        'source_id TEXT',
+        'name_zh TEXT',
+        'name_en TEXT',
+        'aliases TEXT',
+        'force_type TEXT',
+        'primary_muscle TEXT',
+        'secondary_muscles TEXT',
+        'is_unilateral INTEGER NOT NULL DEFAULT 0',
+        'is_bodyweight INTEGER NOT NULL DEFAULT 0',
+        'default_unit TEXT',
+        'instructions_zh TEXT',
+        'instructions_en TEXT',
+        'tips TEXT',
+        'thumbnail_url TEXT',
+        'gif_url TEXT',
+        'video_url TEXT',
+        'local_asset_path TEXT',
+        'media_source TEXT',
+        'media_license TEXT',
+        'media_attribution TEXT',
+        'media_usage_status TEXT',
+        'icon_key TEXT',
+        'heatmap_key TEXT',
+        'muscle_activation_json TEXT',
+        'is_system INTEGER NOT NULL DEFAULT 1',
+        'is_custom INTEGER NOT NULL DEFAULT 0',
+        'created_by_user_id TEXT',
+      ]);
+
+      await db.execAsync(`
+        UPDATE exercises
+        SET primary_muscle = COALESCE(primary_muscle, target_muscle),
+            secondary_muscles = COALESCE(secondary_muscles, secondary_muscle),
+            icon_key = COALESCE(icon_key, lower(COALESCE(target_muscle, 'other')) || ':' || lower(COALESCE(movement_pattern, 'other'))),
+            is_system = CASE WHEN source = 'system' THEN 1 ELSE COALESCE(is_system, 0) END,
+            is_custom = CASE WHEN source = 'custom' THEN 1 ELSE COALESCE(is_custom, 0) END
+        WHERE primary_muscle IS NULL
+           OR secondary_muscles IS NULL
+           OR icon_key IS NULL
+           OR is_system IS NULL
+           OR is_custom IS NULL;
+      `);
+
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS plan_cycles (
+          id TEXT PRIMARY KEY,
+          owner_user_id TEXT,
+          group_id TEXT NOT NULL,
+          plan_id TEXT NOT NULL,
+          cycle_index INTEGER NOT NULL DEFAULT 1,
+          name TEXT NOT NULL,
+          start_date TEXT NOT NULL,
+          end_date TEXT,
+          planned_weeks INTEGER NOT NULL DEFAULT 1,
+          actual_start_date TEXT,
+          actual_end_date TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          completed_at TEXT,
+          archived_at TEXT,
+          remote_id TEXT,
+          sync_status TEXT NOT NULL DEFAULT 'local_only',
+          sync_error TEXT,
+          version INTEGER NOT NULL DEFAULT 0,
+          last_synced_at TEXT,
+          deleted_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS plan_cycle_summaries (
+          id TEXT PRIMARY KEY,
+          owner_user_id TEXT,
+          group_id TEXT NOT NULL,
+          plan_id TEXT NOT NULL,
+          plan_cycle_id TEXT NOT NULL,
+          planned_workout_count INTEGER NOT NULL DEFAULT 0,
+          completed_workout_count INTEGER NOT NULL DEFAULT 0,
+          skipped_workout_count INTEGER NOT NULL DEFAULT 0,
+          completion_rate REAL NOT NULL DEFAULT 0,
+          total_volume REAL NOT NULL DEFAULT 0,
+          total_sets INTEGER NOT NULL DEFAULT 0,
+          total_reps INTEGER NOT NULL DEFAULT 0,
+          total_duration_seconds INTEGER NOT NULL DEFAULT 0,
+          estimated_calories REAL NOT NULL DEFAULT 0,
+          top_progress_exercises_json TEXT,
+          weak_exercises_json TEXT,
+          muscle_group_distribution_json TEXT,
+          summary_text TEXT,
+          remote_id TEXT,
+          sync_status TEXT NOT NULL DEFAULT 'local_only',
+          sync_error TEXT,
+          version INTEGER NOT NULL DEFAULT 0,
+          last_synced_at TEXT,
+          deleted_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS training_reports (
+          id TEXT PRIMARY KEY,
+          owner_user_id TEXT,
+          group_id TEXT NOT NULL,
+          member_id TEXT,
+          plan_id TEXT NOT NULL,
+          plan_cycle_id TEXT,
+          workout_session_id TEXT NOT NULL,
+          report_date TEXT NOT NULL,
+          duration_seconds INTEGER NOT NULL DEFAULT 0,
+          total_volume REAL NOT NULL DEFAULT 0,
+          total_sets INTEGER NOT NULL DEFAULT 0,
+          total_reps INTEGER NOT NULL DEFAULT 0,
+          exercise_count INTEGER NOT NULL DEFAULT 0,
+          estimated_calories REAL NOT NULL DEFAULT 0,
+          estimated_calories_min REAL NOT NULL DEFAULT 0,
+          estimated_calories_max REAL NOT NULL DEFAULT 0,
+          intensity_level TEXT NOT NULL DEFAULT 'medium',
+          muscle_group_summary_json TEXT,
+          exercise_summary_json TEXT,
+          personal_records_json TEXT,
+          notes TEXT,
+          remote_id TEXT,
+          sync_status TEXT NOT NULL DEFAULT 'local_only',
+          sync_error TEXT,
+          version INTEGER NOT NULL DEFAULT 0,
+          last_synced_at TEXT,
+          deleted_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS training_reminders (
+          id TEXT PRIMARY KEY,
+          owner_user_id TEXT,
+          group_id TEXT,
+          plan_id TEXT,
+          plan_cycle_id TEXT,
+          type TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          weekday INTEGER,
+          remind_time TEXT,
+          minutes_before INTEGER,
+          timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+          title_template TEXT NOT NULL,
+          body_template TEXT NOT NULL,
+          last_scheduled_at TEXT,
+          last_fired_at TEXT,
+          remote_id TEXT,
+          sync_status TEXT NOT NULL DEFAULT 'local_only',
+          sync_error TEXT,
+          version INTEGER NOT NULL DEFAULT 0,
+          last_synced_at TEXT,
+          deleted_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_plan_cycles_owner_group ON plan_cycles(owner_user_id, group_id, status);
+        CREATE INDEX IF NOT EXISTS idx_plan_cycle_summaries_cycle ON plan_cycle_summaries(plan_cycle_id);
+        CREATE INDEX IF NOT EXISTS idx_workout_sessions_cycle ON workout_sessions(plan_cycle_id, date);
+        CREATE INDEX IF NOT EXISTS idx_training_reports_session ON training_reports(workout_session_id);
+        CREATE INDEX IF NOT EXISTS idx_training_reports_owner_date ON training_reports(owner_user_id, report_date);
+        CREATE INDEX IF NOT EXISTS idx_training_reports_cycle ON training_reports(plan_cycle_id, report_date);
+        CREATE INDEX IF NOT EXISTS idx_training_reminders_owner_enabled ON training_reminders(owner_user_id, enabled);
+      `);
+    },
+  },
 ];
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {

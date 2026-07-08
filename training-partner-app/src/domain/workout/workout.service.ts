@@ -51,10 +51,18 @@ export function getWorkoutRecordInitialReps(record: WorkoutExerciseRecord): numb
 }
 
 export function summarizeWorkoutSets(sessionId: string, sets: WorkoutSet[]): WorkoutSummary {
+  const completedSets = sets.filter((set) => set.completed);
   return {
     sessionId,
-    completedSets: sets.filter((set) => set.completed).length,
+    completedSets: completedSets.length,
+    durationSeconds: 0,
+    exerciseCount: new Set(completedSets.map((set) => set.exerciseRecordId)).size,
     totalSets: sets.length,
+    totalReps: completedSets.reduce((sum, set) => sum + (set.actualReps ?? 0), 0),
+    totalVolume: completedSets.reduce(
+      (sum, set) => sum + (set.actualWeight ?? 0) * (set.actualReps ?? 0),
+      0,
+    ),
   };
 }
 

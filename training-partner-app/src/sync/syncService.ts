@@ -24,9 +24,13 @@ type ServerSyncEntityType =
   | 'workoutExerciseRecords'
   | 'workoutSets'
   | 'trainingPlans'
+  | 'planCycles'
+  | 'planCycleSummaries'
   | 'planPhases'
   | 'planDays'
   | 'planExercises'
+  | 'trainingReports'
+  | 'trainingReminders'
   | 'bodyMetrics'
   | 'bodyMetricGoals'
   | 'recoveryLogs'
@@ -50,9 +54,13 @@ const serverSyncEntityTypes = new Set<SyncEntityType>([
   'workoutExerciseRecords',
   'workoutSets',
   'trainingPlans',
+  'planCycles',
+  'planCycleSummaries',
   'planPhases',
   'planDays',
   'planExercises',
+  'trainingReports',
+  'trainingReminders',
   'bodyMetrics',
   'bodyMetricGoals',
   'recoveryLogs',
@@ -64,7 +72,11 @@ const localSyncEntityTableByType: Partial<Record<SyncEntityType, string>> = {
   bodyMetrics: 'body_metrics',
   bodyMetricGoals: 'body_metric_goals',
   trainingPlans: 'plan_templates',
+  planCycles: 'plan_cycles',
+  planCycleSummaries: 'plan_cycle_summaries',
   planPhases: 'plan_phases',
+  trainingReports: 'training_reports',
+  trainingReminders: 'training_reminders',
   workoutExerciseRecords: 'workout_exercise_records',
   workoutSessions: 'workout_sessions',
   workoutSets: 'workout_sets',
@@ -212,9 +224,13 @@ export async function requestImmediateSync(): Promise<{ ok: true; message?: stri
       workoutExerciseRecords: [],
       workoutSets: [],
       trainingPlans: [],
+      planCycles: [],
+      planCycleSummaries: [],
       planPhases: [],
       planDays: [],
       planExercises: [],
+      trainingReports: [],
+      trainingReminders: [],
       bodyMetrics: [],
       bodyMetricGoals: [],
       recoveryLogs: [],

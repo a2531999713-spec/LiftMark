@@ -83,6 +83,16 @@ function asBoolInt(value: unknown): number {
   return 0;
 }
 
+function asJsonText(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
 function normalizePayload(row: ServerRow): Record<string, unknown> {
   const raw = row.payload;
   if (raw && typeof raw === 'object') {
@@ -628,6 +638,8 @@ async function applyWorkoutSessions(
       asString(pick(payload, ['id'])) ?? row.client_id ?? remoteId,
       asString(pick(payload, ['groupId', 'group_id'])) ?? row.group_id ?? '',
       asString(pick(payload, ['planId', 'plan_id'])) ?? '',
+      asString(pick(payload, ['planCycleId', 'plan_cycle_id'])),
+      asString(pick(payload, ['planDayId', 'plan_day_id'])),
       asString(pick(payload, ['phaseId', 'phase_id'])),
       asString(pick(payload, ['date'])) ?? '',
       asInt(pick(payload, ['week'])) ?? 1,
@@ -635,6 +647,8 @@ async function applyWorkoutSessions(
       asString(pick(payload, ['title'])) ?? row.title ?? '',
       asString(pick(payload, ['status'])) ?? row.status ?? 'draft',
       asString(pick(payload, ['trainingMode', 'training_mode'])) ?? 'group_local',
+      asString(pick(payload, ['recordedByUserId', 'recorded_by_user_id'])),
+      asString(pick(payload, ['sourceDeviceId', 'source_device_id'])),
       asString(pick(payload, ['startedAt', 'started_at'])),
       asString(pick(payload, ['finishedAt', 'finished_at'])),
       asString(pick(payload, ['createdAt', 'created_at'])) ?? row.created_at,
@@ -653,6 +667,10 @@ async function applyWorkoutSessions(
       insertValues[9],
       insertValues[10],
       insertValues[11],
+      insertValues[12],
+      insertValues[13],
+      insertValues[14],
+      insertValues[15],
       serverUpdatedAt,
     ];
 
@@ -665,13 +683,15 @@ async function applyWorkoutSessions(
       serverDeletedAt: row.deleted_at,
       currentUserId,
       insertColumns: [
-        'id', 'group_id', 'plan_id', 'phase_id', 'date', 'week', 'weekday', 'title', 'status',
-        'training_mode', 'started_at', 'finished_at', 'created_at', 'updated_at',
+        'id', 'group_id', 'plan_id', 'plan_cycle_id', 'plan_day_id', 'phase_id', 'date', 'week',
+        'weekday', 'title', 'status', 'training_mode', 'recorded_by_user_id', 'source_device_id',
+        'started_at', 'finished_at', 'created_at', 'updated_at',
       ],
       insertValues,
       updateColumns: [
-        'group_id', 'plan_id', 'phase_id', 'date', 'week', 'weekday', 'title', 'status',
-        'training_mode', 'started_at', 'finished_at', 'updated_at',
+        'group_id', 'plan_id', 'plan_cycle_id', 'plan_day_id', 'phase_id', 'date', 'week',
+        'weekday', 'title', 'status', 'training_mode', 'recorded_by_user_id', 'source_device_id',
+        'started_at', 'finished_at', 'updated_at',
       ],
       updateValues,
     });
@@ -694,6 +714,8 @@ async function applyWorkoutExerciseRecords(
     const insertValues: DbValue[] = [
       asString(pick(payload, ['id'])) ?? row.client_id ?? remoteId,
       asString(pick(payload, ['sessionId', 'session_id'])) ?? '',
+      asString(pick(payload, ['planCycleId', 'plan_cycle_id'])),
+      asString(pick(payload, ['planDayId', 'plan_day_id'])),
       asString(pick(payload, ['planExerciseId', 'plan_exercise_id'])),
       asString(pick(payload, ['exerciseId', 'exercise_id'])) ?? row.exercise_client_id ?? '',
       asInt(pick(payload, ['orderIndex', 'order_index'])) ?? 0,
@@ -722,14 +744,14 @@ async function applyWorkoutExerciseRecords(
       serverDeletedAt: row.deleted_at,
       currentUserId,
       insertColumns: [
-        'id', 'session_id', 'plan_exercise_id', 'exercise_id', 'order_index',
+        'id', 'session_id', 'plan_cycle_id', 'plan_day_id', 'plan_exercise_id', 'exercise_id', 'order_index',
         'replaced_from_exercise_id', 'priority', 'planned_sets', 'planned_reps', 'planned_rep_min',
         'planned_rep_max', 'planned_rpe', 'planned_rir', 'planned_percent_1rm', 'planned_rest_seconds',
         'notes', 'updated_at',
       ],
       insertValues,
       updateColumns: [
-        'session_id', 'plan_exercise_id', 'exercise_id', 'order_index', 'replaced_from_exercise_id',
+        'session_id', 'plan_cycle_id', 'plan_day_id', 'plan_exercise_id', 'exercise_id', 'order_index', 'replaced_from_exercise_id',
         'priority', 'planned_sets', 'planned_reps', 'planned_rep_min', 'planned_rep_max', 'planned_rpe',
         'planned_rir', 'planned_percent_1rm', 'planned_rest_seconds', 'notes', 'updated_at',
       ],
@@ -756,6 +778,8 @@ async function applyWorkoutSets(
       asString(pick(payload, ['sessionId', 'session_id'])) ?? '',
       asString(pick(payload, ['exerciseRecordId', 'exercise_record_id'])) ?? '',
       asString(pick(payload, ['memberId', 'member_id'])) ?? row.member_client_id ?? '',
+      asString(pick(payload, ['recordedByUserId', 'recorded_by_user_id'])),
+      asString(pick(payload, ['sourceDeviceId', 'source_device_id'])),
       asInt(pick(payload, ['setNumber', 'set_number'])) ?? 0,
       asNumber(pick(payload, ['plannedWeight', 'planned_weight'])),
       asNumber(pick(payload, ['actualWeight', 'actual_weight'])) ?? row.actual_weight,
@@ -786,6 +810,8 @@ async function applyWorkoutSets(
       insertValues[12],
       insertValues[13],
       insertValues[14],
+      insertValues[15],
+      insertValues[16],
       serverUpdatedAt,
     ];
 
@@ -798,13 +824,13 @@ async function applyWorkoutSets(
       serverDeletedAt: row.deleted_at,
       currentUserId,
       insertColumns: [
-        'id', 'session_id', 'exercise_record_id', 'member_id', 'set_number', 'planned_weight',
+        'id', 'session_id', 'exercise_record_id', 'member_id', 'recorded_by_user_id', 'source_device_id', 'set_number', 'planned_weight',
         'actual_weight', 'planned_reps', 'actual_reps', 'rpe', 'rir', 'actual_rest_seconds',
         'completed', 'skipped', 'notes', 'created_at', 'updated_at',
       ],
       insertValues,
       updateColumns: [
-        'session_id', 'exercise_record_id', 'member_id', 'set_number', 'planned_weight', 'actual_weight',
+        'session_id', 'exercise_record_id', 'member_id', 'recorded_by_user_id', 'source_device_id', 'set_number', 'planned_weight', 'actual_weight',
         'planned_reps', 'actual_reps', 'rpe', 'rir', 'actual_rest_seconds', 'completed', 'skipped',
         'notes', 'updated_at',
       ],
@@ -882,12 +908,272 @@ async function applyBodyMetrics(
   return applied;
 }
 
+async function applyPlanCycles(
+  db: LocalDatabase,
+  rows: ServerRow[],
+  currentUserId: string,
+  reclaimExisting: boolean,
+): Promise<number> {
+  let applied = 0;
+  for (const row of rows) {
+    const payload = normalizePayload(row);
+    const remoteId = row.id;
+    const serverUpdatedAt = resolveTimestamp(row);
+    const insertValues: DbValue[] = [
+      asString(pick(payload, ['id'])) ?? row.client_id ?? remoteId,
+      asString(pick(payload, ['groupId', 'group_id'])) ?? row.group_id ?? '',
+      asString(pick(payload, ['planId', 'plan_id'])) ?? '',
+      asInt(pick(payload, ['cycleIndex', 'cycle_index'])) ?? 1,
+      asString(pick(payload, ['name'])) ?? row.name ?? '',
+      asString(pick(payload, ['startDate', 'start_date'])) ?? '',
+      asString(pick(payload, ['endDate', 'end_date'])),
+      asInt(pick(payload, ['plannedWeeks', 'planned_weeks'])) ?? 1,
+      asString(pick(payload, ['actualStartDate', 'actual_start_date'])),
+      asString(pick(payload, ['actualEndDate', 'actual_end_date'])),
+      asString(pick(payload, ['status'])) ?? row.status ?? 'active',
+      asString(pick(payload, ['completedAt', 'completed_at'])),
+      asString(pick(payload, ['archivedAt', 'archived_at'])),
+      asString(pick(payload, ['createdAt', 'created_at'])) ?? row.created_at,
+      asString(pick(payload, ['updatedAt', 'updated_at'])) ?? serverUpdatedAt,
+    ];
+
+    const updateValues: DbValue[] = [
+      insertValues[1],
+      insertValues[2],
+      insertValues[3],
+      insertValues[4],
+      insertValues[5],
+      insertValues[6],
+      insertValues[7],
+      insertValues[8],
+      insertValues[9],
+      insertValues[10],
+      insertValues[11],
+      insertValues[12],
+      serverUpdatedAt,
+    ];
+
+    const wrote = await upsertWithRemoteId(db, {
+      table: 'plan_cycles',
+      localId: insertValues[0] as string,
+      remoteId,
+      reclaimExisting,
+      serverUpdatedAt,
+      serverDeletedAt: row.deleted_at,
+      currentUserId,
+      insertColumns: [
+        'id', 'group_id', 'plan_id', 'cycle_index', 'name', 'start_date', 'end_date',
+        'planned_weeks', 'actual_start_date', 'actual_end_date', 'status', 'completed_at',
+        'archived_at', 'created_at', 'updated_at',
+      ],
+      insertValues,
+      updateColumns: [
+        'group_id', 'plan_id', 'cycle_index', 'name', 'start_date', 'end_date', 'planned_weeks',
+        'actual_start_date', 'actual_end_date', 'status', 'completed_at', 'archived_at', 'updated_at',
+      ],
+      updateValues,
+    });
+    if (wrote) applied += 1;
+  }
+  return applied;
+}
+
+async function applyPlanCycleSummaries(
+  db: LocalDatabase,
+  rows: ServerRow[],
+  currentUserId: string,
+  reclaimExisting: boolean,
+): Promise<number> {
+  let applied = 0;
+  for (const row of rows) {
+    const payload = normalizePayload(row);
+    const remoteId = row.id;
+    const serverUpdatedAt = resolveTimestamp(row);
+    const insertValues: DbValue[] = [
+      asString(pick(payload, ['id'])) ?? row.client_id ?? remoteId,
+      asString(pick(payload, ['groupId', 'group_id'])) ?? row.group_id ?? '',
+      asString(pick(payload, ['planId', 'plan_id'])) ?? '',
+      asString(pick(payload, ['planCycleId', 'plan_cycle_id'])) ?? '',
+      asInt(pick(payload, ['plannedWorkoutCount', 'planned_workout_count'])) ?? 0,
+      asInt(pick(payload, ['completedWorkoutCount', 'completed_workout_count'])) ?? 0,
+      asInt(pick(payload, ['skippedWorkoutCount', 'skipped_workout_count'])) ?? 0,
+      asNumber(pick(payload, ['completionRate', 'completion_rate'])) ?? 0,
+      asNumber(pick(payload, ['totalVolume', 'total_volume'])) ?? 0,
+      asInt(pick(payload, ['totalSets', 'total_sets'])) ?? 0,
+      asInt(pick(payload, ['totalReps', 'total_reps'])) ?? 0,
+      asInt(pick(payload, ['totalDurationSeconds', 'total_duration_seconds'])) ?? 0,
+      asNumber(pick(payload, ['estimatedCalories', 'estimated_calories'])) ?? 0,
+      asJsonText(pick(payload, ['topProgressExercisesJson', 'top_progress_exercises_json'])),
+      asJsonText(pick(payload, ['weakExercisesJson', 'weak_exercises_json'])),
+      asJsonText(pick(payload, ['muscleGroupDistributionJson', 'muscle_group_distribution_json'])),
+      asString(pick(payload, ['summaryText', 'summary_text'])),
+      asString(pick(payload, ['createdAt', 'created_at'])) ?? row.created_at,
+      asString(pick(payload, ['updatedAt', 'updated_at'])) ?? serverUpdatedAt,
+    ];
+
+    const updateValues: DbValue[] = [...insertValues.slice(1, 17), serverUpdatedAt];
+    const wrote = await upsertWithRemoteId(db, {
+      table: 'plan_cycle_summaries',
+      localId: insertValues[0] as string,
+      remoteId,
+      reclaimExisting,
+      serverUpdatedAt,
+      serverDeletedAt: row.deleted_at,
+      currentUserId,
+      insertColumns: [
+        'id', 'group_id', 'plan_id', 'plan_cycle_id', 'planned_workout_count', 'completed_workout_count',
+        'skipped_workout_count', 'completion_rate', 'total_volume', 'total_sets', 'total_reps',
+        'total_duration_seconds', 'estimated_calories', 'top_progress_exercises_json', 'weak_exercises_json',
+        'muscle_group_distribution_json', 'summary_text', 'created_at', 'updated_at',
+      ],
+      insertValues,
+      updateColumns: [
+        'group_id', 'plan_id', 'plan_cycle_id', 'planned_workout_count', 'completed_workout_count',
+        'skipped_workout_count', 'completion_rate', 'total_volume', 'total_sets', 'total_reps',
+        'total_duration_seconds', 'estimated_calories', 'top_progress_exercises_json', 'weak_exercises_json',
+        'muscle_group_distribution_json', 'summary_text', 'updated_at',
+      ],
+      updateValues,
+    });
+    if (wrote) applied += 1;
+  }
+  return applied;
+}
+
+async function applyTrainingReports(
+  db: LocalDatabase,
+  rows: ServerRow[],
+  currentUserId: string,
+  reclaimExisting: boolean,
+): Promise<number> {
+  let applied = 0;
+  for (const row of rows) {
+    const payload = normalizePayload(row);
+    const remoteId = row.id;
+    const serverUpdatedAt = resolveTimestamp(row);
+    const insertValues: DbValue[] = [
+      asString(pick(payload, ['id'])) ?? row.client_id ?? remoteId,
+      asString(pick(payload, ['groupId', 'group_id'])) ?? row.group_id ?? '',
+      asString(pick(payload, ['memberId', 'member_id'])),
+      asString(pick(payload, ['planId', 'plan_id'])) ?? '',
+      asString(pick(payload, ['planCycleId', 'plan_cycle_id'])),
+      asString(pick(payload, ['workoutSessionId', 'workout_session_id', 'sessionId'])) ?? '',
+      asString(pick(payload, ['reportDate', 'report_date', 'date'])) ?? '',
+      asInt(pick(payload, ['durationSeconds', 'duration_seconds'])) ?? 0,
+      asNumber(pick(payload, ['totalVolume', 'total_volume'])) ?? 0,
+      asInt(pick(payload, ['totalSets', 'total_sets'])) ?? 0,
+      asInt(pick(payload, ['totalReps', 'total_reps'])) ?? 0,
+      asInt(pick(payload, ['exerciseCount', 'exercise_count'])) ?? 0,
+      asNumber(pick(payload, ['estimatedCalories', 'estimated_calories'])) ?? 0,
+      asNumber(pick(payload, ['estimatedCaloriesMin', 'estimated_calories_min'])) ?? 0,
+      asNumber(pick(payload, ['estimatedCaloriesMax', 'estimated_calories_max'])) ?? 0,
+      asString(pick(payload, ['intensityLevel', 'intensity_level'])) ?? 'medium',
+      asJsonText(pick(payload, ['muscleGroupSummaryJson', 'muscle_group_summary_json'])),
+      asJsonText(pick(payload, ['exerciseSummaryJson', 'exercise_summary_json'])),
+      asJsonText(pick(payload, ['personalRecordsJson', 'personal_records_json'])),
+      asString(pick(payload, ['notes'])),
+      asString(pick(payload, ['createdAt', 'created_at'])) ?? row.created_at,
+      asString(pick(payload, ['updatedAt', 'updated_at'])) ?? serverUpdatedAt,
+    ];
+
+    const updateValues: DbValue[] = [...insertValues.slice(1, 20), serverUpdatedAt];
+    const wrote = await upsertWithRemoteId(db, {
+      table: 'training_reports',
+      localId: insertValues[0] as string,
+      remoteId,
+      reclaimExisting,
+      serverUpdatedAt,
+      serverDeletedAt: row.deleted_at,
+      currentUserId,
+      insertColumns: [
+        'id', 'group_id', 'member_id', 'plan_id', 'plan_cycle_id', 'workout_session_id', 'report_date',
+        'duration_seconds', 'total_volume', 'total_sets', 'total_reps', 'exercise_count',
+        'estimated_calories', 'estimated_calories_min', 'estimated_calories_max', 'intensity_level',
+        'muscle_group_summary_json', 'exercise_summary_json', 'personal_records_json', 'notes',
+        'created_at', 'updated_at',
+      ],
+      insertValues,
+      updateColumns: [
+        'group_id', 'member_id', 'plan_id', 'plan_cycle_id', 'workout_session_id', 'report_date',
+        'duration_seconds', 'total_volume', 'total_sets', 'total_reps', 'exercise_count',
+        'estimated_calories', 'estimated_calories_min', 'estimated_calories_max', 'intensity_level',
+        'muscle_group_summary_json', 'exercise_summary_json', 'personal_records_json', 'notes', 'updated_at',
+      ],
+      updateValues,
+    });
+    if (wrote) applied += 1;
+  }
+  return applied;
+}
+
+async function applyTrainingReminders(
+  db: LocalDatabase,
+  rows: ServerRow[],
+  currentUserId: string,
+  reclaimExisting: boolean,
+): Promise<number> {
+  let applied = 0;
+  for (const row of rows) {
+    const payload = normalizePayload(row);
+    const remoteId = row.id;
+    const serverUpdatedAt = resolveTimestamp(row);
+    const enabledValue = pick(payload, ['enabled']);
+    const insertValues: DbValue[] = [
+      asString(pick(payload, ['id'])) ?? row.client_id ?? remoteId,
+      asString(pick(payload, ['groupId', 'group_id'])) ?? row.group_id,
+      asString(pick(payload, ['planId', 'plan_id'])),
+      asString(pick(payload, ['planCycleId', 'plan_cycle_id'])),
+      asString(pick(payload, ['type'])) ?? 'workout_day',
+      enabledValue === undefined ? 1 : asBoolInt(enabledValue),
+      asInt(pick(payload, ['weekday'])),
+      asString(pick(payload, ['remindTime', 'remind_time'])),
+      asInt(pick(payload, ['minutesBefore', 'minutes_before'])),
+      asString(pick(payload, ['timezone'])) ?? 'Asia/Shanghai',
+      asString(pick(payload, ['titleTemplate', 'title_template'])) ?? '',
+      asString(pick(payload, ['bodyTemplate', 'body_template'])) ?? '',
+      asString(pick(payload, ['lastScheduledAt', 'last_scheduled_at'])),
+      asString(pick(payload, ['lastFiredAt', 'last_fired_at'])),
+      asString(pick(payload, ['createdAt', 'created_at'])) ?? row.created_at,
+      asString(pick(payload, ['updatedAt', 'updated_at'])) ?? serverUpdatedAt,
+    ];
+
+    const updateValues: DbValue[] = [...insertValues.slice(1, 14), serverUpdatedAt];
+    const wrote = await upsertWithRemoteId(db, {
+      table: 'training_reminders',
+      localId: insertValues[0] as string,
+      remoteId,
+      reclaimExisting,
+      serverUpdatedAt,
+      serverDeletedAt: row.deleted_at,
+      currentUserId,
+      insertColumns: [
+        'id', 'group_id', 'plan_id', 'plan_cycle_id', 'type', 'enabled', 'weekday', 'remind_time',
+        'minutes_before', 'timezone', 'title_template', 'body_template', 'last_scheduled_at',
+        'last_fired_at', 'created_at', 'updated_at',
+      ],
+      insertValues,
+      updateColumns: [
+        'group_id', 'plan_id', 'plan_cycle_id', 'type', 'enabled', 'weekday', 'remind_time',
+        'minutes_before', 'timezone', 'title_template', 'body_template', 'last_scheduled_at',
+        'last_fired_at', 'updated_at',
+      ],
+      updateValues,
+    });
+    if (wrote) applied += 1;
+  }
+  return applied;
+}
+
 type PullEntityCounts = {
   groupMembers: number;
   groups: number;
+  planCycleSummaries: number;
+  planCycles: number;
   planDays: number;
   planExercises: number;
   planPhases: number;
+  trainingReminders: number;
+  trainingReports: number;
   trainingPlans: number;
   workoutExerciseRecords: number;
   workoutSessions: number;
@@ -912,9 +1198,13 @@ function buildRemoteCounts(changes: Record<string, ServerRow[]>): PullEntityCoun
   return {
     groupMembers: 0,
     groups: 0,
+    planCycleSummaries: countChangeRows(changes, 'planCycleSummaries'),
+    planCycles: countChangeRows(changes, 'planCycles'),
     planDays: countChangeRows(changes, 'planDays'),
     planExercises: countChangeRows(changes, 'planExercises'),
     planPhases: countChangeRows(changes, 'planPhases'),
+    trainingReminders: countChangeRows(changes, 'trainingReminders'),
+    trainingReports: countChangeRows(changes, 'trainingReports'),
     trainingPlans: countChangeRows(changes, 'trainingPlans'),
     workoutExerciseRecords: countChangeRows(changes, 'workoutExerciseRecords'),
     workoutSessions: countChangeRows(changes, 'workoutSessions'),
@@ -933,6 +1223,10 @@ async function countVisibleLocalData(db: LocalDatabase, currentUserId: string): 
     groupMembers,
     trainingPlans,
     planPhases,
+    planCycles,
+    planCycleSummaries,
+    trainingReports,
+    trainingReminders,
     planDays,
     planExercises,
     workoutSessions,
@@ -970,6 +1264,30 @@ async function countVisibleLocalData(db: LocalDatabase, currentUserId: string): 
        WHERE owner_user_id = ? AND deleted_at IS NULL`,
       currentUserId,
     ),
+    countFirst(
+      db,
+      `SELECT COUNT(*) AS count FROM plan_cycles
+       WHERE owner_user_id = ? AND deleted_at IS NULL`,
+      currentUserId,
+    ),
+    countFirst(
+      db,
+      `SELECT COUNT(*) AS count FROM plan_cycle_summaries
+       WHERE owner_user_id = ? AND deleted_at IS NULL`,
+      currentUserId,
+    ),
+    countFirst(
+      db,
+      `SELECT COUNT(*) AS count FROM training_reports
+       WHERE owner_user_id = ? AND deleted_at IS NULL`,
+      currentUserId,
+    ),
+    countFirst(
+      db,
+      `SELECT COUNT(*) AS count FROM training_reminders
+       WHERE owner_user_id = ? AND deleted_at IS NULL`,
+      currentUserId,
+    ),
     countFirst(db, 'SELECT COUNT(*) AS count FROM plan_days WHERE owner_user_id = ?', currentUserId),
     countFirst(db, 'SELECT COUNT(*) AS count FROM plan_exercises WHERE owner_user_id = ?', currentUserId),
     countFirst(
@@ -995,9 +1313,13 @@ async function countVisibleLocalData(db: LocalDatabase, currentUserId: string): 
   return {
     groupMembers,
     groups,
+    planCycleSummaries,
+    planCycles,
     planDays,
     planExercises,
     planPhases,
+    trainingReminders,
+    trainingReports,
     trainingPlans,
     workoutExerciseRecords,
     workoutSessions,
@@ -1109,6 +1431,8 @@ function validateFullPullVisibility(remoteCounts: PullEntityCounts, localCounts:
     ['workoutExerciseRecords', '动作记录'],
     ['workoutSets', '训练组'],
     ['trainingPlans', '训练计划'],
+    ['planCycles', '计划周期'],
+    ['trainingReports', '训练报告'],
     ['planPhases', '计划阶段'],
     ['planDays', '训练日'],
     ['planExercises', '计划动作'],
@@ -1132,6 +1456,8 @@ function buildPullMessage(
     `组 ${localCounts.workoutSets}/${remoteCounts.workoutSets}`,
     `动作记录 ${localCounts.workoutExerciseRecords}/${remoteCounts.workoutExerciseRecords}`,
     `计划 ${localCounts.trainingPlans}/${remoteCounts.trainingPlans}`,
+    `周期 ${localCounts.planCycles}/${remoteCounts.planCycles}`,
+    `报告 ${localCounts.trainingReports}/${remoteCounts.trainingReports}`,
     `训练日 ${localCounts.planDays}/${remoteCounts.planDays}`,
   ];
   const suffix = reconciledPlanId ? `；已恢复当前计划 ${reconciledPlanId}` : '';
@@ -1170,6 +1496,8 @@ export async function pullFromServer(
     'pulled sets=', remoteCounts.workoutSets,
     'pulled records=', remoteCounts.workoutExerciseRecords,
     'pulled plans=', remoteCounts.trainingPlans,
+    'pulled cycles=', remoteCounts.planCycles,
+    'pulled reports=', remoteCounts.trainingReports,
     'pulled days=', remoteCounts.planDays,
     'pulled exercises=', remoteCounts.planExercises);
 
@@ -1179,12 +1507,16 @@ export async function pullFromServer(
   const applySteps: [string, () => Promise<number>][] = [
     ['exercises', () => applyExercises(db, (changes.exercises as ServerRow[] | undefined) ?? [])],
     ['trainingPlans', () => applyTrainingPlans(db, (changes.trainingPlans as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
+    ['planCycles', () => applyPlanCycles(db, (changes.planCycles as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['planPhases', () => applyPlanPhases(db, (changes.planPhases as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['planDays', () => applyPlanDays(db, (changes.planDays as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['planExercises', () => applyPlanExercises(db, (changes.planExercises as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['workoutSessions', () => applyWorkoutSessions(db, (changes.workoutSessions as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['workoutExerciseRecords', () => applyWorkoutExerciseRecords(db, (changes.workoutExerciseRecords as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['workoutSets', () => applyWorkoutSets(db, (changes.workoutSets as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
+    ['trainingReports', () => applyTrainingReports(db, (changes.trainingReports as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
+    ['planCycleSummaries', () => applyPlanCycleSummaries(db, (changes.planCycleSummaries as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
+    ['trainingReminders', () => applyTrainingReminders(db, (changes.trainingReminders as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['bodyMetrics', () => applyBodyMetrics(db, (changes.bodyMetrics as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
   ];
 
@@ -1199,6 +1531,8 @@ export async function pullFromServer(
       if (name === 'workoutSets') console.log('[RESTORE] inserted/applied sets=', n);
       if (name === 'workoutExerciseRecords') console.log('[RESTORE] inserted/applied records=', n);
       if (name === 'trainingPlans') console.log('[RESTORE] inserted/applied plans=', n);
+      if (name === 'planCycles') console.log('[RESTORE] inserted/applied cycles=', n);
+      if (name === 'trainingReports') console.log('[RESTORE] inserted/applied reports=', n);
       if (name === 'planPhases') console.log('[RESTORE] inserted/applied phases=', n);
       if (name === 'planDays') console.log('[RESTORE] inserted/applied days=', n);
       if (name === 'planExercises') console.log('[RESTORE] inserted/applied plan exercises=', n);
