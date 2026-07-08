@@ -2,6 +2,9 @@ import { initializeLocalDatabase } from '@/data/local/db';
 import { getCurrentAccountUserId } from '@/data/local/accountScope';
 import { apiRequest } from '@/services/httpClient';
 import { readStoredSession } from '@/services/auth/tokenStorage';
+import { defaultStrengthPlanDaySeeds } from '@/data/seed/defaultStrengthPlan';
+import { defaultDeloadPlanDaySeeds } from '@/data/seed/defaultDeloadPlan';
+import { defaultHypertrophyPlanDaySeeds } from '@/data/seed/defaultHypertrophyPlan';
 
 type LocalDatabase = Awaited<ReturnType<typeof initializeLocalDatabase>>;
 
@@ -506,27 +509,33 @@ async function applyPlanDays(
     const id = asString(pick(payload, ['id'])) ?? row.client_id ?? row.id;
     if (!id) continue;
 
+    const planId = asString(pick(payload, ['planId', 'plan_id'])) ?? '';
+    const phaseId = asString(pick(payload, ['phaseId', 'phase_id'])) ?? '';
+    const week = asInt(pick(payload, ['week'])) ?? 1;
+    const weekday = asInt(pick(payload, ['weekday'])) ?? 1;
+    const title = asString(pick(payload, ['title'])) ?? '';
+    const focus = asString(pick(payload, ['focus'])) ?? '';
+    const notes = asString(pick(payload, ['notes']));
+
     const insertValues: DbValue[] = [
       id,
       currentUserId,
-      asString(pick(payload, ['planId', 'plan_id'])) ?? '',
-      asString(pick(payload, ['phaseId', 'phase_id'])) ?? '',
-      asInt(pick(payload, ['week'])) ?? 1,
-      asInt(pick(payload, ['weekday'])) ?? 1,
-      asString(pick(payload, ['title'])) ?? '',
-      asString(pick(payload, ['focus'])) ?? '',
-      asString(pick(payload, ['notes'])),
+      planId,
+      phaseId,
+      week,
+      weekday,
+      title,
+      focus,
+      notes,
     ];
 
-    const updateValues: DbValue[] = [
-      insertValues[2],
-      insertValues[3],
-      insertValues[4],
-      insertValues[5],
-      insertValues[6],
-      insertValues[7],
-      insertValues[8],
-    ];
+    // 服务器 phase_id 为空时，不覆盖本地 phase_id（保留本地 seed 的内置计划阶段关联）
+    const updateColumns: string[] = ['plan_id', 'week', 'weekday', 'title', 'focus', 'notes'];
+    const updateValues: DbValue[] = [planId, week, weekday, title, focus, notes];
+    if (phaseId) {
+      updateColumns.unshift('phase_id');
+      updateValues.unshift(phaseId);
+    }
 
     const wrote = await upsertById(db, {
       table: 'plan_days',
@@ -536,7 +545,7 @@ async function applyPlanDays(
       serverDeletedAt: row.deleted_at,
       insertColumns: ['id', 'owner_user_id', 'plan_id', 'phase_id', 'week', 'weekday', 'title', 'focus', 'notes'],
       insertValues,
-      updateColumns: ['plan_id', 'phase_id', 'week', 'weekday', 'title', 'focus', 'notes'],
+      updateColumns,
       updateValues,
     });
     if (wrote) applied += 1;
@@ -1211,6 +1220,9 @@ export async function pullFromServer(
   }
 
   const reconciledPlanId = options?.fullPull ? await reconcileActivePlanAfterPull(db, currentUserId) : null;
+  if (options?.fullPull) {
+    await repairBuiltInPlanPhaseLinks(db);
+  }
   const localCounts = await countVisibleLocalData(db, currentUserId);
   console.log('[RESTORE] visible counts after pull=', JSON.stringify(localCounts));
 
@@ -1239,4 +1251,29 @@ export async function pullFromServer(
     remoteCounts,
     serverTime: result.serverTime,
   };
+}
+
+/**
+ * 修复内置计划 plan_days.phase_id 关联。
+ * 服务器 plan_phases 数据缺失时，fullPull 可能导致本地 plan_days.phase_id 被清空，
+ * 这里用内置 seed 数据的 phase_id 修复本地 plan_days。
+ */
+async function repairBuiltInPlanPhaseLinks(db: LocalDatabase): Promise<void> {
+  const seedDays = [
+    ...defaultStrengthPlanDaySeeds,
+    ...defaultDeloadPlanDaySeeds,
+    ...defaultHypertrophyPlanDaySeeds,
+  ];
+  let repaired = 0;
+  for (const day of seedDays) {
+    const result = await db.runAsync(
+      `UPDATE plan_days SET phase_id = ? WHERE id = ? AND (phase_id IS NULL OR phase_id = '')`,
+      day.phaseId,
+      day.id,
+    );
+    if (result.changes > 0) repaired += result.changes;
+  }
+  if (repaired > 0) {
+    console.log('[RESTORE] repaired plan_days.phase_id for built-in plan:', repaired);
+  }
 }
