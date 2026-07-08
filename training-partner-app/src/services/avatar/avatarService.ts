@@ -199,6 +199,28 @@ export async function getAccountProfileCache(userId: string): Promise<AccountPro
   return row ? mapAccountProfile(row) : null;
 }
 
+/**
+ * 仅更新 displayName，不触碰 avatar 等字段。
+ * 用于 server 返回的 nickname 覆盖本地缓存，防止跨账号串号。
+ */
+export async function updateAccountProfileCacheDisplayName(
+  userId: string,
+  displayName: string,
+): Promise<void> {
+  const db = await ensureAccountProfileCacheTable();
+  const updatedAt = new Date().toISOString();
+  await db.runAsync(
+    `INSERT INTO account_profile_cache (user_id, display_name, updated_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       display_name = excluded.display_name,
+       updated_at = excluded.updated_at`,
+    userId,
+    displayName,
+    updatedAt,
+  );
+}
+
 export async function upsertAccountProfileCache(input: {
   age?: number;
   avatarLocalUri?: string;

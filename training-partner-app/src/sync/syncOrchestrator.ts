@@ -17,6 +17,7 @@ export async function sync(
   isSyncing = true;
   console.log('[sync] starting, options:', JSON.stringify(options ?? {}));
   try {
+    let pullResultMessage: string | undefined;
     if (!options?.pushOnly) {
       if (options?.fullPull) {
         console.log('[sync] starting group/member pull...');
@@ -30,6 +31,10 @@ export async function sync(
         return { ok: false, message: pullResult.message ?? 'pull failed' };
       }
       console.log('[sync] pull done');
+      pullResultMessage = pullResult.message;
+      if (options?.fullPull && pullResult.message) {
+        console.log('[sync] full pull result:', pullResult.message);
+      }
     } else {
       console.log('[sync] pushOnly mode, skipping pull');
     }
@@ -43,6 +48,17 @@ export async function sync(
       pushResult = { ok: true, message: 'Pull completed but push failed. Data has been downloaded from cloud.' };
     }
     lastSyncAt = Date.now();
+    if (options?.fullPull && !pushResult.ok) {
+      return pushResult;
+    }
+    if (options?.fullPull) {
+      return {
+        ok: true,
+        message: pushResult.message
+          ? `${pullResultMessage ?? '云端恢复完成。'}；${pushResult.message}`
+          : pullResultMessage ?? '云端恢复完成。',
+      };
+    }
     return pushResult;
   } catch (error) {
     console.error('[sync] FAILED:', error instanceof Error ? error.message : error);

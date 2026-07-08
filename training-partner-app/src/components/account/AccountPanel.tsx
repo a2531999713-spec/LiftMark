@@ -561,7 +561,7 @@ function SyncPanel({ onBack, syncLabel }: { onBack: () => void; syncLabel: strin
             setLastSyncedAt(now);
             void refreshPendingCount();
             if (result.ok) {
-              Alert.alert('恢复完成', '已从云端拉取全部数据。请返回首页查看。');
+              Alert.alert('恢复完成', result.message || '已从云端拉取全部数据。请返回首页查看。');
             } else {
               Alert.alert('恢复失败', result.message || '未知错误');
             }

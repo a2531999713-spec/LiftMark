@@ -72,6 +72,94 @@ function createServerRow(patch: Record<string, unknown> = {}) {
   };
 }
 
+function createPlanRow(patch: Record<string, unknown> = {}) {
+  return {
+    client_id: 'plan_176',
+    created_at: '2026-07-04T09:00:00.000Z',
+    deleted_at: null,
+    id: 'remote_plan_176',
+    name: 'Cloud plan',
+    payload: {
+      durationWeeks: 4,
+      frequencyPerWeek: 3,
+      goal: 'strength',
+      id: 'plan_176',
+      name: 'Cloud plan',
+      updatedAt: '2026-07-04T10:00:00.000Z',
+      visibility: 'private',
+    },
+    updated_at: '2026-07-04T10:00:00.000Z',
+    user_id: 'user_176',
+    ...patch,
+  };
+}
+
+function createPlanPhaseRow(patch: Record<string, unknown> = {}) {
+  return {
+    client_id: 'phase_176',
+    created_at: '2026-07-04T09:00:00.000Z',
+    deleted_at: null,
+    id: 'remote_phase_176',
+    name: 'Strength',
+    payload: {
+      endWeek: 4,
+      id: 'phase_176',
+      name: 'Strength',
+      orderIndex: 1,
+      planId: 'plan_176',
+      startWeek: 1,
+      type: 'strength',
+      updatedAt: '2026-07-04T10:00:00.000Z',
+    },
+    updated_at: '2026-07-04T10:00:00.000Z',
+    user_id: 'user_176',
+    ...patch,
+  };
+}
+
+function createPlanDayRow(patch: Record<string, unknown> = {}) {
+  return {
+    client_id: 'day_176',
+    created_at: '2026-07-04T09:00:00.000Z',
+    deleted_at: null,
+    id: 'remote_day_176',
+    payload: {
+      focus: 'Squat',
+      id: 'day_176',
+      phaseId: 'phase_176',
+      planId: 'plan_176',
+      title: 'Lower',
+      week: 1,
+      weekday: 1,
+    },
+    updated_at: '2026-07-04T10:00:00.000Z',
+    user_id: 'user_176',
+    ...patch,
+  };
+}
+
+function createPlanExerciseRow(patch: Record<string, unknown> = {}) {
+  return {
+    client_id: 'plan_exercise_176',
+    created_at: '2026-07-04T09:00:00.000Z',
+    deleted_at: null,
+    id: 'remote_plan_exercise_176',
+    payload: {
+      exerciseId: 'exercise_squat',
+      id: 'plan_exercise_176',
+      orderIndex: 1,
+      planDayId: 'day_176',
+      priority: 'A',
+      repMax: 5,
+      repMin: 5,
+      sets: 5,
+    },
+    updated_at: '2026-07-04T10:00:00.000Z',
+    user_id: 'user_176',
+    ...patch,
+  };
+}
+
 describe('pullFromServer account isolation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -171,6 +259,48 @@ describe('pullFromServer account isolation', () => {
       'remote_session_176',
       'session_local_1',
     ]);
+  });
+
+  it('applies plan phases during full restore before dependent plan rows', async () => {
+    const db = createDbMock();
+    db.getFirstAsync.mockImplementation(async (...args: unknown[]) => {
+      const [sql] = args;
+      const query = String(sql);
+      if (query.includes('SELECT COUNT(*) AS count')) {
+        if (query.includes('FROM plan_templates')) return { count: 1 };
+        if (query.includes('FROM plan_phases')) return { count: 1 };
+        if (query.includes('FROM plan_days')) return { count: 1 };
+        if (query.includes('FROM plan_exercises')) return { count: 1 };
+        return { count: 0 };
+      }
+      return null;
+    });
+    mockInitializeLocalDatabase.mockResolvedValue(db as never);
+    mockApiRequest.mockResolvedValue({
+      changes: {
+        trainingPlans: [createPlanRow()],
+        planPhases: [createPlanPhaseRow()],
+        planDays: [createPlanDayRow()],
+        planExercises: [createPlanExerciseRow()],
+      },
+      serverTime: '2026-07-05T11:00:00.000Z',
+    });
+
+    const result = await pullFromServer({ fullPull: true });
+
+    const insertTables = db.runAsync.mock.calls
+      .map(([sql]) => String(sql))
+      .filter((sql) => sql.includes('INSERT INTO'))
+      .map((sql) => {
+        const match = sql.match(/INSERT INTO\s+(\w+)/);
+        return match?.[1] ?? '';
+      });
+    expect(result.ok).toBe(true);
+    expect(result.remoteCounts?.planPhases).toBe(1);
+    expect(result.localCounts?.planPhases).toBe(1);
+    expect(insertTables.indexOf('plan_phases')).toBeGreaterThan(insertTables.indexOf('plan_templates'));
+    expect(insertTables.indexOf('plan_days')).toBeGreaterThan(insertTables.indexOf('plan_phases'));
+    expect(insertTables.indexOf('plan_exercises')).toBeGreaterThan(insertTables.indexOf('plan_days'));
   });
 
   it('does not advance the pull cursor when applying a server row fails', async () => {

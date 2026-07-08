@@ -25,6 +25,7 @@ import {
 import { pickImportedPlanDocument } from '@/services/planDocumentService';
 import { createCurrentPlanFile, PlanFileError, serializePlanFile } from '@/services/planFileService';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
@@ -156,6 +157,8 @@ export default function PlanRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const systemSchemes = useMemo(() => listSystemTrainingSchemes(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const currentUserId = useAuthStore((state) => state.user?.id);
+  const currentUserDisplayName = useAuthStore((state) => state.user?.displayName);
   const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
@@ -287,6 +290,12 @@ export default function PlanRoute() {
   const setCurrentPlan = useCallback(
     async (plan: PlanTemplate, showNotice = true) => {
       if (!group) {
+        if (showNotice) {
+          setNotice({
+            title: '请先创建训练小组',
+            message: '使用计划需要先有一个训练小组。请在下方创建小组后重试。',
+          });
+        }
         return;
       }
 
@@ -322,6 +331,38 @@ export default function PlanRoute() {
     },
     [group, guardFeature, loadPlans, repositories, resolvePhaseTypeForWeek],
   );
+
+  // 为没有小组的账号（如新登录的测试号）创建默认训练小组
+  const createDefaultGroup = useCallback(async () => {
+    setIsWorking(true);
+    try {
+      await initializeLocalDatabase();
+      const created = await repositories.groupRepository.createGroup({
+        name: '我的训练小组',
+        activePlanId: '',
+        currentPhaseType: 'strength',
+        currentWeek: 1,
+        fridayEnabled: false,
+        fridayStrategy: 'default_rest',
+      });
+      await repositories.memberRepository.createMember({
+        groupId: created.id,
+        displayName: currentUserDisplayName?.trim() || '我',
+        userId: currentUserId,
+        memberType: currentUserId ? 'real' : 'local',
+        role: 'owner',
+      });
+      setSelectedGroupId(created.id);
+      await loadPlans();
+    } catch (createError) {
+      setNotice({
+        title: '创建小组失败',
+        message: createError instanceof Error ? createError.message : '请稍后重试。',
+      });
+    } finally {
+      setIsWorking(false);
+    }
+  }, [currentUserDisplayName, currentUserId, repositories, setSelectedGroupId, loadPlans]);
 
   const sharePlan = useCallback(
     async (plan: PlanTemplate) => {
@@ -372,6 +413,13 @@ export default function PlanRoute() {
     if (!guardFeature('import_plan')) {
       return;
     }
+    if (!group) {
+      setNotice({
+        title: '请先创建训练小组',
+        message: '导入计划需要先有一个训练小组，用来保存当前计划和训练记录。',
+      });
+      return;
+    }
 
     setIsWorking(true);
     try {
@@ -396,10 +444,15 @@ export default function PlanRoute() {
         message: `“${importedPlan.name}”已成为我的计划。是否设为当前训练计划？`,
       });
     } catch (importError) {
+      console.warn('[PLAN] import failed', {
+        groupId: group.id,
+        message: importError instanceof Error ? importError.message : String(importError),
+        planId: activePlan?.id ?? null,
+      });
       if (importError instanceof PlanFileError) {
         setNotice({
           title: '计划文件格式不兼容',
-          message: '这个文件不是练刻 LiftMark 支持的计划文件。',
+          message: importError.message,
         });
         return;
       }
@@ -411,7 +464,7 @@ export default function PlanRoute() {
     } finally {
       setIsWorking(false);
     }
-  }, [guardFeature, loadPlans, repositories]);
+  }, [activePlan?.id, group, guardFeature, loadPlans, repositories]);
 
   const openUseScheme = useCallback((scheme: SystemTrainingScheme) => {
     if (!scheme.isAvailable || !scheme.templatePlanId) {
@@ -627,6 +680,45 @@ export default function PlanRoute() {
         <View style={styles.loadingOverlay}>
           <ActivityIndicator color={colors.primary} />
         </View>
+      ) : null}
+
+      {!isLoading && !error && !group ? (
+        <>
+          <EmptyState
+            title="还没有训练小组"
+            description="创建一个训练小组后，就可以使用训练计划、记录训练数据了。"
+            actionLabel="创建训练小组"
+            onActionPress={() => void createDefaultGroup()}
+          />
+          <AppCard style={styles.noGroupCard} tone="soft">
+            <AppText variant="bodySmall" weight="900">
+              计划入口
+            </AppText>
+            <View style={styles.inlineActions}>
+              <AppButton
+                icon="barbell-outline"
+                onPress={() =>
+                  setNotice({
+                    title: '请先创建训练小组',
+                    message: '使用系统方案前需要先有一个训练小组。',
+                  })
+                }
+                size="sm"
+                variant="secondary"
+              >
+                使用默认方案
+              </AppButton>
+              <AppButton
+                icon="download-outline"
+                onPress={() => void importPlan()}
+                size="sm"
+                variant="secondary"
+              >
+                导入计划
+              </AppButton>
+            </View>
+          </AppCard>
+        </>
       ) : null}
 
       <AppModalSheet
@@ -1286,6 +1378,10 @@ const styles = StyleSheet.create({
   },
   modalButtons: {
     gap: spacing.sm,
+  },
+  noGroupCard: {
+    gap: spacing.md,
+    padding: spacing.md,
   },
   planMetaRow: {
     flexDirection: 'row',

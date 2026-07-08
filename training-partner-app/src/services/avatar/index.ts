@@ -4,6 +4,7 @@ export {
   getAvatarDisplay,
   syncAccountAvatarToLocalMemberProfiles,
   updateAccountAvatarFromPicker,
+  updateAccountProfileCacheDisplayName,
   updateAccountProfileDetails,
   upsertAccountProfileCache,
 } from './avatarService';

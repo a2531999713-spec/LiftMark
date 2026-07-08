@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import { deriveAuthMode, type AuthMode, type MembershipTier } from '@/domain/auth';
-import { getAccountProfileCache } from '@/services/avatar';
+import { getAccountProfileCache, updateAccountProfileCacheDisplayName } from '@/services/avatar';
 import { createAuthService } from '@/services/auth/authService';
 import type {
   AuthSession,
@@ -69,18 +69,25 @@ async function resolveSessionState(session: AuthSession | null) {
     };
   }
 
+  // server 数据优先：登录/refresh 后 /auth/me 返回的 nickname/avatar 必须覆盖本地旧缓存，
+  // 防止 188 登录后仍显示 176 的缓存昵称。缓存仅在 server 未返回 displayName 时作 fallback。
   const cachedProfile = await getAccountProfileCache(session.user.id).catch(() => null);
   const cachedDisplayName = cachedProfile?.displayName?.trim();
-  const resolvedSession =
-    cachedDisplayName && cachedDisplayName !== session.user.displayName
-      ? {
-          ...session,
-          user: {
-            ...session.user,
-            displayName: cachedDisplayName,
-          },
-        }
-      : session;
+  const serverDisplayName = session.user.displayName?.trim();
+  const fallbackDisplayName = !serverDisplayName && cachedDisplayName ? cachedDisplayName : null;
+  const resolvedSession = fallbackDisplayName
+    ? {
+        ...session,
+        user: {
+          ...session.user,
+          displayName: fallbackDisplayName,
+        },
+      }
+    : session;
+  // server 优先时若与缓存不一致，刷新缓存
+  if (serverDisplayName && serverDisplayName !== cachedDisplayName) {
+    await updateAccountProfileCacheDisplayName(session.user.id, serverDisplayName).catch(() => undefined);
+  }
   if (resolvedSession !== session) {
     await saveStoredSession(resolvedSession).catch(() => undefined);
   }
@@ -113,8 +120,10 @@ function switchRuntimeAccountScope(userId?: string | null) {
 }
 
 function recoverCurrentAccountData() {
-  sync({ fullPull: true })
-    .then(() => repairLocalDataOwnership())
+  // 登录后只修复身份表归属 + 增量同步，不再无条件 fullPull。
+  // fullPull 会重置游标全量拉取，在本地库不可信时可能放大污染，留给用户在同步页主动触发。
+  repairLocalDataOwnership()
+    .then(() => sync())
     .catch((error) => {
       console.warn('[auth] account data recovery failed', error instanceof Error ? error.message : error);
     });

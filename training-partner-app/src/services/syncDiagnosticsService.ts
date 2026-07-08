@@ -3,14 +3,23 @@ import { getDatabase, initializeLocalDatabase } from '@/data/local';
 import { getMigrationVersions, getSchemaCheckResults, type SchemaCheckResult } from '@/data/local/schemaRepair';
 import { readStoredSession } from '@/services/auth/tokenStorage';
 import { apiRequest } from '@/services/httpClient';
-import { syncAllLocalGroupsToServer, syncServerDataToLocal } from '@/services/profileSyncService';
+import { syncAllLocalGroupsToServer } from '@/services/profileSyncService';
 import { requestImmediateSync } from '@/sync/syncService';
 import { countPendingSyncItems } from '@/sync/syncQueue';
+import { sync } from '@/sync/syncOrchestrator';
 import { resolveAvatarUrl } from '@/utils/avatarUrl';
 
 type LocalCounts = {
+  groups: number;
   groupMembers: number;
+  localSyncQueueFailed: number;
+  localSyncQueuePending: number;
   memberProfiles: number;
+  planDays: number;
+  planExercises: number;
+  syncState: number;
+  trainingPlans: number;
+  workoutExerciseRecords: number;
   workoutSessions: number;
   workoutSets: number;
 };
@@ -20,6 +29,7 @@ export type SyncDiagnostics = {
   apiBaseUrl: string;
   avatarAccessStatus?: string;
   avatarUploadTestResult: string;
+  currentUserId?: string;
   isLoggedIn: boolean;
   lastSyncError?: string;
   lastSyncedAt?: string;
@@ -38,6 +48,29 @@ async function countTable(tableName: string, userId?: string) {
   const row = userId
     ? await db.getFirstAsync<{ count: number }>(`SELECT COUNT(*) AS count FROM ${tableName} WHERE owner_user_id = ?`, userId)
     : await db.getFirstAsync<{ count: number }>(`SELECT COUNT(*) AS count FROM ${tableName}`);
+  return row?.count ?? 0;
+}
+
+async function countAllRows(tableName: string) {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ count: number }>(`SELECT COUNT(*) AS count FROM ${tableName}`);
+  return row?.count ?? 0;
+}
+
+async function countQueueByStatuses(userId: string | undefined, statuses: string[]) {
+  const db = await getDatabase();
+  const placeholders = statuses.map(() => '?').join(', ');
+  const row = userId
+    ? await db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM local_sync_queue
+         WHERE owner_user_id = ? AND status IN (${placeholders})`,
+        userId,
+        ...statuses,
+      )
+    : await db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM local_sync_queue WHERE status IN (${placeholders})`,
+        ...statuses,
+      );
   return row?.count ?? 0;
 }
 
@@ -123,18 +156,47 @@ export async function loadSyncDiagnostics(): Promise<SyncDiagnostics> {
     countPendingSyncItems(),
     getLastSyncError(currentUserId),
     getRecentAvatarUrl(currentUserId),
-    checkServerHealth(),
-    Promise.all([
-      countTable('group_members', currentUserId),
-      countTable('member_profiles', currentUserId),
-      countTable('workout_sessions', currentUserId),
-      countTable('workout_sets', currentUserId),
-    ]).then(([groupMembers, memberProfiles, workoutSessions, workoutSets]) => ({
-      groupMembers,
-      memberProfiles,
-      workoutSessions,
-      workoutSets,
-    })),
+      checkServerHealth(),
+      Promise.all([
+        countTable('groups', currentUserId),
+        countTable('group_members', currentUserId),
+        countTable('member_profiles', currentUserId),
+        countTable('plan_templates', currentUserId),
+        countTable('plan_days', currentUserId),
+        countTable('plan_exercises', currentUserId),
+        countTable('workout_sessions', currentUserId),
+        countTable('workout_exercise_records', currentUserId),
+        countTable('workout_sets', currentUserId),
+        countQueueByStatuses(currentUserId, ['pending_create', 'pending_update', 'pending_delete']),
+        countQueueByStatuses(currentUserId, ['sync_failed']),
+        countAllRows('sync_state'),
+      ]).then(([
+        groups,
+        groupMembers,
+        memberProfiles,
+        trainingPlans,
+        planDays,
+        planExercises,
+        workoutSessions,
+        workoutExerciseRecords,
+        workoutSets,
+        localSyncQueuePending,
+        localSyncQueueFailed,
+        syncState,
+      ]) => ({
+        groups,
+        groupMembers,
+        localSyncQueueFailed,
+        localSyncQueuePending,
+        memberProfiles,
+        planDays,
+        planExercises,
+        syncState,
+        trainingPlans,
+        workoutExerciseRecords,
+        workoutSessions,
+        workoutSets,
+      })),
     getSchemaCheckResults(db),
     getMigrationVersions(db),
   ]);
@@ -164,6 +226,7 @@ export async function loadSyncDiagnostics(): Promise<SyncDiagnostics> {
     apiBaseUrl: API_BASE_URL,
     avatarAccessStatus,
     avatarUploadTestResult: recentAvatarUrl ? avatarAccessStatus : '尚无最近头像 URL',
+    currentUserId,
     isLoggedIn: Boolean(session),
     lastSyncError,
     lastSyncedAt,
@@ -188,8 +251,7 @@ export async function runManualUploadSync() {
 }
 
 export async function runManualPullSync() {
-  await syncServerDataToLocal();
-  return { ok: true, message: '手动拉取已执行。' };
+  return sync({ fullPull: true });
 }
 
 export async function repairLocalSchema() {

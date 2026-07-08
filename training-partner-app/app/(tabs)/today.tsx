@@ -633,6 +633,7 @@ export default function TodayRoute() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [accountProfile, setAccountProfile] = useState<AccountProfileCache | null>(null);
   const [lastPerformanceByExerciseId, setLastPerformanceByExerciseId] = useState<LastPerformanceMap>({});
+  const [recentVisibleSessionCount, setRecentVisibleSessionCount] = useState(0);
   const [weeklyOverview, setWeeklyOverview] = useState<WeeklyOverview>(emptyWeeklyOverview);
   const [isAdviceSheetVisible, setAdviceSheetVisible] = useState(false);
   const [isAccountMenuVisible, setAccountMenuVisible] = useState(false);
@@ -691,6 +692,7 @@ export default function TodayRoute() {
         setSelectedWeek(null);
         setSelectedWeekday(null);
         setExerciseMap({});
+        setRecentVisibleSessionCount(0);
         setWeeklyOverview(emptyWeeklyOverview);
         return;
       }
@@ -843,6 +845,7 @@ export default function TodayRoute() {
       setLastPerformanceByExerciseId(summarizeLastPerformance(compactDetails(recentDetails), currentMember?.id));
       setPlanPhases(nextPhases);
       setExerciseMap(nextExerciseMap);
+      setRecentVisibleSessionCount(recentSessions.length);
       setWeeklyOverview(summarizeWeeklyOverview(compactDetails(weekDetails), currentMember?.id));
       try {
         if (currentMember) {
@@ -893,7 +896,7 @@ export default function TodayRoute() {
       setAnnouncement(current);
       setAnnouncementVisible(true);
     }
-  }, [authStatus]);
+  }, [authStatus, ANNOUNCEMENT_FETCH_THROTTLE_MS]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1466,6 +1469,14 @@ export default function TodayRoute() {
           {!error && groups.length > 0 && !activePlan ? (
             <HomeEmptyState
               actions={[
+                ...(recentVisibleSessionCount > 0
+                  ? [
+                      {
+                        label: '查看历史',
+                        onPress: () => router.push('/(tabs)/history'),
+                      },
+                    ]
+                  : []),
                 {
                   label: '创建计划',
                   onPress: () => {
@@ -1479,9 +1490,13 @@ export default function TodayRoute() {
                   },
                 },
               ]}
-              description="创建或导入一个计划，开始你的训练之旅"
+              description={
+                recentVisibleSessionCount > 0
+                  ? `已找到 ${recentVisibleSessionCount} 条历史训练。创建或导入计划后，可继续安排今日训练。`
+                  : '创建或导入一个计划，开始你的训练之旅'
+              }
               icon="clipboard-outline"
-              title="暂无训练计划"
+              title={recentVisibleSessionCount > 0 ? '暂无当前计划' : '暂无训练计划'}
             />
           ) : null}
 

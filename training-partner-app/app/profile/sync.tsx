@@ -62,7 +62,7 @@ export default function ProfileSyncRoute() {
   const runPull = async () => {
     setIsWorking(true);
     const result = await runManualPullSync();
-    setNotice({ tone: result.ok ? 'success' : 'danger', message: result.message });
+    setNotice({ tone: result.ok ? 'success' : 'danger', message: result.message ?? (result.ok ? '同步完成' : '同步失败') });
     await load();
     setIsWorking(false);
   };
@@ -119,6 +119,7 @@ export default function ProfileSyncRoute() {
             </View>
             <SettingsRow label="API_BASE_URL" value={diagnostics.apiBaseUrl} />
             <SettingsRow label="登录状态" value={diagnostics.isLoggedIn ? '已登录' : '未登录'} />
+            <SettingsRow label="当前 user_id" value={diagnostics.currentUserId ?? '-'} />
             <SettingsRow label="accessToken" value={diagnostics.accessTokenPresent ? '存在' : '不存在'} />
             <SettingsRow label="服务器 health" value={diagnostics.serverHealthMessage ?? diagnostics.serverHealth} />
             <SettingsRow label="最近同步时间" value={diagnostics.lastSyncedAt ?? '-'} />
@@ -128,12 +129,20 @@ export default function ProfileSyncRoute() {
             <AppText variant="subtitle" weight="900">
               本地队列
             </AppText>
+            <SettingsRow label="groups" value={`${diagnostics.localCounts.groups}`} />
             <SettingsRow label="待同步数量" value={`${diagnostics.pendingCount}`} />
+            <SettingsRow label="pending queue" value={`${diagnostics.localCounts.localSyncQueuePending}`} />
+            <SettingsRow label="failed queue" value={`${diagnostics.localCounts.localSyncQueueFailed}`} />
             <SettingsRow label="最近失败原因" value={diagnostics.lastSyncError ?? '-'} />
             <SettingsRow label="group_members" value={`${diagnostics.localCounts.groupMembers}`} />
             <SettingsRow label="member_profiles" value={`${diagnostics.localCounts.memberProfiles}`} />
+            <SettingsRow label="training_plans" value={`${diagnostics.localCounts.trainingPlans}`} />
+            <SettingsRow label="plan_days" value={`${diagnostics.localCounts.planDays}`} />
+            <SettingsRow label="plan_exercises" value={`${diagnostics.localCounts.planExercises}`} />
             <SettingsRow label="workout_sessions" value={`${diagnostics.localCounts.workoutSessions}`} />
+            <SettingsRow label="workout_exercise_records" value={`${diagnostics.localCounts.workoutExerciseRecords}`} />
             <SettingsRow label="workout_sets" value={`${diagnostics.localCounts.workoutSets}`} />
+            <SettingsRow label="sync_state" value={`${diagnostics.localCounts.syncState}`} />
           </AppCard>
 
           <AppCard style={styles.card}>

@@ -486,8 +486,8 @@ export async function syncServerDataToLocal(): Promise<void> {
     }
 
     if (!existingGroup) {
-      // 创建小组（归属以服务端为准，防止跨账号拉取时错填归属）
-      const groupOwnerUserId = serverGroup.ownerUserId ?? currentUserId;
+      // 创建小组：归属严格以服务端为准，不兜底为当前登录者（防止跨账号拉取时错填归属）
+      const groupOwnerUserId = serverGroup.ownerUserId ?? null;
       await db.runAsync(
         `INSERT INTO groups (id, name, owner_user_id, active_plan_id, current_phase_type, current_week, friday_enabled, friday_strategy, created_at, updated_at)
          VALUES (?, ?, ?, '', 'strength', 1, 0, 'default_rest', ?, ?)`,
@@ -497,15 +497,23 @@ export async function syncServerDataToLocal(): Promise<void> {
         now,
         now
       );
-    } else {
-      // 更新小组归属以云端为准；只处理当前账号可见的云端小组。
-      const groupOwnerUserId = serverGroup.ownerUserId ?? currentUserId;
+    } else if (existingGroup.owner_user_id === currentUserId || !existingGroup.owner_user_id) {
+      // 仅当本地小组归属当前账号或为空时才更新；属他账号的小组不覆盖归属
+      const groupOwnerUserId = serverGroup.ownerUserId ?? existingGroup.owner_user_id;
       await db.runAsync(
         `UPDATE groups
          SET name = ?, owner_user_id = ?, updated_at = ?
          WHERE id = ?`,
         serverGroup.name,
         groupOwnerUserId,
+        now,
+        serverGroup.id,
+      );
+    } else {
+      // 本地小组属他账号，仅更新名称，不动归属
+      await db.runAsync(
+        `UPDATE groups SET name = ?, updated_at = ? WHERE id = ?`,
+        serverGroup.name,
         now,
         serverGroup.id,
       );
