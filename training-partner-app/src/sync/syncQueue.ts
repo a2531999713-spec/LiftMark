@@ -195,7 +195,20 @@ export async function enqueueSyncCandidate(entity: SyncEntity): Promise<void> {
   const db = await initializeLocalDatabase();
   const now = new Date().toISOString();
   const status = normalizeQueueStatus(entity);
-  const ownerUserId = await resolveEntityOwnerUserId(db, entity);
+  const resolvedOwner = await resolveEntityOwnerUserId(db, entity);
+  const currentUserId = await getCurrentAccountUserId();
+  // 跨账号保护：解析出的 owner 若属于他账号，说明本地数据被污染，不入队推送，避免用当前 token 上传他账号数据
+  if (resolvedOwner && currentUserId && resolvedOwner !== currentUserId) {
+    console.warn(
+      '[syncQueue] CROSS-ACCOUNT SKIP enqueue',
+      entity.entityType,
+      'local_id=', entity.localId,
+      'resolved_owner=', resolvedOwner,
+      'current_user=', currentUserId,
+    );
+    return;
+  }
+  const ownerUserId = resolvedOwner ?? currentUserId;
   const ownerFilter = ownerFilterSql(ownerUserId);
   const existing = await db.getFirstAsync<{ id: string }>(
     `SELECT id FROM local_sync_queue

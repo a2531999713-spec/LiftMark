@@ -167,13 +167,35 @@ async function upsertWithRemoteId(db: LocalDatabase, input: RemoteIdUpsertInput)
       localId,
     ));
 
+  // 跨账号归属保护：本地已存在该行但属于其他账号时，绝不覆盖 owner_user_id。
+  // 这是「188 登录后把 176 本地数据认领为 188」的根因，必须跳过。
+  const ownershipMismatch = existing && existing.owner_user_id !== currentUserId;
+  if (ownershipMismatch) {
+    console.warn(
+      '[sync/pull] CROSS-ACCOUNT SKIP',
+      table,
+      'local_id=', localId,
+      'remote_id=', remoteId,
+      'local_owner=', existing!.owner_user_id,
+      'current_user=', currentUserId,
+    );
+    // 仅补 remote_id（若本地为空），不改归属、不改业务字段
+    if (existing && !existing.remote_id) {
+      await db.runAsync(
+        `UPDATE ${table} SET remote_id = ? WHERE id = ?`,
+        remoteId,
+        existing.id,
+      );
+    }
+    return false;
+  }
+
   if (serverDeletedAt) {
     if (existing) {
       await db.runAsync(
         `UPDATE ${table}
-         SET owner_user_id = ?, remote_id = ?, deleted_at = ?, sync_status = 'synced', last_synced_at = ?
+         SET remote_id = ?, deleted_at = ?, sync_status = 'synced', last_synced_at = ?
          WHERE id = ?`,
-        currentUserId,
         remoteId,
         serverDeletedAt,
         serverUpdatedAt,
@@ -199,8 +221,8 @@ async function upsertWithRemoteId(db: LocalDatabase, input: RemoteIdUpsertInput)
     return true;
   }
 
-  const ownershipMismatch = existing.owner_user_id !== currentUserId;
-  const hasLocalChanges = !ownershipMismatch && existing.sync_status !== 'synced';
+  // 到这里 existing.owner_user_id === currentUserId（同账号），可安全覆盖
+  const hasLocalChanges = existing.sync_status !== 'synced';
   if (hasLocalChanges && existing.updated_at) {
     const localTs = new Date(existing.updated_at).getTime();
     const serverTs = new Date(serverUpdatedAt).getTime();
@@ -214,8 +236,8 @@ async function upsertWithRemoteId(db: LocalDatabase, input: RemoteIdUpsertInput)
     }
   }
 
-  const setColumns = [...input.updateColumns, 'owner_user_id', 'sync_status', 'last_synced_at', 'remote_id'];
-  const setValues: DbValue[] = [...input.updateValues, currentUserId, 'synced', serverUpdatedAt, remoteId];
+  const setColumns = [...input.updateColumns, 'sync_status', 'last_synced_at', 'remote_id'];
+  const setValues: DbValue[] = [...input.updateValues, 'synced', serverUpdatedAt, remoteId];
   const assignments = setColumns.map((column) => `${column} = ?`).join(', ');
   await db.runAsync(`UPDATE ${table} SET ${assignments} WHERE id = ?`, ...setValues, existing.id);
   return true;
