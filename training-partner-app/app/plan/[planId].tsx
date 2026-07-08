@@ -64,7 +64,6 @@ export default function PlanDetailRoute() {
   const [isActionsVisible, setActionsVisible] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isDuplicating, setIsDuplicating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isSystemPlan = detail?.plan.source === 'system' || detail?.plan.visibility === 'system';
@@ -72,7 +71,6 @@ export default function PlanDetailRoute() {
   // 复制系统计划为用户副本，然后跳转到副本的编辑页
   const duplicateAndEdit = useCallback(async () => {
     if (!detail) return;
-    setIsDuplicating(true);
     try {
       const copy = await repositories.planRepository.duplicatePlan({
         sourcePlanId: detail.plan.id,
@@ -82,8 +80,6 @@ export default function PlanDetailRoute() {
       router.replace({ pathname: '/plan/edit/[planId]', params: { planId: copy.id } } as never);
     } catch (dupError) {
       Alert.alert('复制失败', dupError instanceof Error ? dupError.message : '计划复制失败，请重试。');
-    } finally {
-      setIsDuplicating(false);
     }
   }, [detail, repositories]);
 

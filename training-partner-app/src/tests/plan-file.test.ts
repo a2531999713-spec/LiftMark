@@ -105,13 +105,17 @@ describe('LiftMark plan file service', () => {
     ).toThrow('不支持的计划文件版本');
   });
 
-  it('creates new local ids for imported plans', () => {
+  it('keeps the plan id for history rebinding and creates new child ids for imported plans', () => {
     const draft = createImportedPlanDraft(createPlanFile());
 
-    expect(draft.plan.template.id).not.toBe(template.id);
+    expect(draft.plan.template.id).toBe(template.id);
     expect(draft.plan.template.source).toBe('imported');
     expect(draft.plan.template.visibility).toBe('private');
     expect(draft.plan.template.originSchemeId).toBeUndefined();
+    expect(draft.plan.phases[0].id).not.toBe(phase.id);
+    expect(draft.plan.days[0].id).not.toBe(day.id);
+    expect(draft.plan.exercises[0].id).not.toBe(planExercise.id);
+    expect(draft.exercises[0].id).not.toBe(exercise.id);
     expect(draft.plan.phases[0].planId).toBe(draft.plan.template.id);
     expect(draft.plan.days[0].phaseId).toBe(draft.plan.phases[0].id);
     expect(draft.plan.exercises[0].planDayId).toBe(draft.plan.days[0].id);
