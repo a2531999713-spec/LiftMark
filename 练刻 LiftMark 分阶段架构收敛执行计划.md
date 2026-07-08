@@ -137,8 +137,11 @@ docs/
   99-archive/
 ```
 
-- 将 `LiftMark-完整架构设计方案.md` 移动到 `docs/03-architecture/`（根目录可保留入口说明或 README 指向）
-- 根目录散落的历史文档（如 `RELEASE.md`、`RELEASE_NOTES.md`、`DEPLOYMENT_BEST_PRACTICES.md`、`liftmark_sync_architecture.svg`、`test_upload.*`、`liftmark_ab_8week_hypertrophy_plan_v4_fixed.json` 等）按语义归档到 `docs/99-archive/` 或对应分类
+- 第一阶段只创建 `docs/` 目录骨架
+- 只移动 `LiftMark-完整架构设计方案.md` 到 `docs/03-architecture/`
+- 根目录 `README.md` 指向新架构文档位置
+- 其他历史文档、图片、zip、参考样式图、测试文件（如 `RELEASE.md`、`RELEASE_NOTES.md`、`DEPLOYMENT_BEST_PRACTICES.md`、`liftmark_sync_architecture.svg`、`test_upload.*`、`liftmark_ab_8week_hypertrophy_plan_v4_fixed.json` 等）暂时不移动，只生成整理清单，列出建议归档目标位置
+- 完整归档放到第十一阶段"文档体系整理"
 - 不删除任何有用文档
 - 不移动 `.pem`、`.env`、密钥到 Git 可提交区域；发现密钥只更新 `.gitignore` 和文档提醒
 
@@ -178,9 +181,10 @@ docs/
 
 - `apps/liftmark-api/src/config/env.ts` 新增 `corsAllowedOrigins` 读取 `CORS_ALLOWED_ORIGINS`
 - `apps/liftmark-api/src/app.ts` CORS 由 `origin: true` 改为按环境读取白名单
-  - dev 环境兜底允许 localhost
-  - prod 环境严格白名单
-  - `CORS_ALLOWED_ORIGINS` 未设置时回退到当前 `origin: true`，避免直接断线
+  - development 环境可以允许 localhost、局域网调试地址
+  - production 环境必须读取 `CORS_ALLOWED_ORIGINS`
+  - production 环境如果未配置 `CORS_ALLOWED_ORIGINS`，服务端必须启动失败
+  - production 环境绝不允许回退到 `origin: true`
 - `apps/liftmark-api/.env.example` 补 `CORS_ALLOWED_ORIGINS` 说明
 - `management-console/lib/api.ts` 的 `API_BASE` 从硬编码 HTTP IP 改为读 env，并在 `.env.example` 补说明
 - 完整限流（`@fastify/rate-limit`）放第三阶段，本阶段只做配置骨架
@@ -223,7 +227,7 @@ CORS 骨架：
 - 不做大规模训练页重构（放第十阶段）
 - 不一次性删除本地游客成员逻辑（放第五阶段）
 - 不做 AI 模型服务（放第九阶段）
-- 不大规模移动图片、zip、参考图、历史文件（仅文档归档）
+- 不大规模移动图片、zip、参考图、历史文件（仅创建 docs 骨架 + 移动架构文档，其余只生成整理清单）
 - 不使用 git add .（只 add 明确文件）
 - 不提交 .pem / .env / 服务器密钥 / 阿里云密钥
 - 不把项目写成 Android-only
@@ -243,7 +247,7 @@ CORS 骨架：
 
 4. **`management-console/` 补 `typecheck` 脚本**：Next.js 项目 typecheck 用 `tsc --noEmit`，需确认 `tsconfig.json` 配置正确，否则可能暴露大量既有类型错误。若 typecheck 报错较多，评估是否本阶段修或顺延。
 
-5. **CORS 白名单化可能阻断现有客户端**：若生产环境移动端 API 地址与白名单不一致会直接 403。第一阶段 `CORS_ALLOWED_ORIGINS` 未设置时回退到 `origin: true` 兜底，避免直接断线。
+5. **CORS 白名单化可能阻断现有客户端**：production 环境强制读取 `CORS_ALLOWED_ORIGINS`，未配置则服务端启动失败。部署前必须确认 `CORS_ALLOWED_ORIGINS` 与生产环境移动端 API 地址一致，否则服务端无法启动或客户端 403。第一阶段通过 `.env.example` 和部署文档明确标注此要求。
 
 6. **未在第一阶段处理但需提醒的高危项**（本阶段不改，按"不一次性改完"执行）：
    - 后台 localStorage 信任问题（🔴，第三阶段修，在此之前后台安全性依赖网络层）
@@ -287,11 +291,13 @@ npm run build
 - [ ] `backend/` 已 `git mv` 为 `management-console/`，旧路径引用全部清理
 - [ ] `docs/` 17 个子目录骨架已建立
 - [ ] `LiftMark-完整架构设计方案.md` 已移入 `docs/03-architecture/`
+- [ ] README 已指向新架构文档位置
+- [ ] 历史文档整理清单已生成（实际归档放到第十一阶段）
 - [ ] README / PRODUCT / 部署脚本已更新，无 "Android-first"
 - [ ] `/auth/register` 不再允许纯密码绕过验证码
 - [ ] `/sync/push` 已用 `db.transaction` 包裹整批
 - [ ] 移动端同步失败标记逻辑已核查并标注限制
-- [ ] CORS 配置骨架已建立，`.env.example` 已补说明
+- [ ] CORS 配置骨架已建立，production 未配置 `CORS_ALLOWED_ORIGINS` 时服务端启动失败，`.env.example` 已补说明
 - [ ] 三端 `typecheck` / `build` / `test` 通过
 - [ ] 无密钥进入 Git
 - [ ] CHANGELOG 已更新本阶段变更
@@ -360,7 +366,7 @@ training-partner-app/src/store/authStore.ts                      # 登录态保�
 
 ### 5.2 修改范围
 
-- CORS 严格白名单（移除第一阶段兜底）
+- CORS 严格白名单核查（第一阶段已在 production 强制读取 `CORS_ALLOWED_ORIGINS`，本阶段复核 dev/prod 分级并补测试用例）
 - 注册 `@fastify/rate-limit`，对以下接口限流：
   - `/auth/send-code`、`/auth/login-with-code`、`/auth/password-login`、`/auth/refresh`
   - `/auth/change-phone`、`/auth/change-email`
