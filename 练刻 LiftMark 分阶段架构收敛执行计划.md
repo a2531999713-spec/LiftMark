@@ -201,7 +201,7 @@ docs/
 文档目录：
   docs/                                      # 新建 17 个子目录
   docs/03-architecture/                      # 移入架构设计方案
-  docs/99-archive/                           # 归档历史文档
+  docs/99-archive/                           # 仅创建目录，历史文档第一阶段不实际归档，完整归档放第十一阶段
   README.md                                  # 三端结构 + 路径修正
   PRODUCT.md                                 # 去 Android-first
 
