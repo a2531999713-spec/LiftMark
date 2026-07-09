@@ -1,6 +1,13 @@
 ﻿# Training Record 模块实现文档
 
-更新时间：2026-07-07
+更新时间：2026-07-09
+
+## 2026-07-09 补充：补录自由训练归属
+
+- 补录页选择“不关联计划”时，`app/history/manual.tsx` 传入 `free_training`，不再默认绑定当前小组 `activePlanId`。
+- `WorkoutRepository.createManualSessionV2()` 对 `free_training` 不创建 `plan_cycles`，但仍写入当前账号、当前小组、参与成员、训练动作、组数据和训练报告。
+- 选择具体用户计划时，Repository 会校验该计划对当前账号可见，防止旧草稿或页面参数把其它账号计划绑定到补录 session。
+- 历史页继续按当前账号可见小组读取 session；自由训练在历史中作为普通训练记录展示，不依赖 active plan 存在。
 
 ## 2026-07-07 补充：当前小组作用域与补录空草稿
 

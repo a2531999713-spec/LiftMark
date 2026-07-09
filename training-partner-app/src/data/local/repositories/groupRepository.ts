@@ -6,7 +6,7 @@ import type { GroupRepository } from '@/data/repositories/groupRepository';
 import type { DatabaseProvider } from './base';
 import { requireRow } from './base';
 import { type GroupRow, mapGroup } from './mappers';
-import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite } from '../accountScope';
+import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite, getRequiredCurrentUserId } from '../accountScope';
 
 export class SQLiteGroupRepository implements GroupRepository {
   constructor(private readonly getDb: DatabaseProvider) {}
@@ -57,7 +57,7 @@ export class SQLiteGroupRepository implements GroupRepository {
 
   async createGroup(input: CreateGroupInput): Promise<Group> {
     const db = await this.getDb();
-    const userId = await getCurrentAccountUserId();
+    const userId = await getRequiredCurrentUserId();
     const ownerUserId = getOwnerUserIdForWrite(userId, input.ownerUserId);
     const now = nowIso();
     const group: Group = {

@@ -2,6 +2,7 @@ import { createId } from '@/domain/common/ids';
 import { nowIso } from '@/domain/common/time';
 import type { WorkoutRepository } from '@/data/repositories/workoutRepository';
 import { calculateSuggestedWeight } from '@/domain/weight/weight-calculator';
+import { FREE_TRAINING_PLAN_ID } from '@/domain/workout/workout.types';
 import { getPlanExerciseInitialReps, getPlanExerciseSetCount } from '@/domain/workout/workout.service';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import type { SyncEntityType } from '@/sync/syncTypes';
@@ -26,7 +27,7 @@ import type {
 import { validateWorkoutSetInput } from '@/domain/workout/workout.validation';
 
 import { requireRow, type DatabaseProvider } from './base';
-import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite } from '../accountScope';
+import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite, getPlanAccountScope } from '../accountScope';
 import {
   mapExercise,
   mapGroupMember,
@@ -48,6 +49,14 @@ import {
 
 const SOURCE_DEVICE_ID = 'liftmark-mobile';
 const DEFAULT_BODYWEIGHT_KG = 65;
+
+function isFreeTrainingPlan(planId?: string | null): boolean {
+  return !planId || planId === FREE_TRAINING_PLAN_ID;
+}
+
+function normalizeLinkedPlanId(planId?: string | null): string {
+  return planId?.trim() || FREE_TRAINING_PLAN_ID;
+}
 
 function getSessionDurationSeconds(session: WorkoutSession): number {
   const start = session.startedAt ? new Date(session.startedAt).getTime() : Number.NaN;
@@ -108,6 +117,26 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       throw new Error(`Group not visible for current account: ${groupId}`);
     }
     return getOwnerUserIdForWrite(userId, row.owner_user_id);
+  }
+
+  private async assertPlanVisibleForCurrentAccount(planId: string): Promise<void> {
+    if (isFreeTrainingPlan(planId)) return;
+
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getPlanAccountScope(userId, 'plan_templates');
+    const row = await db.getFirstAsync<{ id: string }>(
+      `SELECT id FROM plan_templates
+       WHERE id = ?
+         AND ${scope.where}
+       LIMIT 1`,
+      planId,
+      ...scope.params,
+    );
+
+    if (!row) {
+      throw new Error(`Plan not visible for current account: ${planId}`);
+    }
   }
 
   private async ensureActivePlanCycle(input: {
@@ -788,13 +817,18 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const now = nowIso();
     const weekday = (new Date(`${input.date}T12:00:00`).getDay() || 7) as WorkoutSession['weekday'];
     const participantIds = [...new Set(input.participantMemberIds)];
-    const linkedPlanId = input.sourcePlanId ?? input.planId;
-    const planCycleId = input.planCycleId ?? await this.ensureActivePlanCycle({
-      groupId: input.groupId,
-      ownerUserId,
-      planId: linkedPlanId,
-      startDate: input.date,
-    });
+    const linkedPlanId = input.sourcePlanId === null
+      ? FREE_TRAINING_PLAN_ID
+      : normalizeLinkedPlanId(input.sourcePlanId ?? input.planId);
+    await this.assertPlanVisibleForCurrentAccount(linkedPlanId);
+    const planCycleId = isFreeTrainingPlan(linkedPlanId)
+      ? undefined
+      : input.planCycleId ?? await this.ensureActivePlanCycle({
+          groupId: input.groupId,
+          ownerUserId,
+          planId: linkedPlanId,
+          startDate: input.date,
+        });
 
     if (participantIds.length === 0) {
       throw new Error('请至少选择一位参与成员。');
@@ -949,16 +983,20 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const now = nowIso();
     const weekday = (new Date(`${input.date}T12:00:00`).getDay() || 7) as WorkoutSession['weekday'];
     const manualExercises = this.normalizeManualExercises(input);
-    const planCycleId = input.planCycleId ?? await this.ensureActivePlanCycle({
-      groupId: input.groupId,
-      ownerUserId,
-      planId: input.planId,
-      startDate: input.date,
-    });
+    const linkedPlanId = normalizeLinkedPlanId(input.planId);
+    await this.assertPlanVisibleForCurrentAccount(linkedPlanId);
+    const planCycleId = isFreeTrainingPlan(linkedPlanId)
+      ? undefined
+      : input.planCycleId ?? await this.ensureActivePlanCycle({
+          groupId: input.groupId,
+          ownerUserId,
+          planId: linkedPlanId,
+          startDate: input.date,
+        });
     const session: WorkoutSession = {
       id: createId('session'),
       groupId: input.groupId,
-      planId: input.planId,
+      planId: linkedPlanId,
       planCycleId,
       date: input.date,
       week: 1,

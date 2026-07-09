@@ -7,6 +7,13 @@ jest.mock('@/domain/common/ids', () => ({
   createId: (prefix?: string) => `${prefix ?? 'id'}_test`,
 }));
 
+jest.mock('@/data/local/accountScope', () => ({
+  getCurrentAccountUserId: jest.fn(async () => 'usr_test'),
+  getGroupAccountScope: jest.fn(() => ({ params: [], where: '1 = 1' })),
+  getPlanAccountScope: jest.fn(() => ({ params: [], where: '1 = 1' })),
+  getRequiredCurrentUserId: jest.fn(async () => 'usr_test'),
+}));
+
 function createPlan(patch: Partial<PlanTemplate> = {}): PlanTemplate {
   return {
     id: 'plan_user_1',

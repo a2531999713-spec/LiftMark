@@ -1,6 +1,7 @@
 import { describe, expect, it, jest } from '@jest/globals';
 
 import { SQLiteWorkoutRepository } from '@/data/local/repositories/workoutRepository';
+import { FREE_TRAINING_PLAN_ID } from '@/domain/workout/workout.types';
 
 jest.mock('@/domain/common/ids', () => ({
   createId: (prefix?: string) => `${prefix ?? 'id'}_test`,
@@ -110,7 +111,11 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
       }),
     };
     const db = {
-      getFirstAsync: jest.fn(async (sql: string) => (sql.includes('FROM groups') ? visibleGroupRow : null)),
+      getFirstAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM groups')) return visibleGroupRow;
+        if (sql.includes('FROM plan_templates')) return { id: 'plan_current' };
+        return null;
+      }),
       withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
         await callback(transaction);
       }),
@@ -290,7 +295,11 @@ describe('SQLiteWorkoutRepository.createManualSession', () => {
       }),
     };
     const db = {
-      getFirstAsync: jest.fn(async (sql: string) => (sql.includes('FROM groups') ? visibleGroupRow : null)),
+      getFirstAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM groups')) return visibleGroupRow;
+        if (sql.includes('FROM plan_templates')) return { id: 'plan_current' };
+        return null;
+      }),
       withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
         await callback(transaction);
       }),
@@ -331,6 +340,56 @@ describe('SQLiteWorkoutRepository.createManualSession', () => {
       [105, 4],
       [80, 8],
     ]);
+  });
+
+  it('keeps free manual training detached from active plans and cycles', async () => {
+    const insertedSessionParams: unknown[][] = [];
+    const transaction = {
+      getAllAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM group_members')) {
+          return [{ id: 'member_1' }];
+        }
+        return [];
+      }),
+      runAsync: jest.fn(async (sql: string, ...params: unknown[]) => {
+        if (sql.includes('INSERT INTO workout_sessions')) {
+          insertedSessionParams.push(params);
+        }
+      }),
+    };
+    const db = {
+      getFirstAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM groups')) return visibleGroupRow;
+        if (sql.includes('FROM plan_templates')) return { id: 'plan_current' };
+        return null;
+      }),
+      withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
+        await callback(transaction);
+      }),
+    };
+
+    const session = await new SQLiteWorkoutRepository(async () => db as never).createManualSessionV2({
+      completed: false,
+      date: '2026-06-30',
+      exercises: [
+        {
+          exerciseId: 'exercise_bench',
+          memberSets: [{ memberId: 'member_1', sets: [{ reps: 8, weight: 60 }] }],
+        },
+      ],
+      groupId: 'group_1',
+      participantMemberIds: ['member_1'],
+      planId: FREE_TRAINING_PLAN_ID,
+      sourcePlanId: null,
+      title: 'free training',
+      trainingMode: 'solo_local',
+    });
+
+    expect(session.planId).toBe(FREE_TRAINING_PLAN_ID);
+    expect(session.planCycleId).toBeUndefined();
+    expect(insertedSessionParams[0][3]).toBe(FREE_TRAINING_PLAN_ID);
+    expect(insertedSessionParams[0][4]).toBeNull();
+    expect(db.getFirstAsync).not.toHaveBeenCalledWith(expect.stringContaining('FROM plan_cycles'), expect.anything());
   });
 });
 

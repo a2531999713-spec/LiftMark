@@ -26,6 +26,7 @@ import { resolveSelectedGroup } from '@/domain/group/selected-group';
 import { resolveDefaultTrainingMemberId } from '@/domain/member/member-selection';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
+import { FREE_TRAINING_PLAN_ID } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { useManualWorkoutDraftStore } from '@/store/manualWorkoutDraftStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
@@ -193,8 +194,8 @@ export default function ManualHistoryRoute() {
         exercises: toManualSessionV2Exercises(draft.exercises, draft.participantMemberIds),
         groupId: group.id,
         participantMemberIds: draft.participantMemberIds,
-        planId: group.activePlanId,
-        sourcePlanId: draft.linkedPlanId ?? group.activePlanId,
+        planId: draft.linkedPlanId ?? FREE_TRAINING_PLAN_ID,
+        sourcePlanId: draft.linkedPlanId ?? null,
         title: draft.title,
         trainingMode: draft.trainingMode,
         completed: true,

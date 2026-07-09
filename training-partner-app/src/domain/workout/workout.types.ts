@@ -4,6 +4,8 @@ import type { ExercisePriority, Weekday } from '../plan/plan.types';
 export type SessionStatus = 'draft' | 'in_progress' | 'completed' | 'cancelled';
 export type WorkoutTrainingMode = 'solo_local' | 'group_local';
 
+export const FREE_TRAINING_PLAN_ID = 'free_training';
+
 export type WorkoutSession = {
   id: ID;
   groupId: ID;
@@ -89,8 +91,8 @@ export type CreateSessionFromTodayPlanInput = {
 
 export type CreateManualSessionInput = {
   groupId: ID;
-  planId: ID;
-  planCycleId?: ID;
+  planId?: ID | null;
+  planCycleId?: ID | null;
   date: string;
   title: string;
   memberId: ID;
@@ -146,7 +148,7 @@ export type CreateManualSessionV2Input = {
   groupId: ID;
   notes?: string | null;
   participantMemberIds: ID[];
-  planId: ID;
+  planId?: ID | null;
   planCycleId?: ID | null;
   sourcePlanId?: ID | null;
   title: string;

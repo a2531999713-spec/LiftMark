@@ -23,7 +23,7 @@ import type {
 import { filterExercisesByRecovery } from '@/domain/plan/plan.service';
 
 import { requireRow, type DatabaseProvider } from './base';
-import { getCurrentAccountUserId, getGroupAccountScope, getPlanAccountScope } from '../accountScope';
+import { getCurrentAccountUserId, getGroupAccountScope, getPlanAccountScope, getRequiredCurrentUserId } from '../accountScope';
 import {
   mapPlanDay,
   mapPlanExercise,
@@ -89,6 +89,7 @@ export class SQLitePlanRepository implements PlanRepository {
   async listUserPlans(): Promise<PlanTemplate[]> {
     const db = await this.getDb();
     const userId = await getCurrentAccountUserId();
+    if (!userId) return [];
     const scope = getPlanAccountScope(userId, 'plan_templates');
     const rows = await db.getAllAsync<PlanTemplateRow>(
       `SELECT * FROM plan_templates
@@ -346,7 +347,7 @@ export class SQLitePlanRepository implements PlanRepository {
 
   async createUserPlan(input: CreateUserPlanInput): Promise<PlanTemplate> {
     const db = await this.getDb();
-    const ownerUserId = await getCurrentAccountUserId();
+    const ownerUserId = await getRequiredCurrentUserId();
     const now = nowIso();
     const plan: PlanTemplate = {
       id: createId('plan'),
@@ -462,7 +463,7 @@ export class SQLitePlanRepository implements PlanRepository {
     }
 
     const db = await this.getDb();
-    const ownerUserId = current.creatorId ?? await getCurrentAccountUserId();
+    const ownerUserId = current.creatorId ?? await getRequiredCurrentUserId();
     const now = nowIso();
     const updated: PlanTemplate = {
       ...current,
@@ -590,7 +591,7 @@ export class SQLitePlanRepository implements PlanRepository {
       name: input.name,
       originSchemeId: input.scheme.id,
     });
-    const ownerUserId = await getCurrentAccountUserId();
+    const ownerUserId = await getRequiredCurrentUserId();
     const template = {
       ...draft.template,
       creatorId: ownerUserId ?? draft.template.creatorId,
@@ -707,7 +708,7 @@ export class SQLitePlanRepository implements PlanRepository {
       name: input.name ?? `${sourceTemplate.name}（我的）`,
       originSchemeId: sourceTemplate.originSchemeId ?? sourceTemplate.id,
     });
-    const ownerUserId = await getCurrentAccountUserId();
+    const ownerUserId = await getRequiredCurrentUserId();
     const template = {
       ...draft.template,
       creatorId: ownerUserId ?? draft.template.creatorId,
@@ -811,7 +812,7 @@ export class SQLitePlanRepository implements PlanRepository {
     }
 
     const db = await this.getDb();
-    const ownerUserId = await getCurrentAccountUserId();
+    const ownerUserId = await getRequiredCurrentUserId();
     const exerciseIdByImportedId = new Map<string, string>();
     let finalPlanId = input.template.id;
 
@@ -1054,7 +1055,7 @@ export class SQLitePlanRepository implements PlanRepository {
     }
 
     const db = await this.getDb();
-    const userId = await getCurrentAccountUserId();
+    const userId = await getRequiredCurrentUserId();
     const groupScope = getGroupAccountScope(userId, 'groups');
     const activeGroup = await db.getFirstAsync<{ id: string }>(
       `SELECT id FROM groups
@@ -1102,6 +1103,9 @@ export class SQLitePlanRepository implements PlanRepository {
       await this.getPlanById(input.planId),
       `未找到计划：${input.planId}`,
     );
+    if (plan.source !== 'system' && plan.visibility !== 'system' && plan.status && plan.status !== 'active') {
+      throw new Error(`Training plan is not active: ${input.planId}`);
+    }
     const phases = await this.listPlanPhases(input.planId);
     const phase = phases.find(
       (item) =>

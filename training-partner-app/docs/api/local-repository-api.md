@@ -1,6 +1,14 @@
 ﻿# 本地 Repository API 文档
 
-更新时间：2026-07-03
+更新时间：2026-07-09
+
+## 2026-07-09 契约补充：账号作用域和自由训练
+
+- `accountScope` 新增 `getRequiredCurrentUserId()`、`getCurrentAccountScope()`、`getCurrentGroupScope()`、`assertOwnerUser()` 和 `assertGroupBelongsToUser()` 等作用域能力。无当前账号时，业务小组查询不再回落读取 `owner_user_id IS NULL` 的旧数据。
+- 写入型 Repository 必须绑定当前账号；创建小组、创建/复制/导入/删除用户计划等路径无账号时直接失败，不写入匿名业务数据。
+- `CreateManualSessionInput.planId` 和 `CreateManualSessionV2Input.planId` 可为空。补录或自由训练不关联计划时，Repository 使用保留标识 `free_training` 写入 `workout_sessions.plan_id`，且不创建 `plan_cycles`。
+- 非 `free_training` 的补录计划 ID 必须对当前账号可见；Repository 会拒绝其它账号或不可见计划。
+- `getTodayPlan()` 只允许非系统用户计划在 `active` 状态下作为今日训练来源，`completed`、`archived`、`abandoned` 等状态不能进入今日训练主链路。
 
 ## 2026-07-03 契约补充：成员身份字段
 

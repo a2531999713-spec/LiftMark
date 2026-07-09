@@ -303,6 +303,7 @@ export async function enqueueSyncCandidate(entity: SyncEntity): Promise<void> {
 export async function countPendingSyncItems(): Promise<number> {
   const db = await initializeLocalDatabase();
   const currentUserId = await getCurrentAccountUserId();
+  if (!currentUserId) return 0;
   const ownerFilter = ownerFilterSql(currentUserId);
   const row = await db.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) AS count FROM local_sync_queue
@@ -316,6 +317,7 @@ export async function countPendingSyncItems(): Promise<number> {
 export async function listPendingSyncItems(options: { includeAllAccounts?: boolean } = {}): Promise<SyncQueueItem[]> {
   const db = await initializeLocalDatabase();
   const currentUserId = await getCurrentAccountUserId();
+  if (!currentUserId && !options.includeAllAccounts) return [];
   const ownerFilter = options.includeAllAccounts ? null : ownerFilterSql(currentUserId);
   const rows = await db.getAllAsync<SyncQueueRow>(
     `SELECT * FROM local_sync_queue
