@@ -58,6 +58,7 @@ import {
 } from '@/services/avatar';
 import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { updateDisplayNameAcrossLocalProfiles } from '@/services/profileSyncService';
+import { ensureTrainingGroupMainline } from '@/services/trainingMainlineService';
 import {
   fetchCurrentAnnouncement,
   shouldShowAnnouncement,
@@ -544,6 +545,12 @@ async function loadOrDefault<T>(label: string, task: Promise<T>, fallback: T): P
   }
 }
 
+function isTrainablePlan(plan: PlanTemplate | null): plan is PlanTemplate {
+  if (!plan) return false;
+  if (plan.source === 'system' || plan.visibility === 'system') return true;
+  return !plan.status || plan.status === 'active';
+}
+
 function compactDetails(details: (WorkoutSessionDetail | null)[]): WorkoutSessionDetail[] {
   return details.filter((detail): detail is WorkoutSessionDetail => Boolean(detail));
 }
@@ -649,6 +656,7 @@ export default function TodayRoute() {
   const [pendingWorkoutStart, setPendingWorkoutStart] =
     useState<CreateSessionFromTodayPlanInput | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -705,10 +713,11 @@ export default function TodayRoute() {
         console.error('[home] member avatar sync failed', avatarError);
       });
 
-      const [nextActivePlan, nextMembers] = await Promise.all([
+      const [loadedActivePlan, nextMembers] = await Promise.all([
         loadOrDefault('active plan load', repositories.planRepository.getPlanById(nextGroup.activePlanId), null),
         loadOrDefault('member list load', repositories.memberRepository.listMembers(nextGroup.id), []),
       ]);
+      const nextActivePlan = isTrainablePlan(loadedActivePlan) ? loadedActivePlan : null;
       const nextProfiles = await Promise.all(
         nextMembers.map(async (member) => [
           member.id,
@@ -904,6 +913,31 @@ export default function TodayRoute() {
       void loadAnnouncement();
     }, [loadAnnouncement]),
   );
+
+  const createInitialTrainingGroup = useCallback(async () => {
+    if (!guardFeature('create_group')) {
+      return;
+    }
+
+    setIsCreatingGroup(true);
+    try {
+      const { group: createdGroup } = await ensureTrainingGroupMainline(repositories, {
+        displayName: user?.displayName,
+        groupName: '我的训练小组',
+        selectedGroupId,
+        userId: user?.id,
+      });
+      setSelectedGroupId(createdGroup.id);
+      await loadHome();
+    } catch (createError) {
+      setNotice({
+        title: '创建小组失败',
+        message: createError instanceof Error ? createError.message : '请稍后重试。',
+      });
+    } finally {
+      setIsCreatingGroup(false);
+    }
+  }, [guardFeature, loadHome, repositories, selectedGroupId, setSelectedGroupId, user]);
 
   const resolveSelectedWorkoutPlan = useCallback(async (): Promise<TodayPlanResult | null> => {
     if (!group || !activePlan) {
@@ -1465,11 +1499,11 @@ export default function TodayRoute() {
 
           {!error && groups.length === 0 ? (
             <HomeEmptyState
-              actionLabel="创建小组"
+              actionLabel={isCreatingGroup ? '正在创建...' : '创建小组'}
               description="先建立一个训练小组，再添加计划和成员。"
               icon="people-outline"
               onActionPress={() => {
-                if (guardFeature('create_group')) router.push('/profile/groups' as never);
+                if (!isCreatingGroup) void createInitialTrainingGroup();
               }}
               title="暂无训练小组"
             />

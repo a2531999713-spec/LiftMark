@@ -62,6 +62,36 @@ async function resolveEntityOwnerUserId(
   if (payloadOwner) return payloadOwner;
 
   switch (entity.entityType) {
+    case 'groups': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT owner_user_id
+         FROM groups
+         WHERE id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'groupMembers': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(gm.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM group_members gm
+         LEFT JOIN groups ON groups.id = gm.group_id
+         WHERE gm.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'memberProfiles': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(mp.owner_user_id, gm.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM member_profiles mp
+         LEFT JOIN group_members gm ON gm.id = mp.member_id
+         LEFT JOIN groups ON groups.id = mp.group_id
+         WHERE mp.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
     case 'workoutSessions': {
       const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
         `SELECT COALESCE(ws.owner_user_id, groups.owner_user_id) AS owner_user_id

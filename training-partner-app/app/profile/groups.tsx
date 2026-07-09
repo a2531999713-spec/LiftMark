@@ -10,6 +10,8 @@ import type { GroupMember, GroupMemberRole } from '@/domain/member/member.types'
 import type { PlanTemplate } from '@/domain/plan/plan.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { syncGroupsToServer } from '@/services/profileSyncService';
+import { createTrainingGroupMainline } from '@/services/trainingMainlineService';
+import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, spacing } from '@/theme';
 
@@ -28,6 +30,8 @@ function roleLabel(role: GroupMemberRole) {
 export default function ProfileGroupsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const currentUserId = useAuthStore((state) => state.user?.id);
+  const currentUserDisplayName = useAuthStore((state) => state.user?.displayName);
   const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
   const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [group, setGroup] = useState<Group | null>(null);
@@ -49,7 +53,13 @@ export default function ProfileGroupsRoute() {
       const fallbackGroup = nextGroups[0] ?? null;
       const nextGroup =
         nextGroups.find((item) => item.id === (preferredGroupId ?? selectedGroupId)) ?? fallbackGroup;
-      if (!nextGroup) throw new Error('默认小组尚未初始化。');
+      if (!nextGroup) {
+        setGroup(null);
+        setGroups([]);
+        setMembers([]);
+        setPlan(null);
+        return;
+      }
       const [nextMembers, nextPlan] = await Promise.all([
         repositories.memberRepository.listMembers(nextGroup.id),
         repositories.planRepository.getPlanById(nextGroup.activePlanId),
@@ -75,7 +85,6 @@ export default function ProfileGroupsRoute() {
   );
 
   const createGroup = async () => {
-    if (!group) return;
     const name = newGroupName.trim();
     if (!name) {
       setNotice({ title: '小组名称不能为空', message: '请输入 2-12 个字的小组名称。' });
@@ -83,13 +92,11 @@ export default function ProfileGroupsRoute() {
     }
 
     try {
-      const created = await repositories.groupRepository.createGroup({
-        activePlanId: group.activePlanId,
-        currentPhaseType: group.currentPhaseType,
-        currentWeek: group.currentWeek,
-        fridayEnabled: group.fridayEnabled,
-        fridayStrategy: group.fridayStrategy,
+      const { group: created } = await createTrainingGroupMainline(repositories, {
+        baseGroup: group,
+        displayName: currentUserDisplayName,
         name,
+        userId: currentUserId,
       });
 
       // 同步到服务器

@@ -44,6 +44,11 @@ const LEGACY_FOUR_DAY_SCHEME_ID = 'scheme_four_day_strength_hypertrophy';
 
 type UserPlanExerciseInput = CreateUserPlanInput['days'][number]['exercises'][number];
 
+type ImportPlanTransaction = {
+  getFirstAsync<T>(sql: string, ...params: unknown[]): Promise<T | null>;
+  runAsync(sql: string, ...params: unknown[]): Promise<unknown>;
+};
+
 function normalizePlanExerciseInput(exercise: UserPlanExerciseInput, index: number) {
   const hasRepRange =
     (exercise.repMin !== null && exercise.repMin !== undefined) ||
@@ -66,6 +71,19 @@ function normalizePlanExerciseInput(exercise: UserPlanExerciseInput, index: numb
     restSeconds: exercise.restSeconds ?? 90,
     sets: Math.max(1, Math.round(exercise.sets ?? 3)),
   };
+}
+
+async function resolveImportedEntityId(
+  txn: ImportPlanTransaction,
+  tableName: 'plan_templates' | 'plan_phases' | 'plan_days' | 'plan_exercises',
+  id: string,
+  prefix: string,
+): Promise<string> {
+  const existing = await txn.getFirstAsync<{ id: string }>(
+    `SELECT id FROM ${tableName} WHERE id = ?`,
+    id,
+  );
+  return existing ? createId(prefix) : id;
 }
 
 export class SQLitePlanRepository implements PlanRepository {
@@ -370,8 +388,8 @@ export class SQLitePlanRepository implements PlanRepository {
       await txn.runAsync(
         `INSERT INTO plan_templates (
           id, owner_user_id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
-          description, source, origin_scheme_id, version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          description, source, origin_scheme_id, version, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         plan.id,
         ownerUserId,
         plan.name,
@@ -384,6 +402,7 @@ export class SQLitePlanRepository implements PlanRepository {
         plan.source,
         plan.originSchemeId ?? null,
         plan.version,
+        plan.status ?? 'draft',
         plan.createdAt,
         plan.updatedAt,
       );
@@ -603,8 +622,8 @@ export class SQLitePlanRepository implements PlanRepository {
       await txn.runAsync(
         `INSERT INTO plan_templates (
           id, owner_user_id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
-          description, source, origin_scheme_id, version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          description, source, origin_scheme_id, version, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         template.id,
         ownerUserId,
         template.name,
@@ -617,6 +636,7 @@ export class SQLitePlanRepository implements PlanRepository {
         template.source,
         template.originSchemeId ?? null,
         template.version,
+        template.status ?? 'active',
         template.createdAt,
         template.updatedAt,
       );
@@ -721,8 +741,8 @@ export class SQLitePlanRepository implements PlanRepository {
       await txn.runAsync(
         `INSERT INTO plan_templates (
           id, owner_user_id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
-          description, source, origin_scheme_id, version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          description, source, origin_scheme_id, version, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         template.id,
         ownerUserId,
         template.name,
@@ -735,6 +755,7 @@ export class SQLitePlanRepository implements PlanRepository {
         template.source,
         template.originSchemeId ?? null,
         template.version,
+        template.status ?? 'draft',
         template.createdAt,
         template.updatedAt,
       );
@@ -814,17 +835,37 @@ export class SQLitePlanRepository implements PlanRepository {
     const db = await this.getDb();
     const ownerUserId = await getRequiredCurrentUserId();
     const exerciseIdByImportedId = new Map<string, string>();
+    const phaseIdByImportedId = new Map<string, string>();
+    const dayIdByImportedId = new Map<string, string>();
+    const planExerciseIdByImportedId = new Map<string, string>();
     let finalPlanId = input.template.id;
 
     await db.withExclusiveTransactionAsync(async (txn) => {
       // 检查 plan ID 是否已存在：存在则生成新 ID 避免覆盖已有计划，
       // 不存在则保留原 ID（用于重装后重新导入时与旧训练记录 plan_id 重新关联）
-      const existing = await txn.getFirstAsync<{ id: string }>(
-        'SELECT id FROM plan_templates WHERE id = ?',
-        input.template.id,
-      );
-      const planId = existing ? createId('plan_imported') : input.template.id;
+      const planId = await resolveImportedEntityId(txn, 'plan_templates', input.template.id, 'plan_imported');
       finalPlanId = planId;
+
+      for (const phase of input.phases) {
+        phaseIdByImportedId.set(
+          phase.id,
+          await resolveImportedEntityId(txn, 'plan_phases', phase.id, 'phase_imported'),
+        );
+      }
+
+      for (const day of input.days) {
+        dayIdByImportedId.set(
+          day.id,
+          await resolveImportedEntityId(txn, 'plan_days', day.id, 'day_imported'),
+        );
+      }
+
+      for (const exercise of input.planExercises) {
+        planExerciseIdByImportedId.set(
+          exercise.id,
+          await resolveImportedEntityId(txn, 'plan_exercises', exercise.id, 'plan_exercise_imported'),
+        );
+      }
 
       for (const exercise of input.exercises) {
         const existingByName = await txn.getFirstAsync<{ id: string }>(
@@ -877,8 +918,8 @@ export class SQLitePlanRepository implements PlanRepository {
       await txn.runAsync(
         `INSERT INTO plan_templates (
           id, owner_user_id, name, creator_id, visibility, goal, duration_weeks, frequency_per_week,
-          description, source, origin_scheme_id, version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          description, source, origin_scheme_id, version, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         planId,
         ownerUserId,
         input.template.name,
@@ -891,6 +932,7 @@ export class SQLitePlanRepository implements PlanRepository {
         'imported',
         input.template.originSchemeId ?? null,
         input.template.version,
+        'active',
         input.template.createdAt,
         input.template.updatedAt,
       );
@@ -900,7 +942,7 @@ export class SQLitePlanRepository implements PlanRepository {
           `INSERT INTO plan_phases (
             id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          phase.id,
+          phaseIdByImportedId.get(phase.id) ?? phase.id,
           ownerUserId,
           planId,
           phase.name,
@@ -916,10 +958,10 @@ export class SQLitePlanRepository implements PlanRepository {
           `INSERT INTO plan_days (
             id, owner_user_id, plan_id, phase_id, week, weekday, title, focus, notes
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          day.id,
+          dayIdByImportedId.get(day.id) ?? day.id,
           ownerUserId,
           planId,
-          day.phaseId,
+          phaseIdByImportedId.get(day.phaseId) ?? day.phaseId,
           day.week,
           day.weekday,
           day.title,
@@ -935,9 +977,9 @@ export class SQLitePlanRepository implements PlanRepository {
             intensity_type, percent_1rm, rpe_target, rir_target, fixed_weight, reference_lift,
             rest_seconds, progression_rule_id, notes
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          exercise.id,
+          planExerciseIdByImportedId.get(exercise.id) ?? exercise.id,
           ownerUserId,
-          exercise.planDayId,
+          dayIdByImportedId.get(exercise.planDayId) ?? exercise.planDayId,
           exerciseIdByImportedId.get(exercise.exerciseId) ?? exercise.exerciseId,
           exercise.priority,
           exercise.orderIndex,
@@ -963,6 +1005,7 @@ export class SQLitePlanRepository implements PlanRepository {
       id: finalPlanId,
       creatorId: ownerUserId ?? input.template.creatorId,
       source: 'imported',
+      status: 'active',
       visibility: 'private',
     } as const;
 

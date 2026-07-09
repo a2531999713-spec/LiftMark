@@ -1,7 +1,8 @@
 import { describe, expect, it, jest } from '@jest/globals';
 
 import { SQLitePlanRepository } from '@/data/local/repositories/planRepository';
-import type { PlanTemplate } from '@/domain/plan/plan.types';
+import type { Exercise } from '@/domain/exercise/exercise.types';
+import type { PlanDay, PlanExercise, PlanPhase, PlanTemplate } from '@/domain/plan/plan.types';
 
 jest.mock('@/domain/common/ids', () => ({
   createId: (prefix?: string) => `${prefix ?? 'id'}_test`,
@@ -137,5 +138,101 @@ describe('SQLitePlanRepository.updateUserPlan', () => {
     expect(sql).toContain('INSERT INTO plan_days');
     expect(sql).not.toContain('workout_sessions');
     expect(sql).not.toContain('workout_sets');
+  });
+});
+
+describe('SQLitePlanRepository.importUserPlan', () => {
+  it('remaps imported child ids when local rows already exist', async () => {
+    const calls: unknown[][] = [];
+    const transaction = {
+      getFirstAsync: jest.fn(async (sql: string, idOrName: string) => {
+        if (sql.includes('FROM plan_templates') && idOrName === 'plan_import') return { id: 'plan_import' };
+        if (sql.includes('FROM plan_phases') && idOrName === 'phase_import') return { id: 'phase_import' };
+        if (sql.includes('FROM plan_days') && idOrName === 'day_import') return { id: 'day_import' };
+        if (sql.includes('FROM plan_exercises') && idOrName === 'pex_import') return { id: 'pex_import' };
+        if (sql.includes('FROM exercises')) return { id: 'exercise_existing' };
+        return null;
+      }),
+      runAsync: jest.fn(async (...args: unknown[]) => {
+        calls.push(args);
+      }),
+    };
+    const db = {
+      getAllAsync: jest.fn(async () => []),
+      withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
+        await callback(transaction);
+      }),
+    };
+    const repository = new SQLitePlanRepository(async () => db as never);
+    const template = createPlan({
+      id: 'plan_import',
+      name: 'Imported Plan',
+      source: 'imported',
+    });
+    const phases: PlanPhase[] = [{
+      endWeek: 8,
+      id: 'phase_import',
+      name: 'Base',
+      orderIndex: 1,
+      planId: 'plan_import',
+      startWeek: 1,
+      type: 'strength',
+    }];
+    const days: PlanDay[] = [{
+      focus: 'Push',
+      id: 'day_import',
+      phaseId: 'phase_import',
+      planId: 'plan_import',
+      title: 'Day 1',
+      week: 1,
+      weekday: 1,
+    }];
+    const exercises: Exercise[] = [{
+      category: 'chest',
+      createdAt: '2026-06-01T00:00:00.000Z',
+      equipment: 'barbell',
+      id: 'exercise_import',
+      isCustom: false,
+      isSystem: false,
+      movementPattern: 'horizontal_push',
+      name: 'Bench Press',
+      primaryMuscle: 'chest',
+      source: 'custom',
+      targetMuscle: 'chest',
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    } as Exercise];
+    const planExercises: PlanExercise[] = [{
+      exerciseId: 'exercise_import',
+      id: 'pex_import',
+      intensityType: 'manual',
+      orderIndex: 1,
+      planDayId: 'day_import',
+      priority: 'A',
+      referenceLift: 'bench',
+      reps: 5,
+      sets: 3,
+    }];
+
+    const imported = await repository.importUserPlan({
+      alternatives: [],
+      days,
+      exercises,
+      phases,
+      planExercises,
+      template,
+    });
+
+    expect(imported.id).toBe('plan_imported_test');
+    expect(imported.status).toBe('active');
+
+    const phaseInsert = calls.find((call) => String(call[0]).includes('INSERT INTO plan_phases'));
+    const dayInsert = calls.find((call) => String(call[0]).includes('INSERT INTO plan_days'));
+    const planExerciseInsert = calls.find((call) => String(call[0]).includes('INSERT INTO plan_exercises'));
+    expect(phaseInsert?.[1]).toBe('phase_imported_test');
+    expect(dayInsert?.[1]).toBe('day_imported_test');
+    expect(dayInsert?.[4]).toBe('phase_imported_test');
+    expect(planExerciseInsert?.[1]).toBe('plan_exercise_imported_test');
+    expect(planExerciseInsert?.[3]).toBe('day_imported_test');
+    expect(planExerciseInsert?.[4]).toBe('exercise_existing');
   });
 });

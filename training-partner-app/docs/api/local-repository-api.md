@@ -10,6 +10,14 @@
 - 非 `free_training` 的补录计划 ID 必须对当前账号可见；Repository 会拒绝其它账号或不可见计划。
 - `getTodayPlan()` 只允许非系统用户计划在 `active` 状态下作为今日训练来源，`completed`、`archived`、`abandoned` 等状态不能进入今日训练主链路。
 
+## 2026-07-09 契约补充：一期主链路初始化与计划激活
+
+- 新增 `services/trainingMainlineService.ts`，统一封装当前账号训练主链路初始化：确保当前账号有可见小组、owner 成员和 `member_profiles`，并提供 `activateTrainingPlanForGroup()` 作为复制/导入计划后的唯一激活入口。
+- 首页、计划页和小组管理页不得各自手写“创建默认小组 + 创建成员 + 设置 selectedGroupId”的分散逻辑；空账号创建第一组必须走主链路服务。
+- `PlanRepository.createUserPlan()`、`copySystemSchemeToUserPlan()`、`duplicatePlan()`、`importUserPlan()` 必须显式写入 `plan_templates.status`，不得依赖 SQLite 默认值造成内存对象与数据库状态不一致。
+- 导入计划时，如果 plan / phase / day / planExercise ID 已存在，本地 Repository 必须 remap 冲突节点并同步修正子节点引用，避免重复导入或旧数据残留导致主键冲突。
+- 系统方案复制和计划文件导入完成后，UI 必须立即绑定到当前小组 `activePlanId` 并重置 `currentWeek=1`、`currentPhaseType=第 1 周阶段`，首页才能继续解析今日训练。
+
 ## 2026-07-03 契约补充：成员身份字段
 
 - `GroupMember` 新增 `userId?: ID`、`memberType: 'local' | 'real'`、`localMemberId?: ID`、`joinedAt?: string`。
