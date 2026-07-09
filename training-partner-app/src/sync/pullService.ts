@@ -165,19 +165,20 @@ type ExistingRemoteRow = {
   remote_id: string | null;
   sync_status: string;
   updated_at: string | null;
+  deleted_at: string | null;
 };
 
 async function upsertWithRemoteId(db: LocalDatabase, input: RemoteIdUpsertInput): Promise<boolean> {
   const { table, localId, remoteId, serverUpdatedAt, serverDeletedAt, currentUserId } = input;
 
   const existingByRemoteId = await db.getFirstAsync<ExistingRemoteRow>(
-    `SELECT id, owner_user_id, remote_id, sync_status, updated_at FROM ${table} WHERE remote_id = ? LIMIT 1`,
+    `SELECT id, owner_user_id, remote_id, sync_status, updated_at, deleted_at FROM ${table} WHERE remote_id = ? LIMIT 1`,
     remoteId,
   );
   let existing =
     existingByRemoteId ??
     (await db.getFirstAsync<ExistingRemoteRow>(
-      `SELECT id, owner_user_id, remote_id, sync_status, updated_at FROM ${table} WHERE id = ? LIMIT 1`,
+      `SELECT id, owner_user_id, remote_id, sync_status, updated_at, deleted_at FROM ${table} WHERE id = ? LIMIT 1`,
       localId,
     ));
 
@@ -233,6 +234,16 @@ async function upsertWithRemoteId(db: LocalDatabase, input: RemoteIdUpsertInput)
       );
     }
     return true;
+  }
+
+  // 本地已软删除但服务器尚未删除（pending_delete 还没 push 成功）：
+  // 保留本地删除状态，不让 fullPull 把数据"复活"。只补 remote_id。
+  if (existing?.deleted_at) {
+    console.log('[sync/pull] local soft-deleted, skip server update', table, 'id=', existing.id);
+    if (!existing.remote_id) {
+      await db.runAsync(`UPDATE ${table} SET remote_id = ? WHERE id = ?`, remoteId, existing.id);
+    }
+    return false;
   }
 
   if (!existing) {

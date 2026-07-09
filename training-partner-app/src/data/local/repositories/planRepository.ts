@@ -113,6 +113,7 @@ export class SQLitePlanRepository implements PlanRepository {
       `SELECT * FROM plan_templates
        WHERE source != 'system'
          AND ${scope.where}
+         AND deleted_at IS NULL
          AND id != ?
          AND COALESCE(origin_scheme_id, '') != ?
        ORDER BY updated_at DESC, created_at DESC`,
