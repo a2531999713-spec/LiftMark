@@ -39,6 +39,7 @@ import type {
   Weekday,
 } from '@/domain/plan/plan.types';
 import type { RecoveryMode } from '@/domain/plan/plan.service';
+import { resolveHomeStatus, type HomeStatus } from '@/domain/home/home-status';
 import { calculateSuggestedWeight } from '@/domain/weight/weight-calculator';
 import type {
   CreateSessionFromTodayPlanInput,
@@ -632,6 +633,8 @@ export default function TodayRoute() {
   const [recoveryMode, setRecoveryMode] = useState<RecoveryMode>('good');
   const [todayPlan, setTodayPlan] = useState<TodayPlanResult | null>(null);
   const [activePlan, setActivePlan] = useState<PlanTemplate | null>(null);
+  // 未经 isTrainablePlan 过滤的原始 activePlan，用于识别 completed/archived/abandoned
+  const [rawActivePlan, setRawActivePlan] = useState<PlanTemplate | null>(null);
   const [planPhases, setPlanPhases] = useState<PlanPhase[]>([]);
   const [planDays, setPlanDays] = useState<PlanDay[]>([]);
   const [exerciseMap, setExerciseMap] = useState<Record<string, Exercise>>({});
@@ -691,6 +694,7 @@ export default function TodayRoute() {
         if (!isLatestRequest()) return;
         setGroup(null);
         setActivePlan(null);
+        setRawActivePlan(null);
         setTodayPlan(null);
         setMembers([]);
         setProfiles({});
@@ -845,6 +849,7 @@ export default function TodayRoute() {
       if (!isLatestRequest()) return;
       setGroup(nextGroup);
       setActivePlan(nextActivePlan);
+      setRawActivePlan(loadedActivePlan);
       setTodayPlan(result);
       setPlanDays(nextPlanDays);
       setSelectedWeek(nextSelectedWeek);
@@ -1337,6 +1342,45 @@ export default function TodayRoute() {
     syncLabel,
   });
 
+  // 将首页数据收敛为明确状态枚举，避免「计划未就绪」吞掉 completed/archived/abandoned 等情况。
+  const homeStatus: HomeStatus = resolveHomeStatus({
+    authStatus,
+    groupsCount: groups.length,
+    membersCount: members.length,
+    rawActivePlan,
+    activePlan,
+    todayPlanExists: Boolean(todayPlan),
+    isRestState,
+    hasError: Boolean(error),
+  });
+
+  // 计划状态相关文案，对应 homeStatus 中的 planCompleted/planArchived/planAbandoned/planNotReady。
+  const planStatusCopy: Record<
+    'planCompleted' | 'planArchived' | 'planAbandoned' | 'planNotReady',
+    { title: string; description: string; icon: keyof typeof Ionicons.glyphMap }
+  > = {
+    planCompleted: {
+      title: '当前计划已完成',
+      description: '可前往计划页归档当前计划，或开启新周期继续训练。',
+      icon: 'ribbon-outline',
+    },
+    planArchived: {
+      title: '当前计划已归档',
+      description: '归档计划不能作为今日训练，请创建或导入新计划。',
+      icon: 'archive-outline',
+    },
+    planAbandoned: {
+      title: '当前计划已放弃',
+      description: '该计划已标记为放弃，请创建或导入新计划。',
+      icon: 'trash-outline',
+    },
+    planNotReady: {
+      title: '今日训练内容暂时未解析成功',
+      description: '计划结构已保留，可能是阶段与当前周不匹配。可重新加载，或前往计划页查看本周安排。',
+      icon: 'refresh-outline',
+    },
+  };
+
   const syncAccountProfileAvatarToMembers = useCallback(
     async (profile: AccountProfileCache) => {
       if (!user) return;
@@ -1510,37 +1554,56 @@ export default function TodayRoute() {
           ) : null}
 
           {!error && groups.length > 0 && !activePlan ? (
-            <HomeEmptyState
-              actions={[
-                ...(recentVisibleSessionCount > 0
-                  ? [
-                      {
-                        label: '查看历史',
-                        onPress: () => router.push('/(tabs)/history'),
-                      },
-                    ]
-                  : []),
-                {
-                  label: '创建计划',
-                  onPress: () => {
-                    if (guardFeature('create_plan')) router.push('/plan/create' as never);
+            homeStatus === 'planCompleted' ||
+            homeStatus === 'planArchived' ||
+            homeStatus === 'planAbandoned' ? (
+              <HomeEmptyState
+                actions={[
+                  { label: '查看计划', onPress: () => router.push('/(tabs)/plan') },
+                  {
+                    label: '创建新计划',
+                    onPress: () => {
+                      if (guardFeature('create_plan')) router.push('/plan/create' as never);
+                    },
                   },
-                },
-                {
-                  label: '导入计划',
-                  onPress: () => {
-                    if (guardFeature('import_plan')) router.push('/(tabs)/plan');
+                ]}
+                description={planStatusCopy[homeStatus].description}
+                icon={planStatusCopy[homeStatus].icon}
+                title={planStatusCopy[homeStatus].title}
+              />
+            ) : (
+              <HomeEmptyState
+                actions={[
+                  ...(recentVisibleSessionCount > 0
+                    ? [
+                        {
+                          label: '查看历史',
+                          onPress: () => router.push('/(tabs)/history'),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: '创建计划',
+                    onPress: () => {
+                      if (guardFeature('create_plan')) router.push('/plan/create' as never);
+                    },
                   },
-                },
-              ]}
-              description={
-                recentVisibleSessionCount > 0
-                  ? `已找到 ${recentVisibleSessionCount} 条历史训练。创建或导入计划后，可继续安排今日训练。`
-                  : '创建或导入一个计划，开始你的训练之旅'
-              }
-              icon="clipboard-outline"
-              title={recentVisibleSessionCount > 0 ? '暂无当前计划' : '暂无训练计划'}
-            />
+                  {
+                    label: '导入计划',
+                    onPress: () => {
+                      if (guardFeature('import_plan')) router.push('/(tabs)/plan');
+                    },
+                  },
+                ]}
+                description={
+                  recentVisibleSessionCount > 0
+                    ? `已找到 ${recentVisibleSessionCount} 条历史训练。创建或导入计划后，可继续安排今日训练。`
+                    : '创建或导入一个计划，开始你的训练之旅'
+                }
+                icon="clipboard-outline"
+                title={recentVisibleSessionCount > 0 ? '暂无当前计划' : '暂无训练计划'}
+              />
+            )
           ) : null}
 
           {!error && groups.length > 0 && activePlan && members.length === 0 ? (
@@ -1586,12 +1649,14 @@ export default function TodayRoute() {
 
               {!isRestState && !todayPlan ? (
                 <HomeEmptyState
-                  actionLabel="重新加载"
+                  actions={[
+                    { label: '重新加载', onPress: () => void loadHome() },
+                    { label: '查看计划', onPress: () => router.push('/(tabs)/plan') },
+                  ]}
                   compact
-                  description="计划结构已保留，今日训练内容暂时未解析成功。"
-                  icon="refresh-outline"
-                  onActionPress={() => void loadHome()}
-                  title="今日计划未就绪"
+                  description={planStatusCopy.planNotReady.description}
+                  icon={planStatusCopy.planNotReady.icon}
+                  title={planStatusCopy.planNotReady.title}
                 />
               ) : null}
 

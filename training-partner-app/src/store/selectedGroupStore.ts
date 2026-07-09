@@ -38,13 +38,13 @@ export const useSelectedGroupStore = create<SelectedGroupState>((set) => ({
   switchAccountScope: (userId) =>
     set((state) => {
       const activeUserScope = getScopeKey(userId);
+      // 切换账号时应「恢复」该 scope 之前保存的选择，而不是抹掉它。
+      // 否则 selectedGroupIdsByScope 永远为空，切回原账号后已选小组丢失。
+      const restoredSelectedGroupId = state.selectedGroupIdsByScope[activeUserScope];
       return {
         activeUserScope,
-        selectedGroupId: undefined,
-        selectedGroupIdsByScope: {
-          ...state.selectedGroupIdsByScope,
-          [activeUserScope]: undefined,
-        },
+        selectedGroupId: restoredSelectedGroupId,
+        selectedGroupIdsByScope: state.selectedGroupIdsByScope,
       };
     }),
 }));

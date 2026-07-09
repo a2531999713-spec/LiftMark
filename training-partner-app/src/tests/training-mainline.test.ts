@@ -3,8 +3,10 @@ import { describe, expect, it, jest } from '@jest/globals';
 import type { Group } from '@/domain/group/group.types';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
+import { getRequiredCurrentUserId } from '@/data/local/accountScope';
 import {
   activateTrainingPlanForGroup,
+  createTrainingGroupMainline,
   ensureTrainingGroupMainline,
 } from '@/services/trainingMainlineService';
 
@@ -137,6 +139,85 @@ describe('training mainline service', () => {
       activePlanId: 'plan_test',
       currentPhaseType: 'hypertrophy',
       currentWeek: 1,
+    }));
+  });
+
+  // 测试 1：无账号时 createTrainingGroupMainline 抛出 no account，不写匿名 group
+  it('throws and does not create any group when no account session exists', async () => {
+    jest.mocked(getRequiredCurrentUserId).mockRejectedValueOnce(new Error('NO_ACCOUNT_ERROR_MESSAGE'));
+
+    const createGroup = jest.fn(async () => group());
+    const createMember = jest.fn(async () => member());
+    const repositories = {
+      groupRepository: { createGroup, listGroups: jest.fn(async () => []), updateGroup: jest.fn() },
+      memberRepository: { createMember, listMembers: jest.fn(async () => []), updateMember: jest.fn() },
+    } as never;
+
+    await expect(createTrainingGroupMainline(repositories, {})).rejects.toThrow('NO_ACCOUNT_ERROR_MESSAGE');
+    expect(createGroup).not.toHaveBeenCalled();
+    expect(createMember).not.toHaveBeenCalled();
+  });
+
+  // 测试 2：有账号时 createTrainingGroupMainline 创建 group + owner member（memberRepository.createMember
+  // 在真实实现里会同一事务写入 group_members 与 member_profiles）
+  it('creates a group and an owner member with real memberType when account is present', async () => {
+    jest.mocked(getRequiredCurrentUserId).mockResolvedValueOnce('usr_test');
+    const createdGroup = group();
+    const createdMember = member();
+    const createGroup = jest.fn(async () => createdGroup);
+    const createMember = jest.fn(async () => createdMember);
+    const repositories = {
+      groupRepository: { createGroup, listGroups: jest.fn(async () => []), updateGroup: jest.fn() },
+      memberRepository: { createMember, listMembers: jest.fn(async () => []), updateMember: jest.fn() },
+    } as never;
+
+    const result = await createTrainingGroupMainline(repositories, { userId: 'usr_test' });
+
+    expect(result.createdGroup).toBe(true);
+    expect(result.createdMember).toBe(true);
+    expect(result.group.id).toBe('group_test');
+    expect(result.member.role).toBe('owner');
+    expect(result.member.memberType).toBe('real');
+    expect(result.member.userId).toBe('usr_test');
+    expect(createGroup).toHaveBeenCalledWith(expect.objectContaining({
+      currentWeek: 1,
+      currentPhaseType: 'strength',
+      name: '我的训练小组',
+    }));
+    expect(createMember).toHaveBeenCalledWith(expect.objectContaining({
+      groupId: 'group_test',
+      memberType: 'real',
+      role: 'owner',
+      userId: 'usr_test',
+    }));
+  });
+
+  // 测试 5/6：activateTrainingPlanForGroup 应将 group.activePlanId 指向传入的 userPlan，
+  // 并重置 currentWeek=1、设置 currentPhaseType
+  it('activates an imported/copied user plan by pointing group.activePlanId at it', async () => {
+    const currentGroup = group({ activePlanId: '' });
+    const importedPlan = plan({ id: 'plan_imported', source: 'imported', status: 'active' });
+    const updatedGroup = group({ activePlanId: 'plan_imported', currentPhaseType: 'strength' });
+    const repositories = {
+      groupRepository: { updateGroup: jest.fn(async () => updatedGroup) },
+      planRepository: {
+        listPlanPhases: jest.fn(async () => [
+          { endWeek: 8, id: 'phase_test', name: 'Strength', orderIndex: 1, planId: 'plan_imported', startWeek: 1, type: 'strength' },
+        ]),
+      },
+    } as never;
+
+    const result = await activateTrainingPlanForGroup(repositories, {
+      group: currentGroup,
+      plan: importedPlan,
+    });
+
+    expect(result.group.activePlanId).toBe('plan_imported');
+    expect(result.phaseType).toBe('strength');
+    expect((repositories as any).groupRepository.updateGroup).toHaveBeenCalledWith('group_test', expect.objectContaining({
+      activePlanId: 'plan_imported',
+      currentWeek: 1,
+      currentPhaseType: 'strength',
     }));
   });
 });
