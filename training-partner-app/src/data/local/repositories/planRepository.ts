@@ -1150,15 +1150,33 @@ export class SQLitePlanRepository implements PlanRepository {
       throw new Error(`Training plan is not active: ${input.planId}`);
     }
     const phases = await this.listPlanPhases(input.planId);
-    const phase = phases.find(
-      (item) =>
-        item.type === input.phaseType &&
-        input.currentWeek >= item.startWeek &&
-        input.currentWeek <= item.endWeek,
-    );
+
+    if (phases.length === 0) {
+      // 结构化错误前缀，供首页/兼容服务识别
+      throw new Error(`plan_has_no_phases: 计划没有阶段信息：${input.planId}`);
+    }
+
+    // 多级 fallback 查找 phase：
+    // 1. type + currentWeek 同时匹配
+    // 2. 只按 currentWeek 匹配（currentPhaseType 可能与 phases 不一致）
+    // 3. 按 currentPhaseType 匹配第一个 phase（currentWeek 可能超出范围，由兼容服务 clamp）
+    // 4. 取第一个 phase（最后兜底）
+    const phase =
+      phases.find(
+        (item) =>
+          item.type === input.phaseType &&
+          input.currentWeek >= item.startWeek &&
+          input.currentWeek <= item.endWeek,
+      ) ??
+      phases.find(
+        (item) =>
+          input.currentWeek >= item.startWeek && input.currentWeek <= item.endWeek,
+      ) ??
+      phases.find((item) => item.type === input.phaseType) ??
+      phases[0];
 
     if (!phase) {
-      throw new Error(`没有匹配的计划阶段：${input.phaseType} 第 ${input.currentWeek} 周`);
+      throw new Error(`phase_not_found: 没有匹配的计划阶段：${input.phaseType} 第 ${input.currentWeek} 周`);
     }
 
     if (input.weekday === 5 && !input.fridayEnabled) {
@@ -1173,7 +1191,11 @@ export class SQLitePlanRepository implements PlanRepository {
     }
 
     const db = await this.getDb();
-    const dayRow = await db.getFirstAsync<PlanDayRow>(
+    // 多级 fallback 查找 day：
+    // 1. plan_id + phase_id + week + weekday 精确匹配
+    // 2. plan_id + week + weekday（phase_id 可能悬空，由兼容服务回填）
+    // 3. plan_id + phase_id + week + 任意 weekday（当天无训练，但不一定是休息日）
+    let dayRow = await db.getFirstAsync<PlanDayRow>(
       `SELECT * FROM plan_days
        WHERE plan_id = ? AND phase_id = ? AND week = ? AND weekday = ?
        LIMIT 1`,
@@ -1184,6 +1206,20 @@ export class SQLitePlanRepository implements PlanRepository {
     );
 
     if (!dayRow) {
+      // fallback 2：忽略 phase_id
+      dayRow = await db.getFirstAsync<PlanDayRow>(
+        `SELECT * FROM plan_days
+         WHERE plan_id = ? AND week = ? AND weekday = ?
+         LIMIT 1`,
+        input.planId,
+        input.currentWeek,
+        input.weekday,
+      );
+    }
+
+    if (!dayRow) {
+      // 当天确实没有训练日 → 返回休息日状态，而不是 throw
+      // 这样首页能区分「计划结构缺失」与「今天确实是休息日」
       return {
         plan,
         phase,

@@ -236,3 +236,52 @@ describe('SQLitePlanRepository.importUserPlan', () => {
     expect(planExerciseInsert?.[4]).toBe('exercise_existing');
   });
 });
+
+describe('SQLitePlanRepository.getTodayPlan', () => {
+  it('rejects completed/archived/abandoned/paused/draft user plans as not active', async () => {
+    // 状态检查发生在任何 DB 查询之前，最小 db mock 即可
+    const db = {
+      getFirstAsync: jest.fn(async () => null),
+      getAllAsync: jest.fn(async () => []),
+    };
+    const input = {
+      groupId: 'group_1',
+      planId: 'plan_user_1',
+      phaseType: 'strength' as const,
+      currentWeek: 1,
+      weekday: 1 as const,
+      fridayEnabled: false,
+    };
+
+    // 非 system 计划：completed/archived/abandoned/paused/draft 都不允许作为今日训练
+    for (const status of ['completed', 'archived', 'abandoned', 'paused', 'draft'] as const) {
+      await expect(
+        new TestPlanRepository(
+          createPlan({ status, source: 'user', visibility: 'private' }),
+          [createPlan()],
+          db,
+        ).getTodayPlan(input),
+      ).rejects.toThrow('Training plan is not active');
+    }
+  });
+
+  it('throws structured plan_has_no_phases error when phases are missing', async () => {
+    // active 用户计划但 plan_phases 为空 → 结构化错误前缀，供首页/兼容服务识别
+    const db = {
+      getFirstAsync: jest.fn(async () => null),
+      getAllAsync: jest.fn(async () => []),
+    };
+    const input = {
+      groupId: 'group_1',
+      planId: 'plan_user_1',
+      phaseType: 'strength' as const,
+      currentWeek: 1,
+      weekday: 1 as const,
+      fridayEnabled: false,
+    };
+
+    await expect(
+      new TestPlanRepository(createPlan({ status: 'active' }), [createPlan()], db).getTodayPlan(input),
+    ).rejects.toThrow('plan_has_no_phases');
+  });
+});

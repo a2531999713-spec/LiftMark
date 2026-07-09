@@ -18,6 +18,22 @@ jest.mock('@/data/local/accountScope', () => ({
   getRequiredCurrentUserId: jest.fn(async () => 'usr_test'),
 }));
 
+// 兼容服务引入了 ids / db / syncQueue，需 mock 以避免 nanoid ESM 解析与真实 DB 访问
+jest.mock('@/domain/common/ids', () => ({
+  createId: (prefix?: string) => `${prefix ?? 'id'}_test`,
+}));
+
+jest.mock('@/data/local/db', () => ({
+  getDatabase: jest.fn(async () => ({
+    getAllAsync: jest.fn(async () => []),
+    runAsync: jest.fn(async () => undefined),
+  })),
+}));
+
+jest.mock('@/sync/syncQueue', () => ({
+  enqueueSyncCandidate: jest.fn(async () => undefined),
+}));
+
 function group(patch: Partial<Group> = {}): Group {
   return {
     activePlanId: '',

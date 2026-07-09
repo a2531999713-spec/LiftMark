@@ -3,6 +3,7 @@ import type { Group } from '@/domain/group/group.types';
 import type { GroupMember } from '@/domain/member/member.types';
 import type { PhaseType, PlanPhase, PlanTemplate } from '@/domain/plan/plan.types';
 import { getRequiredCurrentUserId } from '@/data/local/accountScope';
+import { ensurePlanStructureCompatibleForGroup } from '@/services/planStructureCompatibilityService';
 
 type LocalRepositories = ReturnType<typeof createLocalRepositories>;
 
@@ -180,5 +181,21 @@ export async function activateTrainingPlanForGroup(
     currentWeek: 1,
   });
 
-  return { group, phaseType };
+  // 激活后立即做一次结构兼容修复：
+  // - 补齐缺失的 plan_phases
+  // - 回填悬空的 plan_days.phase_id
+  // - clamp group.currentWeek 到 phase 范围
+  // - 修正 group.currentPhaseType 与实际 phases 不一致
+  // 这样旧计划/导入计划/系统方案复制计划都能被 getTodayPlan() 正常解析。
+  const { group: compatibleGroup } = await ensurePlanStructureCompatibleForGroup({
+    repositories,
+    group,
+    plan: input.plan,
+  }).catch((error) => {
+    // 兼容修复失败不应阻塞激活流程（激活本身已成功），只记录日志
+    console.warn('[trainingMainline] plan structure compatibility failed', error);
+    return { group, plan: input.plan, repaired: false, repairedItems: [] };
+  });
+
+  return { group: compatibleGroup, phaseType: compatibleGroup.currentPhaseType };
 }

@@ -60,6 +60,7 @@ import {
 import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { updateDisplayNameAcrossLocalProfiles } from '@/services/profileSyncService';
 import { ensureTrainingGroupMainline } from '@/services/trainingMainlineService';
+import { ensurePlanStructureCompatibleForGroup } from '@/services/planStructureCompatibilityService';
 import {
   fetchCurrentAnnouncement,
   shouldShowAnnouncement,
@@ -688,7 +689,7 @@ export default function TodayRoute() {
       const allGroups = await repositories.groupRepository.listGroups();
       if (!isLatestRequest()) return;
       setGroups(allGroups);
-      const nextGroup = allGroups.find((item) => item.id === selectedGroupId) ?? allGroups[0] ?? null;
+      let nextGroup = allGroups.find((item) => item.id === selectedGroupId) ?? allGroups[0] ?? null;
       if (!nextGroup) {
         const nextAccountProfile = latestUser ? await getAccountProfileCache(latestUser.id) : null;
         if (!isLatestRequest()) return;
@@ -734,7 +735,7 @@ export default function TodayRoute() {
       );
       const nextProfilesByMemberId = Object.fromEntries(nextProfiles);
       const currentMember = resolveDefaultTrainingMember(nextMembers, latestUser?.id);
-      const [weekSessions, recentSessions, nextPhases, nextPlanDays, nextAccountProfile] = await Promise.all([
+      const [weekSessions, recentSessions, nextPhasesInitial, nextPlanDaysInitial, nextAccountProfile] = await Promise.all([
         loadOrDefault(
           'weekly sessions load',
           repositories.workoutRepository.listSessions({
@@ -763,6 +764,9 @@ export default function TodayRoute() {
           : Promise.resolve([]),
         latestUser ? loadOrDefault('account profile load', getAccountProfileCache(latestUser.id), null) : Promise.resolve(null),
       ]);
+      // 用 let 以便计划结构兼容修复后能重新赋值
+      let nextPhases = nextPhasesInitial;
+      let nextPlanDays = nextPlanDaysInitial;
       const weekDetails = await Promise.all(
         weekSessions.map((session) =>
           loadOrDefault(`weekly session detail ${session.id}`, repositories.workoutRepository.getSessionDetail(session.id), null),
@@ -831,6 +835,73 @@ export default function TodayRoute() {
           }),
           null,
         );
+
+        // 首页解析失败时，尝试一次计划结构兼容修复后重新解析。
+        // 覆盖场景：plan_phases 缺失、currentWeek 超出范围、currentPhaseType 不匹配、
+        // plan_days.phase_id 悬空。修复后重新读取 phases/days 并重试 getTodayPlan。
+        if (!result && nextActivePlan) {
+          try {
+            const compatibility = await ensurePlanStructureCompatibleForGroup({
+              repositories,
+              group: nextGroup,
+              plan: nextActivePlan,
+            });
+            if (compatibility.repaired) {
+              // 修复后重新读取 phases/days 与重试 today plan
+              const repairedPhases = await loadOrDefault(
+                'plan phases reload after compatibility',
+                repositories.planRepository.listPlanPhases(nextActivePlan.id),
+                [],
+              );
+              const repairedDays = await loadOrDefault(
+                'plan days reload after compatibility',
+                repositories.planRepository.listPlanDays(nextActivePlan.id),
+                [],
+              );
+              nextPhases = repairedPhases;
+              nextPlanDays = repairedDays;
+              // 用修复后的 group 重新计算 week/weekday/phase
+              const repairedWeekOptions = getPlanWeekOptions(repairedDays, compatibility.group.currentWeek);
+              const repairedAutoWeek = repairedWeekOptions.includes(compatibility.group.currentWeek)
+                ? compatibility.group.currentWeek
+                : repairedWeekOptions[0];
+              nextSelectedWeek = manualWeek ?? repairedAutoWeek;
+              const repairedDaysForWeek = getDaysForWeek(repairedDays, nextSelectedWeek);
+              nextSelectedWeekday =
+                manualWeekday ??
+                (repairedDaysForWeek.some((day) => day.weekday === todayWeekday)
+                  ? todayWeekday
+                  : (repairedDaysForWeek[0]?.weekday ?? todayWeekday));
+              const repairedPhaseForWeek =
+                repairedPhases.find(
+                  (phase) =>
+                    nextSelectedWeek !== null &&
+                    nextSelectedWeek >= phase.startWeek &&
+                    nextSelectedWeek <= phase.endWeek,
+                ) ?? repairedPhases.find((phase) => phase.type === compatibility.group.currentPhaseType);
+
+              result = await loadOrDefault(
+                'today plan reload after compatibility',
+                repositories.planRepository.getTodayPlan({
+                  currentWeek: nextSelectedWeek,
+                  fridayEnabled: true,
+                  groupId: compatibility.group.id,
+                  phaseType: repairedPhaseForWeek?.type ?? compatibility.group.currentPhaseType,
+                  planId: nextGroup.activePlanId,
+                  recoveryMode,
+                  weekday: nextSelectedWeekday,
+                }),
+                null,
+              );
+              if (result) {
+                // 修复成功，更新 group 引用以便后续渲染使用正确的 currentWeek/currentPhaseType
+                nextGroup = compatibility.group;
+              }
+            }
+          } catch (compatibilityError) {
+            console.warn('[home] plan structure compatibility failed', compatibilityError);
+          }
+        }
 
         const planExerciseIds = result?.exercises.map((exercise) => exercise.exerciseId) ?? [];
         const nextExercises =
@@ -1375,8 +1446,8 @@ export default function TodayRoute() {
       icon: 'trash-outline',
     },
     planNotReady: {
-      title: '今日训练内容暂时未解析成功',
-      description: '计划结构已保留，可能是阶段与当前周不匹配。可重新加载，或前往计划页查看本周安排。',
+      title: '今日训练内容暂未解析成功',
+      description: '已尝试自动修复计划结构。若仍失败，可能是计划没有训练日或阶段信息缺失。可重新加载，或前往计划页检查计划内容。',
       icon: 'refresh-outline',
     },
   };
