@@ -409,8 +409,8 @@ export class SQLitePlanRepository implements PlanRepository {
 
       await txn.runAsync(
         `INSERT INTO plan_phases (
-          id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, owner_user_id, plan_id, name, type, start_week, end_week, order_index, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         phaseId,
         ownerUserId,
         plan.id,
@@ -419,6 +419,8 @@ export class SQLitePlanRepository implements PlanRepository {
         1,
         plan.durationWeeks,
         1,
+        plan.createdAt,
+        plan.updatedAt,
       );
 
       for (const [dayIndex, day] of input.days.entries()) {
@@ -521,8 +523,8 @@ export class SQLitePlanRepository implements PlanRepository {
 
       await txn.runAsync(
         `INSERT INTO plan_phases (
-          id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, owner_user_id, plan_id, name, type, start_week, end_week, order_index, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         phaseId,
         ownerUserId,
         updated.id,
@@ -531,6 +533,8 @@ export class SQLitePlanRepository implements PlanRepository {
         1,
         updated.durationWeeks,
         1,
+        updated.createdAt,
+        updated.updatedAt,
       );
 
       for (const [dayIndex, day] of input.days.entries()) {
@@ -644,8 +648,8 @@ export class SQLitePlanRepository implements PlanRepository {
       for (const phase of draft.phases) {
         await txn.runAsync(
           `INSERT INTO plan_phases (
-            id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, owner_user_id, plan_id, name, type, start_week, end_week, order_index, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           phase.id,
           ownerUserId,
           phase.planId,
@@ -654,6 +658,8 @@ export class SQLitePlanRepository implements PlanRepository {
           phase.startWeek,
           phase.endWeek,
           phase.orderIndex,
+          template.createdAt,
+          template.updatedAt,
         );
       }
 
@@ -763,8 +769,8 @@ export class SQLitePlanRepository implements PlanRepository {
       for (const phase of draft.phases) {
         await txn.runAsync(
           `INSERT INTO plan_phases (
-            id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, owner_user_id, plan_id, name, type, start_week, end_week, order_index, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           phase.id,
           ownerUserId,
           phase.planId,
@@ -773,6 +779,8 @@ export class SQLitePlanRepository implements PlanRepository {
           phase.startWeek,
           phase.endWeek,
           phase.orderIndex,
+          template.createdAt,
+          template.updatedAt,
         );
       }
 
@@ -940,8 +948,8 @@ export class SQLitePlanRepository implements PlanRepository {
       for (const phase of input.phases) {
         await txn.runAsync(
           `INSERT INTO plan_phases (
-            id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, owner_user_id, plan_id, name, type, start_week, end_week, order_index, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           phaseIdByImportedId.get(phase.id) ?? phase.id,
           ownerUserId,
           planId,
@@ -950,6 +958,8 @@ export class SQLitePlanRepository implements PlanRepository {
           phase.startWeek,
           phase.endWeek,
           phase.orderIndex,
+          input.template.createdAt,
+          input.template.updatedAt,
         );
       }
 

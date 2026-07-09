@@ -37,7 +37,7 @@ import {
   defaultStrengthPlanExerciseSeeds,
 } from './defaultStrengthPlan';
 
-const DEFAULT_SEED_VERSION = '2026-07-02-workout-execution';
+const DEFAULT_SEED_VERSION = '2026-07-09-plan-phases-created-at';
 
 export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
   await db.execAsync(`
@@ -205,8 +205,8 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
     for (const phase of phases) {
       await txn.runAsync(
         `INSERT OR IGNORE INTO plan_phases (
-          id, plan_id, name, type, start_week, end_week, order_index
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          id, plan_id, name, type, start_week, end_week, order_index, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         phase.id,
         phase.planId,
         phase.name,
@@ -214,14 +214,16 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
         phase.startWeek,
         phase.endWeek,
         phase.orderIndex,
+        now,
+        now,
       );
     }
 
     for (const phase of mainstreamPlanPhaseSeeds) {
       await txn.runAsync(
         `INSERT OR IGNORE INTO plan_phases (
-          id, plan_id, name, type, start_week, end_week, order_index
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          id, plan_id, name, type, start_week, end_week, order_index, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         phase.id,
         phase.planId,
         phase.name,
@@ -229,14 +231,16 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
         phase.startWeek,
         phase.endWeek,
         phase.orderIndex,
+        now,
+        now,
       );
     }
 
     for (const phase of userPhases) {
       await txn.runAsync(
         `INSERT OR IGNORE INTO plan_phases (
-          id, plan_id, name, type, start_week, end_week, order_index
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          id, plan_id, name, type, start_week, end_week, order_index, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         phase.id,
         phase.planId,
         phase.name,
@@ -244,13 +248,15 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
         phase.startWeek,
         phase.endWeek,
         phase.orderIndex,
+        now,
+        now,
       );
     }
 
     await txn.runAsync(
       `INSERT OR IGNORE INTO plan_phases (
-        id, plan_id, name, type, start_week, end_week, order_index
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        id, plan_id, name, type, start_week, end_week, order_index, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       classicPplPhaseSeed.id,
       classicPplPhaseSeed.planId,
       classicPplPhaseSeed.name,
@@ -258,6 +264,8 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
       classicPplPhaseSeed.startWeek,
       classicPplPhaseSeed.endWeek,
       classicPplPhaseSeed.orderIndex,
+      now,
+      now,
     );
 
     for (const exercise of defaultExerciseSeeds) {

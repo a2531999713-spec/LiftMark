@@ -142,6 +142,7 @@ export async function ensurePlanStructureCompatibleForGroup(input: {
     const phaseType: PhaseType =
       group.currentPhaseType ?? inferPhaseTypeFromGoal(plan.goal);
     const phaseId = createId('phase_compat');
+    const phaseTimestamp = nowIso();
     const phaseName =
       phaseType === 'strength'
         ? '增力阶段'
@@ -155,8 +156,8 @@ export async function ensurePlanStructureCompatibleForGroup(input: {
 
     await db.runAsync(
       `INSERT INTO plan_phases (
-        id, owner_user_id, plan_id, name, type, start_week, end_week, order_index
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, owner_user_id, plan_id, name, type, start_week, end_week, order_index, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       phaseId,
       ownerUserId,
       plan.id,
@@ -165,6 +166,8 @@ export async function ensurePlanStructureCompatibleForGroup(input: {
       minWeek,
       maxWeek,
       1,
+      phaseTimestamp,
+      phaseTimestamp,
     );
 
     phases = [
