@@ -33,6 +33,7 @@ const mockApiRequest = apiRequest as jest.MockedFunction<typeof apiRequest>;
 function createDbMock() {
   return {
     getFirstAsync: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+    getAllAsync: jest.fn<(...args: unknown[]) => Promise<unknown[]>>(async () => []),
     runAsync: jest.fn<(...args: unknown[]) => Promise<{ changes: number }>>(async () => ({ changes: 1 })),
   };
 }

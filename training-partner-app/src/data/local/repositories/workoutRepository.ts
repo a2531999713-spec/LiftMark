@@ -1128,11 +1128,11 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const setRows = await db.getAllAsync<WorkoutSetRow>(
       `SELECT ws.* FROM workout_sets ws
        INNER JOIN workout_exercise_records wer ON wer.id = ws.exercise_record_id
-       INNER JOIN group_members gm ON gm.id = ws.member_id
+       LEFT JOIN group_members gm ON gm.id = ws.member_id
        WHERE ws.session_id = ?
          AND ws.deleted_at IS NULL
          AND wer.deleted_at IS NULL
-       ORDER BY wer.order_index ASC, gm.created_at ASC, ws.set_number ASC`,
+       ORDER BY wer.order_index ASC, COALESCE(gm.created_at, '9999-12-31') ASC, ws.set_number ASC`,
       sessionId,
     );
 
