@@ -84,7 +84,9 @@ describe('SQLitePlanRepository.deleteUserPlan', () => {
     await new TestPlanRepository(createPlan(), [createPlan(), createPlan({ id: 'plan_user_2' })], db).deleteUserPlan('plan_user_1');
 
     expect(executedSql.join('\n')).toContain('DELETE FROM plan_exercises');
-    expect(executedSql.join('\n')).toContain('DELETE FROM plan_templates');
+    // plan_templates 改为软删除（UPDATE deleted_at），防止 fullPull 重新插入已删除的计划
+    expect(executedSql.join('\n')).toContain('UPDATE plan_templates');
+    expect(executedSql.join('\n')).toContain('deleted_at');
     expect(executedSql.join('\n')).not.toContain('workout_sessions');
     expect(executedSql.join('\n')).not.toContain('workout_sets');
   });

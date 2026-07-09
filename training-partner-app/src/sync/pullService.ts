@@ -1349,16 +1349,34 @@ async function reconcileActivePlanAfterPull(db: LocalDatabase, currentUserId: st
   if (!group) return null;
 
   if (group.active_plan_id) {
+    // 活动计划「有效」的判定：存在 + 未删除 + 有 plan_days。
+    // 空计划（无 plan_days）会导致首页 getTodayPlan 解析失败/休息日，
+    // 因此视为无效，继续寻找有 plan_days 的 fallback。
     const activePlan = await db.getFirstAsync<{ id: string }>(
-      `SELECT id FROM plan_templates
-       WHERE id = ? AND owner_user_id = ? AND deleted_at IS NULL
+      `SELECT pt.id FROM plan_templates pt
+       WHERE pt.id = ? AND pt.owner_user_id = ? AND pt.deleted_at IS NULL
+         AND EXISTS (SELECT 1 FROM plan_days pd WHERE pd.plan_id = pt.id)
        LIMIT 1`,
       group.active_plan_id,
       currentUserId,
     );
-    if (activePlan) return null;
+    if (activePlan) {
+      console.log('[RESTORE] active plan still valid, skip reconcile', {
+        groupId: group.id,
+        planId: group.active_plan_id,
+      });
+      return null;
+    }
+    console.log('[RESTORE] active plan missing or empty (no plan_days), finding fallback', {
+      groupId: group.id,
+      previousActivePlanId: group.active_plan_id,
+    });
+  } else {
+    console.log('[RESTORE] active plan missing, finding fallback', {
+      groupId: group.id,
+      previousActivePlanId: group.active_plan_id,
+    });
   }
-
   const recentSessionPlan = await db.getFirstAsync<{ plan_id: string }>(
     `SELECT plan_id FROM workout_sessions
      WHERE owner_user_id = ?
@@ -1369,20 +1387,23 @@ async function reconcileActivePlanAfterPull(db: LocalDatabase, currentUserId: st
      LIMIT 1`,
     currentUserId,
   );
+  // fallback 必须有 plan_days，避免选中空计划导致首页解析失败
   const fallbackPlanId = recentSessionPlan?.plan_id
     ? await db.getFirstAsync<{ id: string }>(
-        `SELECT id FROM plan_templates
-         WHERE id = ? AND owner_user_id = ? AND deleted_at IS NULL
+        `SELECT pt.id FROM plan_templates pt
+         WHERE pt.id = ? AND pt.owner_user_id = ? AND pt.deleted_at IS NULL
+           AND EXISTS (SELECT 1 FROM plan_days pd WHERE pd.plan_id = pt.id)
          LIMIT 1`,
         recentSessionPlan.plan_id,
         currentUserId,
       )
     : await db.getFirstAsync<{ id: string }>(
-        `SELECT id FROM plan_templates
-         WHERE owner_user_id = ?
-           AND deleted_at IS NULL
-           AND source != 'system'
-         ORDER BY updated_at DESC, created_at DESC
+        `SELECT pt.id FROM plan_templates pt
+         WHERE pt.owner_user_id = ?
+           AND pt.deleted_at IS NULL
+           AND pt.source != 'system'
+           AND EXISTS (SELECT 1 FROM plan_days pd WHERE pd.plan_id = pt.id)
+         ORDER BY pt.updated_at DESC, pt.created_at DESC
          LIMIT 1`,
         currentUserId,
       );
@@ -1425,16 +1446,15 @@ async function reconcileActivePlanAfterPull(db: LocalDatabase, currentUserId: st
 }
 
 /**
- * 修复 workout_sets / workout_exercise_records / body_metrics 的 member_id
- * 指向本地 group_members.id。
+ * 修复 workout_sets / body_metrics 的 member_id 指向本地 group_members.id。
  *
  * 背景：服务器存储的 member_id 可能是客户端旧 id（member_xxx），而 fullPull
  * 创建 group_members 时用服务器 id（gmem_xxx）作为主键，导致 member_id
  * 不匹配，getSessionDetail 的 INNER JOIN 丢失所有 sets。
  *
  * 策略：通过 group_members.local_member_id 或 remote_id 反查正确的本地 id，
- * 将 workout_sets / workout_exercise_records / body_metrics 的 member_id
- * 更新为 group_members.id。仅 fullPull 后执行一次。
+ * 将 workout_sets / body_metrics 的 member_id 更新为 group_members.id。
+ * 注意：workout_exercise_records 表没有 member_id 列，不在修复范围内。
  */
 async function repairMemberIdReferences(db: LocalDatabase, currentUserId: string): Promise<number> {
   // 查找 workout_sets.member_id 不在 session 所属 group 的可见 member 列表中的记录。
@@ -1475,11 +1495,8 @@ async function repairMemberIdReferences(db: LocalDatabase, currentUserId: string
       target.id,
       orphan.member_id,
     );
-    await db.runAsync(
-      `UPDATE workout_exercise_records SET member_id = ? WHERE member_id = ?`,
-      target.id,
-      orphan.member_id,
-    );
+    // 注意：workout_exercise_records 表没有 member_id 列，不能在此更新；
+    // body_metrics 有 member_id 列，需要同步修复。
     await db.runAsync(
       `UPDATE body_metrics SET member_id = ? WHERE member_id = ?`,
       target.id,

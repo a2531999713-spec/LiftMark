@@ -1136,7 +1136,17 @@ export class SQLitePlanRepository implements PlanRepository {
 
       await txn.runAsync('DELETE FROM plan_days WHERE plan_id = ?', planId);
       await txn.runAsync('DELETE FROM plan_phases WHERE plan_id = ?', planId);
-      await txn.runAsync('DELETE FROM plan_templates WHERE id = ?', planId);
+      // 软删除 plan_templates，防止 fullPull 重新插入已删除的计划（硬删除后
+      // upsertWithRemoteId 找不到 existing 会重新 INSERT，导致"删了又跳出来"）
+      const deleteTs = nowIso();
+      await txn.runAsync(
+        `UPDATE plan_templates
+         SET deleted_at = ?, sync_status = 'pending_delete', updated_at = ?
+         WHERE id = ?`,
+        deleteTs,
+        deleteTs,
+        planId,
+      );
     });
 
     // 计划删除入队同步
