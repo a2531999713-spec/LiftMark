@@ -20,6 +20,14 @@ export function useAuthGate() {
   const guardFeature = useCallback(
     (feature: FeatureKey, context: FeatureContext = {}) => {
       const decision = decideFeatureAccess(feature, { ...context, authMode });
+
+      // Each guard call represents a new user action. Clear prompts from the
+      // previous action first so an allowed action cannot inherit a stale Pro,
+      // login, or notice sheet.
+      setAuthPrompt(null);
+      setProPrompt(null);
+      setNoticePrompt(null);
+
       if (decision.allowed) {
         return true;
       }

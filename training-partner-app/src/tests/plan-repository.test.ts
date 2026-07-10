@@ -31,6 +31,26 @@ function createPlan(patch: Partial<PlanTemplate> = {}): PlanTemplate {
   };
 }
 
+function createPlanRow(patch: Record<string, unknown> = {}) {
+  return {
+    created_at: '2026-06-01T00:00:00.000Z',
+    creator_id: 'usr_test',
+    description: null,
+    duration_weeks: 8,
+    frequency_per_week: 4,
+    goal: 'strength',
+    id: 'plan_usable',
+    name: '可执行计划',
+    origin_scheme_id: null,
+    source: 'blank_created',
+    status: 'active',
+    updated_at: '2026-06-01T00:00:00.000Z',
+    version: 1,
+    visibility: 'private',
+    ...patch,
+  };
+}
+
 class TestPlanRepository extends SQLitePlanRepository {
   constructor(
     private readonly plan: PlanTemplate | null,
@@ -48,6 +68,50 @@ class TestPlanRepository extends SQLitePlanRepository {
     return this.userPlans;
   }
 }
+
+describe('SQLitePlanRepository usable user plans', () => {
+  it('lists only account-scoped, non-system, non-deleted plans with a day and a plan exercise', async () => {
+    const getAllAsync = jest.fn(async () => [createPlanRow()]);
+    const repository = new SQLitePlanRepository(async () => ({ getAllAsync }) as never);
+
+    const plans = await repository.listUserPlans();
+
+    expect(plans.map((plan) => plan.id)).toEqual(['plan_usable']);
+    const sql = String((getAllAsync.mock.calls as unknown[][])[0]?.[0]);
+    expect(sql).toContain("pt.source != 'system'");
+    expect(sql).toContain('pt.deleted_at IS NULL');
+    expect(sql).toContain('FROM plan_days usable_plan_day');
+    expect(sql).toContain('INNER JOIN plan_exercises usable_plan_exercise');
+    expect(sql).toContain("NULLIF(TRIM(usable_plan_exercise.exercise_id), '') IS NOT NULL");
+  });
+
+  it('does not count empty or soft-deleted plans toward the free plan limit', async () => {
+    const getFirstAsync = jest.fn(async () => ({ count: 2 }));
+    const repository = new SQLitePlanRepository(async () => ({ getFirstAsync }) as never);
+
+    await expect(repository.countUsableUserPlans()).resolves.toBe(2);
+
+    const sql = String((getFirstAsync.mock.calls as unknown[][])[0]?.[0]);
+    expect(sql).toContain('COUNT(*) AS count');
+    expect(sql).toContain('pt.deleted_at IS NULL');
+    expect(sql).toContain('INNER JOIN plan_exercises usable_plan_exercise');
+  });
+
+  it('treats plans without days or without plan exercises as unusable', async () => {
+    const getFirstAsync = jest.fn(async (_sql: string, planId: string) =>
+      planId === 'plan_usable' ? { id: planId } : null,
+    );
+    const repository = new SQLitePlanRepository(async () => ({ getFirstAsync }) as never);
+
+    await expect(repository.isPlanUsable('plan_without_days')).resolves.toBe(false);
+    await expect(repository.isPlanUsable('plan_without_exercises')).resolves.toBe(false);
+    await expect(repository.isPlanUsable('plan_usable')).resolves.toBe(true);
+
+    const sql = String(getFirstAsync.mock.calls[0]?.[0]);
+    expect(sql).toContain('FROM plan_days usable_plan_day');
+    expect(sql).toContain('INNER JOIN plan_exercises usable_plan_exercise');
+  });
+});
 
 describe('SQLitePlanRepository.deleteUserPlan', () => {
   it('rejects deleting system plans and active plans', async () => {

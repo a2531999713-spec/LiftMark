@@ -33,6 +33,39 @@ describe('auth access control', () => {
     });
   });
 
+  it.each(['logged_in_free', 'logged_in_pro', 'logged_in_lifetime'] as const)(
+    'allows %s users to import plans',
+    (authMode) => {
+      expect(decideFeatureAccess('import_plan', { authMode })).toEqual({ allowed: true });
+    },
+  );
+
+  it('requires login for guests who import plans', () => {
+    const decision = decideFeatureAccess('import_plan', { authMode: 'guest_preview' });
+
+    expect(decision.allowed).toBe(false);
+    if (!decision.allowed) expect(decision.reason).toBe('login_required');
+  });
+
+  it.each([0, 1, 2])('allows a free user to create or import with %i valid plans', (userPlanCount) => {
+    expect(decideFeatureAccess('create_plan', { authMode: 'logged_in_free', userPlanCount })).toEqual({
+      allowed: true,
+    });
+  });
+
+  it('requires Pro only after a free user reaches the valid plan limit', () => {
+    const decision = decideFeatureAccess('create_plan', {
+      authMode: 'logged_in_free',
+      userPlanCount: 3,
+    });
+
+    expect(decision.allowed).toBe(false);
+    if (!decision.allowed) {
+      expect(decision.reason).toBe('pro_required');
+      expect(decision.message).toContain('免费版计划数量已达上限');
+    }
+  });
+
   it('requires Pro when a free user adds the third member', () => {
     const decision = decideFeatureAccess('add_member', {
       authMode: 'logged_in_free',

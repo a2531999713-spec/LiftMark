@@ -1,7 +1,14 @@
 # Plan 模块实现文档
 
-更新时间：2026-07-08
+更新时间：2026-07-10
 对应代码目录：`training-partner-app/`
+
+## 2026-07-10 可用计划查询、权限上限与统一激活
+
+- `SQLitePlanRepository.listUserPlans()` 使用 `plan_templates` + `plan_days` + `plan_exercises` 的 `EXISTS` 查询过滤空计划；`countUsableUserPlans()` 使用同一条件计数，`isPlanUsable()` 用于激活前校验。
+- `activateTrainingPlanForGroup()` 拒绝系统模板、非 active 状态和无训练日 / 无计划动作的计划，通过后才写 `groups.active_plan_id`。
+- fullPull 会对当前账号可见小组逐个校验活动计划；最近训练计划结构不完整时继续寻找可用 fallback，没有 fallback 时只清空活动指针，不删除计划或训练记录。
+- `useAuthGate.guardFeature()` 每次新操作先清理旧提示；导入先校验 `import_plan`，真正新增前再以可用计划数校验 `create_plan`。
 
 ## 2026-07-08 计划消失与训练数据失联修复 + 管理弹窗打不开修复
 

@@ -108,7 +108,7 @@ function decideGroupLimit(context: AccessContext): AccessDecision {
 function decidePlanLimit(context: AccessContext): AccessDecision {
   const userPlanCount = context.userPlanCount ?? 0;
   if (!isProAuthMode(context.authMode) && userPlanCount >= 3) {
-    return proRequired('免费版最多保存 3 个我的计划。');
+    return proRequired('免费版计划数量已达上限，最多保存 3 个有效计划。开通 Pro 后可继续创建或导入。');
   }
 
   return { allowed: true };

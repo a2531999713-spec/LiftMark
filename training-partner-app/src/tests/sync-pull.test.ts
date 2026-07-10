@@ -3,7 +3,7 @@ import { getCurrentAccountUserId } from '@/data/local/accountScope';
 import { initializeLocalDatabase } from '@/data/local/db';
 import { readStoredSession } from '@/services/auth/tokenStorage';
 import { apiRequest } from '@/services/httpClient';
-import { pullFromServer } from '@/sync/pullService';
+import { pullFromServer, reconcileActivePlanAfterPull } from '@/sync/pullService';
 
 jest.mock('@/data/local/db', () => ({
   __esModule: true,
@@ -340,6 +340,66 @@ describe('pullFromServer account isolation', () => {
       expect.anything(),
       expect.anything(),
       expect.anything(),
+    );
+  });
+});
+
+describe('reconcileActivePlanAfterPull', () => {
+  it('clears an unusable active plan when no usable fallback exists', async () => {
+    const db = createDbMock();
+    db.getAllAsync.mockImplementation(async (...args: unknown[]) => {
+      const query = String(args[0]);
+      if (query.includes('SELECT id, active_plan_id, current_week FROM groups')) {
+        return [{ active_plan_id: 'plan_empty', current_week: 1, id: 'group_176' }];
+      }
+      return [];
+    });
+    db.getFirstAsync.mockImplementation(async () => null);
+
+    await expect(reconcileActivePlanAfterPull(db as never, 'user_176')).resolves.toBeNull();
+
+    expect(db.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("SET active_plan_id = '', current_week = 1"),
+      expect.any(String),
+      'group_176',
+    );
+  });
+
+  it('skips a recent empty plan and activates a structurally usable fallback', async () => {
+    const db = createDbMock();
+    db.getAllAsync.mockImplementation(async (...args: unknown[]) => {
+      const query = String(args[0]);
+      if (query.includes('SELECT id, active_plan_id, current_week FROM groups')) {
+        return [{ active_plan_id: 'plan_empty', current_week: 1, id: 'group_176' }];
+      }
+      return [];
+    });
+    db.getFirstAsync.mockImplementation(async (...args: unknown[]) => {
+      const query = String(args[0]);
+      if (query.includes('SELECT plan_id FROM workout_sessions')) {
+        return { plan_id: 'plan_recent_empty' };
+      }
+      if (query.includes('WHERE pt.id = ?')) return null;
+      if (query.includes('ORDER BY pt.updated_at DESC')) return { id: 'plan_usable' };
+      if (query.includes('SELECT type FROM plan_phases')) return { type: 'strength' };
+      return null;
+    });
+
+    await expect(reconcileActivePlanAfterPull(db as never, 'user_176')).resolves.toBe('plan_usable');
+
+    const planQueries = db.getFirstAsync.mock.calls
+      .map(([sql]) => String(sql))
+      .filter((sql) => sql.includes('FROM plan_templates pt'));
+    expect(planQueries.length).toBeGreaterThan(0);
+    for (const sql of planQueries) {
+      expect(sql).toContain('INNER JOIN plan_exercises pe');
+    }
+    expect(db.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining('SET active_plan_id = ?'),
+      'plan_usable',
+      'strength',
+      expect.any(String),
+      'group_176',
     );
   });
 });

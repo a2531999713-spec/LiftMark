@@ -221,7 +221,10 @@ export default function PlanRoute() {
       }
 
       const loadedActivePlan = await repositories.planRepository.getPlanById(nextGroup.activePlanId);
-      const nextActivePlan = isTrainablePlan(loadedActivePlan) ? loadedActivePlan : null;
+      const isUsableActivePlan = loadedActivePlan
+        ? await repositories.planRepository.isPlanUsable(loadedActivePlan.id)
+        : false;
+      const nextActivePlan = isUsableActivePlan && isTrainablePlan(loadedActivePlan) ? loadedActivePlan : null;
 
       let nextDaySummaries: DaySummary[] = [];
       let nextStats = emptyStats;
@@ -412,6 +415,11 @@ export default function PlanRoute() {
 
     setIsWorking(true);
     try {
+      const usablePlanCount = await repositories.planRepository.countUsableUserPlans();
+      if (!guardFeature('create_plan', { userPlanCount: usablePlanCount })) {
+        return;
+      }
+
       const { group: targetGroup } = await ensureTrainingGroupMainline(repositories, {
         displayName: currentUserDisplayName,
         groupName: '我的训练小组',
@@ -500,12 +508,13 @@ export default function PlanRoute() {
       return;
     }
 
-    if (!guardFeature('create_plan', { userPlanCount: userPlans.length })) {
-      return;
-    }
-
     setIsWorking(true);
     try {
+      const usablePlanCount = await repositories.planRepository.countUsableUserPlans();
+      if (!guardFeature('create_plan', { userPlanCount: usablePlanCount })) {
+        return;
+      }
+
       const { group: targetGroup } = await ensureTrainingGroupMainline(repositories, {
         displayName: currentUserDisplayName,
         groupName: '我的训练小组',
@@ -547,7 +556,6 @@ export default function PlanRoute() {
     selectedGroupId,
     selectedScheme,
     setSelectedGroupId,
-    userPlans.length,
   ]);
 
   const deletePlan = useCallback(async () => {
@@ -662,11 +670,40 @@ export default function PlanRoute() {
           {daySummaries.length === 0 ? (
             <AppCard style={styles.emptyPlanCard} tone="soft">
               <AppText variant="bodySmall" weight="900">
-                当前计划还没有训练日
+                还没有可执行的当前计划
               </AppText>
               <AppText tone="muted" variant="caption">
-                可以创建或导入计划，也可以先复制系统方案。
+                直接使用系统方案，或创建、导入你的训练计划。
               </AppText>
+              <View style={styles.inlineActions}>
+                <AppButton
+                  icon="library-outline"
+                  onPress={() => setSchemeLibraryVisible(true)}
+                  size="sm"
+                >
+                  使用系统方案
+                </AppButton>
+                <AppButton
+                  icon="add-outline"
+                  onPress={() => {
+                    if (guardFeature('create_plan', { userPlanCount: userPlans.length })) {
+                      router.push('/plan/create' as never);
+                    }
+                  }}
+                  size="sm"
+                  variant="secondary"
+                >
+                  创建计划
+                </AppButton>
+                <AppButton
+                  icon="download-outline"
+                  onPress={() => void importPlan()}
+                  size="sm"
+                  variant="secondary"
+                >
+                  导入计划
+                </AppButton>
+              </View>
             </AppCard>
           ) : (
             <View style={styles.dayList}>

@@ -1338,35 +1338,23 @@ async function countVisibleLocalData(db: LocalDatabase, currentUserId: string): 
   };
 }
 
-async function reconcileActivePlanAfterPull(db: LocalDatabase, currentUserId: string): Promise<string | null> {
-  const group = await db.getFirstAsync<{
-    active_plan_id: string | null;
-    current_week: number;
-    id: string;
-  }>(
-    `SELECT id, active_plan_id, current_week FROM groups
-     WHERE deleted_at IS NULL
-       AND (owner_user_id = ? OR EXISTS (
-         SELECT 1 FROM group_members gm
-         WHERE gm.group_id = groups.id
-           AND gm.user_id = ?
-           AND gm.deleted_at IS NULL
-       ))
-     ORDER BY created_at ASC
-     LIMIT 1`,
-    currentUserId,
-    currentUserId,
-  );
-  if (!group) return null;
-
+async function reconcileGroupActivePlanAfterPull(
+  db: LocalDatabase,
+  currentUserId: string,
+  group: { active_plan_id: string | null; current_week: number; id: string },
+): Promise<string | null> {
   if (group.active_plan_id) {
-    // 活动计划「有效」的判定：存在 + 未删除 + 有 plan_days。
-    // 空计划（无 plan_days）会导致首页 getTodayPlan 解析失败/休息日，
-    // 因此视为无效，继续寻找有 plan_days 的 fallback。
+    // 活动计划必须是当前账号的未删除用户计划，并且同时有训练日和计划动作。
     const activePlan = await db.getFirstAsync<{ id: string }>(
       `SELECT pt.id FROM plan_templates pt
        WHERE pt.id = ? AND pt.owner_user_id = ? AND pt.deleted_at IS NULL
-         AND EXISTS (SELECT 1 FROM plan_days pd WHERE pd.plan_id = pt.id)
+         AND pt.source != 'system'
+         AND EXISTS (
+           SELECT 1 FROM plan_days pd
+           INNER JOIN plan_exercises pe ON pe.plan_day_id = pd.id
+           WHERE pd.plan_id = pt.id
+             AND NULLIF(TRIM(pe.exercise_id), '') IS NOT NULL
+         )
        LIMIT 1`,
       group.active_plan_id,
       currentUserId,
@@ -1378,7 +1366,7 @@ async function reconcileActivePlanAfterPull(db: LocalDatabase, currentUserId: st
       });
       return null;
     }
-    console.log('[RESTORE] active plan missing or empty (no plan_days), finding fallback', {
+    console.log('[RESTORE] active plan missing or unusable, finding fallback', {
       groupId: group.id,
       previousActivePlanId: group.active_plan_id,
     });
@@ -1398,28 +1386,56 @@ async function reconcileActivePlanAfterPull(db: LocalDatabase, currentUserId: st
      LIMIT 1`,
     currentUserId,
   );
-  // fallback 必须有 plan_days，避免选中空计划导致首页解析失败
-  const fallbackPlanId = recentSessionPlan?.plan_id
+  // 优先恢复最近训练使用的可用计划；若它结构不完整，再回退到最近更新的可用用户计划。
+  let fallbackPlanId = recentSessionPlan?.plan_id
     ? await db.getFirstAsync<{ id: string }>(
         `SELECT pt.id FROM plan_templates pt
-         WHERE pt.id = ? AND pt.owner_user_id = ? AND pt.deleted_at IS NULL
-           AND EXISTS (SELECT 1 FROM plan_days pd WHERE pd.plan_id = pt.id)
-         LIMIT 1`,
+          WHERE pt.id = ? AND pt.owner_user_id = ? AND pt.deleted_at IS NULL
+            AND pt.source != 'system'
+            AND EXISTS (
+              SELECT 1 FROM plan_days pd
+              INNER JOIN plan_exercises pe ON pe.plan_day_id = pd.id
+              WHERE pd.plan_id = pt.id
+                AND NULLIF(TRIM(pe.exercise_id), '') IS NOT NULL
+            )
+          LIMIT 1`,
         recentSessionPlan.plan_id,
         currentUserId,
       )
-    : await db.getFirstAsync<{ id: string }>(
+    : null;
+
+  if (!fallbackPlanId) {
+    fallbackPlanId = await db.getFirstAsync<{ id: string }>(
         `SELECT pt.id FROM plan_templates pt
-         WHERE pt.owner_user_id = ?
-           AND pt.deleted_at IS NULL
-           AND pt.source != 'system'
-           AND EXISTS (SELECT 1 FROM plan_days pd WHERE pd.plan_id = pt.id)
-         ORDER BY pt.updated_at DESC, pt.created_at DESC
-         LIMIT 1`,
+          WHERE pt.owner_user_id = ?
+            AND pt.deleted_at IS NULL
+            AND pt.source != 'system'
+            AND EXISTS (
+              SELECT 1 FROM plan_days pd
+              INNER JOIN plan_exercises pe ON pe.plan_day_id = pd.id
+              WHERE pd.plan_id = pt.id
+                AND NULLIF(TRIM(pe.exercise_id), '') IS NOT NULL
+            )
+          ORDER BY pt.updated_at DESC, pt.created_at DESC
+          LIMIT 1`,
         currentUserId,
       );
+  }
 
-  if (!fallbackPlanId?.id) return null;
+  if (!fallbackPlanId?.id) {
+    await db.runAsync(
+      `UPDATE groups
+       SET active_plan_id = '', current_week = 1, updated_at = ?
+       WHERE id = ?`,
+      new Date().toISOString(),
+      group.id,
+    );
+    console.log('[RESTORE] cleared unusable active plan because no usable fallback exists', {
+      groupId: group.id,
+      userId: currentUserId,
+    });
+    return null;
+  }
 
   const currentWeek = Math.max(1, group.current_week || 1);
   const phase = await db.getFirstAsync<{ type: string }>(
@@ -1454,6 +1470,33 @@ async function reconcileActivePlanAfterPull(db: LocalDatabase, currentUserId: st
     userId: currentUserId,
   });
   return fallbackPlanId.id;
+}
+
+export async function reconcileActivePlanAfterPull(db: LocalDatabase, currentUserId: string): Promise<string | null> {
+  const groups = await db.getAllAsync<{
+    active_plan_id: string | null;
+    current_week: number;
+    id: string;
+  }>(
+    `SELECT id, active_plan_id, current_week FROM groups
+     WHERE deleted_at IS NULL
+       AND (owner_user_id = ? OR EXISTS (
+         SELECT 1 FROM group_members gm
+         WHERE gm.group_id = groups.id
+           AND gm.user_id = ?
+           AND gm.deleted_at IS NULL
+       ))
+     ORDER BY created_at ASC`,
+    currentUserId,
+    currentUserId,
+  );
+
+  let firstReconciledPlanId: string | null = null;
+  for (const group of groups) {
+    const reconciledPlanId = await reconcileGroupActivePlanAfterPull(db, currentUserId, group);
+    firstReconciledPlanId ??= reconciledPlanId;
+  }
+  return firstReconciledPlanId;
 }
 
 /**

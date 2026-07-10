@@ -14,6 +14,7 @@ import type {
 } from '@/domain/onboarding/trainingProfile.types';
 import { recommendPlans } from '@/domain/plan/planRecommendation';
 import { listSystemTrainingSchemes } from '@/domain/plan/systemSchemes';
+import { activateTrainingPlanForGroup } from '@/services/trainingMainlineService';
 import { useAuthStore } from '@/store/authStore';
 import { colors, radius, spacing } from '@/theme';
 
@@ -173,11 +174,8 @@ export default function TrainingProfileOnboardingRoute() {
         name: selectedRecommendation.scheme.title,
         scheme: selectedRecommendation.scheme,
       });
-      const phases = await repositories.planRepository.listPlanPhases(plan.id);
-      await repositories.groupRepository.updateGroup(group.id, {
-        activePlanId: plan.id,
-        currentPhaseType: phases[0]?.type ?? 'custom',
-        currentWeek: 1,
+      const { group: activatedGroup } = await activateTrainingPlanForGroup(repositories, { group, plan });
+      await repositories.groupRepository.updateGroup(activatedGroup.id, {
         fridayEnabled: plan.frequencyPerWeek >= 3,
       });
 

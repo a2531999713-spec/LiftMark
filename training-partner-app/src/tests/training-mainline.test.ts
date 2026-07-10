@@ -121,7 +121,7 @@ describe('training mainline service', () => {
     }));
   });
 
-  it('activates a plan on the group using the first week phase', async () => {
+  it('activates a copied system plan on the group using the first week phase', async () => {
     const currentGroup = group();
     const activePlan = plan();
     const updatedGroup = group({ activePlanId: activePlan.id, currentPhaseType: 'hypertrophy' });
@@ -130,6 +130,7 @@ describe('training mainline service', () => {
         updateGroup: jest.fn(async () => updatedGroup),
       },
       planRepository: {
+        isPlanUsable: jest.fn(async () => true),
         listPlanPhases: jest.fn(async () => [
           {
             endWeek: 8,
@@ -151,6 +152,7 @@ describe('training mainline service', () => {
 
     expect(result.group.activePlanId).toBe('plan_test');
     expect(result.phaseType).toBe('hypertrophy');
+    expect((repositories as any).planRepository.isPlanUsable).toHaveBeenCalledWith('plan_test');
     expect((repositories as any).groupRepository.updateGroup).toHaveBeenCalledWith('group_test', expect.objectContaining({
       activePlanId: 'plan_test',
       currentPhaseType: 'hypertrophy',
@@ -217,6 +219,7 @@ describe('training mainline service', () => {
     const repositories = {
       groupRepository: { updateGroup: jest.fn(async () => updatedGroup) },
       planRepository: {
+        isPlanUsable: jest.fn(async () => true),
         listPlanPhases: jest.fn(async () => [
           { endWeek: 8, id: 'phase_test', name: 'Strength', orderIndex: 1, planId: 'plan_imported', startWeek: 1, type: 'strength' },
         ]),
@@ -230,10 +233,31 @@ describe('training mainline service', () => {
 
     expect(result.group.activePlanId).toBe('plan_imported');
     expect(result.phaseType).toBe('strength');
+    expect((repositories as any).planRepository.isPlanUsable).toHaveBeenCalledWith('plan_imported');
     expect((repositories as any).groupRepository.updateGroup).toHaveBeenCalledWith('group_test', expect.objectContaining({
       activePlanId: 'plan_imported',
       currentWeek: 1,
       currentPhaseType: 'strength',
     }));
+  });
+
+  it('refuses to activate a plan without both a training day and a plan exercise', async () => {
+    const updateGroup = jest.fn(async () => group({ activePlanId: 'plan_empty' }));
+    const repositories = {
+      groupRepository: { updateGroup },
+      planRepository: {
+        isPlanUsable: jest.fn(async () => false),
+        listPlanPhases: jest.fn(async () => []),
+      },
+    } as never;
+
+    await expect(
+      activateTrainingPlanForGroup(repositories, {
+        group: group(),
+        plan: plan({ id: 'plan_empty' }),
+      }),
+    ).rejects.toThrow('不能设为当前计划');
+
+    expect(updateGroup).not.toHaveBeenCalled();
   });
 });

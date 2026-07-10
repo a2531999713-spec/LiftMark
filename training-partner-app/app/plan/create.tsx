@@ -12,6 +12,9 @@ import type { CreateCustomExerciseInput } from '@/data/repositories/exerciseRepo
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { PlanTemplate } from '@/domain/plan/plan.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { activateTrainingPlanForGroup, ensureTrainingGroupMainline } from '@/services/trainingMainlineService';
+import { useAuthStore } from '@/store/authStore';
+import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing, typography } from '@/theme';
 
 type NoticeState = {
@@ -57,6 +60,10 @@ export default function CreatePlanRoute() {
   const editPlanId = typeof params.editPlanId === 'string' ? params.editPlanId : undefined;
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
+  const currentUserId = useAuthStore((state) => state.user?.id);
+  const currentUserDisplayName = useAuthStore((state) => state.user?.displayName);
+  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [dayDrafts, setDayDrafts] = useState<PlanDayDraft[]>([createDefaultDayDraft()]);
   const [activeDayId, setActiveDayId] = useState<string | null>(null);
@@ -194,7 +201,7 @@ export default function CreatePlanRoute() {
   };
 
   const savePlan = async () => {
-    if (!guardFeature('create_plan')) {
+    if (!guardFeature(editPlanId ? 'edit_plan' : 'create_plan')) {
       return;
     }
 
@@ -209,6 +216,13 @@ export default function CreatePlanRoute() {
 
     setIsSaving(true);
     try {
+      if (!editPlanId) {
+        const usablePlanCount = await repositories.planRepository.countUsableUserPlans();
+        if (!guardFeature('create_plan', { userPlanCount: usablePlanCount })) {
+          return;
+        }
+      }
+
       const input = {
         days: dayDrafts.map((day) => ({
           exercises: day.exerciseIds.map((exerciseId, index) => ({
@@ -231,10 +245,23 @@ export default function CreatePlanRoute() {
         ? await repositories.planRepository.updateUserPlan({ ...input, planId: editPlanId })
         : await repositories.planRepository.createUserPlan(input);
 
+      if (!editPlanId) {
+        const { group } = await ensureTrainingGroupMainline(repositories, {
+          displayName: currentUserDisplayName,
+          groupName: '我的训练小组',
+          selectedGroupId,
+          userId: currentUserId,
+        });
+        setSelectedGroupId(group.id);
+        await activateTrainingPlanForGroup(repositories, { group, plan });
+      }
+
       setCreatedPlan(plan);
       setNotice({
         title: editPlanId ? '已保存计划' : '已创建计划',
-        message: `“${plan.name}”已保存到我的计划。`,
+        message: editPlanId
+          ? `“${plan.name}”已保存到我的计划。`
+          : `“${plan.name}”已保存并设为当前训练计划。`,
       });
     } catch (saveError) {
       setNotice({

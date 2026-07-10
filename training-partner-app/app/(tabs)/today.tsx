@@ -722,7 +722,14 @@ export default function TodayRoute() {
         loadOrDefault('active plan load', repositories.planRepository.getPlanById(nextGroup.activePlanId), null),
         loadOrDefault('member list load', repositories.memberRepository.listMembers(nextGroup.id), []),
       ]);
-      const nextActivePlan = isTrainablePlan(loadedActivePlan) ? loadedActivePlan : null;
+      const activePlanIsUsable = loadedActivePlan
+        ? await loadOrDefault(
+          'active plan structure load',
+          repositories.planRepository.isPlanUsable(loadedActivePlan.id),
+          false,
+        )
+        : false;
+      const nextActivePlan = activePlanIsUsable && isTrainablePlan(loadedActivePlan) ? loadedActivePlan : null;
       const nextProfiles = await Promise.all(
         nextMembers.map(async (member) => [
           member.id,
@@ -1321,7 +1328,12 @@ export default function TodayRoute() {
 
       await createWorkoutSession(startInput);
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : '开始训练失败。');
+      // 启动训练失败不应该使首页进入全屏加载错误态。
+      // 保留当前训练日和参与成员选择，让用户可以修正后立即重试。
+      setNotice({
+        title: '开始训练失败',
+        message: startError instanceof Error ? startError.message : '请稍后重试。',
+      });
     } finally {
       setIsStarting(false);
     }
@@ -1363,7 +1375,10 @@ export default function TodayRoute() {
       });
       await createWorkoutSession(pendingWorkoutStart);
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : '开始训练失败。');
+      setNotice({
+        title: '开始训练失败',
+        message: startError instanceof Error ? startError.message : '请稍后重试。',
+      });
     } finally {
       setIsStarting(false);
     }

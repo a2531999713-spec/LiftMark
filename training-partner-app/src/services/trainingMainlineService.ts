@@ -173,6 +173,16 @@ export async function activateTrainingPlanForGroup(
   await initializeLocalDatabase();
   await getRequiredCurrentUserId();
 
+  if (input.plan.source === 'system' || input.plan.visibility === 'system') {
+    throw new Error('系统方案需要先复制到我的计划，不能直接设为当前计划。');
+  }
+  if (input.plan.status && input.plan.status !== 'active') {
+    throw new Error('只有进行中的计划才能设为当前计划。');
+  }
+  if (!(await repositories.planRepository.isPlanUsable(input.plan.id))) {
+    throw new Error('这份计划还没有可执行的训练日和动作，不能设为当前计划。');
+  }
+
   const phases = await repositories.planRepository.listPlanPhases(input.plan.id);
   const phaseType = resolvePhaseType(input.plan, phases);
   const group = await repositories.groupRepository.updateGroup(input.group.id, {

@@ -66,6 +66,8 @@ export interface PlanRepository {
   getActivePlanCycle(input: GetActivePlanCycleInput): Promise<PlanCycle | null>;
   getPlanCycleSummary(planCycleId: ID): Promise<PlanCycleSummary | null>;
   listUserPlans(): Promise<PlanTemplate[]>;
+  countUsableUserPlans(): Promise<number>;
+  isPlanUsable(planId: ID): Promise<boolean>;
   listPlanCycles(input: ListPlanCyclesInput): Promise<PlanCycle[]>;
   listPlanPhases(planId: ID): Promise<PlanPhase[]>;
   listPlanDays(planId: ID): Promise<PlanDay[]>;

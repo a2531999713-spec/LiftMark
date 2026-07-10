@@ -42,6 +42,17 @@ import {
 const LEGACY_FOUR_DAY_DEFAULT_USER_PLAN_ID = 'plan_user_four_day_strength_hypertrophy_default';
 const LEGACY_FOUR_DAY_SCHEME_ID = 'scheme_four_day_strength_hypertrophy';
 
+function getUsablePlanStructurePredicate(planAlias: string): string {
+  return `EXISTS (
+    SELECT 1
+    FROM plan_days usable_plan_day
+    INNER JOIN plan_exercises usable_plan_exercise
+      ON usable_plan_exercise.plan_day_id = usable_plan_day.id
+    WHERE usable_plan_day.plan_id = ${planAlias}.id
+      AND NULLIF(TRIM(usable_plan_exercise.exercise_id), '') IS NOT NULL
+  )`;
+}
+
 type UserPlanExerciseInput = CreateUserPlanInput['days'][number]['exercises'][number];
 
 type ImportPlanTransaction = {
@@ -108,20 +119,64 @@ export class SQLitePlanRepository implements PlanRepository {
     const db = await this.getDb();
     const userId = await getCurrentAccountUserId();
     if (!userId) return [];
-    const scope = getPlanAccountScope(userId, 'plan_templates');
+    const scope = getPlanAccountScope(userId, 'pt');
     const rows = await db.getAllAsync<PlanTemplateRow>(
-      `SELECT * FROM plan_templates
-       WHERE source != 'system'
+      `SELECT pt.* FROM plan_templates pt
+       WHERE pt.source != 'system'
          AND ${scope.where}
-         AND deleted_at IS NULL
-         AND id != ?
-         AND COALESCE(origin_scheme_id, '') != ?
-       ORDER BY updated_at DESC, created_at DESC`,
+         AND pt.deleted_at IS NULL
+         AND pt.id != ?
+         AND COALESCE(pt.origin_scheme_id, '') != ?
+         AND ${getUsablePlanStructurePredicate('pt')}
+       ORDER BY pt.updated_at DESC, pt.created_at DESC`,
       ...scope.params,
       LEGACY_FOUR_DAY_DEFAULT_USER_PLAN_ID,
       LEGACY_FOUR_DAY_SCHEME_ID,
     );
     return rows.map(mapPlanTemplate);
+  }
+
+  async countUsableUserPlans(): Promise<number> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    if (!userId) return 0;
+    const scope = getPlanAccountScope(userId, 'pt');
+    const row = await db.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM plan_templates pt
+       WHERE pt.source != 'system'
+         AND ${scope.where}
+         AND pt.deleted_at IS NULL
+         AND pt.id != ?
+         AND COALESCE(pt.origin_scheme_id, '') != ?
+         AND ${getUsablePlanStructurePredicate('pt')}`,
+      ...scope.params,
+      LEGACY_FOUR_DAY_DEFAULT_USER_PLAN_ID,
+      LEGACY_FOUR_DAY_SCHEME_ID,
+    );
+    return row?.count ?? 0;
+  }
+
+  async isPlanUsable(planId: string): Promise<boolean> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    if (!userId) return false;
+    const scope = getPlanAccountScope(userId, 'pt');
+    const row = await db.getFirstAsync<{ id: string }>(
+      `SELECT pt.id FROM plan_templates pt
+       WHERE pt.id = ?
+         AND pt.source != 'system'
+         AND ${scope.where}
+         AND pt.deleted_at IS NULL
+         AND pt.id != ?
+         AND COALESCE(pt.origin_scheme_id, '') != ?
+         AND ${getUsablePlanStructurePredicate('pt')}
+       LIMIT 1`,
+      planId,
+      ...scope.params,
+      LEGACY_FOUR_DAY_DEFAULT_USER_PLAN_ID,
+      LEGACY_FOUR_DAY_SCHEME_ID,
+    );
+    return Boolean(row);
   }
 
   async getActivePlanCycle(input: { groupId: string; planId: string }): Promise<PlanCycle | null> {
@@ -378,7 +433,7 @@ export class SQLitePlanRepository implements PlanRepository {
       frequencyPerWeek: Math.max(1, Math.round(input.frequencyPerWeek)),
       description: '用户创建的训练计划',
       source: 'blank_created',
-      status: 'draft',
+      status: 'active',
       version: 1,
       createdAt: now,
       updatedAt: now,
@@ -403,7 +458,7 @@ export class SQLitePlanRepository implements PlanRepository {
         plan.source,
         plan.originSchemeId ?? null,
         plan.version,
-        plan.status ?? 'draft',
+        plan.status ?? 'active',
         plan.createdAt,
         plan.updatedAt,
       );

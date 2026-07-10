@@ -1,6 +1,13 @@
 ﻿# 本地 Repository API 文档
 
-更新时间：2026-07-09
+更新时间：2026-07-10
+
+## 2026-07-10 契约补充：可用用户计划与激活防护
+
+- `PlanRepository.listUserPlans()` 只返回当前账号可见、未软删除、非系统、至少存在 1 个 `plan_day` 且至少存在 1 个有动作 ID 的 `plan_exercise` 的用户计划。
+- 新增 `countUsableUserPlans()`，会使用与 `listUserPlans()` 一致的结构条件；免费版计划数量不得使用未过滤的数组长度。
+- 新增 `isPlanUsable(planId)`；`activateTrainingPlanForGroup()` 必须在写入 `groups.active_plan_id` 前调用它，系统方案、非 active 计划和结构不完整计划均不能激活。
+- 系统方案复制、计划创建和计划导入成功后立即走统一激活服务，重置周次并刷新当前页。
 
 ## 2026-07-09 契约补充：账号作用域和自由训练
 
@@ -140,6 +147,8 @@ export interface ExerciseRepository {
 export interface PlanRepository {
   getPlanById(planId: ID): Promise<PlanTemplate | null>;
   listUserPlans(): Promise<PlanTemplate[]>;
+  countUsableUserPlans(): Promise<number>;
+  isPlanUsable(planId: ID): Promise<boolean>;
   listPlanPhases(planId: ID): Promise<PlanPhase[]>;
   listPlanDays(planId: ID): Promise<PlanDay[]>;
   listPlanExercises(planDayId: ID): Promise<PlanExercise[]>;
@@ -155,7 +164,7 @@ export interface PlanRepository {
 用途：
 
 - 读取当前用户计划。
-- 列出“我的计划”，不返回 `source=system` 的系统方案。
+- 列出“我的计划”，不返回 `source=system` 的系统方案、软删除计划或缺少训练日 / 计划动作的空计划。
 - 从创建计划页保存用户拥有的 `blank_created` 计划。
 - 将完整可用的系统方案复制成用户计划。
 - 将 `.liftmark.json` 导入草稿写入 SQLite，生成 `source: "imported"` 的用户计划。

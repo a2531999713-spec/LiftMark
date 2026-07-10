@@ -10,7 +10,7 @@ import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Group } from '@/domain/group/group.types';
 import { resolveSelectedGroup } from '@/domain/group/selected-group';
-import type { PhaseType, PlanTemplate } from '@/domain/plan/plan.types';
+import type { PlanTemplate } from '@/domain/plan/plan.types';
 import {
   describeSchemeGoal,
   describeSchemeLevel,
@@ -19,6 +19,7 @@ import {
   type SystemTrainingScheme,
 } from '@/domain/plan/systemSchemes';
 import { useAuthGate } from '@/hooks/useAuthGate';
+import { activateTrainingPlanForGroup } from '@/services/trainingMainlineService';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
@@ -85,14 +86,6 @@ export default function ExploreRoute() {
     }, [loadExploreState]),
   );
 
-  const resolvePhaseTypeForPlan = useCallback(
-    async (planId: string): Promise<PhaseType> => {
-      const phases = await repositories.planRepository.listPlanPhases(planId);
-      return phases[0]?.type ?? 'custom';
-    },
-    [repositories],
-  );
-
   const findCopiedPlan = useCallback(
     (schemeId: string) => userPlans.find((plan) => plan.originSchemeId === schemeId || (schemeId === SYSTEM_SCHEME_CLASSIC_PPL_ID && plan.name.includes('经典三分化 PPL'))),
     [userPlans],
@@ -111,11 +104,8 @@ export default function ExploreRoute() {
 
       setIsWorking(true);
       try {
-        await repositories.groupRepository.updateGroup(group.id, {
-          activePlanId: plan.id,
-          currentPhaseType: await resolvePhaseTypeForPlan(plan.id),
-          currentWeek: 1,
-        });
+        const { group: updatedGroup } = await activateTrainingPlanForGroup(repositories, { group, plan });
+        setGroup(updatedGroup);
         await loadExploreState();
         setActivationPrompt(null);
         setNotice({
@@ -128,28 +118,35 @@ export default function ExploreRoute() {
         setIsWorking(false);
       }
     },
-    [group, guardFeature, loadExploreState, repositories, resolvePhaseTypeForPlan],
+    [group, guardFeature, loadExploreState, repositories],
   );
 
   const copyScheme = useCallback(
     async (scheme: SystemTrainingScheme) => {
-      if (!guardFeature('create_plan', { userPlanCount: userPlans.length })) {
+      if (!group) {
+        setNotice({ title: '还没有小组', message: '创建训练小组后，才能使用系统方案。' });
         return;
       }
 
       setIsWorking(true);
       try {
+        const usablePlanCount = await repositories.planRepository.countUsableUserPlans();
+        if (!guardFeature('create_plan', { userPlanCount: usablePlanCount })) {
+          return;
+        }
+
         const plan = await repositories.planRepository.copySystemSchemeToUserPlan({
           name: scheme.title.replace('方案', '计划'),
           scheme,
         });
+        const { group: updatedGroup } = await activateTrainingPlanForGroup(repositories, { group, plan });
         const nextUserPlans = await repositories.planRepository.listUserPlans();
+        setGroup(updatedGroup);
         setUserPlans(nextUserPlans);
         setSelectedScheme(null);
-        setActivationPrompt({
-          plan,
+        setNotice({
           title: '已复制到我的计划',
-          message: `“${plan.name}”已经可以编辑和执行。是否设为当前训练计划？`,
+          message: `“${plan.name}”已设为当前训练计划。`,
         });
       } catch (error) {
         setNotice({ title: '复制失败', message: error instanceof Error ? error.message : '使用系统方案失败。' });
@@ -157,7 +154,7 @@ export default function ExploreRoute() {
         setIsWorking(false);
       }
     },
-    [guardFeature, repositories, userPlans.length],
+    [group, guardFeature, repositories],
   );
 
   const openScheme = useCallback(
