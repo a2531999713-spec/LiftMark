@@ -1035,15 +1035,52 @@ export default function TodayRoute() {
         (phase) => currentWeek >= phase.startWeek && currentWeek <= phase.endWeek,
       ) ?? planPhases.find((phase) => phase.type === group.currentPhaseType);
 
-    const resolvedPlan = await repositories.planRepository.getTodayPlan({
-      currentWeek,
-      fridayEnabled: true,
-      groupId: group.id,
-      phaseType: phaseForSelectedWeek?.type ?? group.currentPhaseType,
-      planId: activePlan.id,
-      recoveryMode,
-      weekday,
-    });
+    // getTodayPlan 可能在计划结构不完整时抛错（如 plan_has_no_phases）。
+    // 先尝试直接解析；失败时走兼容修复后重试，仍失败则返回 null（由调用方显示友好提示，而非 break 首页）。
+    let resolvedPlan: TodayPlanResult | null = null;
+    try {
+      resolvedPlan = await repositories.planRepository.getTodayPlan({
+        currentWeek,
+        fridayEnabled: true,
+        groupId: group.id,
+        phaseType: phaseForSelectedWeek?.type ?? group.currentPhaseType,
+        planId: activePlan.id,
+        recoveryMode,
+        weekday,
+      });
+    } catch (planError) {
+      console.warn('[home] resolveSelectedWorkoutPlan getTodayPlan failed, attempting compatibility repair', planError);
+      try {
+        const compatibility = await ensurePlanStructureCompatibleForGroup({
+          repositories,
+          group,
+          plan: activePlan,
+        });
+        if (compatibility.repaired) {
+          const repairedPhases = await repositories.planRepository.listPlanPhases(activePlan.id);
+          const repairedPhaseForWeek =
+            repairedPhases.find(
+              (phase) => currentWeek >= phase.startWeek && currentWeek <= phase.endWeek,
+            ) ?? repairedPhases.find((phase) => phase.type === compatibility.group.currentPhaseType);
+          resolvedPlan = await repositories.planRepository.getTodayPlan({
+            currentWeek,
+            fridayEnabled: true,
+            groupId: compatibility.group.id,
+            phaseType: repairedPhaseForWeek?.type ?? compatibility.group.currentPhaseType,
+            planId: activePlan.id,
+            recoveryMode,
+            weekday,
+          });
+          setPlanPhases(repairedPhases);
+        }
+      } catch (repairError) {
+        console.warn('[home] resolveSelectedWorkoutPlan compatibility repair failed', repairError);
+      }
+    }
+
+    if (!resolvedPlan) {
+      return null;
+    }
 
     const planExerciseIds = resolvedPlan.exercises.map((exercise) => exercise.exerciseId);
     const nextExercises =
@@ -1088,7 +1125,11 @@ export default function TodayRoute() {
     try {
       resolvedPlan = await resolveSelectedWorkoutPlan();
     } catch (resolveError) {
-      setError(resolveError instanceof Error ? resolveError.message : '训练计划刷新失败。');
+      // 用 setNotice 而非 setError：setError 会让整个首页显示"首页暂时无法加载"，而 setNotice 只弹友好提示
+      setNotice({
+        title: '训练计划暂时不可用',
+        message: resolveError instanceof Error ? resolveError.message : '训练计划刷新失败，请稍后重试。',
+      });
       return;
     }
 
@@ -1131,7 +1172,10 @@ export default function TodayRoute() {
         return;
       }
     } catch (sessionError) {
-      setError(sessionError instanceof Error ? sessionError.message : '读取未完成训练失败。');
+      setNotice({
+        title: '读取未完成训练失败',
+        message: sessionError instanceof Error ? sessionError.message : '请稍后重试。',
+      });
       return;
     }
 

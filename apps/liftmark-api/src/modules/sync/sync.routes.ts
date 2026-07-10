@@ -188,11 +188,17 @@ async function listChanges(userId: string, since?: string) {
   };
 
   for (const [entityType, tableName] of Object.entries(entityTableByType) as [EntityType, string][]) {
-    result[entityType] = await db(tableName)
-      .select('*')
-      .where({ user_id: userId })
-      .where('updated_at', '>', sinceDate)
-      .orderBy('updated_at', 'asc');
+    try {
+      result[entityType] = await db(tableName)
+        .select('*')
+        .where({ user_id: userId })
+        .where('updated_at', '>', sinceDate)
+        .orderBy('updated_at', 'asc');
+    } catch (tableError) {
+      // 表可能尚未通过迁移创建（如迁移 010 未运行），跳过而非整体 500
+      console.warn(`[sync/pull] table "${tableName}" query failed, returning empty:`, tableError instanceof Error ? tableError.message : tableError);
+      result[entityType] = [];
+    }
   }
 
   return result;
