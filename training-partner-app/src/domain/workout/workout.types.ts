@@ -4,10 +4,14 @@ import type { ExercisePriority, Weekday } from '../plan/plan.types';
 export type SessionStatus = 'draft' | 'in_progress' | 'completed' | 'cancelled';
 export type WorkoutTrainingMode = 'solo_local' | 'group_local';
 
+export const FREE_TRAINING_PLAN_ID = 'free_training';
+
 export type WorkoutSession = {
   id: ID;
   groupId: ID;
   planId: ID;
+  planCycleId?: ID;
+  planDayId?: ID;
   phaseId?: ID;
   date: string;
   week: number;
@@ -15,6 +19,8 @@ export type WorkoutSession = {
   title: string;
   status: SessionStatus;
   trainingMode: WorkoutTrainingMode;
+  recordedByUserId?: ID;
+  sourceDeviceId?: string;
   startedAt?: string;
   finishedAt?: string;
   createdAt: string;
@@ -24,6 +30,8 @@ export type WorkoutSession = {
 export type WorkoutExerciseRecord = {
   id: ID;
   sessionId: ID;
+  planCycleId?: ID;
+  planDayId?: ID;
   planExerciseId?: ID;
   exerciseId: ID;
   orderIndex: number;
@@ -47,6 +55,8 @@ export type WorkoutSet = {
   sessionId: ID;
   exerciseRecordId: ID;
   memberId: ID;
+  recordedByUserId?: ID;
+  sourceDeviceId?: string;
   setNumber: number;
   plannedWeight?: number;
   actualWeight?: number;
@@ -67,6 +77,8 @@ export type WorkoutSet = {
 export type CreateSessionFromTodayPlanInput = {
   groupId: ID;
   planId: ID;
+  planCycleId?: ID;
+  planDayId?: ID;
   phaseId?: ID;
   date: string;
   week: number;
@@ -79,7 +91,8 @@ export type CreateSessionFromTodayPlanInput = {
 
 export type CreateManualSessionInput = {
   groupId: ID;
-  planId: ID;
+  planId?: ID | null;
+  planCycleId?: ID | null;
   date: string;
   title: string;
   memberId: ID;
@@ -135,7 +148,8 @@ export type CreateManualSessionV2Input = {
   groupId: ID;
   notes?: string | null;
   participantMemberIds: ID[];
-  planId: ID;
+  planId?: ID | null;
+  planCycleId?: ID | null;
   sourcePlanId?: ID | null;
   title: string;
   trainingMode: WorkoutTrainingMode;
@@ -185,7 +199,16 @@ export type SaveWorkoutSetInput = Partial<
 export type WorkoutSummary = {
   sessionId: ID;
   completedSets: number;
+  durationSeconds: number;
+  estimatedCalories?: number;
+  estimatedCaloriesMax?: number;
+  estimatedCaloriesMin?: number;
+  exerciseCount: number;
+  intensityLevel?: 'low' | 'medium' | 'high';
+  reportId?: ID;
   totalSets: number;
+  totalReps: number;
+  totalVolume: number;
 };
 
 export type WorkoutMemberContribution = {
@@ -208,6 +231,7 @@ export type WorkoutSessionAggregation = {
 export type ListSessionsInput = {
   groupId?: ID;
   memberId?: ID;
+  planCycleId?: ID;
   fromDate?: string;
   toDate?: string;
   limit?: number;

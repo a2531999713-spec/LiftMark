@@ -1,6 +1,21 @@
 ﻿# Training Record 模块实现文档
 
-更新时间：2026-07-07
+更新时间：2026-07-09
+
+## 2026-07-09 补充：补录自由训练归属
+
+- 补录页选择“不关联计划”时，`app/history/manual.tsx` 传入 `free_training`，不再默认绑定当前小组 `activePlanId`。
+- `WorkoutRepository.createManualSessionV2()` 对 `free_training` 不创建 `plan_cycles`，但仍写入当前账号、当前小组、参与成员、训练动作、组数据和训练报告。
+- 选择具体用户计划时，Repository 会校验该计划对当前账号可见，防止旧草稿或页面参数把其它账号计划绑定到补录 session。
+- 历史页继续按当前账号可见小组读取 session；自由训练在历史中作为普通训练记录展示，不依赖 active plan 存在。
+
+## 2026-07-09 补充：一期训练主链路闭环
+
+- `services/trainingMainlineService.ts` 是首页、计划页、小组页共享的账号训练入口服务，负责空账号创建小组、创建当前账号 owner 成员、初始化 `member_profiles`，并返回可写入 `selectedGroupId` 的 group。
+- 首页 no-group 状态可直接初始化训练小组；小组管理页空账号不再抛“默认小组尚未初始化”，而是允许创建第一组。
+- 系统方案复制和计划文件导入后会立即通过 `activateTrainingPlanForGroup()` 绑定当前小组，确保 `activePlanId`、`currentPhaseType`、`currentWeek` 与用户计划状态同步。
+- 首页加载 active plan 时会过滤非系统且非 `active` 的用户计划；completed / archived / abandoned 不再进入今日训练解析，也不会误显示“今日计划未就绪”。
+- 今日训练入口仍由 `WorkoutRepository.createSessionFromTodayPlan()` 创建或读取 active `plan_cycles`，训练 session / exercise records / sets / reports 继续进入当前账号同步队列。
 
 ## 2026-07-07 补充：当前小组作用域与补录空草稿
 

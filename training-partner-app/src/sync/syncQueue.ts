@@ -62,6 +62,36 @@ async function resolveEntityOwnerUserId(
   if (payloadOwner) return payloadOwner;
 
   switch (entity.entityType) {
+    case 'groups': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT owner_user_id
+         FROM groups
+         WHERE id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'groupMembers': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(gm.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM group_members gm
+         LEFT JOIN groups ON groups.id = gm.group_id
+         WHERE gm.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'memberProfiles': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(mp.owner_user_id, gm.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM member_profiles mp
+         LEFT JOIN group_members gm ON gm.id = mp.member_id
+         LEFT JOIN groups ON groups.id = mp.group_id
+         WHERE mp.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
     case 'workoutSessions': {
       const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
         `SELECT COALESCE(ws.owner_user_id, groups.owner_user_id) AS owner_user_id
@@ -99,6 +129,27 @@ async function resolveEntityOwnerUserId(
         `SELECT COALESCE(owner_user_id, creator_id) AS owner_user_id
          FROM plan_templates
          WHERE id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'planCycles': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(pc.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM plan_cycles pc
+         LEFT JOIN groups ON groups.id = pc.group_id
+         WHERE pc.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'planCycleSummaries': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(pcs.owner_user_id, pc.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM plan_cycle_summaries pcs
+         LEFT JOIN plan_cycles pc ON pc.id = pcs.plan_cycle_id
+         LEFT JOIN groups ON groups.id = pcs.group_id
+         WHERE pcs.id = ?`,
         entity.localId,
       );
       return row?.owner_user_id ?? null;
@@ -141,6 +192,27 @@ async function resolveEntityOwnerUserId(
          LEFT JOIN group_members gm ON gm.id = bm.member_id
          LEFT JOIN groups ON groups.id = gm.group_id
          WHERE bm.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'trainingReports': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(tr.owner_user_id, ws.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM training_reports tr
+         LEFT JOIN workout_sessions ws ON ws.id = tr.workout_session_id
+         LEFT JOIN groups ON groups.id = tr.group_id
+         WHERE tr.id = ?`,
+        entity.localId,
+      );
+      return row?.owner_user_id ?? null;
+    }
+    case 'trainingReminders': {
+      const row = await db.getFirstAsync<{ owner_user_id: string | null }>(
+        `SELECT COALESCE(rem.owner_user_id, groups.owner_user_id) AS owner_user_id
+         FROM training_reminders rem
+         LEFT JOIN groups ON groups.id = rem.group_id
+         WHERE rem.id = ?`,
         entity.localId,
       );
       return row?.owner_user_id ?? null;
@@ -261,6 +333,7 @@ export async function enqueueSyncCandidate(entity: SyncEntity): Promise<void> {
 export async function countPendingSyncItems(): Promise<number> {
   const db = await initializeLocalDatabase();
   const currentUserId = await getCurrentAccountUserId();
+  if (!currentUserId) return 0;
   const ownerFilter = ownerFilterSql(currentUserId);
   const row = await db.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) AS count FROM local_sync_queue
@@ -274,6 +347,7 @@ export async function countPendingSyncItems(): Promise<number> {
 export async function listPendingSyncItems(options: { includeAllAccounts?: boolean } = {}): Promise<SyncQueueItem[]> {
   const db = await initializeLocalDatabase();
   const currentUserId = await getCurrentAccountUserId();
+  if (!currentUserId && !options.includeAllAccounts) return [];
   const ownerFilter = options.includeAllAccounts ? null : ownerFilterSql(currentUserId);
   const rows = await db.getAllAsync<SyncQueueRow>(
     `SELECT * FROM local_sync_queue

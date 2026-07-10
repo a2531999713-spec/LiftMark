@@ -6,7 +6,7 @@ import type { GroupRepository } from '@/data/repositories/groupRepository';
 import type { DatabaseProvider } from './base';
 import { requireRow } from './base';
 import { type GroupRow, mapGroup } from './mappers';
-import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite } from '../accountScope';
+import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite, getRequiredCurrentUserId } from '../accountScope';
 
 export class SQLiteGroupRepository implements GroupRepository {
   constructor(private readonly getDb: DatabaseProvider) {}
@@ -57,7 +57,7 @@ export class SQLiteGroupRepository implements GroupRepository {
 
   async createGroup(input: CreateGroupInput): Promise<Group> {
     const db = await this.getDb();
-    const userId = await getCurrentAccountUserId();
+    const userId = await getRequiredCurrentUserId();
     const ownerUserId = getOwnerUserIdForWrite(userId, input.ownerUserId);
     const now = nowIso();
     const group: Group = {
@@ -95,25 +95,22 @@ export class SQLiteGroupRepository implements GroupRepository {
 
   async updateGroup(id: string, patch: Partial<Group>): Promise<Group> {
     const db = await this.getDb();
-    const userId = await getCurrentAccountUserId();
     const existing = await requireRow(await this.getGroupById(id), `Group not found: ${id}`);
-    const ownerUserId = existing.ownerUserId ?? getOwnerUserIdForWrite(userId, patch.ownerUserId);
     const updated: Group = {
       ...existing,
       ...patch,
       id,
-      ownerUserId: ownerUserId ?? undefined,
+      ownerUserId: existing.ownerUserId,
       createdAt: existing.createdAt,
       updatedAt: nowIso(),
     };
 
     await db.runAsync(
       `UPDATE groups
-       SET name = ?, owner_user_id = ?, active_plan_id = ?, current_phase_type = ?,
+       SET name = ?, active_plan_id = ?, current_phase_type = ?,
            current_week = ?, friday_enabled = ?, friday_strategy = ?, updated_at = ?
        WHERE id = ?`,
       updated.name,
-      updated.ownerUserId ?? null,
       updated.activePlanId,
       updated.currentPhaseType,
       updated.currentWeek,

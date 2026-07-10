@@ -2,6 +2,7 @@ import { createId } from '@/domain/common/ids';
 import { nowIso } from '@/domain/common/time';
 import type { WorkoutRepository } from '@/data/repositories/workoutRepository';
 import { calculateSuggestedWeight } from '@/domain/weight/weight-calculator';
+import { FREE_TRAINING_PLAN_ID } from '@/domain/workout/workout.types';
 import { getPlanExerciseInitialReps, getPlanExerciseSetCount } from '@/domain/workout/workout.service';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import type { SyncEntityType } from '@/sync/syncTypes';
@@ -26,11 +27,12 @@ import type {
 import { validateWorkoutSetInput } from '@/domain/workout/workout.validation';
 
 import { requireRow, type DatabaseProvider } from './base';
-import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite } from '../accountScope';
+import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite, getPlanAccountScope } from '../accountScope';
 import {
   mapExercise,
   mapGroupMember,
   mapMemberProfile,
+  mapPlanCycle,
   mapPlanExercise,
   mapWorkoutExerciseRecord,
   mapWorkoutSession,
@@ -38,11 +40,53 @@ import {
   type ExerciseRow,
   type GroupMemberRow,
   type MemberProfileRow,
+  type PlanCycleRow,
   type PlanExerciseRow,
   type WorkoutExerciseRecordRow,
   type WorkoutSessionRow,
   type WorkoutSetRow,
 } from './mappers';
+
+const SOURCE_DEVICE_ID = 'liftmark-mobile';
+const DEFAULT_BODYWEIGHT_KG = 65;
+
+function isFreeTrainingPlan(planId?: string | null): boolean {
+  return !planId || planId === FREE_TRAINING_PLAN_ID;
+}
+
+function normalizeLinkedPlanId(planId?: string | null): string {
+  return planId?.trim() || FREE_TRAINING_PLAN_ID;
+}
+
+function getSessionDurationSeconds(session: WorkoutSession): number {
+  const start = session.startedAt ? new Date(session.startedAt).getTime() : Number.NaN;
+  const end = session.finishedAt ? new Date(session.finishedAt).getTime() : Date.now();
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return 0;
+  return Math.round((end - start) / 1000);
+}
+
+function getIntensityLevel(input: { durationSeconds: number; totalSets: number; totalVolume: number }): 'low' | 'medium' | 'high' {
+  if (input.durationSeconds >= 75 * 60 || input.totalSets >= 24 || input.totalVolume >= 12000) return 'high';
+  if (input.durationSeconds >= 35 * 60 || input.totalSets >= 10 || input.totalVolume >= 3500) return 'medium';
+  return 'low';
+}
+
+function getMetForIntensity(intensity: 'low' | 'medium' | 'high'): number {
+  if (intensity === 'high') return 6;
+  if (intensity === 'medium') return 5;
+  return 3.5;
+}
+
+function estimateCalories(input: { bodyweightKg?: number; durationSeconds: number; intensity: 'low' | 'medium' | 'high' }) {
+  const bodyweightKg = input.bodyweightKg && input.bodyweightKg > 0 ? input.bodyweightKg : DEFAULT_BODYWEIGHT_KG;
+  const hours = Math.max(input.durationSeconds, 60) / 3600;
+  const calories = getMetForIntensity(input.intensity) * bodyweightKg * hours;
+  return {
+    estimatedCalories: Math.round(calories),
+    estimatedCaloriesMin: Math.max(0, Math.round(calories * 0.8)),
+    estimatedCaloriesMax: Math.max(0, Math.round(calories * 1.2)),
+  };
+}
 
 type DeletedEntity = {
   entityType: Extract<SyncEntityType, 'workoutSessions' | 'workoutExerciseRecords' | 'workoutSets'>;
@@ -73,6 +117,342 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       throw new Error(`Group not visible for current account: ${groupId}`);
     }
     return getOwnerUserIdForWrite(userId, row.owner_user_id);
+  }
+
+  private async assertPlanVisibleForCurrentAccount(planId: string): Promise<void> {
+    if (isFreeTrainingPlan(planId)) return;
+
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getPlanAccountScope(userId, 'plan_templates');
+    const row = await db.getFirstAsync<{ id: string }>(
+      `SELECT id FROM plan_templates
+       WHERE id = ?
+         AND ${scope.where}
+       LIMIT 1`,
+      planId,
+      ...scope.params,
+    );
+
+    if (!row) {
+      throw new Error(`Plan not visible for current account: ${planId}`);
+    }
+  }
+
+  private async ensureActivePlanCycle(input: {
+    groupId: string;
+    ownerUserId: string | null;
+    planId: string;
+    planName?: string;
+    plannedWeeks?: number;
+    startDate: string;
+  }): Promise<string> {
+    const db = await this.getDb();
+    const existing = await db.getFirstAsync<PlanCycleRow>(
+      `SELECT * FROM plan_cycles
+       WHERE group_id = ?
+         AND plan_id = ?
+         AND (owner_user_id = ? OR (? IS NULL AND owner_user_id IS NULL))
+         AND status = 'active'
+         AND deleted_at IS NULL
+       ORDER BY cycle_index DESC, created_at DESC
+       LIMIT 1`,
+      input.groupId,
+      input.planId,
+      input.ownerUserId,
+      input.ownerUserId,
+    );
+    if (existing) return mapPlanCycle(existing).id;
+
+    const plan = await db.getFirstAsync<{ duration_weeks: number | null; name: string }>(
+      `SELECT name, duration_weeks FROM plan_templates WHERE id = ? LIMIT 1`,
+      input.planId,
+    );
+    const nextIndexRow = await db.getFirstAsync<{ max_index: number | null }>(
+      `SELECT MAX(cycle_index) AS max_index FROM plan_cycles WHERE group_id = ? AND plan_id = ?`,
+      input.groupId,
+      input.planId,
+    );
+    const now = nowIso();
+    const cycleId = createId('cycle');
+    const cycleIndex = (nextIndexRow?.max_index ?? 0) + 1;
+    const plannedWeeks = Math.max(1, input.plannedWeeks ?? plan?.duration_weeks ?? 1);
+    const name = `${input.planName ?? plan?.name ?? 'Training Plan'} Cycle ${cycleIndex}`;
+    const endDate = new Date(`${input.startDate}T00:00:00`);
+    endDate.setDate(endDate.getDate() + plannedWeeks * 7 - 1);
+
+    await db.runAsync(
+      `INSERT INTO plan_cycles (
+        id, owner_user_id, group_id, plan_id, cycle_index, name, start_date, end_date,
+        planned_weeks, actual_start_date, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+      cycleId,
+      input.ownerUserId,
+      input.groupId,
+      input.planId,
+      cycleIndex,
+      name,
+      input.startDate,
+      endDate.toISOString().slice(0, 10),
+      plannedWeeks,
+      input.startDate,
+      now,
+      now,
+    );
+
+    await enqueueSyncCandidate({
+      entityType: 'planCycles',
+      localId: cycleId,
+      operation: 'create',
+      ownerUserId: input.ownerUserId,
+      payload: {
+        id: cycleId,
+        groupId: input.groupId,
+        planId: input.planId,
+        cycleIndex,
+        name,
+        startDate: input.startDate,
+        endDate: endDate.toISOString().slice(0, 10),
+        plannedWeeks,
+        status: 'active',
+      },
+      status: 'pending_create',
+      updatedAt: now,
+    });
+
+    return cycleId;
+  }
+
+  private async upsertTrainingReportForSession(sessionId: string): Promise<WorkoutSummary> {
+    const db = await this.getDb();
+    const session = await requireRow(await this.getSession(sessionId), `Workout session not visible: ${sessionId}`);
+    const ownerUserId = session.recordedByUserId ?? await this.getVisibleGroupOwnerUserId(session.groupId);
+    const now = nowIso();
+    const durationSeconds = getSessionDurationSeconds(session);
+
+    const counts = await db.getFirstAsync<{
+      completed_sets: number | null;
+      exercise_count: number | null;
+      total_reps: number | null;
+      total_sets: number | null;
+      total_volume: number | null;
+    }>(
+      `SELECT
+        SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS completed_sets,
+        COUNT(*) AS total_sets,
+        COUNT(DISTINCT CASE WHEN completed = 1 THEN exercise_record_id ELSE NULL END) AS exercise_count,
+        SUM(CASE WHEN completed = 1 THEN COALESCE(actual_reps, planned_reps, 0) ELSE 0 END) AS total_reps,
+        SUM(
+          CASE
+            WHEN completed = 1 THEN
+              COALESCE(actual_weight, planned_weight, 0) * COALESCE(actual_reps, planned_reps, 0)
+            ELSE 0
+          END
+        ) AS total_volume
+       FROM workout_sets
+       WHERE session_id = ? AND deleted_at IS NULL`,
+      sessionId,
+    );
+
+    const participantStats = await db.getFirstAsync<{
+      avg_bodyweight: number | null;
+      participant_count: number | null;
+    }>(
+      `SELECT
+        COUNT(DISTINCT ws.member_id) AS participant_count,
+        AVG(CASE WHEN mp.bodyweight > 0 THEN mp.bodyweight ELSE NULL END) AS avg_bodyweight
+       FROM workout_sets ws
+       LEFT JOIN member_profiles mp ON mp.member_id = ws.member_id AND mp.deleted_at IS NULL
+       WHERE ws.session_id = ? AND ws.deleted_at IS NULL`,
+      sessionId,
+    );
+
+    const exerciseRows = await db.getAllAsync<{
+      completed_sets: number | null;
+      exercise_id: string;
+      exercise_name: string | null;
+      muscle_group: string | null;
+      total_reps: number | null;
+      total_volume: number | null;
+    }>(
+      `SELECT
+        wer.exercise_id,
+        ex.name AS exercise_name,
+        COALESCE(ex.primary_muscle, ex.target_muscle, 'other') AS muscle_group,
+        SUM(CASE WHEN ws.completed = 1 THEN 1 ELSE 0 END) AS completed_sets,
+        SUM(CASE WHEN ws.completed = 1 THEN COALESCE(ws.actual_reps, ws.planned_reps, 0) ELSE 0 END) AS total_reps,
+        SUM(
+          CASE
+            WHEN ws.completed = 1 THEN
+              COALESCE(ws.actual_weight, ws.planned_weight, 0) * COALESCE(ws.actual_reps, ws.planned_reps, 0)
+            ELSE 0
+          END
+        ) AS total_volume
+       FROM workout_exercise_records wer
+       LEFT JOIN workout_sets ws ON ws.exercise_record_id = wer.id AND ws.deleted_at IS NULL
+       LEFT JOIN exercises ex ON ex.id = wer.exercise_id
+       WHERE wer.session_id = ? AND wer.deleted_at IS NULL
+       GROUP BY wer.exercise_id, ex.name, ex.primary_muscle, ex.target_muscle
+       ORDER BY MIN(wer.order_index) ASC`,
+      sessionId,
+    );
+
+    const completedSets = counts?.completed_sets ?? 0;
+    const totalSets = counts?.total_sets ?? 0;
+    const totalReps = counts?.total_reps ?? 0;
+    const totalVolume = counts?.total_volume ?? 0;
+    const exerciseCount = counts?.exercise_count ?? 0;
+    const intensityLevel = getIntensityLevel({ durationSeconds, totalSets: completedSets, totalVolume });
+    const participantCount = Math.max(1, participantStats?.participant_count ?? 1);
+    const avgBodyweight = participantStats?.avg_bodyweight && participantStats.avg_bodyweight > 0
+      ? participantStats.avg_bodyweight
+      : DEFAULT_BODYWEIGHT_KG;
+    const calories = estimateCalories({
+      bodyweightKg: avgBodyweight * participantCount,
+      durationSeconds,
+      intensity: intensityLevel,
+    });
+
+    const muscleTotals = new Map<string, { completedSets: number; totalReps: number; totalVolume: number }>();
+    const exerciseSummary = exerciseRows.map((row) => {
+      const muscleGroup = row.muscle_group ?? 'other';
+      const current = muscleTotals.get(muscleGroup) ?? { completedSets: 0, totalReps: 0, totalVolume: 0 };
+      current.completedSets += row.completed_sets ?? 0;
+      current.totalReps += row.total_reps ?? 0;
+      current.totalVolume += row.total_volume ?? 0;
+      muscleTotals.set(muscleGroup, current);
+      return {
+        exerciseId: row.exercise_id,
+        name: row.exercise_name ?? row.exercise_id,
+        muscleGroup,
+        completedSets: row.completed_sets ?? 0,
+        totalReps: row.total_reps ?? 0,
+        totalVolume: row.total_volume ?? 0,
+      };
+    });
+    const muscleGroupSummary = Array.from(muscleTotals.entries()).map(([muscleGroup, value]) => ({
+      muscleGroup,
+      ...value,
+    }));
+
+    const existing = await db.getFirstAsync<{ id: string }>(
+      `SELECT id FROM training_reports
+       WHERE workout_session_id = ? AND deleted_at IS NULL
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      sessionId,
+    );
+    const reportId = existing?.id ?? createId('report');
+    const operation = existing ? 'update' : 'create';
+    const reportPayload = {
+      id: reportId,
+      groupId: session.groupId,
+      planId: session.planId,
+      planCycleId: session.planCycleId,
+      workoutSessionId: session.id,
+      reportDate: session.date,
+      durationSeconds,
+      totalVolume,
+      totalSets,
+      totalReps,
+      exerciseCount,
+      estimatedCalories: calories.estimatedCalories,
+      estimatedCaloriesMin: calories.estimatedCaloriesMin,
+      estimatedCaloriesMax: calories.estimatedCaloriesMax,
+      intensityLevel,
+      muscleGroupSummaryJson: JSON.stringify(muscleGroupSummary),
+      exerciseSummaryJson: JSON.stringify(exerciseSummary),
+      personalRecordsJson: JSON.stringify([]),
+      updatedAt: now,
+    };
+
+    if (existing) {
+      await db.runAsync(
+        `UPDATE training_reports
+         SET group_id = ?, member_id = ?, plan_id = ?, plan_cycle_id = ?, workout_session_id = ?,
+             report_date = ?, duration_seconds = ?, total_volume = ?, total_sets = ?, total_reps = ?,
+             exercise_count = ?, estimated_calories = ?, estimated_calories_min = ?,
+             estimated_calories_max = ?, intensity_level = ?, muscle_group_summary_json = ?,
+             exercise_summary_json = ?, personal_records_json = ?, updated_at = ?
+         WHERE id = ?`,
+        session.groupId,
+        null,
+        session.planId,
+        session.planCycleId ?? null,
+        session.id,
+        session.date,
+        durationSeconds,
+        totalVolume,
+        totalSets,
+        totalReps,
+        exerciseCount,
+        calories.estimatedCalories,
+        calories.estimatedCaloriesMin,
+        calories.estimatedCaloriesMax,
+        intensityLevel,
+        reportPayload.muscleGroupSummaryJson,
+        reportPayload.exerciseSummaryJson,
+        reportPayload.personalRecordsJson,
+        now,
+        reportId,
+      );
+    } else {
+      await db.runAsync(
+        `INSERT INTO training_reports (
+          id, owner_user_id, group_id, member_id, plan_id, plan_cycle_id, workout_session_id,
+          report_date, duration_seconds, total_volume, total_sets, total_reps, exercise_count,
+          estimated_calories, estimated_calories_min, estimated_calories_max, intensity_level,
+          muscle_group_summary_json, exercise_summary_json, personal_records_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        reportId,
+        ownerUserId,
+        session.groupId,
+        null,
+        session.planId,
+        session.planCycleId ?? null,
+        session.id,
+        session.date,
+        durationSeconds,
+        totalVolume,
+        totalSets,
+        totalReps,
+        exerciseCount,
+        calories.estimatedCalories,
+        calories.estimatedCaloriesMin,
+        calories.estimatedCaloriesMax,
+        intensityLevel,
+        reportPayload.muscleGroupSummaryJson,
+        reportPayload.exerciseSummaryJson,
+        reportPayload.personalRecordsJson,
+        now,
+        now,
+      );
+    }
+
+    await enqueueSyncCandidate({
+      entityType: 'trainingReports',
+      localId: reportId,
+      operation,
+      ownerUserId,
+      payload: reportPayload,
+      status: operation === 'create' ? 'pending_create' : 'pending_update',
+      updatedAt: now,
+    });
+
+    return {
+      sessionId,
+      reportId,
+      completedSets,
+      durationSeconds,
+      estimatedCalories: calories.estimatedCalories,
+      estimatedCaloriesMax: calories.estimatedCaloriesMax,
+      estimatedCaloriesMin: calories.estimatedCaloriesMin,
+      exerciseCount,
+      intensityLevel,
+      totalSets,
+      totalReps,
+      totalVolume,
+    };
   }
 
   private async getOwnedSessionRow(sessionId: string): Promise<WorkoutSessionRow | null> {
@@ -148,12 +528,20 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const ownerUserId = await this.getVisibleGroupOwnerUserId(input.groupId);
     const now = nowIso();
     const trainingMode = input.trainingMode ?? 'group_local';
+    const planCycleId = input.planCycleId ?? await this.ensureActivePlanCycle({
+      groupId: input.groupId,
+      ownerUserId,
+      planId: input.planId,
+      startDate: input.date,
+    });
     let session: WorkoutSession | null = null;
 
     await db.withExclusiveTransactionAsync(async (txn) => {
       const existing = await txn.getFirstAsync<WorkoutSessionRow>(
         `SELECT * FROM workout_sessions
          WHERE group_id = ? AND date = ? AND plan_id = ? AND week = ? AND weekday = ?
+           AND (plan_cycle_id = ? OR (? IS NULL AND plan_cycle_id IS NULL))
+           AND (owner_user_id = ? OR (? IS NULL AND owner_user_id IS NULL))
            AND training_mode = ? AND status IN ('draft', 'in_progress')
            AND deleted_at IS NULL
          ORDER BY created_at DESC
@@ -163,6 +551,10 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         input.planId,
         input.week,
         input.weekday,
+        planCycleId,
+        planCycleId,
+        ownerUserId,
+        ownerUserId,
         trainingMode,
       );
 
@@ -176,8 +568,14 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       if (input.planExerciseIds?.length) {
         const placeholders = input.planExerciseIds.map(() => '?').join(', ');
         const rows = await txn.getAllAsync<PlanExerciseRow>(
-          `SELECT * FROM plan_exercises WHERE id IN (${placeholders})`,
+          `SELECT pe.* FROM plan_exercises pe
+           INNER JOIN plan_days pd ON pd.id = pe.plan_day_id
+           WHERE pe.id IN (${placeholders})
+             AND pd.plan_id = ?
+             AND (pe.owner_user_id = ? OR pe.owner_user_id IS NULL)`,
           ...input.planExerciseIds,
+          input.planId,
+          ownerUserId,
         );
         const byId = new Map(rows.map((row) => [row.id, row]));
         planExerciseRows = input.planExerciseIds
@@ -188,11 +586,13 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
           `SELECT pe.* FROM plan_exercises pe
            INNER JOIN plan_days pd ON pd.id = pe.plan_day_id
            WHERE pd.plan_id = ? AND pd.phase_id = ? AND pd.week = ? AND pd.weekday = ?
+             AND (pe.owner_user_id = ? OR pe.owner_user_id IS NULL)
            ORDER BY pe.order_index ASC`,
           input.planId,
           input.phaseId ?? '',
           input.week,
           input.weekday,
+          ownerUserId,
         );
       }
 
@@ -202,8 +602,14 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       }
 
       const memberRows = await txn.getAllAsync<GroupMemberRow>(
-        'SELECT * FROM group_members WHERE group_id = ? ORDER BY created_at ASC',
+        `SELECT * FROM group_members
+         WHERE group_id = ?
+           AND (owner_user_id = ? OR (? IS NULL AND owner_user_id IS NULL))
+           AND deleted_at IS NULL
+         ORDER BY created_at ASC`,
         input.groupId,
+        ownerUserId,
+        ownerUserId,
       );
       const members = memberRows.map(mapGroupMember);
       const requestedParticipantIds = input.participantMemberIds?.length
@@ -220,8 +626,13 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       }
 
       const profileRows = await txn.getAllAsync<MemberProfileRow>(
-        'SELECT * FROM member_profiles WHERE group_id = ?',
+        `SELECT * FROM member_profiles
+         WHERE group_id = ?
+           AND (owner_user_id = ? OR (? IS NULL AND owner_user_id IS NULL))
+           AND deleted_at IS NULL`,
         input.groupId,
+        ownerUserId,
+        ownerUserId,
       );
       const profilesByMemberId = new Map(
         profileRows.map((row) => [row.member_id, mapMemberProfile(row)]),
@@ -239,6 +650,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         id: createId('session'),
         groupId: input.groupId,
         planId: input.planId,
+        planCycleId,
+        planDayId: input.planDayId,
         phaseId: input.phaseId,
         date: input.date,
         week: input.week,
@@ -246,6 +659,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         title: input.title,
         status: 'in_progress',
         trainingMode,
+        recordedByUserId: ownerUserId ?? undefined,
+        sourceDeviceId: SOURCE_DEVICE_ID,
         startedAt: now,
         createdAt: now,
         updatedAt: now,
@@ -253,13 +668,16 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
       await txn.runAsync(
         `INSERT INTO workout_sessions (
-          id, owner_user_id, group_id, plan_id, phase_id, date, week, weekday, title,
-          status, training_mode, started_at, finished_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, owner_user_id, group_id, plan_id, plan_cycle_id, plan_day_id, phase_id,
+          date, week, weekday, title, status, training_mode, recorded_by_user_id,
+          source_device_id, started_at, finished_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         createdSession.id,
         ownerUserId,
         createdSession.groupId,
         createdSession.planId,
+        createdSession.planCycleId ?? null,
+        createdSession.planDayId ?? null,
         createdSession.phaseId ?? null,
         createdSession.date,
         createdSession.week,
@@ -267,6 +685,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         createdSession.title,
         createdSession.status,
         createdSession.trainingMode,
+        createdSession.recordedByUserId ?? null,
+        createdSession.sourceDeviceId ?? null,
         createdSession.startedAt ?? null,
         null,
         createdSession.createdAt,
@@ -277,14 +697,16 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         const recordId = createId('exercise_record');
         await txn.runAsync(
           `INSERT INTO workout_exercise_records (
-            id, owner_user_id, session_id, plan_exercise_id, exercise_id, order_index,
+            id, owner_user_id, session_id, plan_cycle_id, plan_day_id, plan_exercise_id, exercise_id, order_index,
             replaced_from_exercise_id, priority, planned_sets, planned_reps,
             planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
             planned_percent_1rm, planned_rest_seconds, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           recordId,
           ownerUserId,
           createdSession.id,
+          createdSession.planCycleId ?? null,
+          createdSession.planDayId ?? planExercise.planDayId,
           planExercise.id,
           planExercise.exerciseId,
           index + 1,
@@ -350,15 +772,18 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
             await txn.runAsync(
               `INSERT INTO workout_sets (
                 id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
+                recorded_by_user_id, source_device_id,
                 planned_weight, actual_weight, planned_reps, actual_reps,
                 rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               createId('set'),
               ownerUserId,
               createdSession.id,
               recordId,
               member.id,
               setNumber,
+              createdSession.recordedByUserId ?? null,
+              createdSession.sourceDeviceId ?? null,
               plannedWeight,
               plannedWeight,
               plannedReps,
@@ -392,6 +817,18 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const now = nowIso();
     const weekday = (new Date(`${input.date}T12:00:00`).getDay() || 7) as WorkoutSession['weekday'];
     const participantIds = [...new Set(input.participantMemberIds)];
+    const linkedPlanId = input.sourcePlanId === null
+      ? FREE_TRAINING_PLAN_ID
+      : normalizeLinkedPlanId(input.sourcePlanId ?? input.planId);
+    await this.assertPlanVisibleForCurrentAccount(linkedPlanId);
+    const planCycleId = isFreeTrainingPlan(linkedPlanId)
+      ? undefined
+      : input.planCycleId ?? await this.ensureActivePlanCycle({
+          groupId: input.groupId,
+          ownerUserId,
+          planId: linkedPlanId,
+          startDate: input.date,
+        });
 
     if (participantIds.length === 0) {
       throw new Error('请至少选择一位参与成员。');
@@ -404,13 +841,16 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const session: WorkoutSession = {
       id: createId('session'),
       groupId: input.groupId,
-      planId: input.sourcePlanId ?? input.planId,
+      planId: linkedPlanId,
+      planCycleId: planCycleId ?? undefined,
       date: input.date,
       week: 1,
       weekday,
-      title: input.title.trim() || '补录训练',
+      title: input.title.trim() || 'Manual Workout',
       status: input.completed === false ? 'in_progress' : 'completed',
       trainingMode: input.trainingMode,
+      recordedByUserId: ownerUserId ?? undefined,
+      sourceDeviceId: SOURCE_DEVICE_ID,
       startedAt: now,
       finishedAt: input.completed === false ? undefined : now,
       createdAt: now,
@@ -431,13 +871,16 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
       await txn.runAsync(
         `INSERT INTO workout_sessions (
-          id, owner_user_id, group_id, plan_id, phase_id, date, week, weekday, title,
-          status, training_mode, started_at, finished_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, owner_user_id, group_id, plan_id, plan_cycle_id, plan_day_id, phase_id,
+          date, week, weekday, title, status, training_mode, recorded_by_user_id,
+          source_device_id, started_at, finished_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         session.id,
         ownerUserId,
         session.groupId,
         session.planId,
+        session.planCycleId ?? null,
+        null,
         null,
         session.date,
         session.week,
@@ -445,6 +888,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         session.title,
         session.status,
         session.trainingMode,
+        session.recordedByUserId ?? null,
+        session.sourceDeviceId ?? null,
         session.startedAt ?? null,
         session.finishedAt ?? null,
         session.createdAt,
@@ -462,14 +907,16 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
         await txn.runAsync(
           `INSERT INTO workout_exercise_records (
-            id, owner_user_id, session_id, plan_exercise_id, exercise_id, order_index,
+            id, owner_user_id, session_id, plan_cycle_id, plan_day_id, plan_exercise_id, exercise_id, order_index,
             replaced_from_exercise_id, priority, planned_sets, planned_reps,
             planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
             planned_percent_1rm, planned_rest_seconds, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           recordId,
           ownerUserId,
           session.id,
+          session.planCycleId ?? null,
+          null,
           null,
           exercise.exerciseId,
           exerciseIndex + 1,
@@ -493,15 +940,18 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
             await txn.runAsync(
               `INSERT INTO workout_sets (
                 id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
+                recorded_by_user_id, source_device_id,
                 planned_weight, actual_weight, planned_reps, actual_reps,
                 rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               createId('set'),
               ownerUserId,
               session.id,
               recordId,
               memberSet.memberId,
               set.setIndex ?? setIndex + 1,
+              session.recordedByUserId ?? null,
+              session.sourceDeviceId ?? null,
               set.weight ?? null,
               set.weight ?? null,
               set.reps ?? null,
@@ -520,6 +970,10 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       }
     });
 
+    if (session.status === 'completed') {
+      await this.upsertTrainingReportForSession(session.id);
+    }
+
     return session;
   }
 
@@ -529,16 +983,29 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const now = nowIso();
     const weekday = (new Date(`${input.date}T12:00:00`).getDay() || 7) as WorkoutSession['weekday'];
     const manualExercises = this.normalizeManualExercises(input);
+    const linkedPlanId = normalizeLinkedPlanId(input.planId);
+    await this.assertPlanVisibleForCurrentAccount(linkedPlanId);
+    const planCycleId = isFreeTrainingPlan(linkedPlanId)
+      ? undefined
+      : input.planCycleId ?? await this.ensureActivePlanCycle({
+          groupId: input.groupId,
+          ownerUserId,
+          planId: linkedPlanId,
+          startDate: input.date,
+        });
     const session: WorkoutSession = {
       id: createId('session'),
       groupId: input.groupId,
-      planId: input.planId,
+      planId: linkedPlanId,
+      planCycleId,
       date: input.date,
       week: 1,
       weekday,
-      title: input.title.trim() || '补录训练',
+      title: input.title.trim() || 'Manual Workout',
       status: input.completed === false ? 'in_progress' : 'completed',
       trainingMode: 'solo_local',
+      recordedByUserId: ownerUserId ?? undefined,
+      sourceDeviceId: SOURCE_DEVICE_ID,
       startedAt: now,
       finishedAt: input.completed === false ? undefined : now,
       createdAt: now,
@@ -548,13 +1015,16 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     await db.withExclusiveTransactionAsync(async (txn) => {
       await txn.runAsync(
         `INSERT INTO workout_sessions (
-          id, owner_user_id, group_id, plan_id, phase_id, date, week, weekday, title,
-          status, training_mode, started_at, finished_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, owner_user_id, group_id, plan_id, plan_cycle_id, plan_day_id, phase_id,
+          date, week, weekday, title, status, training_mode, recorded_by_user_id,
+          source_device_id, started_at, finished_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         session.id,
         ownerUserId,
         session.groupId,
         session.planId,
+        session.planCycleId ?? null,
+        null,
         null,
         session.date,
         session.week,
@@ -562,6 +1032,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         session.title,
         session.status,
         session.trainingMode,
+        session.recordedByUserId ?? null,
+        session.sourceDeviceId ?? null,
         session.startedAt ?? null,
         session.finishedAt ?? null,
         session.createdAt,
@@ -573,14 +1045,16 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         const plannedReps = exercise.sets[0]?.reps ?? input.reps ?? null;
         await txn.runAsync(
           `INSERT INTO workout_exercise_records (
-            id, owner_user_id, session_id, plan_exercise_id, exercise_id, order_index,
+            id, owner_user_id, session_id, plan_cycle_id, plan_day_id, plan_exercise_id, exercise_id, order_index,
             replaced_from_exercise_id, priority, planned_sets, planned_reps,
             planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
             planned_percent_1rm, planned_rest_seconds, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           recordId,
           ownerUserId,
           session.id,
+          session.planCycleId ?? null,
+          null,
           null,
           exercise.exerciseId,
           exerciseIndex + 1,
@@ -603,15 +1077,18 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
           await txn.runAsync(
             `INSERT INTO workout_sets (
               id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
+              recorded_by_user_id, source_device_id,
               planned_weight, actual_weight, planned_reps, actual_reps,
               rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             createId('set'),
             ownerUserId,
             session.id,
             recordId,
             input.memberId,
             setIndex + 1,
+            session.recordedByUserId ?? null,
+            session.sourceDeviceId ?? null,
             set.weight ?? null,
             set.weight ?? null,
             set.reps ?? null,
@@ -628,6 +1105,10 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         }
       }
     });
+
+    if (session.status === 'completed') {
+      await this.upsertTrainingReportForSession(session.id);
+    }
 
     return session;
   }
@@ -647,11 +1128,11 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const setRows = await db.getAllAsync<WorkoutSetRow>(
       `SELECT ws.* FROM workout_sets ws
        INNER JOIN workout_exercise_records wer ON wer.id = ws.exercise_record_id
-       INNER JOIN group_members gm ON gm.id = ws.member_id
+       LEFT JOIN group_members gm ON gm.id = ws.member_id
        WHERE ws.session_id = ?
          AND ws.deleted_at IS NULL
          AND wer.deleted_at IS NULL
-       ORDER BY wer.order_index ASC, gm.created_at ASC, ws.set_number ASC`,
+       ORDER BY wer.order_index ASC, COALESCE(gm.created_at, '9999-12-31') ASC, ws.set_number ASC`,
       sessionId,
     );
 
@@ -740,14 +1221,16 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
       await txn.runAsync(
         `INSERT INTO workout_exercise_records (
-          id, owner_user_id, session_id, plan_exercise_id, exercise_id, order_index,
+          id, owner_user_id, session_id, plan_cycle_id, plan_day_id, plan_exercise_id, exercise_id, order_index,
           replaced_from_exercise_id, priority, planned_sets, planned_reps,
           planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
           planned_percent_1rm, planned_rest_seconds, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         recordId,
         ownerUserId,
         session.id,
+        session.planCycleId ?? null,
+        session.planDayId ?? null,
         null,
         input.exerciseId,
         nextOrderIndex,
@@ -769,15 +1252,18 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
           await txn.runAsync(
             `INSERT INTO workout_sets (
               id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
+              recorded_by_user_id, source_device_id,
               planned_weight, actual_weight, planned_reps, actual_reps,
               rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             createId('set'),
             ownerUserId,
             session.id,
             recordId,
             memberId,
             index + 1,
+            session.recordedByUserId ?? ownerUserId,
+            session.sourceDeviceId ?? SOURCE_DEVICE_ID,
             set.weight ?? null,
             set.weight ?? null,
             set.reps ?? null,
@@ -821,6 +1307,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       session_id: input.sessionId,
       exercise_record_id: record.id,
       member_id: input.memberId,
+      recorded_by_user_id: session.recordedByUserId ?? ownerUserId,
+      source_device_id: session.sourceDeviceId ?? SOURCE_DEVICE_ID,
       set_number: (setNumberRow?.max_set_number ?? 0) + 1,
       planned_weight: input.weight ?? null,
       actual_weight: input.weight ?? null,
@@ -839,15 +1327,18 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     await db.runAsync(
       `INSERT INTO workout_sets (
         id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
+        recorded_by_user_id, source_device_id,
         planned_weight, actual_weight, planned_reps, actual_reps,
         rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       setRow.id,
       ownerUserId,
       setRow.session_id,
       setRow.exercise_record_id,
       setRow.member_id,
       setRow.set_number,
+      setRow.recorded_by_user_id ?? null,
+      setRow.source_device_id ?? null,
       setRow.planned_weight,
       setRow.actual_weight,
       setRow.planned_reps,
@@ -1405,20 +1896,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       now,
       sessionId,
     );
-    const counts = await db.getFirstAsync<{ completed_sets: number; total_sets: number }>(
-      `SELECT
-        SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS completed_sets,
-        COUNT(*) AS total_sets
-       FROM workout_sets
-       WHERE session_id = ? AND deleted_at IS NULL`,
-      sessionId,
-    );
-
-    return {
-      sessionId,
-      completedSets: counts?.completed_sets ?? 0,
-      totalSets: counts?.total_sets ?? 0,
-    };
+    return this.upsertTrainingReportForSession(sessionId);
   }
 
   async listHistorySessionsByScope(input: ListHistorySessionsByScopeInput): Promise<WorkoutSession[]> {
@@ -1453,6 +1931,11 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
           AND member_sets.deleted_at IS NULL
       )`);
       params.push(input.memberId);
+    }
+
+    if (input.planCycleId) {
+      clauses.push('ws.plan_cycle_id = ?');
+      params.push(input.planCycleId);
     }
 
     if (input.fromDate) {

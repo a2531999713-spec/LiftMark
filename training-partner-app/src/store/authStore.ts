@@ -17,7 +17,9 @@ import { readStoredSession, saveStoredSession } from '@/services/auth/tokenStora
 import { getMembership, type Membership } from '@/services/membershipService';
 import { repairLocalDataOwnership } from '@/services/ownershipRepairService';
 import { sync } from '@/sync/syncOrchestrator';
+import { useManualWorkoutDraftStore } from '@/store/manualWorkoutDraftStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
+import { useWorkoutDraftStore } from '@/store/workoutDraftStore';
 
 type AuthStore = {
   authMode: AuthMode;
@@ -117,13 +119,13 @@ async function resolveSessionState(session: AuthSession | null) {
 
 function switchRuntimeAccountScope(userId?: string | null) {
   useSelectedGroupStore.getState().switchAccountScope(userId);
+  useWorkoutDraftStore.getState().setActiveSessionId(undefined);
+  useManualWorkoutDraftStore.getState().reset();
 }
 
 function recoverCurrentAccountData() {
-  // 登录后只修复身份表归属 + 增量同步，不再无条件 fullPull。
-  // fullPull 会重置游标全量拉取，在本地库不可信时可能放大污染，留给用户在同步页主动触发。
   repairLocalDataOwnership()
-    .then(() => sync())
+    .then(() => sync({ fullPull: true }))
     .catch((error) => {
       console.warn('[auth] account data recovery failed', error instanceof Error ? error.message : error);
     });

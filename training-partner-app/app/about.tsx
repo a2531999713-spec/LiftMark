@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { AppText, Screen, SettingsRow } from '@/components/ui';
 import { ProfileSection } from '@/components/profile';
+import { BUILD_INFO, HAS_BUILD_INFO } from '@/config/buildInfo';
 import { colors, radius, spacing } from '@/theme';
 
 const APP_CONFIG = {
@@ -14,8 +15,19 @@ const APP_CONFIG = {
   ]
 } as const;
 
+function formatBuildTime(iso: string): string {
+  if (!iso) return '未构建';
+  try {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return iso;
+    return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')} ${`${date.getHours()}`.padStart(2, '0')}:${`${date.getMinutes()}`.padStart(2, '0')}`;
+  } catch {
+    return iso;
+  }
+}
+
 export default function AboutRoute() {
-  const version = Constants.expoConfig?.version ?? '0.1.0';
+  const version = Constants.expoConfig?.version ?? BUILD_INFO.appVersion;
 
   return (
     <Screen contentStyle={styles.screen}>
@@ -49,6 +61,20 @@ export default function AboutRoute() {
               {text}
             </AppText>
           ))}
+        </View>
+      </ProfileSection>
+
+      <ProfileSection title="构建信息">
+        <View style={styles.aboutBlock}>
+          <SettingsRow label="Commit" value={BUILD_INFO.commit || '未知'} />
+          <SettingsRow label="分支" value={BUILD_INFO.branch || '未知'} />
+          <SettingsRow label="构建时间" value={formatBuildTime(BUILD_INFO.builtAt)} />
+          <SettingsRow label="API 地址" value={BUILD_INFO.apiBaseUrl} />
+          <AppText variant="caption" tone="muted" style={styles.buildHint}>
+            {HAS_BUILD_INFO
+              ? '当前为已构建版本，以上信息来自本次打包。'
+              : '当前为开发态，构建后会显示真实 commit / 分支 / 时间。'}
+          </AppText>
         </View>
       </ProfileSection>
     </Screen>
@@ -88,5 +114,9 @@ const styles = StyleSheet.create({
   },
   aboutText: {
     lineHeight: 22,
+  },
+  buildHint: {
+    lineHeight: 18,
+    paddingTop: spacing.xs,
   },
 });

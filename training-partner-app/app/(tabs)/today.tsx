@@ -39,6 +39,7 @@ import type {
   Weekday,
 } from '@/domain/plan/plan.types';
 import type { RecoveryMode } from '@/domain/plan/plan.service';
+import { resolveHomeStatus, type HomeStatus } from '@/domain/home/home-status';
 import { calculateSuggestedWeight } from '@/domain/weight/weight-calculator';
 import type {
   CreateSessionFromTodayPlanInput,
@@ -58,6 +59,8 @@ import {
 } from '@/services/avatar';
 import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { updateDisplayNameAcrossLocalProfiles } from '@/services/profileSyncService';
+import { ensureTrainingGroupMainline } from '@/services/trainingMainlineService';
+import { ensurePlanStructureCompatibleForGroup } from '@/services/planStructureCompatibilityService';
 import {
   fetchCurrentAnnouncement,
   shouldShowAnnouncement,
@@ -544,6 +547,12 @@ async function loadOrDefault<T>(label: string, task: Promise<T>, fallback: T): P
   }
 }
 
+function isTrainablePlan(plan: PlanTemplate | null): plan is PlanTemplate {
+  if (!plan) return false;
+  if (plan.source === 'system' || plan.visibility === 'system') return true;
+  return !plan.status || plan.status === 'active';
+}
+
 function compactDetails(details: (WorkoutSessionDetail | null)[]): WorkoutSessionDetail[] {
   return details.filter((detail): detail is WorkoutSessionDetail => Boolean(detail));
 }
@@ -554,6 +563,7 @@ function isSameWorkoutSelection(
 ): boolean {
   return (
     session.planId === input.planId &&
+    (!session.planDayId || !input.planDayId || session.planDayId === input.planDayId) &&
     session.week === input.week &&
     session.weekday === input.weekday &&
     session.trainingMode === (input.trainingMode ?? 'group_local')
@@ -624,6 +634,8 @@ export default function TodayRoute() {
   const [recoveryMode, setRecoveryMode] = useState<RecoveryMode>('good');
   const [todayPlan, setTodayPlan] = useState<TodayPlanResult | null>(null);
   const [activePlan, setActivePlan] = useState<PlanTemplate | null>(null);
+  // 未经 isTrainablePlan 过滤的原始 activePlan，用于识别 completed/archived/abandoned
+  const [rawActivePlan, setRawActivePlan] = useState<PlanTemplate | null>(null);
   const [planPhases, setPlanPhases] = useState<PlanPhase[]>([]);
   const [planDays, setPlanDays] = useState<PlanDay[]>([]);
   const [exerciseMap, setExerciseMap] = useState<Record<string, Exercise>>({});
@@ -648,6 +660,7 @@ export default function TodayRoute() {
   const [pendingWorkoutStart, setPendingWorkoutStart] =
     useState<CreateSessionFromTodayPlanInput | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -676,12 +689,13 @@ export default function TodayRoute() {
       const allGroups = await repositories.groupRepository.listGroups();
       if (!isLatestRequest()) return;
       setGroups(allGroups);
-      const nextGroup = allGroups.find((item) => item.id === selectedGroupId) ?? allGroups[0] ?? null;
+      let nextGroup = allGroups.find((item) => item.id === selectedGroupId) ?? allGroups[0] ?? null;
       if (!nextGroup) {
         const nextAccountProfile = latestUser ? await getAccountProfileCache(latestUser.id) : null;
         if (!isLatestRequest()) return;
         setGroup(null);
         setActivePlan(null);
+        setRawActivePlan(null);
         setTodayPlan(null);
         setMembers([]);
         setProfiles({});
@@ -704,10 +718,11 @@ export default function TodayRoute() {
         console.error('[home] member avatar sync failed', avatarError);
       });
 
-      const [nextActivePlan, nextMembers] = await Promise.all([
+      const [loadedActivePlan, nextMembers] = await Promise.all([
         loadOrDefault('active plan load', repositories.planRepository.getPlanById(nextGroup.activePlanId), null),
         loadOrDefault('member list load', repositories.memberRepository.listMembers(nextGroup.id), []),
       ]);
+      const nextActivePlan = isTrainablePlan(loadedActivePlan) ? loadedActivePlan : null;
       const nextProfiles = await Promise.all(
         nextMembers.map(async (member) => [
           member.id,
@@ -720,7 +735,7 @@ export default function TodayRoute() {
       );
       const nextProfilesByMemberId = Object.fromEntries(nextProfiles);
       const currentMember = resolveDefaultTrainingMember(nextMembers, latestUser?.id);
-      const [weekSessions, recentSessions, nextPhases, nextPlanDays, nextAccountProfile] = await Promise.all([
+      const [weekSessions, recentSessions, nextPhasesInitial, nextPlanDaysInitial, nextAccountProfile] = await Promise.all([
         loadOrDefault(
           'weekly sessions load',
           repositories.workoutRepository.listSessions({
@@ -749,6 +764,9 @@ export default function TodayRoute() {
           : Promise.resolve([]),
         latestUser ? loadOrDefault('account profile load', getAccountProfileCache(latestUser.id), null) : Promise.resolve(null),
       ]);
+      // 用 let 以便计划结构兼容修复后能重新赋值
+      let nextPhases = nextPhasesInitial;
+      let nextPlanDays = nextPlanDaysInitial;
       const weekDetails = await Promise.all(
         weekSessions.map((session) =>
           loadOrDefault(`weekly session detail ${session.id}`, repositories.workoutRepository.getSessionDetail(session.id), null),
@@ -818,6 +836,73 @@ export default function TodayRoute() {
           null,
         );
 
+        // 首页解析失败时，尝试一次计划结构兼容修复后重新解析。
+        // 覆盖场景：plan_phases 缺失、currentWeek 超出范围、currentPhaseType 不匹配、
+        // plan_days.phase_id 悬空。修复后重新读取 phases/days 并重试 getTodayPlan。
+        if (!result && nextActivePlan) {
+          try {
+            const compatibility = await ensurePlanStructureCompatibleForGroup({
+              repositories,
+              group: nextGroup,
+              plan: nextActivePlan,
+            });
+            if (compatibility.repaired) {
+              // 修复后重新读取 phases/days 与重试 today plan
+              const repairedPhases = await loadOrDefault(
+                'plan phases reload after compatibility',
+                repositories.planRepository.listPlanPhases(nextActivePlan.id),
+                [],
+              );
+              const repairedDays = await loadOrDefault(
+                'plan days reload after compatibility',
+                repositories.planRepository.listPlanDays(nextActivePlan.id),
+                [],
+              );
+              nextPhases = repairedPhases;
+              nextPlanDays = repairedDays;
+              // 用修复后的 group 重新计算 week/weekday/phase
+              const repairedWeekOptions = getPlanWeekOptions(repairedDays, compatibility.group.currentWeek);
+              const repairedAutoWeek = repairedWeekOptions.includes(compatibility.group.currentWeek)
+                ? compatibility.group.currentWeek
+                : repairedWeekOptions[0];
+              nextSelectedWeek = manualWeek ?? repairedAutoWeek;
+              const repairedDaysForWeek = getDaysForWeek(repairedDays, nextSelectedWeek);
+              nextSelectedWeekday =
+                manualWeekday ??
+                (repairedDaysForWeek.some((day) => day.weekday === todayWeekday)
+                  ? todayWeekday
+                  : (repairedDaysForWeek[0]?.weekday ?? todayWeekday));
+              const repairedPhaseForWeek =
+                repairedPhases.find(
+                  (phase) =>
+                    nextSelectedWeek !== null &&
+                    nextSelectedWeek >= phase.startWeek &&
+                    nextSelectedWeek <= phase.endWeek,
+                ) ?? repairedPhases.find((phase) => phase.type === compatibility.group.currentPhaseType);
+
+              result = await loadOrDefault(
+                'today plan reload after compatibility',
+                repositories.planRepository.getTodayPlan({
+                  currentWeek: nextSelectedWeek,
+                  fridayEnabled: true,
+                  groupId: compatibility.group.id,
+                  phaseType: repairedPhaseForWeek?.type ?? compatibility.group.currentPhaseType,
+                  planId: nextGroup.activePlanId,
+                  recoveryMode,
+                  weekday: nextSelectedWeekday,
+                }),
+                null,
+              );
+              if (result) {
+                // 修复成功，更新 group 引用以便后续渲染使用正确的 currentWeek/currentPhaseType
+                nextGroup = compatibility.group;
+              }
+            }
+          } catch (compatibilityError) {
+            console.warn('[home] plan structure compatibility failed', compatibilityError);
+          }
+        }
+
         const planExerciseIds = result?.exercises.map((exercise) => exercise.exerciseId) ?? [];
         const nextExercises =
           planExerciseIds.length > 0
@@ -835,6 +920,7 @@ export default function TodayRoute() {
       if (!isLatestRequest()) return;
       setGroup(nextGroup);
       setActivePlan(nextActivePlan);
+      setRawActivePlan(loadedActivePlan);
       setTodayPlan(result);
       setPlanDays(nextPlanDays);
       setSelectedWeek(nextSelectedWeek);
@@ -904,6 +990,31 @@ export default function TodayRoute() {
     }, [loadAnnouncement]),
   );
 
+  const createInitialTrainingGroup = useCallback(async () => {
+    if (!guardFeature('create_group')) {
+      return;
+    }
+
+    setIsCreatingGroup(true);
+    try {
+      const { group: createdGroup } = await ensureTrainingGroupMainline(repositories, {
+        displayName: user?.displayName,
+        groupName: '我的训练小组',
+        selectedGroupId,
+        userId: user?.id,
+      });
+      setSelectedGroupId(createdGroup.id);
+      await loadHome();
+    } catch (createError) {
+      setNotice({
+        title: '创建小组失败',
+        message: createError instanceof Error ? createError.message : '请稍后重试。',
+      });
+    } finally {
+      setIsCreatingGroup(false);
+    }
+  }, [guardFeature, loadHome, repositories, selectedGroupId, setSelectedGroupId, user]);
+
   const resolveSelectedWorkoutPlan = useCallback(async (): Promise<TodayPlanResult | null> => {
     if (!group || !activePlan) {
       return null;
@@ -924,15 +1035,52 @@ export default function TodayRoute() {
         (phase) => currentWeek >= phase.startWeek && currentWeek <= phase.endWeek,
       ) ?? planPhases.find((phase) => phase.type === group.currentPhaseType);
 
-    const resolvedPlan = await repositories.planRepository.getTodayPlan({
-      currentWeek,
-      fridayEnabled: true,
-      groupId: group.id,
-      phaseType: phaseForSelectedWeek?.type ?? group.currentPhaseType,
-      planId: activePlan.id,
-      recoveryMode,
-      weekday,
-    });
+    // getTodayPlan 可能在计划结构不完整时抛错（如 plan_has_no_phases）。
+    // 先尝试直接解析；失败时走兼容修复后重试，仍失败则返回 null（由调用方显示友好提示，而非 break 首页）。
+    let resolvedPlan: TodayPlanResult | null = null;
+    try {
+      resolvedPlan = await repositories.planRepository.getTodayPlan({
+        currentWeek,
+        fridayEnabled: true,
+        groupId: group.id,
+        phaseType: phaseForSelectedWeek?.type ?? group.currentPhaseType,
+        planId: activePlan.id,
+        recoveryMode,
+        weekday,
+      });
+    } catch (planError) {
+      console.warn('[home] resolveSelectedWorkoutPlan getTodayPlan failed, attempting compatibility repair', planError);
+      try {
+        const compatibility = await ensurePlanStructureCompatibleForGroup({
+          repositories,
+          group,
+          plan: activePlan,
+        });
+        if (compatibility.repaired) {
+          const repairedPhases = await repositories.planRepository.listPlanPhases(activePlan.id);
+          const repairedPhaseForWeek =
+            repairedPhases.find(
+              (phase) => currentWeek >= phase.startWeek && currentWeek <= phase.endWeek,
+            ) ?? repairedPhases.find((phase) => phase.type === compatibility.group.currentPhaseType);
+          resolvedPlan = await repositories.planRepository.getTodayPlan({
+            currentWeek,
+            fridayEnabled: true,
+            groupId: compatibility.group.id,
+            phaseType: repairedPhaseForWeek?.type ?? compatibility.group.currentPhaseType,
+            planId: activePlan.id,
+            recoveryMode,
+            weekday,
+          });
+          setPlanPhases(repairedPhases);
+        }
+      } catch (repairError) {
+        console.warn('[home] resolveSelectedWorkoutPlan compatibility repair failed', repairError);
+      }
+    }
+
+    if (!resolvedPlan) {
+      return null;
+    }
 
     const planExerciseIds = resolvedPlan.exercises.map((exercise) => exercise.exerciseId);
     const nextExercises =
@@ -977,7 +1125,11 @@ export default function TodayRoute() {
     try {
       resolvedPlan = await resolveSelectedWorkoutPlan();
     } catch (resolveError) {
-      setError(resolveError instanceof Error ? resolveError.message : '训练计划刷新失败。');
+      // 用 setNotice 而非 setError：setError 会让整个首页显示"首页暂时无法加载"，而 setNotice 只弹友好提示
+      setNotice({
+        title: '训练计划暂时不可用',
+        message: resolveError instanceof Error ? resolveError.message : '训练计划刷新失败，请稍后重试。',
+      });
       return;
     }
 
@@ -1000,6 +1152,7 @@ export default function TodayRoute() {
       groupId: group.id,
       phaseId: resolvedPlan.phase.id,
       planExerciseIds: resolvedPlan.exercises.map((exercise) => exercise.id),
+      planDayId: resolvedPlan.day.id,
       planId: resolvedPlan.plan.id,
       participantMemberIds,
       title: resolvedPlan.day.title,
@@ -1019,7 +1172,10 @@ export default function TodayRoute() {
         return;
       }
     } catch (sessionError) {
-      setError(sessionError instanceof Error ? sessionError.message : '读取未完成训练失败。');
+      setNotice({
+        title: '读取未完成训练失败',
+        message: sessionError instanceof Error ? sessionError.message : '请稍后重试。',
+      });
       return;
     }
 
@@ -1046,8 +1202,12 @@ export default function TodayRoute() {
         payload: {
           date: session.date,
           groupId: session.groupId,
+          planCycleId: session.planCycleId,
+          planDayId: session.planDayId,
           phaseId: session.phaseId,
           planId: session.planId,
+          recordedByUserId: session.recordedByUserId,
+          sourceDeviceId: session.sourceDeviceId,
           status: session.status,
           title: session.title,
           trainingMode: session.trainingMode,
@@ -1070,6 +1230,8 @@ export default function TodayRoute() {
               notes: record.notes,
               orderIndex: record.orderIndex,
               parentServerId: session.id,
+              planCycleId: record.planCycleId,
+              planDayId: record.planDayId,
               planExerciseId: record.planExerciseId,
               plannedPercent1RM: record.plannedPercent1RM,
               plannedRepMax: record.plannedRepMax,
@@ -1130,6 +1292,7 @@ export default function TodayRoute() {
         groupId: group.id,
         phaseId: resolvedPlan.phase.id,
         planExerciseIds: resolvedPlan.exercises.map((exercise) => exercise.id),
+        planDayId: resolvedPlan.day.id,
         planId: resolvedPlan.plan.id,
         participantMemberIds,
         title: resolvedPlan.day.title,
@@ -1294,6 +1457,45 @@ export default function TodayRoute() {
     syncLabel,
   });
 
+  // 将首页数据收敛为明确状态枚举，避免「计划未就绪」吞掉 completed/archived/abandoned 等情况。
+  const homeStatus: HomeStatus = resolveHomeStatus({
+    authStatus,
+    groupsCount: groups.length,
+    membersCount: members.length,
+    rawActivePlan,
+    activePlan,
+    todayPlanExists: Boolean(todayPlan),
+    isRestState,
+    hasError: Boolean(error),
+  });
+
+  // 计划状态相关文案，对应 homeStatus 中的 planCompleted/planArchived/planAbandoned/planNotReady。
+  const planStatusCopy: Record<
+    'planCompleted' | 'planArchived' | 'planAbandoned' | 'planNotReady',
+    { title: string; description: string; icon: keyof typeof Ionicons.glyphMap }
+  > = {
+    planCompleted: {
+      title: '当前计划已完成',
+      description: '可前往计划页归档当前计划，或开启新周期继续训练。',
+      icon: 'ribbon-outline',
+    },
+    planArchived: {
+      title: '当前计划已归档',
+      description: '归档计划不能作为今日训练，请创建或导入新计划。',
+      icon: 'archive-outline',
+    },
+    planAbandoned: {
+      title: '当前计划已放弃',
+      description: '该计划已标记为放弃，请创建或导入新计划。',
+      icon: 'trash-outline',
+    },
+    planNotReady: {
+      title: '今日训练内容暂未解析成功',
+      description: '已尝试自动修复计划结构。若仍失败，可能是计划没有训练日或阶段信息缺失。可重新加载，或前往计划页检查计划内容。',
+      icon: 'refresh-outline',
+    },
+  };
+
   const syncAccountProfileAvatarToMembers = useCallback(
     async (profile: AccountProfileCache) => {
       if (!user) return;
@@ -1456,48 +1658,67 @@ export default function TodayRoute() {
 
           {!error && groups.length === 0 ? (
             <HomeEmptyState
-              actionLabel="创建小组"
+              actionLabel={isCreatingGroup ? '正在创建...' : '创建小组'}
               description="先建立一个训练小组，再添加计划和成员。"
               icon="people-outline"
               onActionPress={() => {
-                if (guardFeature('create_group')) router.push('/profile/groups' as never);
+                if (!isCreatingGroup) void createInitialTrainingGroup();
               }}
               title="暂无训练小组"
             />
           ) : null}
 
           {!error && groups.length > 0 && !activePlan ? (
-            <HomeEmptyState
-              actions={[
-                ...(recentVisibleSessionCount > 0
-                  ? [
-                      {
-                        label: '查看历史',
-                        onPress: () => router.push('/(tabs)/history'),
-                      },
-                    ]
-                  : []),
-                {
-                  label: '创建计划',
-                  onPress: () => {
-                    if (guardFeature('create_plan')) router.push('/plan/create' as never);
+            homeStatus === 'planCompleted' ||
+            homeStatus === 'planArchived' ||
+            homeStatus === 'planAbandoned' ? (
+              <HomeEmptyState
+                actions={[
+                  { label: '查看计划', onPress: () => router.push('/(tabs)/plan') },
+                  {
+                    label: '创建新计划',
+                    onPress: () => {
+                      if (guardFeature('create_plan')) router.push('/plan/create' as never);
+                    },
                   },
-                },
-                {
-                  label: '导入计划',
-                  onPress: () => {
-                    if (guardFeature('import_plan')) router.push('/(tabs)/plan');
+                ]}
+                description={planStatusCopy[homeStatus].description}
+                icon={planStatusCopy[homeStatus].icon}
+                title={planStatusCopy[homeStatus].title}
+              />
+            ) : (
+              <HomeEmptyState
+                actions={[
+                  ...(recentVisibleSessionCount > 0
+                    ? [
+                        {
+                          label: '查看历史',
+                          onPress: () => router.push('/(tabs)/history'),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: '创建计划',
+                    onPress: () => {
+                      if (guardFeature('create_plan')) router.push('/plan/create' as never);
+                    },
                   },
-                },
-              ]}
-              description={
-                recentVisibleSessionCount > 0
-                  ? `已找到 ${recentVisibleSessionCount} 条历史训练。创建或导入计划后，可继续安排今日训练。`
-                  : '创建或导入一个计划，开始你的训练之旅'
-              }
-              icon="clipboard-outline"
-              title={recentVisibleSessionCount > 0 ? '暂无当前计划' : '暂无训练计划'}
-            />
+                  {
+                    label: '导入计划',
+                    onPress: () => {
+                      if (guardFeature('import_plan')) router.push('/(tabs)/plan');
+                    },
+                  },
+                ]}
+                description={
+                  recentVisibleSessionCount > 0
+                    ? `已找到 ${recentVisibleSessionCount} 条历史训练。创建或导入计划后，可继续安排今日训练。`
+                    : '创建或导入一个计划，开始你的训练之旅'
+                }
+                icon="clipboard-outline"
+                title={recentVisibleSessionCount > 0 ? '暂无当前计划' : '暂无训练计划'}
+              />
+            )
           ) : null}
 
           {!error && groups.length > 0 && activePlan && members.length === 0 ? (
@@ -1543,12 +1764,14 @@ export default function TodayRoute() {
 
               {!isRestState && !todayPlan ? (
                 <HomeEmptyState
-                  actionLabel="重新加载"
+                  actions={[
+                    { label: '重新加载', onPress: () => void loadHome() },
+                    { label: '查看计划', onPress: () => router.push('/(tabs)/plan') },
+                  ]}
                   compact
-                  description="计划结构已保留，今日训练内容暂时未解析成功。"
-                  icon="refresh-outline"
-                  onActionPress={() => void loadHome()}
-                  title="今日计划未就绪"
+                  description={planStatusCopy.planNotReady.description}
+                  icon={planStatusCopy.planNotReady.icon}
+                  title={planStatusCopy.planNotReady.title}
                 />
               ) : null}
 

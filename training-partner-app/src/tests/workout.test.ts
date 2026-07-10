@@ -104,7 +104,11 @@ describe('workout domain rules', () => {
     expect(summary).toEqual({
       sessionId: 'session_1',
       completedSets: 2,
+      durationSeconds: 0,
+      exerciseCount: 1,
       totalSets: 3,
+      totalReps: 0,
+      totalVolume: 0,
     });
   });
 

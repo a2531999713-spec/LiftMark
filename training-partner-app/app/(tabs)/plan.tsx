@@ -14,7 +14,7 @@ import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
 import { resolveSelectedGroup } from '@/domain/group/selected-group';
 import { DEFAULT_CYCLE_WEEK_COUNT } from '@/domain/plan/defaultCycle';
-import type { PhaseType, PlanDay, PlanTemplate } from '@/domain/plan/plan.types';
+import type { PlanDay, PlanTemplate } from '@/domain/plan/plan.types';
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import {
   describeSchemeGoal,
@@ -24,6 +24,10 @@ import {
 } from '@/domain/plan/systemSchemes';
 import { pickImportedPlanDocument } from '@/services/planDocumentService';
 import { createCurrentPlanFile, PlanFileError, serializePlanFile } from '@/services/planFileService';
+import {
+  activateTrainingPlanForGroup,
+  ensureTrainingGroupMainline,
+} from '@/services/trainingMainlineService';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { useAuthStore } from '@/store/authStore';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
@@ -121,6 +125,12 @@ function summarizeWorkoutDetails(details: WorkoutSessionDetail[]): Pick<PlanDash
   };
 }
 
+function isTrainablePlan(plan: PlanTemplate | null): plan is PlanTemplate {
+  if (!plan) return false;
+  if (plan.source === 'system' || plan.visibility === 'system') return true;
+  return !plan.status || plan.status === 'active';
+}
+
 function buildRecentSessions(details: WorkoutSessionDetail[]): Pick<
   PlanDashboardStats,
   'recentSessionsCompletedSets' | 'recentSessionsVolume' | 'recentSessionsLabels' | 'recentSessionDate'
@@ -210,7 +220,8 @@ export default function PlanRoute() {
         setSelectedGroupId(nextGroup.id);
       }
 
-      const nextActivePlan = await repositories.planRepository.getPlanById(nextGroup.activePlanId);
+      const loadedActivePlan = await repositories.planRepository.getPlanById(nextGroup.activePlanId);
+      const nextActivePlan = isTrainablePlan(loadedActivePlan) ? loadedActivePlan : null;
 
       let nextDaySummaries: DaySummary[] = [];
       let nextStats = emptyStats;
@@ -279,14 +290,6 @@ export default function PlanRoute() {
     }, [loadPlans]),
   );
 
-  const resolvePhaseTypeForWeek = useCallback(
-    async (planId: string, week: number): Promise<PhaseType> => {
-      const phases = await repositories.planRepository.listPlanPhases(planId);
-      return phases.find((phase) => week >= phase.startWeek && week <= phase.endWeek)?.type ?? phases[0]?.type ?? 'custom';
-    },
-    [repositories],
-  );
-
   const setCurrentPlan = useCallback(
     async (plan: PlanTemplate, showNotice = true) => {
       if (!group) {
@@ -305,11 +308,7 @@ export default function PlanRoute() {
 
       setIsSettingActive(plan.id);
       try {
-        const updated = await repositories.groupRepository.updateGroup(group.id, {
-          activePlanId: plan.id,
-          currentPhaseType: await resolvePhaseTypeForWeek(plan.id, 1),
-          currentWeek: 1,
-        });
+        const { group: updated } = await activateTrainingPlanForGroup(repositories, { group, plan });
         setGroup(updated);
         setActivePlan(plan);
         setManageVisible(false);
@@ -329,28 +328,18 @@ export default function PlanRoute() {
         setIsSettingActive(null);
       }
     },
-    [group, guardFeature, loadPlans, repositories, resolvePhaseTypeForWeek],
+    [group, guardFeature, loadPlans, repositories],
   );
 
   // 为没有小组的账号（如新登录的测试号）创建默认训练小组
   const createDefaultGroup = useCallback(async () => {
     setIsWorking(true);
     try {
-      await initializeLocalDatabase();
-      const created = await repositories.groupRepository.createGroup({
-        name: '我的训练小组',
-        activePlanId: '',
-        currentPhaseType: 'strength',
-        currentWeek: 1,
-        fridayEnabled: false,
-        fridayStrategy: 'default_rest',
-      });
-      await repositories.memberRepository.createMember({
-        groupId: created.id,
-        displayName: currentUserDisplayName?.trim() || '我',
+      const { group: created } = await ensureTrainingGroupMainline(repositories, {
+        displayName: currentUserDisplayName,
+        groupName: '我的训练小组',
+        selectedGroupId,
         userId: currentUserId,
-        memberType: currentUserId ? 'real' : 'local',
-        role: 'owner',
       });
       setSelectedGroupId(created.id);
       await loadPlans();
@@ -362,7 +351,7 @@ export default function PlanRoute() {
     } finally {
       setIsWorking(false);
     }
-  }, [currentUserDisplayName, currentUserId, repositories, setSelectedGroupId, loadPlans]);
+  }, [currentUserDisplayName, currentUserId, repositories, selectedGroupId, setSelectedGroupId, loadPlans]);
 
   const sharePlan = useCallback(
     async (plan: PlanTemplate) => {
@@ -423,6 +412,14 @@ export default function PlanRoute() {
 
     setIsWorking(true);
     try {
+      const { group: targetGroup } = await ensureTrainingGroupMainline(repositories, {
+        displayName: currentUserDisplayName,
+        groupName: '我的训练小组',
+        selectedGroupId,
+        userId: currentUserId,
+      });
+      setSelectedGroupId(targetGroup.id);
+
       const picked = await pickImportedPlanDocument();
       if (!picked) {
         return;
@@ -436,16 +433,21 @@ export default function PlanRoute() {
         planExercises: picked.draft.plan.exercises,
         template: picked.draft.plan.template,
       });
+      const { group: updatedGroup } = await activateTrainingPlanForGroup(repositories, {
+        group: targetGroup,
+        plan: importedPlan,
+      });
+      setGroup(updatedGroup);
+      setActivePlan(importedPlan);
       await loadPlans();
 
-      setActivationPrompt({
-        plan: importedPlan,
+      setNotice({
         title: '计划已导入',
-        message: `“${importedPlan.name}”已成为我的计划。是否设为当前训练计划？`,
+        message: `“${importedPlan.name}”已设为当前训练计划。`,
       });
     } catch (importError) {
       console.warn('[PLAN] import failed', {
-        groupId: group.id,
+        groupId: group?.id ?? null,
         message: importError instanceof Error ? importError.message : String(importError),
         planId: activePlan?.id ?? null,
       });
@@ -464,7 +466,17 @@ export default function PlanRoute() {
     } finally {
       setIsWorking(false);
     }
-  }, [activePlan?.id, group, guardFeature, loadPlans, repositories]);
+  }, [
+    activePlan?.id,
+    currentUserDisplayName,
+    currentUserId,
+    group,
+    guardFeature,
+    loadPlans,
+    repositories,
+    selectedGroupId,
+    setSelectedGroupId,
+  ]);
 
   const openUseScheme = useCallback((scheme: SystemTrainingScheme) => {
     if (!scheme.isAvailable || !scheme.templatePlanId) {
@@ -494,16 +506,29 @@ export default function PlanRoute() {
 
     setIsWorking(true);
     try {
+      const { group: targetGroup } = await ensureTrainingGroupMainline(repositories, {
+        displayName: currentUserDisplayName,
+        groupName: '我的训练小组',
+        selectedGroupId,
+        userId: currentUserId,
+      });
+      setSelectedGroupId(targetGroup.id);
+
       const plan = await repositories.planRepository.copySystemSchemeToUserPlan({
         scheme: selectedScheme,
         name: selectedScheme.title.replace('方案', '计划'),
       });
+      const { group: updatedGroup } = await activateTrainingPlanForGroup(repositories, {
+        group: targetGroup,
+        plan,
+      });
+      setGroup(updatedGroup);
+      setActivePlan(plan);
       await loadPlans();
       setSelectedScheme(null);
-      setActivationPrompt({
-        plan,
+      setNotice({
         title: '已复制到我的计划',
-        message: `“${plan.name}”已经是可编辑的用户计划。是否设为当前训练计划？`,
+        message: `“${plan.name}”已设为当前训练计划。`,
       });
     } catch (copyError) {
       setNotice({
@@ -513,7 +538,17 @@ export default function PlanRoute() {
     } finally {
       setIsWorking(false);
     }
-  }, [guardFeature, loadPlans, repositories, selectedScheme, userPlans.length]);
+  }, [
+    currentUserDisplayName,
+    currentUserId,
+    guardFeature,
+    loadPlans,
+    repositories,
+    selectedGroupId,
+    selectedScheme,
+    setSelectedGroupId,
+    userPlans.length,
+  ]);
 
   const deletePlan = useCallback(async () => {
     if (!deletePromptPlan) {

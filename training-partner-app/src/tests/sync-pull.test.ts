@@ -33,6 +33,7 @@ const mockApiRequest = apiRequest as jest.MockedFunction<typeof apiRequest>;
 function createDbMock() {
   return {
     getFirstAsync: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+    getAllAsync: jest.fn<(...args: unknown[]) => Promise<unknown[]>>(async () => []),
     runAsync: jest.fn<(...args: unknown[]) => Promise<{ changes: number }>>(async () => ({ changes: 1 })),
   };
 }
@@ -244,12 +245,16 @@ describe('pullFromServer account isolation', () => {
       'group_176',
       'plan_176',
       null,
+      null,
+      null,
       '2026-07-05',
       1,
       7,
       'Cloud session',
       'completed',
       'solo_local',
+      null,
+      null,
       null,
       null,
       '2026-07-05T10:00:00.000Z',
