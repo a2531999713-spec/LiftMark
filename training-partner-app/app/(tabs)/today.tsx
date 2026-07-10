@@ -686,12 +686,12 @@ export default function TodayRoute() {
     try {
       await initializeLocalDatabase();
       const latestUser = useAuthStore.getState().user;
-      const allGroups = await repositories.groupRepository.listGroups();
+      const allGroups = await loadOrDefault('group list load', repositories.groupRepository.listGroups(), []);
       if (!isLatestRequest()) return;
       setGroups(allGroups);
       let nextGroup = allGroups.find((item) => item.id === selectedGroupId) ?? allGroups[0] ?? null;
       if (!nextGroup) {
-        const nextAccountProfile = latestUser ? await getAccountProfileCache(latestUser.id) : null;
+        const nextAccountProfile = latestUser ? await loadOrDefault('account profile load', getAccountProfileCache(latestUser.id), null) : null;
         if (!isLatestRequest()) return;
         setGroup(null);
         setActivePlan(null);
@@ -1082,16 +1082,10 @@ export default function TodayRoute() {
       return null;
     }
 
-    const planExerciseIds = resolvedPlan.exercises.map((exercise) => exercise.exerciseId);
-    const nextExercises =
-      planExerciseIds.length > 0
-        ? await repositories.exerciseRepository.listExercisesByIds(planExerciseIds)
-        : [];
-
-    setSelectedWeek(currentWeek);
-    setSelectedWeekday(weekday);
-    setTodayPlan(resolvedPlan);
-    setExerciseMap(Object.fromEntries(nextExercises.map((exercise) => [exercise.id, exercise])));
+    // 不调用 setSelectedWeek/setSelectedWeekday/setTodayPlan/setExerciseMap：
+    // 这些 setState 会改变 loadHome 的 useCallback 依赖，触发 loadHome 重新执行。
+    // 如果 loadHome 重新执行时抛错，会导致首页显示"首页暂时无法加载"。
+    // resolveSelectedWorkoutPlan 的目的是返回结果供 openWorkoutScope 使用，不需要更新首页 UI 状态。
 
     return resolvedPlan;
   }, [
