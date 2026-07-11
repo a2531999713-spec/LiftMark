@@ -55,7 +55,7 @@
 git clone https://github.com/a2531999713-spec/LiftMark.git
 
 # 进入项目目录
-cd -/training-partner-app
+cd LiftMark/training-partner-app
 
 # 安装依赖
 npm install

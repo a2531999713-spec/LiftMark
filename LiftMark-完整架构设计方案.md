@@ -3,13 +3,13 @@
 > 适用对象：Codex / 后续 AI 开发工具 / 项目维护者  
 > 文档目标：统一练刻 LiftMark 的产品边界、工程目录、账号体系、小组训练、自动同步、后台管理、安全、性能、AI 智能推荐预留和文档管理规范。  
 > 当前结论：移动端基于 Expo / React Native 构建，Android 与 iOS 功能设计必须保持一致；当前只是使用 Android 设备进行测试，不代表 Android 独占或 Android 优先。  
-> 路径命名结论：原 `backend/` 目录容易和服务端 API 混淆，建议重命名为 `management-console/`，表示“后台管理系统 / 运营管理控制台”。
+> 路径命名结论：原后台目录已于 2026-07-11 重命名为 `management-console/`，与 `apps/liftmark-api/` 服务端 API 明确区分。
 
 ---
 
 ## 0. 当前项目实际情况与命名调整
 
-### 0.1 当前目录现状
+### 0.1 当前目录现状（2026-07-11 收敛后）
 
 当前本地项目大致结构如下：
 
@@ -18,7 +18,8 @@ LiftMark/
   training-partner-app/          # 移动端 App，目前实际存在
   apps/
     liftmark-api/                # 服务端 API，目前实际存在
-  backend/                       # 后台管理系统，目前实际存在，但命名不准确
+  management-console/            # 后台管理系统 / 运营控制台
+  packages/shared/               # 三端最小共享契约
   scripts/                       # 脚本目录
   参考样式图/                    # UI 参考图
   训练计划/                      # 训练计划资料
@@ -31,7 +32,7 @@ LiftMark/
   RELEASE_NOTES.md
 ```
 
-### 0.2 后台管理系统命名调整
+### 0.2 后台管理系统命名调整（已完成）
 
 `backend/` 容易被理解为“后端服务”，但项目里已经有真正的服务端 API：
 
@@ -39,7 +40,7 @@ LiftMark/
 apps/liftmark-api/
 ```
 
-因此建议把当前 `backend/` 重命名为：
+因此当前目录统一为：
 
 ```text
 management-console/
@@ -72,7 +73,7 @@ LiftMark/
   training-partner-app/              # 移动端 App，Expo / React Native
   apps/
     liftmark-api/                    # 服务端 API，Fastify / PostgreSQL
-  management-console/                # 后台管理系统，原 backend，建议重命名
+  management-console/                # 后台管理系统
   packages/                          # 后续新增，共享代码与领域逻辑
     shared/                          # DTO、类型、Zod schema、错误码
     domain/                          # 训练、同步、推荐、权限等纯业务逻辑

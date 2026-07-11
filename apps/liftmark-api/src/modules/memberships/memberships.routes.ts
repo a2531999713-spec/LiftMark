@@ -19,7 +19,10 @@ export async function registerMembershipRoutes(app: FastifyInstance) {
     return { membership: toMembershipDto(membership) };
   });
 
-  app.post('/activation-codes/redeem', { preHandler: requireAuth }, async (request) => {
+  app.post('/activation-codes/redeem', {
+    preHandler: requireAuth,
+    config: { rateLimit: { max: 5, timeWindow: '5 minutes' } },
+  }, async (request) => {
     const authUser = getAuthUser(request);
     const body = redeemSchema.parse(request.body);
     const normalizedCode = body.code.trim().toUpperCase();
@@ -73,4 +76,3 @@ export async function registerMembershipRoutes(app: FastifyInstance) {
     });
   });
 }
-

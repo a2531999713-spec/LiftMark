@@ -93,7 +93,7 @@ async function createAdminSession(user: any) {
 }
 
 export async function registerAdminRoutes(app: FastifyInstance) {
-  app.post('/admin/auth/login', async (request) => {
+  app.post('/admin/auth/login', { config: { rateLimit: { max: 5, timeWindow: '5 minutes' } } }, async (request) => {
     const body = adminLoginSchema.parse(request.body);
     const user = await db('users').where({ phone: body.account }).orWhere({ email: body.account }).first();
     if (!user || user.role !== 'admin' || user.status !== 'normal' || !(await verifyPassword(body.password, user.password_hash))) {
@@ -269,4 +269,3 @@ export async function registerAdminRoutes(app: FastifyInstance) {
 
   await registerAdminExtendedRoutes(app);
 }
-

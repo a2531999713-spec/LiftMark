@@ -4,6 +4,7 @@ import { ExternalLink, FolderOpen } from 'lucide-react'
 import { PageHeader, InfoRow } from '@/components/admin/page-parts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { PUBLIC_UPLOAD_BASE } from '@/lib/api'
 
 export default function FilesPage() {
   return (
@@ -32,7 +33,7 @@ export default function FilesPage() {
         <CardContent>
           <dl>
             <InfoRow label="存储路径">/home/deploy/liftmark/uploads/</InfoRow>
-            <InfoRow label="访问路径">http://47.100.239.29/uploads/</InfoRow>
+            <InfoRow label="访问路径">{`${PUBLIC_UPLOAD_BASE}/`}</InfoRow>
             <InfoRow label="nginx 配置">/etc/nginx/sites-enabled/liftmark</InfoRow>
           </dl>
         </CardContent>
@@ -46,7 +47,7 @@ export default function FilesPage() {
           <p className="mb-3 text-sm text-muted-foreground">
             点击下方按钮在新标签页中查看头像目录。
           </p>
-          <Button render={<a href="http://47.100.239.29/uploads/avatars/" target="_blank" rel="noreferrer" />}>
+          <Button render={<a href={`${PUBLIC_UPLOAD_BASE}/avatars/`} target="_blank" rel="noreferrer" />}>
             <FolderOpen data-icon="inline-start" /> 查看头像目录
             <ExternalLink data-icon="inline-end" />
           </Button>

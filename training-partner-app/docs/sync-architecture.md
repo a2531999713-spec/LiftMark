@@ -71,7 +71,7 @@ pullFromServer(fullPull?)
   ├── 1. 读取 sync_state.last_pull_at:{currentUserId}
   │     fullPull=true 或无记录 → since = null（全量）
   │     否则 → since = 当前账号 last_pull_at（增量）
-  ├── 2. GET /sync/pull?since={since}&deviceId=liftmark-mobile
+  ├── 2. GET /sync/pull?since={since}&deviceId={installationDeviceId}
   │     返回 { serverTime, changes: { workoutSessions, ... } }
   ├── 3. 按依赖顺序应用 changes：
   │     exercises → trainingPlans → planDays → planExercises →
@@ -146,6 +146,9 @@ requestImmediateSync()
 | `src/sync/pullService.ts` | Pull 服务：从 /sync/pull 拉取并 upsertFromServer |
 | `src/sync/syncOrchestrator.ts` | 同步入口：pull → push，防重入，防抖，节流 |
 | `src/sync/syncService.ts` | Push 服务：requestImmediateSync 推送本地变更 |
+| `src/sync/registry/` | 同步实体、表、显式字段和删除策略的唯一移动端注册表 |
+| `src/sync/serialization/` | 显式 serializer；push 不再依赖 `SELECT *` 作为长期契约 |
+| `src/sync/device/deviceIdentity.ts` | SecureStore 安装级随机设备 ID；不使用硬件标识 |
 | `src/sync/syncQueue.ts` | 同步队列管理：enqueue、listPending、markSynced |
 | `src/data/local/migrations.ts` | migration 16（归属修复）+ migration 17（sync_state 表） |
 | `src/data/local/accountScope.ts` | 账号作用域过滤 |

@@ -10,6 +10,9 @@ import {
   markSyncItemsSyncing,
 } from './syncQueue';
 import type { SyncEntityType, SyncPreferences, SyncQueueItem, SyncSnapshot } from './syncTypes';
+import { getInstallationDeviceId } from './device/deviceIdentity';
+import { getSyncEntityDefinition } from './registry/syncEntityRegistry';
+import { serializeLocalRow } from './serialization/serializers/localRow.serializer';
 
 const defaultPreferences: SyncPreferences = {
   enabled: true,
@@ -68,45 +71,31 @@ const serverSyncEntityTypes = new Set<SyncEntityType>([
   'settings',
 ]);
 
-const localSyncEntityTableByType: Partial<Record<SyncEntityType, string>> = {
-  bodyMetrics: 'body_metrics',
-  bodyMetricGoals: 'body_metric_goals',
-  trainingPlans: 'plan_templates',
-  planCycles: 'plan_cycles',
-  planCycleSummaries: 'plan_cycle_summaries',
-  planPhases: 'plan_phases',
-  planDays: 'plan_days',
-  planExercises: 'plan_exercises',
-  trainingReports: 'training_reports',
-  trainingReminders: 'training_reminders',
-  workoutExerciseRecords: 'workout_exercise_records',
-  workoutSessions: 'workout_sessions',
-  workoutSets: 'workout_sets',
-  recoveryLogs: 'recovery_logs',
-  progressionSuggestions: 'progression_suggestions',
-};
-
-// push 前从本地表读取完整行数据填充 payload。
+// push 前按 registry 显式字段读取本地业务数据并填充 payload。
 // 背景：enqueueSyncCandidate 入队时大多未携带业务字段 payload（仅 localId/owner），
 // 导致 buildServerEntity 推送到服务器的 payload 缺少 plan_id/type/start_week 等关键列，
 // fullPull 时 applyPlanPhases 等无法恢复，本地 plan_phases.plan_id 为空 → plan_has_no_phases。
-// 这里在 push 前从本地表 SELECT * 补全业务字段，确保 push/pull 业务数据不丢失。
+// 这里不会 SELECT *；新增字段必须先进入 registry 和 serializer 测试。
 async function hydrateItemPayload(
   db: Awaited<ReturnType<typeof initializeLocalDatabase>>,
   item: SyncQueueItem,
 ): Promise<Record<string, unknown>> {
   const existing = item.payload ?? {};
   if (item.operation === 'delete') return existing;
-  const table = localSyncEntityTableByType[item.entityType];
+  const definition = getSyncEntityDefinition(item.entityType);
+  const table = definition.localTable;
   if (!table) return existing;
   try {
+    const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+    const available = new Set(columns.map((column) => column.name));
+    const selectedFields = definition.fields.filter((field) => available.has(field));
+    if (selectedFields.length === 0) return existing;
     const row = await db.getFirstAsync<Record<string, unknown>>(
-      `SELECT * FROM ${table} WHERE id = ? LIMIT 1`,
+      `SELECT ${selectedFields.join(', ')} FROM ${table} WHERE id = ? LIMIT 1`,
       item.localId,
     );
     if (!row) return existing;
-    // 本地表行数据优先（补全业务字段），保留 existing 的 owner 等字段
-    return { ...existing, ...row };
+    return { ...existing, ...serializeLocalRow(item.entityType, row) };
   } catch {
     return existing;
   }
@@ -163,7 +152,7 @@ function filterQueueItemsForUser(items: SyncQueueItem[], userId: string) {
 }
 
 async function markLocalEntitySynced(item: SyncQueueItem, remoteId: string | undefined, syncedAt: string) {
-  const tableName = localSyncEntityTableByType[item.entityType];
+  const tableName = getSyncEntityDefinition(item.entityType).localTable;
   if (!tableName) return;
 
   const db = await initializeLocalDatabase();
@@ -274,11 +263,12 @@ export async function requestImmediateSync(): Promise<{ ok: true; message?: stri
       );
     }
 
+    const deviceId = await getInstallationDeviceId();
     const result = await apiRequest<SyncPushResponse>('/sync/push', {
       accessToken: session.accessToken,
       body: {
         changes,
-        deviceId: 'liftmark-mobile',
+        deviceId,
       },
     });
 

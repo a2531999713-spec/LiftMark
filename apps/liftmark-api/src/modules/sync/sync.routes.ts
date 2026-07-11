@@ -1,70 +1,19 @@
 import type { FastifyInstance } from 'fastify';
 import type { Knex } from 'knex';
 import { z } from 'zod';
+import { syncEntitySchema, syncPushSchema } from '@liftmark/shared';
 
 import { db } from '../../db/connection';
 import { getAuthUser, requireAuth } from '../../middlewares/auth';
 import { badRequest } from '../../utils/errors';
 import { createId } from '../../utils/ids';
+import { syncEntityTableByType, type SyncEntityType } from './sync.contract';
+import { assertSyncSchemaReady } from './sync.schema-health';
+import { isUndefinedTableError } from './sync.schema-errors';
 
-const entityTableByType = {
-  exercises: 'exercises',
-  workoutSessions: 'workout_sessions',
-  workoutExerciseRecords: 'workout_exercise_records',
-  workoutSets: 'workout_sets',
-  trainingPlans: 'training_plans',
-  planCycles: 'plan_cycles',
-  planCycleSummaries: 'plan_cycle_summaries',
-  planPhases: 'plan_phases',
-  planDays: 'plan_days',
-  planExercises: 'plan_exercises',
-  trainingReports: 'training_reports',
-  trainingReminders: 'training_reminders',
-  bodyMetrics: 'body_metrics',
-  bodyMetricGoals: 'body_metric_goals',
-  recoveryLogs: 'recovery_logs',
-  progressionSuggestions: 'progression_suggestions',
-  settings: 'settings',
-} as const;
-
-type EntityType = keyof typeof entityTableByType;
+const entityTableByType = syncEntityTableByType;
+type EntityType = SyncEntityType;
 type SyncDb = typeof db | Knex.Transaction;
-
-const syncEntitySchema = z.object({
-  clientId: z.string().min(1),
-  serverId: z.string().optional(),
-  groupId: z.string().optional().nullable(),
-  parentServerId: z.string().optional().nullable(),
-  name: z.string().optional().nullable(),
-  title: z.string().optional().nullable(),
-  status: z.string().optional().nullable(),
-  updatedAt: z.string().optional(),
-  deletedAt: z.string().optional().nullable(),
-  payload: z.record(z.string(), z.unknown()).optional(),
-});
-
-const pushSchema = z.object({
-  deviceId: z.string().min(1).optional(),
-    changes: z.object({
-      exercises: z.array(syncEntitySchema).optional(),
-      workoutSessions: z.array(syncEntitySchema).optional(),
-      workoutExerciseRecords: z.array(syncEntitySchema).optional(),
-      workoutSets: z.array(syncEntitySchema).optional(),
-      trainingPlans: z.array(syncEntitySchema).optional(),
-      planCycles: z.array(syncEntitySchema).optional(),
-      planCycleSummaries: z.array(syncEntitySchema).optional(),
-      planPhases: z.array(syncEntitySchema).optional(),
-      planDays: z.array(syncEntitySchema).optional(),
-      planExercises: z.array(syncEntitySchema).optional(),
-      trainingReports: z.array(syncEntitySchema).optional(),
-      trainingReminders: z.array(syncEntitySchema).optional(),
-      bodyMetrics: z.array(syncEntitySchema).optional(),
-      bodyMetricGoals: z.array(syncEntitySchema).optional(),
-      recoveryLogs: z.array(syncEntitySchema).optional(),
-      progressionSuggestions: z.array(syncEntitySchema).optional(),
-      settings: z.array(syncEntitySchema).optional(),
-    }),
-});
 
 function getPayloadNumber(payload: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
@@ -166,6 +115,7 @@ async function upsertEntity(conn: SyncDb, userId: string, entityType: EntityType
 }
 
 async function listChanges(userId: string, since?: string) {
+  await assertSyncSchemaReady();
   const sinceDate = since ? new Date(since) : new Date(0);
   const result: Record<EntityType, unknown[]> = {
     exercises: [],
@@ -195,24 +145,34 @@ async function listChanges(userId: string, since?: string) {
         .where('updated_at', '>', sinceDate)
         .orderBy('updated_at', 'asc');
     } catch (tableError) {
-      // 表可能尚未通过迁移创建（如迁移 010 未运行），跳过而非整体 500
-      console.warn(`[sync/pull] table "${tableName}" query failed, returning empty:`, tableError instanceof Error ? tableError.message : tableError);
-      result[entityType] = [];
+      if (isUndefinedTableError(tableError)) {
+        appSchemaLogger(tableName, tableError);
+        await assertSyncSchemaReady();
+      }
+      throw tableError;
     }
   }
 
   return result;
 }
 
+function appSchemaLogger(tableName: string, error: unknown) {
+  console.error(
+    `[sync/pull] required table "${tableName}" is unavailable`,
+    error instanceof Error ? error.message : error,
+  );
+}
+
 export async function registerSyncRoutes(app: FastifyInstance) {
   app.post('/sync/push', { preHandler: requireAuth }, async (request) => {
     const authUser = getAuthUser(request);
-    const body = pushSchema.parse(request.body);
+    const body = syncPushSchema.parse(request.body);
+    const changes = body.changes as Partial<Record<EntityType, z.infer<typeof syncEntitySchema>[]>>;
     const mappings: Awaited<ReturnType<typeof upsertEntity>>[] = [];
 
     await db.transaction(async (trx) => {
       for (const entityType of Object.keys(entityTableByType) as EntityType[]) {
-        const items = body.changes[entityType] ?? [];
+        const items = changes[entityType] ?? [];
         for (const item of items) {
           mappings.push(await upsertEntity(trx, authUser.id, entityType, item));
         }

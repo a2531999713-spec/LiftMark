@@ -1,3 +1,13 @@
+## 2026-07-11 核心架构收敛补充
+
+- 根路由由 `AppScopeProvider` 统一提供当前账号、小组、成员、激活计划与周期上下文；账号切换只清理跨账号运行态和选择态，不删除 SQLite 业务数据。
+- `app/(tabs)/today.tsx` 与 `app/workout/[sessionId].tsx` 已收敛为薄路由，具体界面位于 `src/features/home/` 与 `src/features/workout-session/`。新增 application use case、reducer/selector、controller 与服务边界，旧 UI 交互保持不变。
+- 首页周汇总和最近表现改为账号/小组作用域内的 SQLite 聚合查询，移除首页逐 session 加载详情的 N+1 路径。
+- 训练组保存经串行自动保存服务写入本地 SQLite；结束训练前会 flush 防抖和在途写入。休息计时由时间戳推导，不依赖累计 tick。
+- 移动端同步实体、显式字段和删除策略集中在 `src/sync/registry/`；设备标识为 SecureStore 保存的安装级随机 ID，不使用硬件标识。
+- 三端稳定契约位于仓库 `packages/shared/`；只共享同步 DTO、实体名、状态与错误码，不共享数据库实现或 UI 模型。
+- 管理控制台目录为 `management-console/`，服务端 API 仍为 `apps/liftmark-api/`。
+
 ## 2026-07-06 双向数据同步与归属不可变架构补充
 
 - 同步模型从单向 push 升级为双向 pull + push；新增 `src/sync/pullService.ts` 和 `src/sync/syncOrchestrator.ts`。

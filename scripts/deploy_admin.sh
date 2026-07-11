@@ -2,7 +2,7 @@
 # 在服务器上构建并部署 admin console (standalone)
 set -e
 
-SRC=/home/deploy/liftmark/backend
+SRC=/home/deploy/liftmark/management-console
 DEST=/home/deploy/liftmark/admin-deploy
 
 echo "=== step 1: install deps ==="

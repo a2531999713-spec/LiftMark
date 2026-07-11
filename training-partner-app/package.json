@@ -9,6 +9,7 @@
     "@expo/ui": "~56.0.16",
     "@expo/vector-icons": "^15.0.2",
     "@hookform/resolvers": "^5.4.0",
+    "@liftmark/shared": "file:../packages/shared",
     "@shopify/flash-list": "^2.0.2",
     "date-fns": "^4.4.0",
     "expo": "~56.0.9",
