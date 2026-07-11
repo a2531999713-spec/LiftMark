@@ -630,12 +630,20 @@ async function extendSyncEntityTables(trx: Knex.Transaction) {
 async function addCorePlanReportReminderSyncTables(trx: Knex.Transaction) {
   for (const tableName of ['plan_cycles', 'plan_cycle_summaries', 'training_reports', 'training_reminders']) {
     await ensureSyncEntityTable(trx, tableName);
+    
   }
 
   await trx.raw('CREATE INDEX IF NOT EXISTS idx_plan_cycles_user_updated ON plan_cycles(user_id, updated_at DESC)');
   await trx.raw('CREATE INDEX IF NOT EXISTS idx_plan_cycle_summaries_user_updated ON plan_cycle_summaries(user_id, updated_at DESC)');
   await trx.raw('CREATE INDEX IF NOT EXISTS idx_training_reports_user_updated ON training_reports(user_id, updated_at DESC)');
   await trx.raw('CREATE INDEX IF NOT EXISTS idx_training_reminders_user_updated ON training_reminders(user_id, updated_at DESC)');
+}
+async function repairHistoricalBodyMetricGoalsSyncTable(trx: Knex.Transaction) {
+  await ensureSyncEntityTable(trx, 'body_metric_goals');
+
+  await trx.raw(
+    'CREATE INDEX IF NOT EXISTS idx_body_metric_goals_user_updated ON body_metric_goals(user_id, updated_at DESC)',
+  );
 }
 
 export async function migrate() {
@@ -650,6 +658,8 @@ export async function migrate() {
   await runMigration('008_admin_audit_tables', createAdminAuditTables);
   await runMigration('009_extend_sync_entity_tables', extendSyncEntityTables);
   await runMigration('010_core_plan_report_reminder_sync_tables', addCorePlanReportReminderSyncTables);
+  await runMigration('011_repair_body_metric_goals_sync_table',repairHistoricalBodyMetricGoalsSyncTable,
+);
 }
 
 if (require.main === module) {
