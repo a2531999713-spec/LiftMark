@@ -134,8 +134,10 @@ export async function ensurePlanStructureCompatibleForGroup(input: {
     notes: row.notes ?? undefined,
   }));
 
-  // --- 修复 1：plan_phases 为空但有 plan_days → 创建默认 phase ---
-  if (phases.length === 0 && days.length > 0) {
+  // --- 修复 1：plan_phases 为空 → 创建默认 phase ---
+  // 即使 plan_days 也为空也创建，避免 getTodayPlan 抛 plan_has_no_phases 导致首页解析失败。
+  // days 为空时 getTodayPlan 会返回休息日，首页可正常显示，用户可重新导入计划。
+  if (phases.length === 0) {
     const weeks = days.map((day) => day.week).filter((w) => Number.isFinite(w));
     const minWeek = weeks.length > 0 ? Math.min(...weeks) : 1;
     const maxWeek = weeks.length > 0 ? Math.max(...weeks) : Math.max(1, plan.durationWeeks);

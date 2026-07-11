@@ -190,6 +190,7 @@ export default function PlanRoute() {
   const [isWorking, setIsWorking] = useState(false);
   const [isSettingActive, setIsSettingActive] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [emptyPlanIds, setEmptyPlanIds] = useState<Set<string>>(new Set());
 
   const availableSchemes = useMemo(() => systemSchemes.filter((scheme) => scheme.isAvailable), [systemSchemes]);
   const upcomingSchemes = useMemo(() => systemSchemes.filter((scheme) => !scheme.isAvailable), [systemSchemes]);
@@ -208,6 +209,17 @@ export default function PlanRoute() {
         resolveSelectedGroup(repositories.groupRepository, selectedGroupId),
         repositories.planRepository.listUserPlans(),
       ]);
+      // 检测空计划（没有 plan_days 的计划），供批量清理
+      const nextEmptyPlanIds = new Set<string>();
+      await Promise.all(
+        nextUserPlans.map(async (plan) => {
+          const days = await repositories.planRepository.listPlanDays(plan.id);
+          if (days.length === 0) {
+            nextEmptyPlanIds.add(plan.id);
+          }
+        }),
+      );
+      setEmptyPlanIds(nextEmptyPlanIds);
       if (!nextGroup) {
         setGroup(null);
         setActivePlan(null);
@@ -603,6 +615,46 @@ export default function PlanRoute() {
     });
   }, [userPlans, group?.activePlanId]);
 
+  const cleanupEmptyPlans = useCallback(async () => {
+    if (!guardFeature('edit_plan')) {
+      return;
+    }
+    // 只清理非活跃的空计划（活跃计划即使为空也保留，避免误删当前训练目标）
+    const toDelete = sortedUserPlans.filter(
+      (plan) => emptyPlanIds.has(plan.id) && plan.id !== group?.activePlanId,
+    );
+    if (toDelete.length === 0) {
+      setNotice({ title: '没有空计划', message: '当前没有可清理的空计划。' });
+      return;
+    }
+
+    setIsWorking(true);
+    try {
+      let successCount = 0;
+      let failCount = 0;
+      for (const plan of toDelete) {
+        try {
+          await repositories.planRepository.deleteUserPlan(plan.id);
+          successCount += 1;
+        } catch {
+          failCount += 1;
+        }
+      }
+      await loadPlans();
+      setNotice({
+        title: '清理完成',
+        message: `已删除 ${successCount} 个空计划${failCount > 0 ? `，${failCount} 个删除失败` : ''}。`,
+      });
+    } catch (cleanupError) {
+      setNotice({
+        title: '清理失败',
+        message: cleanupError instanceof Error ? cleanupError.message : '清理空计划失败。',
+      });
+    } finally {
+      setIsWorking(false);
+    }
+  }, [emptyPlanIds, group?.activePlanId, guardFeature, loadPlans, repositories, sortedUserPlans]);
+
   return (
     <Screen>
       {error ? <EmptyState title="计划暂时无法加载" description={error} /> : null}
@@ -930,6 +982,20 @@ export default function PlanRoute() {
               >
                 导入计划
               </AppButton>
+              {emptyPlanIds.size > 0 ? (
+                <AppButton
+                  disabled={isWorking}
+                  onPress={() => {
+                    setMoreMenuInlineOpen(false);
+                    void cleanupEmptyPlans();
+                  }}
+                  size="sm"
+                  variant="danger"
+                  icon="trash-outline"
+                >
+                  清理空计划（{emptyPlanIds.size}）
+                </AppButton>
+              ) : null}
             </View>
           ) : null}
 
@@ -963,6 +1029,13 @@ export default function PlanRoute() {
                             <View style={styles.currentBadge}>
                               <AppText tone="brand" variant="caption" weight="900">
                                 当前
+                              </AppText>
+                            </View>
+                          ) : null}
+                          {emptyPlanIds.has(plan.id) ? (
+                            <View style={[styles.currentBadge, { backgroundColor: colors.dangerSoft ?? colors.surfaceMuted }]}>
+                              <AppText tone="danger" variant="caption" weight="900">
+                                空计划
                               </AppText>
                             </View>
                           ) : null}

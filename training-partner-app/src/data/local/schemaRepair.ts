@@ -18,7 +18,7 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
     'last_synced_at',
     'deleted_at',
   ],
-  member_profiles: ['owner_user_id', 'avatar_url', 'avatar_thumb_url', 'avatar_local_uri', 'avatar_updated_at'],
+  member_profiles: ['owner_user_id', 'avatar_url', 'avatar_thumb_url', 'avatar_local_uri', 'avatar_updated_at', 'deleted_at'],
   account_profile_cache: [
     'display_name',
     'phone_masked',
@@ -112,6 +112,7 @@ const COLUMN_DEFINITIONS: Record<string, Record<string, string>> = {
     avatar_thumb_url: 'avatar_thumb_url TEXT',
     avatar_local_uri: 'avatar_local_uri TEXT',
     avatar_updated_at: 'avatar_updated_at TEXT',
+    deleted_at: 'deleted_at TEXT',
   },
   account_profile_cache: {
     display_name: 'display_name TEXT',

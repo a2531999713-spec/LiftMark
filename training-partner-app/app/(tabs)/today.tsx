@@ -1322,7 +1322,11 @@ export default function TodayRoute() {
 
       await createWorkoutSession(startInput);
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : '开始训练失败。');
+      // 用 setNotice 而非 setError：setError 会让整个首页显示"首页暂时无法加载"，而 setNotice 只弹友好提示
+      setNotice({
+        title: '开始训练失败',
+        message: startError instanceof Error ? startError.message : '请稍后重试。',
+      });
     } finally {
       setIsStarting(false);
     }
@@ -1364,7 +1368,10 @@ export default function TodayRoute() {
       });
       await createWorkoutSession(pendingWorkoutStart);
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : '开始训练失败。');
+      setNotice({
+        title: '开始训练失败',
+        message: startError instanceof Error ? startError.message : '请稍后重试。',
+      });
     } finally {
       setIsStarting(false);
     }
