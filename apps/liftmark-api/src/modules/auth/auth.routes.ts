@@ -11,6 +11,15 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken, type TokenUser }
 import { syncUserAvatarToMemberProfiles } from '../sync/avatarSync';
 import { sendSmsCode, verifySmsCode } from './sms.service';
 import { saveAvatarFile, deleteAvatarFile, getAllowedExtension } from './avatar.service';
+import {
+  codeLoginSchema,
+  loginSchema,
+  passwordLoginSchema,
+  refreshSchema,
+  registerSchema,
+  sendCodeSchema,
+} from './auth.schemas';
+import { registerVerifiedPhone } from './auth.registration';
 
 type UserRow = {
   avatar_url?: string | null;
@@ -28,41 +37,6 @@ type UserRow = {
   role: 'user' | 'admin';
   status: 'normal' | 'disabled';
 };
-
-const sendCodeSchema = z.object({
-  phone: z.string(),
-  purpose: z.enum(['login', 'register', 'reset_password']),
-});
-
-const registerSchema = z.object({
-  phone: z.string(),
-  password: z.string().min(6).optional(),
-  code: z.string().optional(),
-  campaignCode: z.string().max(64).optional(),
-  nickname: z.string().min(1).max(32).optional(),
-  registrationSource: z.string().max(64).optional(),
-});
-
-const loginSchema = z.object({
-  account: z.string().min(1),
-  password: z.string().min(1),
-});
-
-const passwordLoginSchema = z.object({
-  identifier: z.string().min(1),
-  password: z.string().min(1),
-});
-
-const codeLoginSchema = z.object({
-  phone: z.string(),
-  code: z.string().min(1),
-  campaignCode: z.string().max(64).optional(),
-  registrationSource: z.string().max(64).optional(),
-});
-
-const refreshSchema = z.object({
-  refreshToken: z.string().min(1),
-});
 
 function toPublicUser(user: UserRow) {
   return {
@@ -253,7 +227,7 @@ async function createUser(input: {
 }
 
 export async function registerAuthRoutes(app: FastifyInstance) {
-  app.post('/auth/send-code', async (request) => {
+  app.post('/auth/send-code', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request) => {
     const body = sendCodeSchema.parse(request.body);
     return sendSmsCode({
       ...body,
@@ -261,29 +235,26 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/auth/register', async (request) => {
+  app.post('/auth/register', { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } }, async (request) => {
     const body = registerSchema.parse(request.body);
-    if (!body.password && !body.code) {
-      throw badRequest('请提供密码或验证码。');
-    }
-    if (body.code) {
-      await verifySmsCode({ phone: body.phone, purpose: 'register', code: body.code });
-    }
-    const user = await createUser(body);
-    return createSession(user);
+    return registerVerifiedPhone(body, {
+      verifyCode: verifySmsCode,
+      createUser,
+      createSession,
+    });
   });
 
-  app.post('/auth/login', async (request) => {
+  app.post('/auth/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request) => {
     const body = loginSchema.parse(request.body);
     return loginWithPassword(body.account, body.password);
   });
 
-  app.post('/auth/password/login', async (request) => {
+  app.post('/auth/password/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request) => {
     const body = passwordLoginSchema.parse(request.body);
     return loginWithPassword(body.identifier, body.password);
   });
 
-  app.post('/auth/login-with-code', async (request) => {
+  app.post('/auth/login-with-code', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request) => {
     const body = codeLoginSchema.parse(request.body);
     await verifySmsCode({ phone: body.phone, purpose: 'login', code: body.code });
     const user =
@@ -299,7 +270,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     return createSession(user);
   });
 
-  app.post('/auth/refresh', async (request) => {
+  app.post('/auth/refresh', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request) => {
     const body = refreshSchema.parse(request.body);
     const payload = verifyRefreshToken(body.refreshToken);
     const tokenHash = hashValue(body.refreshToken);
@@ -383,7 +354,10 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   });
 
   // 文件上传接口
-  app.post('/auth/avatar/upload', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/auth/avatar/upload', {
+    preHandler: requireAuth,
+    config: { rateLimit: { max: 10, timeWindow: '10 minutes' } },
+  }, async (request, reply) => {
     const authUser = getAuthUser(request);
 
     try {

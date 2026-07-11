@@ -12,6 +12,7 @@ type SyncStore = SyncSnapshot & {
   isLoading: boolean;
   loadSyncState: () => Promise<void>;
   requestSync: () => Promise<string | null>;
+  resetRuntime: () => void;
   setPreferences: (preferences: SyncPreferences) => Promise<void>;
 };
 
@@ -44,6 +45,16 @@ export const useSyncStore = create<SyncStore>((set) => ({
       return result.message;
     }
     return null;
+  },
+
+  resetRuntime() {
+    set({
+      error: null,
+      isLoading: false,
+      lastSyncedAt: undefined,
+      pendingCount: 0,
+      status: 'idle',
+    });
   },
 
   async setPreferences(preferences) {

@@ -1,6 +1,8 @@
 // 后端 API 调用客户端 - 自动注入鉴权 token、错误处理
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://47.100.239.29/api';
+const configuredApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+export const API_BASE = configuredApiBase?.replace(/\/$/, '') ?? '';
+export const PUBLIC_UPLOAD_BASE = `${API_BASE.replace(/\/api$/, '')}/uploads`;
 
 const TOKEN_KEY = 'liftmark_admin_token';
 const USER_KEY = 'liftmark_admin_user';
@@ -77,6 +79,9 @@ export function clearAuth() {
 type QueryParams = Record<string, string | number | boolean | undefined | null>;
 
 function buildUrl(path: string, query?: QueryParams): string {
+  if (!API_BASE) {
+    throw new ApiRequestError(500, 'API_BASE_NOT_CONFIGURED', '管理后台尚未配置 API 地址。');
+  }
   const url = new URL(`${API_BASE}${path}`);
   if (query) {
     for (const [key, value] of Object.entries(query)) {

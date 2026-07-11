@@ -1,11 +1,14 @@
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import path from 'path';
 import { ZodError } from 'zod';
 
 import { db } from './db/connection';
+import { isCorsOriginAllowed } from './config/cors';
+import { env } from './config/env';
 import { registerActivationCodeRoutes } from './modules/activation-codes/activation-codes.routes';
 import { registerAchievementsRoutes } from './modules/achievements/achievements.routes';
 import { registerAdminRoutes } from './modules/admin/admin.routes';
@@ -22,6 +25,7 @@ import { registerInvitationRoutes } from './modules/invitations/invitation.route
 import { registerPendingTrainingRoutes } from './modules/pending-training/pendingTraining.routes';
 import { registerTrainingRoomRoutes } from './modules/training-rooms/trainingRooms.routes';
 import { registerWorkoutRoutes } from './modules/workouts/workouts.routes';
+import { getMissingSyncTables } from './modules/sync/sync.schema-health';
 import { ApiError } from './utils/errors';
 
 export async function buildApp() {
@@ -31,7 +35,17 @@ export async function buildApp() {
   });
 
   await app.register(cors, {
-    origin: true,
+    origin(origin, callback) {
+      callback(null, isCorsOriginAllowed(origin, env.corsAllowedOrigins));
+    },
+  });
+
+  await app.register(rateLimit, {
+    global: false,
+    errorResponseBuilder: () => ({
+      error: 'RATE_LIMITED',
+      message: '请求过于频繁，请稍后再试。',
+    }),
   });
 
   await app.register(multipart, {
@@ -85,6 +99,16 @@ export async function buildApp() {
       service: 'liftmark-api',
       time: new Date().toISOString(),
     }));
+
+    api.get('/migration-health', async (_request, reply) => {
+      const missingSyncTables = await getMissingSyncTables();
+      const ok = missingSyncTables.length === 0;
+      return reply.status(ok ? 200 : 503).send({
+        ok,
+        schema: ok ? 'ready' : 'outdated',
+        missingSyncTables,
+      });
+    });
 
     api.get('/db-check', async () => {
       const row = await db.raw('select current_database() as current_database, current_user as current_user');

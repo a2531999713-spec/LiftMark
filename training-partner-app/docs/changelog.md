@@ -1,5 +1,13 @@
 # 变更记录
 
+## 2026-07-11 - architecture-convergence
+
+- 新增 AppScope、账号切换运行态清理和 scoped repository 入口。
+- 首页与训练执行页迁入 feature 层，路由收敛为薄入口；首页使用作用域聚合查询，训练结束前 flush 全部本地写入。
+- 同步新增显式实体注册表、安装级随机设备 ID、pull/push coordinator、冲突策略与服务端缺表错误边界。
+- API 注册必须验证短信验证码，并增加生产 CORS 白名单和敏感接口限流。
+- 无移动端 SQLite migration；无后端 PostgreSQL migration；需要发布 API、管理控制台和重打移动端安装包后才会进入对应环境，本任务未执行部署。
+
 ## 2026-07-11 - sync-payload-fix-and-empty-plan-cleanup
 
 ### 重大 bug：首页解析失败 + 开始训练报错 + 空计划堆积
@@ -314,7 +322,7 @@
 
 ### 后台数据修正中心优化
 - `apps/liftmark-api/src/modules/admin/admin.extended.routes.ts` 新增 `GET /admin/corrections/fields`，按修正类型返回常用数据库字段列表。
-- `backend/app/(admin)/corrections/page.tsx` 将「修正字段」从手动输入改为下拉选择；选择「修正类型」后自动列出对应字段，并显示字段中文说明。
+- `management-console/app/(admin)/corrections/page.tsx` 将「修正字段」从手动输入改为下拉选择；选择「修正类型」后自动列出对应字段，并显示字段中文说明。
 
 ### 移动端公告系统接入
 - 新增 `training-partner-app/src/services/announcementService.ts`：获取当前有效公告、读写本地已读状态（使用 SQLite `sync_state` 表）。

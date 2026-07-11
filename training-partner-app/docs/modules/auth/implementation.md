@@ -1,6 +1,14 @@
 ﻿# Auth 模块实现
 
-更新时间：2026-07-01
+更新时间：2026-07-11
+
+## 2026-07-11 安全边界收敛
+
+- `POST /auth/register` 的 `code` 现在为必填项，服务端必须先验证注册用途短信验证码，才会进入用户创建事务；错误验证码和重复手机号均不会创建用户。
+- `POST /auth/login-with-code` 保留短信登录/自动注册兼容路径，同样由服务端验证码校验保护。
+- 发送验证码、注册、密码登录、验证码登录、刷新令牌、激活码兑换、管理员登录和头像上传均配置独立限流策略；限流错误码统一为 `RATE_LIMITED`。
+- 生产环境必须显式配置 `CORS_ALLOWED_ORIGINS`。Web Origin 仅允许白名单，React Native 无 Origin 请求仍可访问 API。
+- 管理控制台 API 地址只读取 `NEXT_PUBLIC_API_BASE_URL`，不再内置生产 IP。
 
 ## 1. API 接入
 
@@ -20,7 +28,7 @@ API base URL 来自 `src/config/api.ts` / `EXPO_PUBLIC_API_BASE_URL`，当前公
 - 密码登录：手机号 / 练刻 ID + 密码，调用 `POST /auth/password/login`，请求体为 `{ identifier, password }`。
 - 短信验证码登录 / 注册：手机号 + 验证码，调用 `POST /auth/send-code` 与 `POST /auth/login-with-code`。
 
-`POST /auth/login` 保留为旧客户端兼容接口，继续接受 `{ account, password }`。`POST /auth/register` 保留为显式注册接口；`POST /auth/login-with-code` 对新手机号执行自动创建账号。移动端不信任客户端注册时间，后端在创建用户事务中写入注册顺序和活动字段。
+`POST /auth/login` 保留为旧客户端兼容接口，继续接受 `{ account, password }`。`POST /auth/register` 保留为显式注册接口，请求体必须包含服务端可验证的短信验证码；`POST /auth/login-with-code` 对新手机号执行自动创建账号。移动端不信任客户端注册时间，后端在创建用户事务中写入注册顺序和活动字段。
 
 后端用户注册元数据：
 

@@ -1,143 +1,104 @@
-<div align="center">
-
 # 练刻 LiftMark
 
-**你的智能健身训练伙伴**
+LiftMark is a three-client strength-training system. Mobile training writes to SQLite first; PostgreSQL is the authoritative cloud recovery and conflict-arbitration source.
 
-[![Expo](https://img.shields.io/badge/Expo-56-000000?style=for-the-badge&logo=expo&logoColor=white)](https://expo.dev)
-[![React Native](https://img.shields.io/badge/React%20Native-0.85-61DAFB?style=for-the-badge&logo=reactnative&logoColor=black)](https://reactnative.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+## Repository structure
 
-<img src="training-partner-app/assets/brand/brand-preview.png" alt="LiftMark Preview" width="100%">
+| Path | Responsibility |
+|---|---|
+| `training-partner-app/` | Expo / React Native mobile app for iOS and Android, local workout execution, SQLite repositories, reports, reminders, and sync queue. |
+| `apps/liftmark-api/` | Fastify / Knex / PostgreSQL API for authentication, groups, transactional sync, workouts, and admin APIs. |
+| `management-console/` | Next.js operations console. It consumes the API and does not contain the API server. |
+| `packages/shared/` | Minimal cross-client DTOs, sync entity names, status values, and error codes. |
+| `docs/` | Architecture, handoff, database, deployment, and verification documentation. |
+| `scripts/` | Explicit operational and diagnostic scripts. Review scripts before running them against any environment. |
 
-</div>
+Core data flow:
 
----
+```text
+Authenticated Account -> AccountScope -> Group -> Member -> Plan -> Plan Cycle
+-> Workout Execution -> Training Report -> Account-Scoped Sync Queue
+-> Transactional Server Sync
+```
 
-## ✨ 功能特性
+## Requirements
 
-- 🏋️ **多人训练管理** - 支持多个团队成员，各自独立的训练计划
-- 📊 **智能训练计划** - 系统化的力量训练和增肌计划
-- 📈 **渐进式超负荷** - 自动记录和推荐重量递增
-- 💪 **训练记录** - 详细记录每次训练的组数、次数、重量
-- 📅 **历史分析** - 查看训练历史和进步趋势
-- 🔄 **数据导入导出** - 支持训练数据和计划的导入导出
+- Node.js 22.13 or newer.
+- npm for the mobile app and API; the management console currently has an npm lockfile and must not mix package managers.
+- JDK 17 plus Android SDK 36 / NDK 27.1 for Android builds. Do not use Java 24.
+- PostgreSQL for API development.
+- Secrets supplied through untracked environment files. Never commit `.env`, `.pem`, tokens, database URLs, SMS credentials, backups, uploads, logs, or screenshots.
 
-## 🛠️ 技术栈
+## Mobile app
 
-| 技术 | 用途 |
-|------|------|
-| **Expo 56** | 跨平台开发框架 |
-| **React Native 0.85** | 移动端 UI 框架 |
-| **TypeScript 6.0** | 类型安全的 JavaScript |
-| **Expo Router** | 文件系统路由 |
-| **SQLite** | 本地数据存储 |
-| **Zustand** | 状态管理 |
-| **React Hook Form** | 表单处理 |
-| **Zod** | 数据验证 |
-
-## 🚀 快速开始
-
-### 环境要求
-
-- Node.js >= 22.13.0
-- npm 或 yarn
-- Android Studio (Android 开发)
-- Expo CLI
-
-### 安装步骤
-
-```bash
-# 克隆仓库
-git clone https://github.com/a2531999713-spec/LiftMark.git
-
-# 进入项目目录
-cd -/training-partner-app
-
-# 安装依赖
+```powershell
+cd C:\Users\zhw\Documents\LiftMark\training-partner-app
 npm install
-
-# 启动开发服务器
-npm start
+npm run start
 ```
 
-### 运行应用
+Useful commands:
 
-```bash
-# Android 设备/模拟器
+```powershell
 npm run android
-
-# 构建 APK 预览版
-npm run android:preview
-
-# iOS 设备/模拟器
 npm run ios
-
-# Web 浏览器
-npm run web
+npm run typecheck
+npm run lint
+npm test -- --runInBand
 ```
 
-## 📁 项目结构
+Android arm64 release verification:
 
-```
-training-partner-app/
-├── app/                    # Expo Router 页面
-│   ├── (tabs)/            # 标签页路由
-│   │   ├── today.tsx      # 今日训练
-│   │   ├── plan.tsx       # 训练计划
-│   │   ├── history.tsx    # 训练历史
-│   │   ├── members.tsx    # 成员管理
-│   │   └── settings.tsx   # 设置
-│   ├── workout/           # 训练相关页面
-│   ├── plan/              # 计划相关页面
-│   └── member/            # 成员相关页面
-├── src/                   # 源代码
-│   ├── components/        # UI 组件
-│   ├── domain/            # 业务逻辑
-│   ├── data/              # 数据层
-│   ├── services/          # 服务层
-│   └── theme/             # 主题配置
-├── assets/                # 静态资源
-├── scripts/               # 构建脚本
-└── docs/                  # 文档
+```powershell
+cd C:\Users\zhw\Documents\LiftMark\training-partner-app\android
+$env:PATH = "D:\Setup\nodejs;" + $env:PATH
+.\gradlew.bat assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
 ```
 
-## 📜 可用脚本
+## API
 
-| 命令 | 描述 |
-|------|------|
-| `npm start` | 启动 Expo 开发服务器 |
-| `npm run android` | 运行 Android 应用 |
-| `npm run android:preview` | 构建并安装 APK |
-| `npm run android:release` | 构建 Release 版本 |
-| `npm run typecheck` | 运行 TypeScript 类型检查 |
-| `npm run lint` | 运行 ESLint 代码检查 |
-| `npm test` | 运行测试用例 |
+Create an untracked `.env` from `apps/liftmark-api/.env.example`, then:
 
-## 🤝 贡献指南
+```powershell
+cd C:\Users\zhw\Documents\LiftMark\apps\liftmark-api
+npm install
+npm run typecheck
+npm run build
+npm run dev
+```
 
-欢迎贡献！请遵循以下步骤：
+Production requires explicit secrets and `CORS_ALLOWED_ORIGINS`. Database migrations are append-only and must be reviewed, backed up, and run separately from application deployment.
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 创建 Pull Request
+## Management console
 
-## 📄 许可证
+Create an untracked `.env.local` from `management-console/.env.example`, then:
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+```powershell
+cd C:\Users\zhw\Documents\LiftMark\management-console
+npm install
+npm run typecheck
+npm run lint
+npm run build
+npm run dev
+```
 
-## 📞 联系方式
+`NEXT_PUBLIC_API_BASE_URL` is required. Production API addresses are configuration, never hard-coded source values.
 
-- GitHub: [@a2531999713-spec](https://github.com/a2531999713-spec)
-- Email: a2531999713@163.com
+## Documentation
 
----
+- Architecture target: [`LiftMark-完整架构设计方案.md`](./LiftMark-完整架构设计方案.md)
+- Phased convergence plan: [`练刻 LiftMark 分阶段架构收敛执行计划.md`](./练刻%20LiftMark%20分阶段架构收敛执行计划.md)
+- Current-state audit: [`docs/03-architecture/current-state-audit-2026-07-11.md`](./docs/03-architecture/current-state-audit-2026-07-11.md)
+- Handoff entry: [`docs/handoff/00_README_交接入口.md`](./docs/handoff/00_README_交接入口.md)
+- Mobile technical architecture: [`training-partner-app/docs/technical-architecture.md`](./training-partner-app/docs/technical-architecture.md)
+- Sync architecture: [`training-partner-app/docs/sync-architecture.md`](./training-partner-app/docs/sync-architecture.md)
+- Database schema: [`training-partner-app/docs/database/schema.md`](./training-partner-app/docs/database/schema.md)
+- API deployment guide: [`training-partner-app/docs/backend-deploy-guide.md`](./training-partner-app/docs/backend-deploy-guide.md)
 
-<div align="center">
+## Data and migration rules
 
-**如果这个项目对你有帮助，请给个 ⭐ Star 支持一下！**
-
-</div>
+- SQLite and PostgreSQL migrations are append-only. Never edit a released migration or delete production tables.
+- Protect the production account and never reassign workout, plan, measurement, or report ownership between accounts.
+- Workout execution must succeed locally without network access. Cloud failure keeps local data queued for retry.
+- Pull precedes push; full restore does not use `since`; cursors and queues are account-scoped.
+- Do not run production migrations, repair SQL, seeds, deployments, PM2 restarts, or Nginx changes from ordinary development tasks.

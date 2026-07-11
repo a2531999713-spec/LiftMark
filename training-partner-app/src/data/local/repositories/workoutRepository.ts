@@ -6,6 +6,7 @@ import { FREE_TRAINING_PLAN_ID } from '@/domain/workout/workout.types';
 import { getPlanExerciseInitialReps, getPlanExerciseSetCount } from '@/domain/workout/workout.service';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import type { SyncEntityType } from '@/sync/syncTypes';
+import { getInstallationDeviceId } from '@/sync/device/deviceIdentity';
 import type {
   CreateSessionFromTodayPlanInput,
   CreateManualSessionInput,
@@ -47,7 +48,6 @@ import {
   type WorkoutSetRow,
 } from './mappers';
 
-const SOURCE_DEVICE_ID = 'liftmark-mobile';
 const DEFAULT_BODYWEIGHT_KG = 65;
 
 function isFreeTrainingPlan(planId?: string | null): boolean {
@@ -525,6 +525,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async createSessionFromTodayPlan(input: CreateSessionFromTodayPlanInput): Promise<WorkoutSession> {
     const db = await this.getDb();
+    const sourceDeviceId = await getInstallationDeviceId();
     const ownerUserId = await this.getVisibleGroupOwnerUserId(input.groupId);
     const now = nowIso();
     const trainingMode = input.trainingMode ?? 'group_local';
@@ -660,7 +661,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         status: 'in_progress',
         trainingMode,
         recordedByUserId: ownerUserId ?? undefined,
-        sourceDeviceId: SOURCE_DEVICE_ID,
+        sourceDeviceId,
         startedAt: now,
         createdAt: now,
         updatedAt: now,
@@ -813,6 +814,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async createManualSessionV2(input: CreateManualSessionV2Input): Promise<WorkoutSession> {
     const db = await this.getDb();
+    const sourceDeviceId = await getInstallationDeviceId();
     const ownerUserId = await this.getVisibleGroupOwnerUserId(input.groupId);
     const now = nowIso();
     const weekday = (new Date(`${input.date}T12:00:00`).getDay() || 7) as WorkoutSession['weekday'];
@@ -850,7 +852,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       status: input.completed === false ? 'in_progress' : 'completed',
       trainingMode: input.trainingMode,
       recordedByUserId: ownerUserId ?? undefined,
-      sourceDeviceId: SOURCE_DEVICE_ID,
+      sourceDeviceId,
       startedAt: now,
       finishedAt: input.completed === false ? undefined : now,
       createdAt: now,
@@ -979,6 +981,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async createManualSession(input: CreateManualSessionInput): Promise<WorkoutSession> {
     const db = await this.getDb();
+    const sourceDeviceId = await getInstallationDeviceId();
     const ownerUserId = await this.getVisibleGroupOwnerUserId(input.groupId);
     const now = nowIso();
     const weekday = (new Date(`${input.date}T12:00:00`).getDay() || 7) as WorkoutSession['weekday'];
@@ -1005,7 +1008,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       status: input.completed === false ? 'in_progress' : 'completed',
       trainingMode: 'solo_local',
       recordedByUserId: ownerUserId ?? undefined,
-      sourceDeviceId: SOURCE_DEVICE_ID,
+      sourceDeviceId,
       startedAt: now,
       finishedAt: input.completed === false ? undefined : now,
       createdAt: now,
@@ -1192,6 +1195,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async addExerciseToSession(input: AddWorkoutExerciseInput): Promise<WorkoutSessionDetail> {
     const db = await this.getDb();
+    const sourceDeviceId = await getInstallationDeviceId();
     const session = await requireRow(await this.getSession(input.sessionId), `未找到训练：${input.sessionId}`);
     const now = nowIso();
     const ownerUserId = await this.getVisibleGroupOwnerUserId(session.groupId);
@@ -1263,7 +1267,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
             memberId,
             index + 1,
             session.recordedByUserId ?? ownerUserId,
-            session.sourceDeviceId ?? SOURCE_DEVICE_ID,
+            session.sourceDeviceId ?? sourceDeviceId,
             set.weight ?? null,
             set.weight ?? null,
             set.reps ?? null,
@@ -1286,6 +1290,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
   async addSetToExerciseRecord(input: AddWorkoutSetInput): Promise<WorkoutSet> {
     const db = await this.getDb();
+    const sourceDeviceId = await getInstallationDeviceId();
     const now = nowIso();
     const session = await requireRow(await this.getSession(input.sessionId), `Workout session not visible: ${input.sessionId}`);
     const ownerUserId = await this.getVisibleGroupOwnerUserId(session.groupId);
@@ -1308,7 +1313,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       exercise_record_id: record.id,
       member_id: input.memberId,
       recorded_by_user_id: session.recordedByUserId ?? ownerUserId,
-      source_device_id: session.sourceDeviceId ?? SOURCE_DEVICE_ID,
+      source_device_id: session.sourceDeviceId ?? sourceDeviceId,
       set_number: (setNumberRow?.max_set_number ?? 0) + 1,
       planned_weight: input.weight ?? null,
       actual_weight: input.weight ?? null,

@@ -1,3 +1,5 @@
+import type { SharedSyncEntityType } from '@liftmark/shared';
+
 export type SyncStatus =
   | 'local_only'
   | 'pending_create'
@@ -8,27 +10,7 @@ export type SyncStatus =
   | 'sync_failed'
   | 'conflict';
 
-export type SyncEntityType =
-  | 'exercises'
-  | 'workoutSessions'
-  | 'workoutExerciseRecords'
-  | 'workoutSets'
-  | 'trainingPlans'
-  | 'planCycles'
-  | 'planCycleSummaries'
-  | 'planPhases'
-  | 'planDays'
-  | 'planExercises'
-  | 'trainingReports'
-  | 'trainingReminders'
-  | 'groups'
-  | 'groupMembers'
-  | 'memberProfiles'
-  | 'bodyMetrics'
-  | 'bodyMetricGoals'
-  | 'recoveryLogs'
-  | 'progressionSuggestions'
-  | 'settings';
+export type SyncEntityType = SharedSyncEntityType;
 
 export type SyncOperation = 'create' | 'update' | 'delete';
 

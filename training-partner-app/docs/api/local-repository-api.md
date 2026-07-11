@@ -1,6 +1,13 @@
 ﻿# 本地 Repository API 文档
 
-更新时间：2026-07-09
+更新时间：2026-07-11
+
+## 2026-07-11 契约补充：AppScope、作用域工厂与首页聚合
+
+- `application/scope/AppScope` 是页面业务上下文的统一输入，包含 `userId`、`groupId`、`memberId`、`activePlanId` 和 `activePlanCycleId`；页面不得自行跨账号回退查找数据。
+- `createScopedRepositories(scope)` 会校验当前认证账号与 scope 一致，并验证小组对该账号可见。新增业务用例优先接收 scoped repositories，避免页面直接构造全局 repository 工厂。
+- `loadHomeDashboardSnapshot()` 只在当前账号和小组作用域内聚合周训练量、完成次数、最近表现和可见进行中 session；不得恢复 `listSessions()` 后逐条 `getSessionDetail()` 的首页查询方式。
+- 账号切换清理 selected group、活动 session/draft 与同步运行态，不删除任何本地业务表；新账号通过 full pull 恢复自己的作用域数据。
 
 ## 2026-07-09 契约补充：账号作用域和自由训练
 

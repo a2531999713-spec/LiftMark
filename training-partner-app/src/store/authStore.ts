@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { switchApplicationAccountScope } from '@/application/scope/accountSwitch.service';
 import { deriveAuthMode, type AuthMode, type MembershipTier } from '@/domain/auth';
 import { getAccountProfileCache, updateAccountProfileCacheDisplayName } from '@/services/avatar';
 import { createAuthService } from '@/services/auth/authService';
@@ -17,9 +18,6 @@ import { readStoredSession, saveStoredSession } from '@/services/auth/tokenStora
 import { getMembership, type Membership } from '@/services/membershipService';
 import { repairLocalDataOwnership } from '@/services/ownershipRepairService';
 import { sync } from '@/sync/syncOrchestrator';
-import { useManualWorkoutDraftStore } from '@/store/manualWorkoutDraftStore';
-import { useSelectedGroupStore } from '@/store/selectedGroupStore';
-import { useWorkoutDraftStore } from '@/store/workoutDraftStore';
 
 type AuthStore = {
   authMode: AuthMode;
@@ -118,9 +116,7 @@ async function resolveSessionState(session: AuthSession | null) {
 }
 
 function switchRuntimeAccountScope(userId?: string | null) {
-  useSelectedGroupStore.getState().switchAccountScope(userId);
-  useWorkoutDraftStore.getState().setActiveSessionId(undefined);
-  useManualWorkoutDraftStore.getState().reset();
+  switchApplicationAccountScope(userId);
 }
 
 function recoverCurrentAccountData() {

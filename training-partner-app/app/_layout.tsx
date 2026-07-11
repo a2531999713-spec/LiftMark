@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { ActivityIndicator, AppState, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { AppScopeProvider } from '@/application/scope';
 import { initializeLocalDatabase } from '@/data/local';
 import { useAuthStore } from '@/store/authStore';
 import { sync, getLastSyncAt } from '@/sync/syncOrchestrator';
@@ -79,7 +80,8 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <Stack
+      <AppScopeProvider>
+        <Stack
         screenOptions={{
           headerBackButtonDisplayMode: 'minimal',
           headerBackTitle: '',
@@ -137,7 +139,8 @@ export default function RootLayout() {
         <Stack.Screen name="about" options={{ headerShown: false }} />
         <Stack.Screen name="terms" options={{ title: '' }} />
         <Stack.Screen name="privacy" options={{ title: '' }} />
-      </Stack>
+        </Stack>
+      </AppScopeProvider>
     </GestureHandlerRootView>
   );
 }

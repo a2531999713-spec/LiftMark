@@ -85,9 +85,9 @@
 - `apps/liftmark-api/src/modules/training-rooms/trainingRooms.routes.ts`
 - `apps/liftmark-api/src/modules/catalog/catalog.routes.ts`
 - `apps/liftmark-api/src/modules/admin/admin.extended.routes.ts`
-- `backend/app/(admin)/membership/page.tsx`
-- `backend/app/(admin)/corrections/page.tsx`
-- `backend/后台管理问题排查与修复说明.md`
+- `management-console/app/(admin)/membership/page.tsx`
+- `management-console/app/(admin)/corrections/page.tsx`
+- `management-console/后台管理问题排查与修复说明.md`
 
 ### 验证
 - 后端 `npm run typecheck` 已通过。

@@ -2,8 +2,8 @@
 const nextConfig = {
   output: 'standalone',
   basePath: '/admin',
-  typescript: {
-    ignoreBuildErrors: true,
+  turbopack: {
+    root: import.meta.dirname,
   },
   images: {
     unoptimized: true,

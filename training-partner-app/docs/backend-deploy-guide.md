@@ -503,7 +503,7 @@ export const API_BASE_URL =
 | 公网访问地址 | `http://47.100.239.29/admin/` |
 | 内部监听地址 | `http://127.0.0.1:3001` |
 | 部署目录 | `/home/deploy/liftmark/admin-deploy` |
-| 源代码目录 | `/home/deploy/liftmark/backend` |
+| 源代码目录 | `/home/deploy/liftmark/management-console` |
 | PM2 进程名 | `liftmark-admin` |
 | 框架 | Next.js 16.2.6 (standalone) + React 19 |
 | basePath | `/admin` |
@@ -528,13 +528,13 @@ npm install --no-audit --no-fund  # 安装依赖（含 devDependencies 用于构
 npm run build                     # 生成 .next/standalone/
 ```
 
-构建产物：`backend/.next/standalone/server.js` + `backend/.next/static/`
+构建产物：`management-console/.next/standalone/server.js` + `management-console/.next/static/`
 
 #### 9.3.2 准备运行目录
 
 ```bash
 DEST=/home/deploy/liftmark/admin-deploy
-SRC=/home/deploy/liftmark/backend
+SRC=/home/deploy/liftmark/management-console
 
 rm -rf "$DEST"
 mkdir -p "$DEST/.next/static" "$DEST/public"
@@ -656,7 +656,7 @@ npm install --no-audit --no-fund
 npm run build
 
 DEST=/home/deploy/liftmark/admin-deploy
-SRC=/home/deploy/liftmark/backend
+SRC=/home/deploy/liftmark/management-console
 
 # 备份旧目录（可选）
 mv "$DEST" "${DEST}.bak.$(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
@@ -684,7 +684,7 @@ pm2 save
 
 ### 9.5 与 liftmark-api 协同部署
 
-`backend/admin-deploy/` 和 `apps/liftmark-api/` 是两个独立服务：
+`management-console/` 和 `apps/liftmark-api/` 是两个独立服务：
 
 | 服务 | 端口 | PM2 进程 | 跑在 |
 |---|---|---|---|
@@ -813,4 +813,3 @@ pm2 start liftmark-api
 | `pg_dump: command not found` | 安装 `postgresql-client`：`sudo apt install -y postgresql-client`。 |
 | cron 未执行 | 检查 `crontab -l` 是否包含条目，确认 cron 服务运行：`sudo systemctl status cron`。 |
 | 备份文件过大 | 数据库增长后建议使用 `pg_dump --format=custom` 结合 `pg_restore`，或增加备份保留策略。 |
-

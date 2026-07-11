@@ -5,6 +5,8 @@ import { readStoredSession } from '@/services/auth/tokenStorage';
 import { defaultStrengthPlanDaySeeds } from '@/data/seed/defaultStrengthPlan';
 import { defaultDeloadPlanDaySeeds } from '@/data/seed/defaultDeloadPlan';
 import { defaultHypertrophyPlanDaySeeds } from '@/data/seed/defaultHypertrophyPlan';
+import { getInstallationDeviceId } from './device/deviceIdentity';
+import { advancePullCursor, getPullCursor } from './pull/pullCursorStore';
 
 type LocalDatabase = Awaited<ReturnType<typeof initializeLocalDatabase>>;
 
@@ -36,8 +38,6 @@ type PullResponse = {
 
 type DbValue = string | number | null;
 
-const LAST_PULL_AT_KEY_PREFIX = 'last_pull_at';
-const DEVICE_ID = 'liftmark-mobile';
 
 function pick(payload: Record<string, unknown> | null, keys: string[]): unknown {
   if (!payload) return undefined;
@@ -111,38 +111,6 @@ function normalizePayload(row: ServerRow): Record<string, unknown> {
 
 function resolveTimestamp(row: ServerRow): string {
   return row.client_updated_at ?? row.updated_at ?? new Date().toISOString();
-}
-
-function getLastPullAtKey(userId: string): string {
-  return `${LAST_PULL_AT_KEY_PREFIX}:${userId}`;
-}
-
-async function getLastPullAt(db: LocalDatabase, userId: string): Promise<string> {
-  try {
-    const row = await db.getFirstAsync<{ value: string }>(
-      'SELECT value FROM sync_state WHERE key = ? LIMIT 1',
-      getLastPullAtKey(userId),
-    );
-    return row?.value ?? new Date(0).toISOString();
-  } catch {
-    return new Date(0).toISOString();
-  }
-}
-
-async function setLastPullAt(db: LocalDatabase, userId: string, value: string): Promise<void> {
-  try {
-    const key = getLastPullAtKey(userId);
-    await db.runAsync(
-      `INSERT INTO sync_state (id, key, value, updated_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      `sync_state_${key}`,
-      key,
-      value,
-      new Date().toISOString(),
-    );
-  } catch (error) {
-    console.warn('[sync] failed to update last_pull_at', error instanceof Error ? error.message : error);
-  }
 }
 
 type RemoteIdUpsertInput = {
@@ -309,7 +277,7 @@ async function upsertById(db: LocalDatabase, input: IdUpsertInput): Promise<bool
   }
 
   const existing = await db.getFirstAsync<{ id: string; owner_user_id?: string | null }>(
-    `SELECT * FROM ${table} WHERE id = ? LIMIT 1`,
+    `SELECT id, owner_user_id FROM ${table} WHERE id = ? LIMIT 1`,
     id,
   );
 
@@ -1576,8 +1544,9 @@ export async function pullFromServer(
   }
 
   const db = await initializeLocalDatabase();
-  const since = options?.fullPull ? new Date(0).toISOString() : await getLastPullAt(db, currentUserId);
-  const path = `/sync/pull?since=${encodeURIComponent(since)}&deviceId=${DEVICE_ID}`;
+  const since = options?.fullPull ? new Date(0).toISOString() : await getPullCursor(db, currentUserId);
+  const deviceId = await getInstallationDeviceId();
+  const path = `/sync/pull?since=${encodeURIComponent(since)}&deviceId=${encodeURIComponent(deviceId)}`;
 
   console.log('[sync/pull] calling', path);
   console.log('[RESTORE] currentUserId=', currentUserId, 'fullPull=', options?.fullPull, 'since=', since);
@@ -1677,7 +1646,7 @@ export async function pullFromServer(
     }
   }
 
-  await setLastPullAt(db, currentUserId, result.serverTime);
+  await advancePullCursor(db, currentUserId, result.serverTime);
   console.log('[sync/pull] done, total applied:', pulled);
 
   return {

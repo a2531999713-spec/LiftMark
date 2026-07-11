@@ -1,5 +1,7 @@
 import dotenv from 'dotenv';
 
+import { resolveCorsAllowedOrigins } from './cors';
+
 dotenv.config();
 
 function readEnv(name: string, fallback?: string) {
@@ -22,6 +24,7 @@ export const env = {
   host: process.env.HOST ?? '127.0.0.1',
   port: Number(process.env.PORT ?? 3000),
   databaseUrl: readEnv('DATABASE_URL'),
+  corsAllowedOrigins: resolveCorsAllowedOrigins(process.env.NODE_ENV ?? 'development', process.env.CORS_ALLOWED_ORIGINS),
   jwtSecret: readSecret('JWT_SECRET', 'dev-only-liftmark-access-secret-change-me'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
   jwtRefreshSecret: readSecret('JWT_REFRESH_SECRET', 'dev-only-liftmark-refresh-secret-change-me'),
@@ -40,4 +43,3 @@ export const env = {
 export function isProduction() {
   return env.nodeEnv === 'production';
 }
-
