@@ -75,6 +75,8 @@ const localSyncEntityTableByType: Partial<Record<SyncEntityType, string>> = {
   planCycles: 'plan_cycles',
   planCycleSummaries: 'plan_cycle_summaries',
   planPhases: 'plan_phases',
+  planDays: 'plan_days',
+  planExercises: 'plan_exercises',
   trainingReports: 'training_reports',
   trainingReminders: 'training_reminders',
   workoutExerciseRecords: 'workout_exercise_records',
@@ -83,6 +85,32 @@ const localSyncEntityTableByType: Partial<Record<SyncEntityType, string>> = {
   recoveryLogs: 'recovery_logs',
   progressionSuggestions: 'progression_suggestions',
 };
+
+// push 前从本地表读取完整行数据填充 payload。
+// 背景：enqueueSyncCandidate 入队时大多未携带业务字段 payload（仅 localId/owner），
+// 导致 buildServerEntity 推送到服务器的 payload 缺少 plan_id/type/start_week 等关键列，
+// fullPull 时 applyPlanPhases 等无法恢复，本地 plan_phases.plan_id 为空 → plan_has_no_phases。
+// 这里在 push 前从本地表 SELECT * 补全业务字段，确保 push/pull 业务数据不丢失。
+async function hydrateItemPayload(
+  db: Awaited<ReturnType<typeof initializeLocalDatabase>>,
+  item: SyncQueueItem,
+): Promise<Record<string, unknown>> {
+  const existing = item.payload ?? {};
+  if (item.operation === 'delete') return existing;
+  const table = localSyncEntityTableByType[item.entityType];
+  if (!table) return existing;
+  try {
+    const row = await db.getFirstAsync<Record<string, unknown>>(
+      `SELECT * FROM ${table} WHERE id = ? LIMIT 1`,
+      item.localId,
+    );
+    if (!row) return existing;
+    // 本地表行数据优先（补全业务字段），保留 existing 的 owner 等字段
+    return { ...existing, ...row };
+  } catch {
+    return existing;
+  }
+}
 
 function buildServerEntity(item: SyncQueueItem) {
   const payload = item.payload ?? {};
@@ -238,8 +266,12 @@ export async function requestImmediateSync(): Promise<{ ok: true; message?: stri
       settings: [],
     };
 
+    const db = await initializeLocalDatabase();
     for (const item of syncableItems) {
-      changes[item.entityType as ServerSyncEntityType].push(buildServerEntity(item));
+      const hydratedPayload = await hydrateItemPayload(db, item);
+      changes[item.entityType as ServerSyncEntityType].push(
+        buildServerEntity({ ...item, payload: hydratedPayload }),
+      );
     }
 
     const result = await apiRequest<SyncPushResponse>('/sync/push', {

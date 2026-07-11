@@ -670,6 +670,8 @@ export default function TodayRoute() {
   const loadHomeRequestRef = useRef(0);
   const lastAnnouncementFetchRef = useRef(0);
   const ANNOUNCEMENT_FETCH_THROTTLE_MS = 5 * 60 * 1000;
+  // 用 ref 存储 group/todayPlan 用于 hasData 判断，避免放进 loadHome 依赖列表导致无限循环
+  const hasHomeDataRef = useRef(false);
 
   const loadHome = useCallback(async () => {
     const requestId = loadHomeRequestRef.current + 1;
@@ -677,7 +679,7 @@ export default function TodayRoute() {
     const isLatestRequest = () => requestId === loadHomeRequestRef.current;
 
     // 已有数据时不强制 loading（避免切 Tab 白屏），只在无数据时显示 loading
-    const hasData = Boolean(group && todayPlan);
+    const hasData = hasHomeDataRef.current;
     if (!hasData) {
       setIsLoading(true);
     }
@@ -697,6 +699,7 @@ export default function TodayRoute() {
         setActivePlan(null);
         setRawActivePlan(null);
         setTodayPlan(null);
+        hasHomeDataRef.current = false;
         setMembers([]);
         setProfiles({});
         setAccountProfile(nextAccountProfile);
@@ -922,6 +925,8 @@ export default function TodayRoute() {
       setActivePlan(nextActivePlan);
       setRawActivePlan(loadedActivePlan);
       setTodayPlan(result);
+      // 更新 ref 用于下次 hasData 判断
+      hasHomeDataRef.current = Boolean(nextGroup && result);
       setPlanDays(nextPlanDays);
       setSelectedWeek(nextSelectedWeek);
       setSelectedWeekday(nextSelectedWeekday);
@@ -957,7 +962,9 @@ export default function TodayRoute() {
         setIsLoading(false);
       }
     }
-  }, [isPlanSelectionManual, repositories, recoveryMode, selectedGroupId, selectedWeek, selectedWeekday, setSelectedGroupId, todayWeekday, group, todayPlan]);
+  // 注意：group 和 todayPlan 不在依赖列表中，用 hasHomeDataRef 代替。
+  // 把它们放进依赖会导致 loadHome 无限循环（setGroup/setTodayPlan 创建新引用 → loadHome 重建 → useFocusEffect 重执行）
+  }, [isPlanSelectionManual, repositories, recoveryMode, selectedGroupId, selectedWeek, selectedWeekday, setSelectedGroupId, todayWeekday]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1315,7 +1322,11 @@ export default function TodayRoute() {
 
       await createWorkoutSession(startInput);
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : '开始训练失败。');
+      // 用 setNotice 而非 setError：setError 会让整个首页显示"首页暂时无法加载"，而 setNotice 只弹友好提示
+      setNotice({
+        title: '开始训练失败',
+        message: startError instanceof Error ? startError.message : '请稍后重试。',
+      });
     } finally {
       setIsStarting(false);
     }
@@ -1357,7 +1368,10 @@ export default function TodayRoute() {
       });
       await createWorkoutSession(pendingWorkoutStart);
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : '开始训练失败。');
+      setNotice({
+        title: '开始训练失败',
+        message: startError instanceof Error ? startError.message : '请稍后重试。',
+      });
     } finally {
       setIsStarting(false);
     }
