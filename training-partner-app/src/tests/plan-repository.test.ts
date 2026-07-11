@@ -15,6 +15,10 @@ jest.mock('@/data/local/accountScope', () => ({
   getRequiredCurrentUserId: jest.fn(async () => 'usr_test'),
 }));
 
+jest.mock('@/sync/syncQueue', () => ({
+  enqueueSyncCandidate: jest.fn(async () => undefined),
+}));
+
 function createPlan(patch: Partial<PlanTemplate> = {}): PlanTemplate {
   return {
     id: 'plan_user_1',
@@ -285,5 +289,55 @@ describe('SQLitePlanRepository.getTodayPlan', () => {
     await expect(
       new TestPlanRepository(createPlan({ status: 'active' }), [createPlan()], db).getTodayPlan(input),
     ).rejects.toThrow('plan_has_no_phases');
+  });
+});
+
+describe('SQLitePlanRepository plan cycle summary', () => {
+  it('reuses the same summary row when recalculated repeatedly', async () => {
+    let summaryExists = false;
+    const writes: string[] = [];
+    const cycleRow = {
+      actual_end_date: null,
+      actual_start_date: '2026-07-01',
+      archived_at: null,
+      completed_at: '2026-07-11T00:00:00.000Z',
+      created_at: '2026-07-01T00:00:00.000Z',
+      cycle_index: 1,
+      end_date: '2026-07-28',
+      group_id: 'group_1',
+      id: 'cycle_1',
+      name: '周期 1',
+      owner_user_id: 'usr_test',
+      plan_id: 'plan_user_1',
+      planned_weeks: 4,
+      start_date: '2026-07-01',
+      status: 'completed',
+      updated_at: '2026-07-11T00:00:00.000Z',
+    };
+    const transaction = {
+      getFirstAsync: jest.fn(async () => summaryExists ? { created_at: '2026-07-11T00:00:00.000Z', id: 'cycle_summary_test' } : null),
+      runAsync: jest.fn(async (sql: string) => {
+        writes.push(sql);
+        if (sql.includes('INSERT INTO plan_cycle_summaries')) summaryExists = true;
+      }),
+    };
+    const db = {
+      getFirstAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM plan_cycles')) return cycleRow;
+        if (sql.includes('FROM plan_templates')) return { frequency_per_week: 2, name: '力量计划' };
+        return null;
+      }),
+      getAllAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM workout_sessions ws')) return [];
+        return [];
+      }),
+      withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => callback(transaction)),
+    };
+    const repository = new SQLitePlanRepository(async () => db as never);
+    const first = await repository.recalculatePlanCycleSummary('cycle_1');
+    const second = await repository.recalculatePlanCycleSummary('cycle_1');
+    expect(first.id).toBe(second.id);
+    expect(writes.filter((sql) => sql.includes('INSERT INTO plan_cycle_summaries'))).toHaveLength(1);
+    expect(writes.some((sql) => sql.includes('UPDATE plan_cycle_summaries'))).toBe(true);
   });
 });

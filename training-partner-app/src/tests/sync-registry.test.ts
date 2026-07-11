@@ -31,6 +31,19 @@ describe('sync registry and serializers', () => {
     expect(getSyncEntityDefinition('memberProfiles').deletionStrategy).toBe('dedicated-endpoint');
   });
 
+  it('covers cycle completion, archive, summary, and report fields', () => {
+    expect(getSyncEntityDefinition('planCycles').fields).toEqual(expect.arrayContaining([
+      'owner_user_id', 'group_id', 'plan_id', 'status', 'completed_at', 'archived_at',
+    ]));
+    expect(getSyncEntityDefinition('planCycleSummaries').fields).toEqual(expect.arrayContaining([
+      'plan_cycle_id', 'planned_workout_count', 'completed_workout_count', 'completion_rate',
+      'total_volume', 'total_sets', 'total_reps', 'total_duration_seconds', 'estimated_calories',
+    ]));
+    expect(getSyncEntityDefinition('trainingReports').fields).toEqual(expect.arrayContaining([
+      'workout_session_id', 'plan_cycle_id', 'estimated_calories_low', 'estimated_calories_high',
+    ]));
+  });
+
   it('generates non-hardware installation identifiers', () => {
     const first = createInstallationDeviceId();
     const second = createInstallationDeviceId();
