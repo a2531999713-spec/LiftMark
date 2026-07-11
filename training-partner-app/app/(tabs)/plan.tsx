@@ -14,7 +14,8 @@ import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
 import { resolveSelectedGroup } from '@/domain/group/selected-group';
 import { DEFAULT_CYCLE_WEEK_COUNT } from '@/domain/plan/defaultCycle';
-import type { PlanDay, PlanTemplate } from '@/domain/plan/plan.types';
+import type { PlanCycleOverview, PlanDay, PlanTemplate } from '@/domain/plan/plan.types';
+import { getPlanCycleStatusLabel, isPlanCycleReadyToComplete } from '@/domain/plan/planCycle.service';
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import {
   describeSchemeGoal,
@@ -176,6 +177,8 @@ export default function PlanRoute() {
   const [userPlans, setUserPlans] = useState<PlanTemplate[]>([]);
   const [daySummaries, setDaySummaries] = useState<DaySummary[]>([]);
   const [stats, setStats] = useState<PlanDashboardStats>(emptyStats);
+  const [cycleOverview, setCycleOverview] = useState<PlanCycleOverview | null>(null);
+  const [dismissedCycleId, setDismissedCycleId] = useState<string | null>(null);
   const [selectedScheme, setSelectedScheme] = useState<SystemTrainingScheme | null>(null);
   const [previewScheme, setPreviewScheme] = useState<SystemTrainingScheme | null>(null);
   const [activationPrompt, setActivationPrompt] = useState<ActivationPrompt | null>(null);
@@ -226,6 +229,7 @@ export default function PlanRoute() {
         setUserPlans(nextUserPlans);
         setDaySummaries([]);
         setStats(emptyStats);
+        setCycleOverview(null);
         return;
       }
       if (nextGroup.id !== selectedGroupId) {
@@ -237,6 +241,7 @@ export default function PlanRoute() {
 
       let nextDaySummaries: DaySummary[] = [];
       let nextStats = emptyStats;
+      let nextCycleOverview: PlanCycleOverview | null = null;
 
       if (nextActivePlan) {
         const days = await repositories.planRepository.listPlanDays(nextActivePlan.id);
@@ -282,6 +287,14 @@ export default function PlanRoute() {
           ...recentStats,
           weeklySessionCount: weeklyDetails.filter((detail) => detail.sets.some((set) => set.completed)).length,
         };
+        const cycles = await repositories.planRepository.listPlanCycles({
+          groupId: nextGroup.id,
+          planId: nextActivePlan.id,
+        });
+        const visibleCycle = cycles.find((cycle) => cycle.status === 'active') ?? cycles[0];
+        if (visibleCycle) {
+          nextCycleOverview = await repositories.planRepository.getPlanCycleOverview(visibleCycle.id);
+        }
       }
 
       setGroup(nextGroup);
@@ -289,6 +302,7 @@ export default function PlanRoute() {
       setUserPlans(nextUserPlans);
       setDaySummaries(nextDaySummaries);
       setStats(nextStats);
+      setCycleOverview(nextCycleOverview);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '计划加载失败。');
     } finally {
@@ -605,6 +619,12 @@ export default function PlanRoute() {
 
   const activePlanWeeks = activePlan?.durationWeeks ?? DEFAULT_CYCLE_WEEK_COUNT;
   const activePlanProgress = Math.min(100, Math.round(((group?.currentWeek ?? 1) / activePlanWeeks) * 100));
+  const cycleNeedsAttention = Boolean(
+    cycleOverview && (
+      cycleOverview.cycle.status === 'completed'
+      || isPlanCycleReadyToComplete(cycleOverview.cycle, group?.currentWeek ?? 1, cycleOverview.completedWorkoutCount)
+    ),
+  );
   
   // 按最近使用排序（当前计划排第一）
   const sortedUserPlans = useMemo(() => {
@@ -680,6 +700,64 @@ export default function PlanRoute() {
               <View style={[styles.progressFill, { width: `${activePlanProgress}%` }]} />
             </View>
           </VisualHeroCard>
+
+          {cycleOverview ? (
+            <AppCard style={styles.cycleCard}>
+              <View style={styles.cycleHeader}>
+                <View style={styles.cycleIcon}>
+                  <Ionicons color={colors.primary} name="repeat-outline" size={22} />
+                </View>
+                <View style={styles.planRowText}>
+                  <AppText variant="subtitle" weight="900">{cycleOverview.cycle.name}</AppText>
+                  <AppText tone="muted" variant="caption">
+                    {cycleOverview.cycle.startDate} — {cycleOverview.cycle.actualEndDate ?? cycleOverview.cycle.endDate ?? '进行中'}
+                  </AppText>
+                </View>
+                <Tag
+                  label={getPlanCycleStatusLabel(cycleOverview.cycle.status)}
+                  tone={cycleOverview.cycle.status === 'archived' || cycleOverview.cycle.status === 'completed' ? 'success' : 'brand'}
+                />
+              </View>
+              <View style={styles.cycleStats}>
+                <StatTile label="计划训练" value={`${cycleOverview.plannedWorkoutCount} 次`} />
+                <StatTile label="已完成" value={`${cycleOverview.completedWorkoutCount} 次`} />
+                <StatTile label="完成率" value={`${Math.round(cycleOverview.completionRate * 100)}%`} />
+                <StatTile label="总训练量" value={formatKg(cycleOverview.totalVolume)} />
+              </View>
+              <View style={styles.inlineActions}>
+                <AppButton
+                  onPress={() => router.push({ pathname: '/plan/cycle/[cycleId]', params: { cycleId: cycleOverview.cycle.id } } as never)}
+                  style={styles.button}
+                  variant="secondary"
+                >
+                  查看周期总结
+                </AppButton>
+              </View>
+            </AppCard>
+          ) : null}
+
+          {cycleOverview && cycleNeedsAttention && dismissedCycleId !== cycleOverview.cycle.id ? (
+            <AppCard style={styles.cycleNotice} tone="soft">
+              <View style={styles.cycleNoticeHeader}>
+                <Ionicons color={colors.success} name="checkmark-circle-outline" size={24} />
+                <View style={styles.planRowText}>
+                  <AppText variant="bodySmall" weight="900">当前计划周期已完成</AppText>
+                  <AppText tone="muted" variant="caption">
+                    查看最终统计后，可以结束并归档本周期；训练历史和报告不会被删除。
+                  </AppText>
+                </View>
+              </View>
+              <View style={styles.inlineActions}>
+                <AppButton
+                  onPress={() => router.push({ pathname: '/plan/cycle/[cycleId]', params: { cycleId: cycleOverview.cycle.id } } as never)}
+                  style={styles.button}
+                >
+                  {cycleOverview.cycle.status === 'completed' ? '归档本周期' : '查看并结束周期'}
+                </AppButton>
+                <AppButton onPress={() => setDismissedCycleId(cycleOverview.cycle.id)} style={styles.button} variant="ghost">暂不处理</AppButton>
+              </View>
+            </AppCard>
+          ) : null}
 
           <AppCard style={styles.dashboardCard}>
             <View style={styles.dashboardHeader}>
@@ -1372,9 +1450,41 @@ function SchemeCard({
 }
 
 const styles = StyleSheet.create({
+  button: {
+    flex: 1,
+  },
   compactPreview: {
     gap: spacing.md,
     padding: spacing.md,
+  },
+  cycleCard: {
+    gap: spacing.md,
+  },
+  cycleHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  cycleIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    height: 46,
+    justifyContent: 'center',
+    width: 46,
+  },
+  cycleNotice: {
+    gap: spacing.md,
+  },
+  cycleNoticeHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  cycleStats: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
   },
   dashboardCard: {
     gap: spacing.md,

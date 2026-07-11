@@ -499,6 +499,12 @@ export default function WorkoutSummaryRoute() {
           </AppCard>
 
           <View style={styles.buttonRow}>
+            <AppButton
+              onPress={() => router.push({ pathname: '/report/[sessionId]', params: { sessionId } } as never)}
+              style={styles.button}
+            >
+              查看完整训练报告
+            </AppButton>
             <AppButton onPress={() => router.replace('/(tabs)/history')} style={styles.button} variant="secondary">
               返回记录
             </AppButton>

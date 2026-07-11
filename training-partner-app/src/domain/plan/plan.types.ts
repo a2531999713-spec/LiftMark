@@ -79,6 +79,36 @@ export type PlanCycleSummary = {
   updatedAt: string;
 };
 
+export type PlanCycleSessionStats = {
+  bodyweightsKg: (number | undefined)[];
+  completedSets: number;
+  durationSeconds: number;
+  hasReport: boolean;
+  reportEstimatedCalories?: number;
+  reportTotalReps?: number;
+  reportTotalSets?: number;
+  reportTotalVolume?: number;
+  sessionId: ID;
+  totalReps: number;
+  totalVolume: number;
+};
+
+export type PlanCycleOverview = {
+  actualDurationDays: number;
+  completedWorkoutCount: number;
+  completionRate: number;
+  cycle: PlanCycle;
+  estimatedCalories: number;
+  planName: string;
+  plannedWorkoutCount: number;
+  reportCount: number;
+  skippedWorkoutCount: number;
+  totalDurationSeconds: number;
+  totalReps: number;
+  totalSets: number;
+  totalVolume: number;
+};
+
 export type PlanPhase = {
   id: ID;
   planId: ID;

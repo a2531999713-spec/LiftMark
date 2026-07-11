@@ -5,6 +5,7 @@ import type {
   GetTodayPlanInput,
   IntensityType,
   PlanCycle,
+  PlanCycleOverview,
   PlanCycleSummary,
   PlanDay,
   PlanExercise,
@@ -65,6 +66,7 @@ export interface PlanRepository {
   getPlanById(planId: ID): Promise<PlanTemplate | null>;
   getActivePlanCycle(input: GetActivePlanCycleInput): Promise<PlanCycle | null>;
   getPlanCycleSummary(planCycleId: ID): Promise<PlanCycleSummary | null>;
+  getPlanCycleOverview(planCycleId: ID): Promise<PlanCycleOverview>;
   listUserPlans(): Promise<PlanTemplate[]>;
   listPlanCycles(input: ListPlanCyclesInput): Promise<PlanCycle[]>;
   listPlanPhases(planId: ID): Promise<PlanPhase[]>;
@@ -76,6 +78,8 @@ export interface PlanRepository {
   duplicatePlan(input: DuplicatePlanInput): Promise<PlanTemplate>;
   importUserPlan(input: ImportUserPlanInput): Promise<PlanTemplate>;
   archivePlanCycle(input: ArchivePlanCycleInput): Promise<PlanCycleSummary>;
+  completePlanCycle(input: CompletePlanCycleInput): Promise<PlanCycleSummary>;
+  recalculatePlanCycleSummary(planCycleId: ID): Promise<PlanCycleSummary>;
   deleteUserPlan(planId: ID): Promise<void>;
   getTodayPlan(input: GetTodayPlanInput): Promise<TodayPlanResult>;
 }
@@ -97,5 +101,9 @@ export type ListPlanCyclesInput = {
 };
 
 export type ArchivePlanCycleInput = {
+  planCycleId: ID;
+};
+
+export type CompletePlanCycleInput = {
   planCycleId: ID;
 };

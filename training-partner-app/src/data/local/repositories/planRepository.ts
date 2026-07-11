@@ -13,6 +13,8 @@ import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import type {
   GetTodayPlanInput,
   PlanCycle,
+  PlanCycleOverview,
+  PlanCycleSessionStats,
   PlanCycleSummary,
   PlanDay,
   PlanExercise,
@@ -21,6 +23,11 @@ import type {
   TodayPlanResult,
 } from '@/domain/plan/plan.types';
 import { filterExercisesByRecovery } from '@/domain/plan/plan.service';
+import {
+  calculatePlanCycleOverview,
+  canArchivePlanCycle,
+  canCompletePlanCycle,
+} from '@/domain/plan/planCycle.service';
 
 import { requireRow, type DatabaseProvider } from './base';
 import { getCurrentAccountUserId, getGroupAccountScope, getPlanAccountScope, getRequiredCurrentUserId } from '../accountScope';
@@ -191,137 +198,292 @@ export class SQLitePlanRepository implements PlanRepository {
     return row ? mapPlanCycleSummary(row) : null;
   }
 
-  async archivePlanCycle(input: { planCycleId: string }): Promise<PlanCycleSummary> {
+  private async getVisiblePlanCycle(planCycleId: string): Promise<PlanCycle> {
     const db = await this.getDb();
-    const userId = await getCurrentAccountUserId();
+    const userId = await getRequiredCurrentUserId();
     const scope = getGroupAccountScope(userId, 'groups');
-    const cycle = await db.getFirstAsync<PlanCycleRow>(
+    const row = await db.getFirstAsync<PlanCycleRow>(
       `SELECT pc.* FROM plan_cycles pc
        INNER JOIN groups ON groups.id = pc.group_id
-       WHERE pc.id = ?
-         AND pc.deleted_at IS NULL
+       WHERE pc.id = ? AND pc.owner_user_id = ? AND pc.deleted_at IS NULL
          AND ${scope.where}
        LIMIT 1`,
-      input.planCycleId,
+      planCycleId,
+      userId,
       ...scope.params,
     );
-    if (!cycle) {
-      throw new Error(`Plan cycle not visible for current account: ${input.planCycleId}`);
+    if (!row) throw new Error(`Plan cycle not visible for current account: ${planCycleId}`);
+    return mapPlanCycle(row);
+  }
+
+  private async listPlanCycleSessionStats(cycle: PlanCycle): Promise<PlanCycleSessionStats[]> {
+    const db = await this.getDb();
+    const ownerUserId = await getRequiredCurrentUserId();
+    const [sessionRows, participantRows] = await Promise.all([
+      db.getAllAsync<{
+        completed_sets: number;
+        duration_seconds: number;
+        has_report: number;
+        report_estimated_calories: number | null;
+        report_total_reps: number | null;
+        report_total_sets: number | null;
+        report_total_volume: number | null;
+        session_id: string;
+        total_reps: number;
+        total_volume: number;
+      }>(
+        `SELECT ws.id AS session_id,
+           COALESCE((SELECT latest.duration_seconds FROM training_reports latest
+             WHERE latest.workout_session_id = ws.id AND latest.owner_user_id = ?
+               AND latest.deleted_at IS NULL ORDER BY latest.updated_at DESC LIMIT 1),
+             CASE WHEN ws.started_at IS NOT NULL AND ws.finished_at IS NOT NULL
+               THEN MAX(0, CAST((julianday(ws.finished_at) - julianday(ws.started_at)) * 86400 AS INTEGER)) ELSE 0 END
+           ) AS duration_seconds,
+           COALESCE((SELECT COUNT(*) FROM workout_sets completed
+             WHERE completed.session_id = ws.id AND completed.owner_user_id = ?
+               AND completed.completed = 1 AND completed.skipped = 0 AND completed.deleted_at IS NULL), 0) AS completed_sets,
+           COALESCE((SELECT SUM(COALESCE(reps.actual_reps, reps.planned_reps, 0)) FROM workout_sets reps
+             WHERE reps.session_id = ws.id AND reps.owner_user_id = ?
+               AND reps.completed = 1 AND reps.skipped = 0 AND reps.deleted_at IS NULL), 0) AS total_reps,
+           COALESCE((SELECT SUM(COALESCE(volume.actual_weight, volume.planned_weight, 0)
+               * COALESCE(volume.actual_reps, volume.planned_reps, 0)) FROM workout_sets volume
+             WHERE volume.session_id = ws.id AND volume.owner_user_id = ?
+               AND volume.completed = 1 AND volume.skipped = 0 AND volume.deleted_at IS NULL), 0) AS total_volume,
+           CASE WHEN report.id IS NULL THEN 0 ELSE 1 END AS has_report,
+           report.total_sets AS report_total_sets, report.total_reps AS report_total_reps,
+           report.total_volume AS report_total_volume,
+           report.estimated_calories AS report_estimated_calories
+         FROM workout_sessions ws
+         LEFT JOIN training_reports report ON report.id = (
+           SELECT latest.id FROM training_reports latest
+           WHERE latest.workout_session_id = ws.id AND latest.owner_user_id = ? AND latest.deleted_at IS NULL
+           ORDER BY latest.updated_at DESC LIMIT 1
+         )
+         WHERE ws.owner_user_id = ? AND ws.group_id = ? AND ws.plan_cycle_id = ?
+           AND ws.status = 'completed' AND ws.deleted_at IS NULL
+         ORDER BY ws.date ASC, ws.id ASC`,
+        ownerUserId,
+        ownerUserId,
+        ownerUserId,
+        ownerUserId,
+        ownerUserId,
+        ownerUserId,
+        cycle.groupId,
+        cycle.id,
+      ),
+      db.getAllAsync<{ bodyweight: number | null; member_id: string; session_id: string }>(
+        `SELECT DISTINCT workout_set.session_id, workout_set.member_id, mp.bodyweight
+         FROM workout_sets workout_set
+         INNER JOIN workout_sessions session_scope ON session_scope.id = workout_set.session_id
+         LEFT JOIN member_profiles mp ON mp.member_id = workout_set.member_id AND mp.deleted_at IS NULL
+         WHERE session_scope.owner_user_id = ? AND session_scope.group_id = ?
+           AND session_scope.plan_cycle_id = ? AND session_scope.status = 'completed'
+           AND session_scope.deleted_at IS NULL AND workout_set.owner_user_id = ?
+           AND workout_set.deleted_at IS NULL`,
+        ownerUserId,
+        cycle.groupId,
+        cycle.id,
+        ownerUserId,
+      ),
+    ]);
+    const bodyweightsBySession = new Map<string, (number | undefined)[]>();
+    for (const participant of participantRows) {
+      const weights = bodyweightsBySession.get(participant.session_id) ?? [];
+      weights.push(participant.bodyweight && participant.bodyweight > 0 ? participant.bodyweight : undefined);
+      bodyweightsBySession.set(participant.session_id, weights);
     }
+    return sessionRows.map((session) => ({
+      bodyweightsKg: bodyweightsBySession.get(session.session_id) ?? [undefined],
+      completedSets: session.completed_sets,
+      durationSeconds: session.duration_seconds,
+      hasReport: session.has_report === 1,
+      reportEstimatedCalories: session.report_estimated_calories ?? undefined,
+      reportTotalReps: session.report_total_reps ?? undefined,
+      reportTotalSets: session.report_total_sets ?? undefined,
+      reportTotalVolume: session.report_total_volume ?? undefined,
+      sessionId: session.session_id,
+      totalReps: session.total_reps,
+      totalVolume: session.total_volume,
+    }));
+  }
 
-    const now = nowIso();
-    const stats = await db.getFirstAsync<{
-      completed_workout_count: number;
-      total_duration_seconds: number;
-      total_sets: number;
-      total_reps: number;
-      total_volume: number;
-      estimated_calories: number;
-    }>(
-      `SELECT
-         COUNT(DISTINCT CASE WHEN ws.status = 'completed' THEN ws.id END) AS completed_workout_count,
-         COALESCE(SUM(CASE WHEN tr.id IS NOT NULL THEN tr.duration_seconds ELSE 0 END), 0) AS total_duration_seconds,
-         COALESCE(SUM(CASE WHEN wset.completed = 1 THEN 1 ELSE 0 END), 0) AS total_sets,
-         COALESCE(SUM(CASE WHEN wset.completed = 1 THEN COALESCE(wset.actual_reps, 0) ELSE 0 END), 0) AS total_reps,
-         COALESCE(SUM(CASE WHEN wset.completed = 1 THEN COALESCE(wset.actual_weight, 0) * COALESCE(wset.actual_reps, 0) ELSE 0 END), 0) AS total_volume,
-         COALESCE(SUM(COALESCE(tr.estimated_calories, 0)), 0) AS estimated_calories
-       FROM workout_sessions ws
-       LEFT JOIN workout_sets wset ON wset.session_id = ws.id AND wset.deleted_at IS NULL
-       LEFT JOIN training_reports tr ON tr.workout_session_id = ws.id AND tr.deleted_at IS NULL
-       WHERE ws.plan_cycle_id = ?
-         AND ws.deleted_at IS NULL`,
-      cycle.id,
+  async getPlanCycleOverview(planCycleId: string): Promise<PlanCycleOverview> {
+    const db = await this.getDb();
+    const cycle = await this.getVisiblePlanCycle(planCycleId);
+    const ownerUserId = await getRequiredCurrentUserId();
+    const plan = await db.getFirstAsync<{ frequency_per_week: number; name: string }>(
+      `SELECT name, frequency_per_week FROM plan_templates
+       WHERE id = ? AND owner_user_id = ? AND deleted_at IS NULL LIMIT 1`,
+      cycle.planId,
+      ownerUserId,
     );
+    return calculatePlanCycleOverview({
+      cycle,
+      frequencyPerWeek: plan?.frequency_per_week ?? 0,
+      planName: plan?.name ?? '训练计划',
+      sessions: await this.listPlanCycleSessionStats(cycle),
+    });
+  }
 
-    const plannedWorkoutCount = Math.max(1, cycle.planned_weeks);
-    const completedWorkoutCount = stats?.completed_workout_count ?? 0;
+  async recalculatePlanCycleSummary(planCycleId: string): Promise<PlanCycleSummary> {
+    const db = await this.getDb();
+    const ownerUserId = await getRequiredCurrentUserId();
+    const overview = await this.getPlanCycleOverview(planCycleId);
+    const now = nowIso();
+    let operation: 'create' | 'update' = 'create';
+    let createdAt = now;
+    let summaryId = createId('cycle_summary');
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      const existing = await txn.getFirstAsync<{ created_at: string; id: string }>(
+        `SELECT id, created_at FROM plan_cycle_summaries
+         WHERE owner_user_id = ? AND plan_cycle_id = ? AND deleted_at IS NULL
+         ORDER BY updated_at DESC LIMIT 1`,
+        ownerUserId,
+        planCycleId,
+      );
+      if (existing) {
+        operation = 'update';
+        createdAt = existing.created_at;
+        summaryId = existing.id;
+        await txn.runAsync(
+          `UPDATE plan_cycle_summaries SET
+             group_id = ?, plan_id = ?, planned_workout_count = ?, completed_workout_count = ?,
+             skipped_workout_count = ?, completion_rate = ?, total_volume = ?, total_sets = ?,
+             total_reps = ?, total_duration_seconds = ?, estimated_calories = ?, summary_text = ?,
+             sync_status = 'pending_update', updated_at = ?
+           WHERE id = ? AND owner_user_id = ?`,
+          overview.cycle.groupId,
+          overview.cycle.planId,
+          overview.plannedWorkoutCount,
+          overview.completedWorkoutCount,
+          overview.skippedWorkoutCount,
+          overview.completionRate,
+          overview.totalVolume,
+          overview.totalSets,
+          overview.totalReps,
+          overview.totalDurationSeconds,
+          overview.estimatedCalories,
+          '周期统计已按当前训练记录重新计算。',
+          now,
+          summaryId,
+          ownerUserId,
+        );
+      } else {
+        await txn.runAsync(
+          `INSERT INTO plan_cycle_summaries (
+             id, owner_user_id, group_id, plan_id, plan_cycle_id, planned_workout_count,
+             completed_workout_count, skipped_workout_count, completion_rate, total_volume,
+             total_sets, total_reps, total_duration_seconds, estimated_calories, summary_text,
+             sync_status, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_create', ?, ?)`,
+          summaryId,
+          ownerUserId,
+          overview.cycle.groupId,
+          overview.cycle.planId,
+          overview.cycle.id,
+          overview.plannedWorkoutCount,
+          overview.completedWorkoutCount,
+          overview.skippedWorkoutCount,
+          overview.completionRate,
+          overview.totalVolume,
+          overview.totalSets,
+          overview.totalReps,
+          overview.totalDurationSeconds,
+          overview.estimatedCalories,
+          '周期统计已按当前训练记录重新计算。',
+          now,
+          now,
+        );
+      }
+    });
     const summary: PlanCycleSummary = {
-      id: createId('cycle_summary'),
-      ownerUserId: cycle.owner_user_id ?? undefined,
-      groupId: cycle.group_id,
-      planId: cycle.plan_id,
-      planCycleId: cycle.id,
-      plannedWorkoutCount,
-      completedWorkoutCount,
-      skippedWorkoutCount: Math.max(0, plannedWorkoutCount - completedWorkoutCount),
-      completionRate: completedWorkoutCount / plannedWorkoutCount,
-      totalVolume: stats?.total_volume ?? 0,
-      totalSets: stats?.total_sets ?? 0,
-      totalReps: stats?.total_reps ?? 0,
-      totalDurationSeconds: stats?.total_duration_seconds ?? 0,
-      estimatedCalories: stats?.estimated_calories ?? 0,
-      summaryText: 'Cycle summary generated.',
-      createdAt: now,
+      completedWorkoutCount: overview.completedWorkoutCount,
+      completionRate: overview.completionRate,
+      createdAt,
+      estimatedCalories: overview.estimatedCalories,
+      groupId: overview.cycle.groupId,
+      id: summaryId,
+      ownerUserId,
+      planCycleId: overview.cycle.id,
+      planId: overview.cycle.planId,
+      plannedWorkoutCount: overview.plannedWorkoutCount,
+      skippedWorkoutCount: overview.skippedWorkoutCount,
+      summaryText: '周期统计已按当前训练记录重新计算。',
+      totalDurationSeconds: overview.totalDurationSeconds,
+      totalReps: overview.totalReps,
+      totalSets: overview.totalSets,
+      totalVolume: overview.totalVolume,
       updatedAt: now,
     };
+    await enqueueSyncCandidate({
+      entityType: 'planCycleSummaries',
+      localId: summary.id,
+      operation,
+      ownerUserId,
+      payload: summary,
+      status: operation === 'create' ? 'pending_create' : 'pending_update',
+      updatedAt: now,
+    });
+    return summary;
+  }
 
-    await db.withExclusiveTransactionAsync(async (txn) => {
-      await txn.runAsync(
-        `UPDATE plan_cycles
-         SET status = 'archived', archived_at = ?, actual_end_date = COALESCE(actual_end_date, ?),
-             sync_status = 'pending_update', updated_at = ?
-         WHERE id = ?`,
+  async completePlanCycle(input: { planCycleId: string }): Promise<PlanCycleSummary> {
+    const db = await this.getDb();
+    const ownerUserId = await getRequiredCurrentUserId();
+    const cycle = await this.getVisiblePlanCycle(input.planCycleId);
+    if (cycle.status === 'abandoned') throw new Error('已放弃的周期不能标记为完成。');
+    if (canCompletePlanCycle(cycle.status)) {
+      const now = nowIso();
+      await db.runAsync(
+        `UPDATE plan_cycles SET status = 'completed', completed_at = ?,
+           actual_end_date = COALESCE(actual_end_date, ?), sync_status = 'pending_update', updated_at = ?
+         WHERE id = ? AND owner_user_id = ?`,
         now,
         now.slice(0, 10),
         now,
         cycle.id,
+        ownerUserId,
       );
-      await txn.runAsync(
-        `INSERT INTO plan_cycle_summaries (
-          id, owner_user_id, group_id, plan_id, plan_cycle_id, planned_workout_count,
-          completed_workout_count, skipped_workout_count, completion_rate, total_volume,
-          total_sets, total_reps, total_duration_seconds, estimated_calories,
-          top_progress_exercises_json, weak_exercises_json, muscle_group_distribution_json,
-          summary_text, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        summary.id,
-        summary.ownerUserId ?? null,
-        summary.groupId,
-        summary.planId,
-        summary.planCycleId,
-        summary.plannedWorkoutCount,
-        summary.completedWorkoutCount,
-        summary.skippedWorkoutCount,
-        summary.completionRate,
-        summary.totalVolume,
-        summary.totalSets,
-        summary.totalReps,
-        summary.totalDurationSeconds,
-        summary.estimatedCalories,
-        summary.topProgressExercisesJson ?? null,
-        summary.weakExercisesJson ?? null,
-        summary.muscleGroupDistributionJson ?? null,
-        summary.summaryText ?? null,
-        summary.createdAt,
-        summary.updatedAt,
-      );
-    });
+      await enqueueSyncCandidate({
+        entityType: 'planCycles',
+        localId: cycle.id,
+        operation: 'update',
+        ownerUserId,
+        payload: { completedAt: now, id: cycle.id, status: 'completed' },
+        status: 'pending_update',
+        updatedAt: now,
+      });
+    }
+    return this.recalculatePlanCycleSummary(cycle.id);
+  }
 
+  async archivePlanCycle(input: { planCycleId: string }): Promise<PlanCycleSummary> {
+    const db = await this.getDb();
+    const ownerUserId = await getRequiredCurrentUserId();
+    const cycle = await this.getVisiblePlanCycle(input.planCycleId);
+    if (!canArchivePlanCycle(cycle.status)) throw new Error('请先结束当前周期，再进行归档。');
+    const summary = await this.recalculatePlanCycleSummary(cycle.id);
+    if (cycle.status === 'archived') return summary;
+    const now = nowIso();
+    await db.runAsync(
+      `UPDATE plan_cycles SET status = 'archived', archived_at = ?,
+         actual_end_date = COALESCE(actual_end_date, ?), sync_status = 'pending_update', updated_at = ?
+       WHERE id = ? AND owner_user_id = ?`,
+      now,
+      now.slice(0, 10),
+      now,
+      cycle.id,
+      ownerUserId,
+    );
     await enqueueSyncCandidate({
       entityType: 'planCycles',
       localId: cycle.id,
       operation: 'update',
-      ownerUserId: cycle.owner_user_id,
-      payload: {
-        id: cycle.id,
-        groupId: cycle.group_id,
-        planId: cycle.plan_id,
-        status: 'archived',
-        archivedAt: now,
-      },
+      ownerUserId,
+      payload: { archivedAt: now, id: cycle.id, status: 'archived' },
       status: 'pending_update',
       updatedAt: now,
     });
-    await enqueueSyncCandidate({
-      entityType: 'planCycleSummaries',
-      localId: summary.id,
-      operation: 'create',
-      ownerUserId: summary.ownerUserId,
-      payload: summary,
-      status: 'pending_create',
-      updatedAt: summary.updatedAt,
-    });
-
     return summary;
   }
 

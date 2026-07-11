@@ -465,6 +465,15 @@ export default function HistoryDetailRoute() {
             ) : null}
           </AppCard>
 
+          {!isEditMode ? (
+            <AppButton
+              onPress={() => router.push({ pathname: '/report/[sessionId]', params: { sessionId: detail.session.id } } as never)}
+              variant="secondary"
+            >
+              查看训练报告
+            </AppButton>
+          ) : null}
+
           <SectionHeader
             actionLabel={isEditMode ? '新增动作' : undefined}
             onActionPress={() => {

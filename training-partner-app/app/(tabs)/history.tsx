@@ -1,5 +1,5 @@
-import { RecordHomeScreen } from '@/features/history/recordHome/RecordHomeScreen';
+import { CycleAwareRecordHomeScreen } from '@/features/history/recordHome/CycleAwareRecordHomeScreen';
 
 export default function HistoryRoute() {
-  return <RecordHomeScreen />;
+  return <CycleAwareRecordHomeScreen />;
 }

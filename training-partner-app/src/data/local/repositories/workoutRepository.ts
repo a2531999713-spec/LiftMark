@@ -4,6 +4,7 @@ import type { WorkoutRepository } from '@/data/repositories/workoutRepository';
 import { calculateSuggestedWeight } from '@/domain/weight/weight-calculator';
 import { FREE_TRAINING_PLAN_ID } from '@/domain/workout/workout.types';
 import { getPlanExerciseInitialReps, getPlanExerciseSetCount } from '@/domain/workout/workout.service';
+import { estimateTrainingCalories, getTrainingIntensityLevel } from '@/domain/report/trainingReport.service';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import type { SyncEntityType } from '@/sync/syncTypes';
 import { getInstallationDeviceId } from '@/sync/device/deviceIdentity';
@@ -28,7 +29,13 @@ import type {
 import { validateWorkoutSetInput } from '@/domain/workout/workout.validation';
 
 import { requireRow, type DatabaseProvider } from './base';
-import { getCurrentAccountUserId, getGroupAccountScope, getOwnerUserIdForWrite, getPlanAccountScope } from '../accountScope';
+import {
+  getCurrentAccountUserId,
+  getGroupAccountScope,
+  getOwnerUserIdForWrite,
+  getPlanAccountScope,
+  getRequiredCurrentUserId,
+} from '../accountScope';
 import {
   mapExercise,
   mapGroupMember,
@@ -48,8 +55,6 @@ import {
   type WorkoutSetRow,
 } from './mappers';
 
-const DEFAULT_BODYWEIGHT_KG = 65;
-
 function isFreeTrainingPlan(planId?: string | null): boolean {
   return !planId || planId === FREE_TRAINING_PLAN_ID;
 }
@@ -63,29 +68,6 @@ function getSessionDurationSeconds(session: WorkoutSession): number {
   const end = session.finishedAt ? new Date(session.finishedAt).getTime() : Date.now();
   if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return 0;
   return Math.round((end - start) / 1000);
-}
-
-function getIntensityLevel(input: { durationSeconds: number; totalSets: number; totalVolume: number }): 'low' | 'medium' | 'high' {
-  if (input.durationSeconds >= 75 * 60 || input.totalSets >= 24 || input.totalVolume >= 12000) return 'high';
-  if (input.durationSeconds >= 35 * 60 || input.totalSets >= 10 || input.totalVolume >= 3500) return 'medium';
-  return 'low';
-}
-
-function getMetForIntensity(intensity: 'low' | 'medium' | 'high'): number {
-  if (intensity === 'high') return 6;
-  if (intensity === 'medium') return 5;
-  return 3.5;
-}
-
-function estimateCalories(input: { bodyweightKg?: number; durationSeconds: number; intensity: 'low' | 'medium' | 'high' }) {
-  const bodyweightKg = input.bodyweightKg && input.bodyweightKg > 0 ? input.bodyweightKg : DEFAULT_BODYWEIGHT_KG;
-  const hours = Math.max(input.durationSeconds, 60) / 3600;
-  const calories = getMetForIntensity(input.intensity) * bodyweightKg * hours;
-  return {
-    estimatedCalories: Math.round(calories),
-    estimatedCaloriesMin: Math.max(0, Math.round(calories * 0.8)),
-    estimatedCaloriesMax: Math.max(0, Math.round(calories * 1.2)),
-  };
 }
 
 type DeletedEntity = {
@@ -226,7 +208,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   private async upsertTrainingReportForSession(sessionId: string): Promise<WorkoutSummary> {
     const db = await this.getDb();
     const session = await requireRow(await this.getSession(sessionId), `Workout session not visible: ${sessionId}`);
-    const ownerUserId = session.recordedByUserId ?? await this.getVisibleGroupOwnerUserId(session.groupId);
+    const ownerUserId = await getRequiredCurrentUserId();
     const now = nowIso();
     const durationSeconds = getSessionDurationSeconds(session);
 
@@ -254,13 +236,11 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       sessionId,
     );
 
-    const participantStats = await db.getFirstAsync<{
-      avg_bodyweight: number | null;
-      participant_count: number | null;
+    const participantStats = await db.getAllAsync<{
+      bodyweight: number | null;
+      member_id: string;
     }>(
-      `SELECT
-        COUNT(DISTINCT ws.member_id) AS participant_count,
-        AVG(CASE WHEN mp.bodyweight > 0 THEN mp.bodyweight ELSE NULL END) AS avg_bodyweight
+      `SELECT DISTINCT ws.member_id, mp.bodyweight
        FROM workout_sets ws
        LEFT JOIN member_profiles mp ON mp.member_id = ws.member_id AND mp.deleted_at IS NULL
        WHERE ws.session_id = ? AND ws.deleted_at IS NULL`,
@@ -302,15 +282,11 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const totalReps = counts?.total_reps ?? 0;
     const totalVolume = counts?.total_volume ?? 0;
     const exerciseCount = counts?.exercise_count ?? 0;
-    const intensityLevel = getIntensityLevel({ durationSeconds, totalSets: completedSets, totalVolume });
-    const participantCount = Math.max(1, participantStats?.participant_count ?? 1);
-    const avgBodyweight = participantStats?.avg_bodyweight && participantStats.avg_bodyweight > 0
-      ? participantStats.avg_bodyweight
-      : DEFAULT_BODYWEIGHT_KG;
-    const calories = estimateCalories({
-      bodyweightKg: avgBodyweight * participantCount,
+    const intensityLevel = getTrainingIntensityLevel({ durationSeconds, totalSets: completedSets, totalVolume });
+    const calories = estimateTrainingCalories({
       durationSeconds,
       intensity: intensityLevel,
+      participantBodyweightsKg: participantStats.map((participant) => participant.bodyweight),
     });
 
     const muscleTotals = new Map<string, { completedSets: number; totalReps: number; totalVolume: number }>();
@@ -337,10 +313,11 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
     const existing = await db.getFirstAsync<{ id: string }>(
       `SELECT id FROM training_reports
-       WHERE workout_session_id = ? AND deleted_at IS NULL
+       WHERE workout_session_id = ? AND owner_user_id = ? AND deleted_at IS NULL
        ORDER BY updated_at DESC
        LIMIT 1`,
       sessionId,
+      ownerUserId,
     );
     const reportId = existing?.id ?? createId('report');
     const operation = existing ? 'update' : 'create';
@@ -353,7 +330,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       reportDate: session.date,
       durationSeconds,
       totalVolume,
-      totalSets,
+      totalSets: completedSets,
       totalReps,
       exerciseCount,
       estimatedCalories: calories.estimatedCalories,
@@ -374,7 +351,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
              exercise_count = ?, estimated_calories = ?, estimated_calories_min = ?,
              estimated_calories_max = ?, intensity_level = ?, muscle_group_summary_json = ?,
              exercise_summary_json = ?, personal_records_json = ?, updated_at = ?
-         WHERE id = ?`,
+         WHERE id = ? AND owner_user_id = ?`,
         session.groupId,
         null,
         session.planId,
@@ -383,7 +360,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         session.date,
         durationSeconds,
         totalVolume,
-        totalSets,
+        completedSets,
         totalReps,
         exerciseCount,
         calories.estimatedCalories,
@@ -395,6 +372,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         reportPayload.personalRecordsJson,
         now,
         reportId,
+        ownerUserId,
       );
     } else {
       await db.runAsync(
@@ -414,7 +392,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         session.date,
         durationSeconds,
         totalVolume,
-        totalSets,
+        completedSets,
         totalReps,
         exerciseCount,
         calories.estimatedCalories,
