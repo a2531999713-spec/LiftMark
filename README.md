@@ -21,6 +21,8 @@ Authenticated Account -> AccountScope -> Group -> Member -> Plan -> Plan Cycle
 -> Transactional Server Sync
 ```
 
+The mobile P1 plan-cycle/report/history flow is implemented on the existing local-first architecture: training completion produces an account-scoped report, plan-cycle completion/archive produces an idempotent summary, and history supports current/archive/free/manual filters without N+1 detail reads. See `docs/03-architecture/plan-cycle-report-history-implementation-2026-07.md` for routes, data flow, scope rules, tests, and the remaining device acceptance step.
+
 ## Requirements
 
 - Node.js 22.13 or newer.

@@ -2,6 +2,13 @@
 
 更新时间：2026-07-11
 
+## 2026-07-11 契约补充：计划周期、训练报告与历史聚合
+
+- `TrainingReportRepository.getTrainingReportSource(sessionId)` 返回当前账号与 session 所属小组可见的 report/session/exercises/sets/participants；缺少 report 时返回可构建只读 fallback 的 source，不写库。
+- `HistoryRepository.listHistoryItems(input)` 和 `listHistoryCycleOptions(groupId)` 使用 scoped aggregate query，支持 `all/current_cycle/specific_cycle/free/manual`，页面不得逐条加载 session detail。
+- `PlanRepository.getPlanCycleOverview()` 返回周期及 session 统计；`completePlanCycle()`、`recalculatePlanCycleSummary()`、`archivePlanCycle()` 对当前 owner + group 校验并复用同一 summary。
+- summary 聚合优先 report、缺失时 fallback 到 session/set，排除未完成、已删除和 skipped set；不得把未完成计划日推断成显式跳过。
+
 ## 2026-07-11 契约补充：AppScope、作用域工厂与首页聚合
 
 - `application/scope/AppScope` 是页面业务上下文的统一输入，包含 `userId`、`groupId`、`memberId`、`activePlanId` 和 `activePlanCycleId`；页面不得自行跨账号回退查找数据。

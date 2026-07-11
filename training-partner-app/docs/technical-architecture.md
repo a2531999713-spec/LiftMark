@@ -1,3 +1,10 @@
+## 2026-07-11 P1 计划周期、报告与历史查询补充
+
+- 新增 `domain/report/trainingReport.service.ts` 与 `domain/plan/planCycle.service.ts` 作为报告和周期统计的纯领域口径。
+- 新增 scoped `TrainingReportRepository`、`HistoryRepository`，以及 `PlanRepository.getPlanCycleOverview/completePlanCycle/recalculatePlanCycleSummary`；页面只通过 controller/use case 访问。
+- 历史列表以 owner + group 为入口执行一条 aggregate query，避免逐 session 查询 report/cycle/plan 的 N+1。
+- 复用 SQLite v23 与现有 sync registry；没有 schema、API 或共享契约变更。详见仓库级 `docs/03-architecture/plan-cycle-report-history-implementation-2026-07.md`。
+
 ## 2026-07-11 核心架构收敛补充
 
 - 根路由由 `AppScopeProvider` 统一提供当前账号、小组、成员、激活计划与周期上下文；账号切换只清理跨账号运行态和选择态，不删除 SQLite 业务数据。

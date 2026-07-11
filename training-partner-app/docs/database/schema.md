@@ -2,6 +2,13 @@
 
 更新时间：2026-07-06
 
+## 2026-07-11 补充：P1 周期、报告与历史筛选
+
+- 本轮无 migration；继续使用 migration v23 已存在的 `plan_cycles`、`plan_cycle_summaries` 和 `training_reports`。
+- 周期 summary 由 Repository 按当前 owner + `plan_cycle_id` 查找并幂等更新；报告按当前 owner + `workout_session_id` 查找并更新。
+- 历史筛选仅新增查询层 JOIN/聚合，不增加表或冗余 UI 状态列。
+- `planCycles`、`planCycleSummaries`、`trainingReports` 的 sync registry / pull 字段继续沿用并增加测试覆盖。
+
 ## 2026-07-06 补充：账号恢复同步止血
 
 - 本次不新增 migration，修复点在同步和归属修复策略。

@@ -1,5 +1,14 @@
 ﻿# LiftMark 项目交接记录
 
+## 2026-07-11 plan-cycle-report-history 交接
+
+- 路由：`/report/[sessionId]` 和 `/plan/cycle/[cycleId]`；训练结束、历史详情、计划周期卡和周期训练列表均已接入。
+- 数据边界：报告、周期和历史读取都约束当前 owner + group；报告 upsert 和周期 summary 队列写入当前 owner，重复操作幂等。
+- 兼容：旧训练无 report 时仅生成只读展示模型；没有 SQLite/PostgreSQL migration、API、共享包、管理后台或部署变更。
+- 验证：typecheck、lint、36/36 Jest 套件（177 tests）与 Android arm64 Release 构建通过。
+- 未完成：尚未在可确认登录 188 的隔离设备安装并执行写入验收，也未对 176 做只读隔离核验；不得把构建通过写成真机全流程通过。
+- 完整记录：仓库级 `docs/03-architecture/plan-cycle-report-history-implementation-2026-07.md`。
+
 ## 2026-07-06 home-feedback-group-ux 交接
 
 - 首页右上角头像不再显示红点；`HomeHeader` 已移除 `showStatusDot` 属性和 `statusDot` 样式，红点之前仅表示登录状态，并非未读消息。

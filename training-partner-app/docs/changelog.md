@@ -1,5 +1,12 @@
 # 变更记录
 
+## 2026-07-11 - plan-cycle-report-history
+
+- 新增训练报告详情、旧报告只读 fallback、周期完成/归档总结和周期感知历史筛选。
+- 新增 scoped report/history repositories、周期 domain service、controller/use case 与同步 registry 回归断言。
+- 无 migration、API 或共享包变更；typecheck、lint、36 套件/177 测试和 Android arm64 Release 构建通过。
+- 188 写入和 176 只读真机账号验收尚未执行，合并发布前必须补齐。
+
 ## 2026-07-11 - architecture-convergence
 
 - 新增 AppScope、账号切换运行态清理和 scoped repository 入口。

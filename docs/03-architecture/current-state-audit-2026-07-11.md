@@ -2,6 +2,8 @@
 
 > 本文第 2–12 节记录重构开始前的基线快照，因此保留当时的旧目录和耦合路径。第 14 节记录本轮收敛结果。
 
+> 后续 P1 计划周期、报告详情与历史筛选已于同日实现；当前结果见 `plan-cycle-report-history-implementation-2026-07.md`。本文的 P1 缺口描述是审计时快照，不应作为当前功能状态。
+
 ## 1. Audit baseline and safety boundary
 
 - Repository baseline: `2f01f63` on `master`; working branch: `refactor/architecture-convergence-20260711`.
