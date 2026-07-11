@@ -1,6 +1,6 @@
-﻿# 数据同步架构
+# 数据同步架构
 
-更新时间：2026-07-06
+更新时间：2026-07-11
 
 ## 1. 架构选型：本地优先 + 云端权威
 
@@ -93,9 +93,15 @@ pullFromServer(fullPull?)
 ```text
 requestImmediateSync()
   ├── 1. 从 local_sync_queue 批量取出 pending 记录
-  ├── 2. 按 entity_type 分组，POST /sync/push { changes, deviceId }
-  ├── 3. 服务端逐条 upsert，返回 mappings（clientId → serverId）
-  └── 4. 对 success 更新 remote_id、sync_status='synced'
+  ├── 2. hydrateItemPayload：按 entityType 从本地业务表 SELECT * 读取完整行，
+  │     补全队列 payload 中缺失的业务字段（plan_id / type / start_week 等）。
+  │     背景：enqueueSyncCandidate 入队时大多未携带业务字段（仅 localId/owner），
+  │     若直接用空 payload 推送，服务器 payload 会缺少业务列，
+  │     fullPull 时客户端无法恢复 → 本地 plan_phases.plan_id 为空 → plan_has_no_phases。
+  │     映射表：localSyncEntityTableByType（plan_phases→plan_phases、plan_days→plan_days 等）。
+  ├── 3. 按 entity_type 分组，POST /sync/push { changes, deviceId }
+  ├── 4. 服务端逐条 upsert，返回 mappings（clientId → serverId）
+  └── 5. 对 success 更新 remote_id、sync_status='synced'
          同时回写业务实体表的 remote_id / sync_status / last_synced_at
          对 failure 标记 sync_status='sync_failed'
 ```

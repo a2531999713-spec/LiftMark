@@ -1,5 +1,51 @@
 # 变更记录
 
+## 2026-07-11 - sync-payload-fix-and-empty-plan-cleanup
+
+### 重大 bug：首页解析失败 + 开始训练报错 + 空计划堆积
+
+#### 1. sync payload 业务字段丢失（首页 plan_has_no_phases 根因）
+- **根因**：`enqueueSyncCandidate` 入队时大多未携带业务字段 payload（仅 localId/owner），`syncService.ts` 的 `buildServerEntity` 直接用队列里的空 payload 推送到服务器，导致 `plan_phases` / `plan_days` / `plan_exercises` 等表的 `payload` 缺少 `plan_id` / `type` / `start_week` / `end_week` / `order_index` 等关键业务列。fullPull 时客户端 `applyPlanPhases` 等无法从 payload 恢复业务字段，本地 `plan_phases.plan_id` 变成空字符串，`listPlanPhases` 查不到，触发 `plan_has_no_phases`，首页显示"解析失败"。
+- **修复**：`src/sync/syncService.ts` 新增 `hydrateItemPayload`，push 前从本地表 `SELECT *` 读取完整行，补全 payload 业务字段。同时补全缺失的 `planDays` / `planExercises` 表映射（`localSyncEntityTableByType`）。
+
+#### 2. member_profiles 缺少 deleted_at 列（开始训练失败根因）
+- **根因**：`createSessionFromTodayPlan`（`workoutRepository.ts`）查询 `member_profiles.deleted_at IS NULL`，但旧版数据库的 `member_profiles` 表在 `schema.ts` 的 CREATE TABLE 中没有 `deleted_at` 列，`schemaRepair.ts` 的 `REQUIRED_COLUMNS` 也未覆盖该表，导致 SQL 报错 `no such column: deleted_at`，"开始训练失败"。
+- **修复**：`src/data/local/schemaRepair.ts` 的 `REQUIRED_COLUMNS` 和 `COLUMN_DEFINITIONS` 中为 `member_profiles` 添加 `deleted_at` 列定义。`ensureLocalSchemaCompatibility` 会在 App 启动时自动 `ALTER TABLE ADD COLUMN` 补列。
+
+#### 3. planStructureCompatibilityService 无条件创建默认 phase
+- **修复**：`src/services/planStructureCompatibilityService.ts` phases 为空时无条件创建默认 phase（之前要求 `days.length > 0` 才修复），避免 `getTodayPlan` 抛 `plan_has_no_phases`。plan_days 也为空时返回休息日状态，首页可正常显示，用户可重新导入计划。
+
+#### 4. 开始训练失败不再破坏首页
+- **修复**：`app/(tabs)/today.tsx` 的 `startWorkout` 和 `discardConflictAndStart` 的 catch 从 `setError` 改为 `setNotice`。之前 `resolveSelectedWorkoutPlan` 或 `createWorkoutSession` 抛错会触发 `setError`，把整个首页替换成"首页暂时无法加载"错误状态；现在只弹友好提示框。同时移除 `[home] debug activePlan` 调试日志。
+
+#### 5. 空计划批量清理
+- **修复**：`app/(tabs)/plan.tsx` 三处改动：
+  1. `loadPlans` 中检测每个计划是否有 `plan_days`，空计划 ID 存入 `emptyPlanIds` state。
+  2. 计划列表项上，空计划名旁显示红色"空计划"标记（`dangerSoft` 背景 + `danger` 文字）。
+  3. "更多操作"菜单新增"清理空计划(N)"按钮（`variant="danger"`），点击批量软删除所有非活跃的空计划，并入队 sync delete 推送到服务器，fullPull 不会再拉回来。
+
+### 验证
+- adb 自动化验证：首页正常加载，显示训练动作（杠铃卧推、上斜哑铃卧推、器械推胸）。
+- 点击"选择成员并开始"→ 成功创建训练 session，进入训练页，弹出"本次训练记录较少"对话框，不再报"开始训练失败"。
+- sync pull 恢复 233 条记录（phases=2, days=32, exercises=192），本地可见 phases=12, days=194, exercises=1158。
+- 编译 `.\gradlew.bat assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a` BUILD SUCCESSFUL。
+- 本次均为客户端代码变更，无服务器后端 API 或数据库变更，无需服务器部署。
+- 移动端需重新打包 APK 以生效。
+
+### 修改文件
+- `training-partner-app/src/sync/syncService.ts`
+- `training-partner-app/src/data/local/schemaRepair.ts`
+- `training-partner-app/src/services/planStructureCompatibilityService.ts`
+- `training-partner-app/app/(tabs)/today.tsx`
+- `training-partner-app/app/(tabs)/plan.tsx`
+- `scripts/check_plan_phases.js`（新增，服务器诊断脚本）
+- `scripts/list_tables.js`（新增，服务器表列表脚本）
+
+### Git
+- 分支：`fix/home-infinite-loop`
+- 提交：`53790ba` fix: resolve homepage parse failure, start workout error, and empty plans cleanup
+- 合并：`6f84f56` merge: fix homepage parse failure, start workout error, and empty plans cleanup（已推送 origin/master）
+
 ## 2026-07-08 - plan-disappear-and-manage-modal-fix
 
 ### 重大 bug：重装后计划消失 + 重新导入后训练数据失联
