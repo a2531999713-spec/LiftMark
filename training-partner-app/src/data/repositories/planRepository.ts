@@ -33,6 +33,10 @@ export type CreateUserPlanDayInput = {
     percent1RM?: number | null;
     priority?: 'A' | 'B' | 'C';
     referenceLift?: ReferenceLift | null;
+    /** Legacy compatibility only. New editor does not expose this field. */
+    rpeTarget?: number | null;
+    /** Legacy compatibility only. New editor does not expose this field. */
+    rirTarget?: number | null;
     repMax?: number | null;
     repMin?: number | null;
     reps?: number | null;

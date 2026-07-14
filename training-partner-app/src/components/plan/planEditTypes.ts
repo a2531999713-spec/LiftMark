@@ -11,6 +11,10 @@ export type PlanExerciseDraft = {
   percent1RM?: number | null;
   priority: ExercisePriority;
   referenceLift: ReferenceLift;
+  /** Legacy compatibility only. Kept through an edit without rendering it. */
+  rpeTarget?: number | null;
+  /** Legacy compatibility only. Kept through an edit without rendering it. */
+  rirTarget?: number | null;
   repMax?: number | null;
   repMin?: number | null;
   reps?: number | null;

@@ -62,6 +62,14 @@ const rangeExercise: PlanExercise = {
   sets: 3,
 };
 
+const legacyRpeExercise: PlanExercise = {
+  ...fixedExercise,
+  id: 'exercise_legacy_rpe',
+  intensityType: 'rpe',
+  rpeTarget: 8,
+  rirTarget: 2,
+};
+
 describe('plan exercise prescription editor', () => {
   it('restores and saves independent prescriptions without using the first exercise defaults', () => {
     const draft = buildPlanEditDraft(plan, [day], [[fixedExercise, rangeExercise]]);
@@ -108,5 +116,14 @@ describe('plan exercise prescription editor', () => {
     expect(copiedDay.exercises.map((exercise) => exercise.id)).not.toEqual(draft.days[0].exercises.map((exercise) => exercise.id));
     copiedDay.exercises[0].sets = 9;
     expect(draft.days[0].exercises[0].sets).toBe(4);
+  });
+
+  it('keeps legacy RPE/RIR through a save without exposing a legacy intensity mode', () => {
+    const draft = buildPlanEditDraft(plan, [day], [[legacyRpeExercise]]);
+    const input = toUpdateUserPlanInput(plan.id, draft);
+
+    expect(draft.days[0].exercises[0].intensityType).toBe('manual');
+    expect(draft.days[0].exercises[0]).toMatchObject({ rpeTarget: 8, rirTarget: 2 });
+    expect(input.days[0].exercises[0]).toMatchObject({ intensityType: 'manual', rpeTarget: 8, rirTarget: 2 });
   });
 });
