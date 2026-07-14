@@ -14,7 +14,6 @@ import type {
   WorkoutSession,
   WorkoutSessionDetail,
   WorkoutSet,
-  WorkoutSummary,
 } from '@/domain/workout/workout.types';
 
 export interface WorkoutRepository {
@@ -37,7 +36,8 @@ export interface WorkoutRepository {
   deleteSessionCascade(sessionId: ID): Promise<void>;
   cleanupEmptyExerciseRecords(sessionId: ID): Promise<void>;
   getSessionAggregation(sessionId: ID): Promise<WorkoutSessionAggregation>;
-  finishSession(sessionId: ID): Promise<WorkoutSummary>;
+  finishSession(sessionId: ID): Promise<void>;
+  generateTrainingReport(sessionId: ID): Promise<void>;
   listHistorySessionsByScope(input: ListHistorySessionsByScopeInput): Promise<WorkoutSession[]>;
   listSessions(input: ListSessionsInput): Promise<WorkoutSession[]>;
 }

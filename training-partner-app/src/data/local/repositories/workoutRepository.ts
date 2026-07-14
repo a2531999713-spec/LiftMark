@@ -1870,7 +1870,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     };
   }
 
-  async finishSession(sessionId: string): Promise<WorkoutSummary> {
+  async finishSession(sessionId: string): Promise<void> {
     const db = await this.getDb();
     const now = nowIso();
     const visibleSession = await this.getSession(sessionId);
@@ -1886,7 +1886,10 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       now,
       sessionId,
     );
-    return this.upsertTrainingReportForSession(sessionId);
+  }
+
+  async generateTrainingReport(sessionId: string): Promise<void> {
+    await this.upsertTrainingReportForSession(sessionId);
   }
 
   async listHistorySessionsByScope(input: ListHistorySessionsByScopeInput): Promise<WorkoutSession[]> {

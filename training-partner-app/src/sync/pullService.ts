@@ -1431,16 +1431,16 @@ async function reconcileActivePlanAfterPull(db: LocalDatabase, currentUserId: st
  * 创建 group_members 时用服务器 id（gmem_xxx）作为主键，导致 member_id
  * 不匹配，getSessionDetail 的 INNER JOIN 丢失所有 sets。
  *
- * 策略：通过 group_members.local_member_id 或 remote_id 反查正确的本地 id，
- * 将 workout_sets / body_metrics 的 member_id 更新为 group_members.id。
- * 注意：workout_exercise_records 表没有 member_id 列，不在修复范围内。
+ * 策略：仅在同一账号、同一小组内，且旧值精确匹配 group_members.local_member_id
+ * 或 remote_id 时，反查正确的本地 id。绝不以 user_id 单独推断，避免跨小组误归属。
+ * 注意：body_metrics 没有 group_id，无法安全做同组校验，因此不在修复范围内。
  */
 async function repairMemberIdReferences(db: LocalDatabase, currentUserId: string): Promise<number> {
   // 查找 workout_sets.member_id 不在 session 所属 group 的可见 member 列表中的记录。
   // 同一用户可能有多份 member 记录（不同 group 或重复创建），listMembers 只返回当前
   // group 的 member，导致 personalSessions 用 currentMember.id 过滤 sets 时全部丢失。
-  const orphans = await db.getAllAsync<{ member_id: string }>(
-    `SELECT DISTINCT ws.member_id
+  const orphans = await db.getAllAsync<{ group_id: string; member_id: string }>(
+    `SELECT DISTINCT wsession.group_id, ws.member_id
      FROM workout_sets ws
      INNER JOIN workout_sessions wsession ON wsession.id = ws.session_id
      LEFT JOIN group_members gm ON gm.id = ws.member_id
@@ -1448,38 +1448,48 @@ async function repairMemberIdReferences(db: LocalDatabase, currentUserId: string
        AND gm.deleted_at IS NULL
      WHERE ws.member_id IS NOT NULL
        AND ws.member_id != ''
+       AND ws.owner_user_id = ?
+       AND wsession.owner_user_id = ?
        AND gm.id IS NULL`,
+    currentUserId,
+    currentUserId,
   );
   if (orphans.length === 0) return 0;
 
   let fixed = 0;
   for (const orphan of orphans) {
-    // 通过 session 所属 group + recorded_by_user_id（回退到当前账号）查找正确的 member
+    // 仅接受服务端/旧本地 member 标识的精确映射，且必须在同一账号和小组内。
     const target = await db.getFirstAsync<{ id: string }>(
       `SELECT gm.id
        FROM group_members gm
-       INNER JOIN workout_sets wset ON wset.member_id = ?
-       INNER JOIN workout_sessions wsession ON wsession.id = wset.session_id
-       WHERE gm.group_id = wsession.group_id
-         AND gm.user_id = COALESCE(NULLIF(wset.recorded_by_user_id, ''), ?)
+       INNER JOIN groups g ON g.id = gm.group_id
+       WHERE gm.group_id = ?
+         AND g.owner_user_id = ?
+         AND (gm.local_member_id = ? OR gm.remote_id = ?)
          AND gm.deleted_at IS NULL
        LIMIT 1`,
-      orphan.member_id,
-      currentUserId,
+        orphan.group_id,
+        currentUserId,
+        orphan.member_id,
+        orphan.member_id,
     );
 
     if (!target) continue;
     await db.runAsync(
-      `UPDATE workout_sets SET member_id = ? WHERE member_id = ?`,
+      `UPDATE workout_sets
+       SET member_id = ?
+       WHERE member_id = ? AND owner_user_id = ?
+         AND EXISTS (
+           SELECT 1 FROM workout_sessions scoped_session
+           WHERE scoped_session.id = workout_sets.session_id
+             AND scoped_session.owner_user_id = ?
+             AND scoped_session.group_id = ?
+         )`,
       target.id,
       orphan.member_id,
-    );
-    // 注意：workout_exercise_records 表没有 member_id 列，不能在此更新；
-    // body_metrics 有 member_id 列，需要同步修复。
-    await db.runAsync(
-      `UPDATE body_metrics SET member_id = ? WHERE member_id = ?`,
-      target.id,
-      orphan.member_id,
+      currentUserId,
+      currentUserId,
+      orphan.group_id,
     );
     fixed += 1;
     console.log('[RESTORE] repaired member_id', {

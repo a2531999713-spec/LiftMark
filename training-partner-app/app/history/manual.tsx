@@ -9,7 +9,6 @@ import {
   ManualWorkoutExerciseList,
   ManualWorkoutHero,
   ManualWorkoutInfoCard,
-  ManualWorkoutModeSwitch,
   ManualWorkoutParticipantsCard,
   ManualWorkoutSaveCheckCard,
 } from '@/components/manual-workout/ManualWorkoutHomeCards';
@@ -135,6 +134,7 @@ export default function ManualHistoryRoute() {
     [draft.exercises, draft.participantMemberIds],
   );
   const selectedMemberCount = draft.participantMemberIds.length;
+  const derivedTrainingMode = selectedMemberCount <= 1 ? 'solo_local' : 'group_local';
   const dateLabel = draft.date === getLocalDateString() ? '今天' : draft.date;
   const selectedPlan = plans.find((plan) => plan.id === draft.linkedPlanId) ?? null;
   const planLabel = selectedPlan?.name ?? '不关联计划';
@@ -197,7 +197,7 @@ export default function ManualHistoryRoute() {
         planId: draft.linkedPlanId ?? FREE_TRAINING_PLAN_ID,
         sourcePlanId: draft.linkedPlanId ?? null,
         title: draft.title,
-        trainingMode: draft.trainingMode,
+        trainingMode: derivedTrainingMode,
         completed: true,
       });
 
@@ -218,7 +218,7 @@ export default function ManualHistoryRoute() {
     <Screen
       contentStyle={styles.screenContent}
       scroll={false}
-      subtitle="记录已经完成的个人 / 小组训练"
+      subtitle="选择本次补录的参与成员；选择一人即为个人记录，选择多人即为小组记录。"
       title="补录训练"
     >
       {isLoading ? <ActivityIndicator color={colors.primary} /> : null}
@@ -237,7 +237,6 @@ export default function ManualHistoryRoute() {
               summary={summary}
               title={draft.title}
             />
-            <ManualWorkoutModeSwitch onChange={draft.setTrainingMode} value={draft.trainingMode} />
             <ManualWorkoutInfoCard
               date={draft.date}
               onDateChange={draft.setDate}
@@ -266,7 +265,7 @@ export default function ManualHistoryRoute() {
             <ManualWorkoutSaveCheckCard
               participantCount={selectedMemberCount}
               summary={summary}
-              trainingMode={draft.trainingMode}
+              trainingMode={derivedTrainingMode}
             />
           </ScrollView>
 

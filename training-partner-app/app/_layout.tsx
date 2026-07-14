@@ -105,6 +105,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="workout/[sessionId]" options={{ headerShown: false }} />
         <Stack.Screen name="workout/summary/[sessionId]" options={{ headerShown: false }} />
+        <Stack.Screen name="report/[sessionId]" options={{ headerShown: false }} />
         <Stack.Screen name="member/new" options={{ headerShown: false }} />
         <Stack.Screen name="member/[memberId]" options={{ headerShown: false }} />
         <Stack.Screen name="history/manual" options={{ headerShown: false }} />
@@ -120,6 +121,7 @@ export default function RootLayout() {
         <Stack.Screen name="plan/[planId]" options={{ title: '' }} />
         <Stack.Screen name="plan/edit/[planId]" options={{ title: '编辑计划' }} />
         <Stack.Screen name="plan/edit-day/[dayId]" options={{ title: '' }} />
+        <Stack.Screen name="plan/cycle/[cycleId]" options={{ headerShown: false }} />
         <Stack.Screen name="plan/create" options={{ title: '创建计划' }} />
         <Stack.Screen name="account/index" options={{ title: '' }} />
         <Stack.Screen name="account/login" options={{ headerShown: false }} />

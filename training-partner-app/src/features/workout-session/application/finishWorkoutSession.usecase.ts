@@ -8,7 +8,9 @@ export async function finishWorkoutSession(input: {
   repository: WorkoutRepository;
   sessionId: string;
 }) {
+  const startedAt = Date.now();
   await input.flushDebouncedWrites();
   await input.autosave.flush();
-  return input.repository.finishSession(input.sessionId);
+  await input.repository.finishSession(input.sessionId);
+  return { criticalDurationMs: Date.now() - startedAt };
 }

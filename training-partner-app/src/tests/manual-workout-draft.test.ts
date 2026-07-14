@@ -7,7 +7,7 @@ describe('manual workout draft store', () => {
     useManualWorkoutDraftStore.getState().reset();
   });
 
-  it('initializes as a blank personal manual entry without seeded exercises', () => {
+  it('derives group mode from two selected participants without seeded exercises', () => {
     useManualWorkoutDraftStore.getState().initialize({
       date: '2026-07-07',
       exerciseIds: [],
@@ -18,9 +18,26 @@ describe('manual workout draft store', () => {
 
     const state = useManualWorkoutDraftStore.getState();
     expect(state.title).toBe('');
-    expect(state.trainingMode).toBe('solo_local');
-    expect(state.participantMemberIds).toEqual(['member_1']);
+    expect(state.trainingMode).toBe('group_local');
+    expect(state.participantMemberIds).toEqual(['member_1', 'member_2']);
     expect(state.exercises).toEqual([]);
+  });
+
+  it('derives solo mode again after participant count returns to one', () => {
+    useManualWorkoutDraftStore.getState().initialize({
+      date: '2026-07-07',
+      exerciseIds: [],
+      participantMemberIds: ['member_1', 'member_2'],
+      title: '',
+      trainingMode: 'group_local',
+    });
+
+    useManualWorkoutDraftStore.getState().toggleParticipant('member_2');
+
+    expect(useManualWorkoutDraftStore.getState()).toMatchObject({
+      participantMemberIds: ['member_1'],
+      trainingMode: 'solo_local',
+    });
   });
 
   it('adds a selected exercise with one blank set per participant', () => {

@@ -20,8 +20,8 @@ const sessionRow = {
   report_date: '2026-07-11',
   report_duration_seconds: 3600,
   report_estimated_calories: 300,
-  report_estimated_calories_high: 360,
-  report_estimated_calories_low: 240,
+  report_estimated_calories_max: 360,
+  report_estimated_calories_min: 240,
   report_exercise_count: 1,
   report_id: 'report-a',
   report_intensity_level: 'medium',
@@ -70,7 +70,13 @@ describe('SQLiteTrainingReportRepository', () => {
     expect(source).toMatchObject({ hasReport: true, ownerUserId: 'account-a', sessionId: 'session-a' });
     expect(calls[0]?.sql).toContain('tr.owner_user_id = ?');
     expect(calls[0]?.sql).toContain('ws.owner_user_id = ?');
+    expect(calls[0]?.sql).toContain('tr.estimated_calories_min AS report_estimated_calories_min');
+    expect(calls[0]?.sql).toContain('tr.estimated_calories_max AS report_estimated_calories_max');
     expect(calls[0]?.params.filter((value) => value === 'account-a').length).toBeGreaterThanOrEqual(2);
+    expect(source?.report).toMatchObject({
+      estimatedCaloriesMax: 360,
+      estimatedCaloriesMin: 240,
+    });
   });
 
   it('returns a read-only source when an old session has no persisted report', async () => {

@@ -25,6 +25,8 @@ The mobile P1 plan-cycle/report/history flow is implemented on the existing loca
 
 Training reminder settings are local-notification first: business configuration syncs by account and group, while Expo schedule identifiers stay on the current device. See `docs/03-architecture/training-reminder-implementation-2026-07.md`.
 
+The v2.7.1 stability pass keeps workout completion local-first, restores report/history resilience, and tightens safe member-id repair after pull without relaxing account or group scope. See `docs/03-architecture/workout-report-history-stability-implementation-2026-07.md`.
+
 ## Requirements
 
 - Node.js 22.13 or newer.

@@ -24,8 +24,8 @@ type ReportSessionRow = {
   report_date: string | null;
   report_duration_seconds: number | null;
   report_estimated_calories: number | null;
-  report_estimated_calories_high: number | null;
-  report_estimated_calories_low: number | null;
+  report_estimated_calories_max: number | null;
+  report_estimated_calories_min: number | null;
   report_exercise_count: number | null;
   report_id: string | null;
   report_intensity_level: TrainingIntensityLevel | null;
@@ -71,8 +71,8 @@ function mapReport(row: ReportSessionRow, ownerUserId: string): TrainingReport |
     createdAt: row.report_created_at ?? row.report_updated_at ?? new Date(0).toISOString(),
     durationSeconds: row.report_duration_seconds ?? 0,
     estimatedCalories: row.report_estimated_calories ?? 0,
-    estimatedCaloriesMax: row.report_estimated_calories_high ?? 0,
-    estimatedCaloriesMin: row.report_estimated_calories_low ?? 0,
+    estimatedCaloriesMax: row.report_estimated_calories_max ?? 0,
+    estimatedCaloriesMin: row.report_estimated_calories_min ?? 0,
     exerciseCount: row.report_exercise_count ?? 0,
     groupId: row.group_id,
     id: row.report_id,
@@ -111,8 +111,8 @@ export class SQLiteTrainingReportRepository implements TrainingReportRepository 
          tr.total_volume AS report_total_volume, tr.total_sets AS report_total_sets,
          tr.total_reps AS report_total_reps, tr.exercise_count AS report_exercise_count,
          tr.estimated_calories AS report_estimated_calories,
-         tr.estimated_calories_low AS report_estimated_calories_low,
-         tr.estimated_calories_high AS report_estimated_calories_high,
+         tr.estimated_calories_min AS report_estimated_calories_min,
+         tr.estimated_calories_max AS report_estimated_calories_max,
          tr.intensity_level AS report_intensity_level, tr.notes AS report_notes,
          tr.created_at AS report_created_at, tr.updated_at AS report_updated_at
        FROM workout_sessions ws

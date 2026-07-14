@@ -15,6 +15,7 @@ import { colors, radius, spacing } from '@/theme';
 
 import { defaultHistoryFilter, resolveScopedHistoryFilter, type ScopedHistoryFilterState } from './historyFilter.state';
 import { useHistoryListController } from './useHistoryListController';
+import { buildHistoryTrendInsight } from './historyInsights';
 
 type RecordScope = 'personal' | 'group';
 
@@ -91,6 +92,7 @@ export function CycleAwareRecordHomeScreen() {
   }, {}), [state.items]);
   const filterLabel = getFilterLabel(filter, state.cycles);
   const emptyCopy = getEmptyCopy(filter);
+  const trendInsight = useMemo(() => buildHistoryTrendInsight(state.items), [state.items]);
 
   const chooseBaseFilter = (next: HistoryFilter) => {
     if (next.kind === 'cycle') {
@@ -149,6 +151,24 @@ export function CycleAwareRecordHomeScreen() {
             { icon: 'document-text-outline', label: '完整报告', unit: '份', value: `${metrics.reportCount}` },
           ]} />
           <ChartCard data={trend.values} labels={trend.labels} subtitle={`${range.fromDate} - ${range.toDate}`} title="训练量趋势" />
+          <SectionCard title="趋势说明">
+            <AppText tone="muted" variant="bodySmall">{trendInsight}</AppText>
+          </SectionCard>
+          <SectionCard title="训练分析">
+            <View style={styles.analysisActions}>
+              {scope === 'personal' ? (
+                <Pressable onPress={() => router.push('/history/analytics' as never)} style={styles.analysisAction}>
+                  <AppText tone="brand" variant="bodySmall" weight="900">查看完整训练分析</AppText>
+                </Pressable>
+              ) : (
+                <>
+                  <Pressable onPress={() => router.push('/history/group' as never)} style={styles.analysisAction}><AppText tone="brand" variant="bodySmall" weight="900">小组分析</AppText></Pressable>
+                  <Pressable onPress={() => router.push('/history/group/exercise-compare' as never)} style={styles.analysisAction}><AppText tone="brand" variant="bodySmall" weight="900">动作对比</AppText></Pressable>
+                  <Pressable onPress={() => router.push('/history/group/attendance' as never)} style={styles.analysisAction}><AppText tone="brand" variant="bodySmall" weight="900">出勤率</AppText></Pressable>
+                </>
+              )}
+            </View>
+          </SectionCard>
           <SectionCard subtitle="点击日期筛选当天训练。" title="近期训练日期">
             <RecentDateStrip
               countsByDate={countsByDate}
@@ -259,6 +279,8 @@ function HistoryList({ items, scope }: { items: HistoryListItem[]; scope: Record
 }
 
 const styles = StyleSheet.create({
+  analysisAction: { alignItems: 'center', backgroundColor: colors.brandSoft, borderRadius: radius.md, minHeight: 42, justifyContent: 'center', paddingHorizontal: spacing.md },
+  analysisActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   cycleList: { gap: spacing.sm, paddingBottom: spacing.sm },
   cycleOption: { alignItems: 'center', backgroundColor: colors.backgroundElevated, borderColor: colors.border, borderRadius: radius.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, minHeight: 64, padding: spacing.md },
   cyclePickerContent: { maxHeight: 500 },

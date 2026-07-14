@@ -23,6 +23,17 @@ type MiniBarLineChartProps = {
 const PLOT_PADDING_X = 14;
 const PLOT_PADDING_TOP = 14;
 const PLOT_PADDING_BOTTOM = 6;
+export const MIN_BAR_WIDTH = 8;
+export const MAX_BAR_WIDTH = 24;
+
+export function calculateBarGeometry(containerWidth: number, pointCount: number, index: number) {
+  const plotWidth = Math.max(1, containerWidth - PLOT_PADDING_X * 2);
+  const slotWidth = 1 / Math.max(1, pointCount);
+  const slotCenterX = PLOT_PADDING_X + slotWidth * plotWidth * (index + 0.5);
+  const calculatedWidth = slotWidth * plotWidth * 0.5;
+  const visualWidth = Math.min(MAX_BAR_WIDTH, Math.max(MIN_BAR_WIDTH, calculatedWidth));
+  return { plotWidth, slotCenterX, visualWidth };
+}
 
 function sanitize(value: number): number {
   return Number.isFinite(value) ? value : 0;
@@ -149,8 +160,6 @@ function ChartArea({
   }
 
   const pointCount = Math.max(barData.length, lineData.length, 1);
-  const slotWidth = pointCount > 0 ? 1 / pointCount : 1;
-  const barWidthRatio = 0.5;
 
   return (
     <View style={[styles.chartArea, { height: chartHeight }]} onLayout={handleLayout}>
@@ -167,10 +176,8 @@ function ChartArea({
       ))}
       {containerWidth > 0
         ? barData.map((value, index) => {
-            const plotWidth = Math.max(1, containerWidth - PLOT_PADDING_X * 2);
+            const { slotCenterX, visualWidth: barWidth } = calculateBarGeometry(containerWidth, pointCount, index);
             const plotHeight = Math.max(1, chartHeight - PLOT_PADDING_TOP - PLOT_PADDING_BOTTOM);
-            const slotCenterX = PLOT_PADDING_X + slotWidth * plotWidth * (index + 0.5);
-            const barWidth = Math.max(4, slotWidth * plotWidth * barWidthRatio);
             const yPercent = normalizeYAxisValue(value, barScale);
             const barHeight = yPercent * plotHeight;
             const top = PLOT_PADDING_TOP + (plotHeight - barHeight);
@@ -184,12 +191,14 @@ function ChartArea({
                   {
                     left: (slotCenterX - barWidth / 2) as DimensionValue,
                     top,
-                    width: barWidth,
+                    // 点击热区略大于视觉柱，仍保持和日期 slot 对齐。
+                    width: Math.max(barWidth, 28),
+                    marginLeft: -Math.max(0, (28 - barWidth) / 2),
                     height: barHeight,
                   },
                 ]}
               >
-                <View style={[styles.bar, { width: '100%', height: '100%' }, activeIndex === index && styles.barActive]} />
+                <View style={[styles.bar, { width: barWidth, height: '100%', alignSelf: 'center' }, activeIndex === index && styles.barActive]} />
                 {showLabel ? (
                   <View style={styles.barLabelBubble}>
                     <AppText numberOfLines={1} style={styles.barLabelText} variant="caption" weight="900">

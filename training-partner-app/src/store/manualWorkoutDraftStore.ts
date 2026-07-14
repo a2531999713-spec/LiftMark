@@ -86,6 +86,10 @@ function createInitialSets(): ManualSetDraft[] {
   return [createSetDraft(1)];
 }
 
+function deriveTrainingMode(participantMemberIds: string[]): WorkoutTrainingMode {
+  return participantMemberIds.length <= 1 ? 'solo_local' : 'group_local';
+}
+
 function createMemberSets(participantMemberIds: string[]): ManualMemberSetDraft[] {
   return participantMemberIds.map((memberId) => ({
     memberId,
@@ -176,11 +180,8 @@ export const useManualWorkoutDraftStore = create<ManualWorkoutDraftState>((set, 
     if (!lastSet) return;
     get().addMemberSet(exerciseDraftId, memberId);
   },
-  initialize: ({ date, exerciseIds, linkedPlanId = null, participantMemberIds, title, trainingMode = 'solo_local' }) => {
-    const scopedParticipantMemberIds =
-      trainingMode === 'solo_local' && participantMemberIds.length > 0
-        ? [participantMemberIds[0]]
-        : participantMemberIds;
+  initialize: ({ date, exerciseIds, linkedPlanId = null, participantMemberIds, title }) => {
+    const scopedParticipantMemberIds = participantMemberIds;
     set({
       activeExerciseDraftId: undefined,
       date,
@@ -189,7 +190,7 @@ export const useManualWorkoutDraftStore = create<ManualWorkoutDraftState>((set, 
       linkedPlanId,
       participantMemberIds: scopedParticipantMemberIds,
       title,
-      trainingMode,
+      trainingMode: deriveTrainingMode(scopedParticipantMemberIds),
     });
   },
   removeExercise: (exerciseDraftId) => {
@@ -210,14 +211,11 @@ export const useManualWorkoutDraftStore = create<ManualWorkoutDraftState>((set, 
   setDate: (date) => set({ date }),
   setLinkedPlanId: (linkedPlanId) => set({ linkedPlanId: linkedPlanId ?? null }),
   setTitle: (title) => set({ title }),
-  setTrainingMode: (trainingMode) => {
+  setTrainingMode: (_trainingMode) => {
     set((state) => {
-      const participantMemberIds =
-        trainingMode === 'solo_local' && state.participantMemberIds.length > 0
-          ? [state.participantMemberIds[0]]
-          : state.participantMemberIds;
+      const participantMemberIds = state.participantMemberIds;
       return {
-        trainingMode,
+        trainingMode: deriveTrainingMode(participantMemberIds),
         participantMemberIds,
         exercises: state.exercises.map((exercise) => ensureMemberSets(exercise, participantMemberIds)),
       };
@@ -228,12 +226,11 @@ export const useManualWorkoutDraftStore = create<ManualWorkoutDraftState>((set, 
       const exists = state.participantMemberIds.includes(memberId);
       const nextIds = exists
         ? state.participantMemberIds.filter((id) => id !== memberId)
-        : state.trainingMode === 'solo_local'
-          ? [memberId]
-          : [...state.participantMemberIds, memberId];
+        : [...state.participantMemberIds, memberId];
 
       return {
         participantMemberIds: nextIds,
+        trainingMode: deriveTrainingMode(nextIds),
         exercises: state.exercises.map((exercise) => ensureMemberSets(exercise, nextIds)),
       };
     });

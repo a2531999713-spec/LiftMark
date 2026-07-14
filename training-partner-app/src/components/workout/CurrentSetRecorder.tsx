@@ -157,6 +157,7 @@ function NumberStepper({
 type CurrentSetRecorderProps = {
   exercise: Exercise | null;
   effortDisplay?: EffortDisplay;
+  isCompletingSet?: boolean;
   isResting: boolean;
   isWorkoutReadyToFinish: boolean;
   memberName: string;
@@ -183,6 +184,7 @@ type CurrentSetRecorderProps = {
 
 export function CurrentSetRecorder({
   isResting,
+  isCompletingSet = false,
   isWorkoutReadyToFinish,
   memberName,
   nextMemberName,
@@ -251,6 +253,7 @@ export function CurrentSetRecorder({
 
       <Pressable
         accessibilityRole="button"
+        disabled={isCompletingSet}
         onPress={() => setShowAdvanced((current) => !current)}
         style={styles.advancedToggle}
       >
@@ -300,7 +303,7 @@ export function CurrentSetRecorder({
           size={18}
         />
         <AppText tone="inverse" variant="bodySmall" weight="800">
-          {isWorkoutReadyToFinish ? '完成训练' : '完成本组'}
+          {isCompletingSet ? '处理中…' : '完成本组'}
         </AppText>
       </Pressable>
     </AppCard>

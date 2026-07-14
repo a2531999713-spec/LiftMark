@@ -175,10 +175,12 @@ export default function WorkoutRoute() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
   const [memberRestState, setMemberRestState] = useState<Record<string, MemberRestTimerState>>({});
-  const [isWorkoutReadyToFinish, setWorkoutReadyToFinish] = useState(false);
+  const [, setWorkoutReadyToFinish] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [isCompletingSet, setIsCompletingSet] = useState(false);
+  const [isApplyingAdjustment, setIsApplyingAdjustment] = useState(false);
   const [exercisePickerMode, setExercisePickerMode] = useState<'addTemporary' | 'replace' | null>(null);
   const [isAdjustmentSheetVisible, setAdjustmentSheetVisible] = useState(false);
   const [adjustmentOperation, setAdjustmentOperation] = useState<WorkoutAdjustmentOperation>('extra_set');
@@ -193,6 +195,7 @@ export default function WorkoutRoute() {
   const latestSetByIdRef = useRef<Record<string, WorkoutSet>>({});
   const pendingSetPatchesRef = useRef<Record<string, Omit<SaveWorkoutSetInput, 'id'>>>({});
   const setSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const exercisePickerCacheRef = useRef<Exercise[] | null>(null);
   const autosaveRef = useRef(new WorkoutAutosaveService());
 
   useEffect(() => {
@@ -534,9 +537,10 @@ export default function WorkoutRoute() {
             updatedAt: new Date().toISOString(),
           }).catch(() => undefined);
         }
-        // 训练完成后自动同步
-        void requestImmediateSync().catch(() => undefined);
         router.replace({ pathname: '/workout/summary/[sessionId]', params: { sessionId } });
+        // 报告/同步属于后置任务，绝不阻塞用户进入总结页；报告失败时摘要页走只读回退。
+        void repositories.workoutRepository.generateTrainingReport(sessionId).catch(() => undefined);
+        void requestImmediateSync().catch(() => undefined);
     } catch (finishError) {
       setError(finishError instanceof Error ? finishError.message : '完成训练失败。');
     } finally {
@@ -783,10 +787,7 @@ export default function WorkoutRoute() {
   }
 
   async function completeCurrentRound() {
-    if (isWorkoutReadyToFinish) {
-      await finishWorkout();
-      return;
-    }
+    if (isCompletingSet) return;
     const targetSet = currentDisplaySet && !currentDisplaySet.completed && !currentDisplaySet.skipped
       ? currentDisplaySet
       : null;
@@ -803,6 +804,7 @@ export default function WorkoutRoute() {
       return;
     }
 
+    setIsCompletingSet(true);
     const pendingPatch = consumePendingSetPatch(targetSet.id);
     const targetDraft = pendingPatch ? { ...targetSet, ...pendingPatch } : targetSet;
     const previousCompletedWeight = [...activeSets]
@@ -823,25 +825,36 @@ export default function WorkoutRoute() {
 
     if (actualWeight === undefined || !Number.isFinite(actualWeight)) {
       Alert.alert('请先填写重量', '当前组没有可用的建议重量，请填写实际重量后再保存。');
+      setIsCompletingSet(false);
       return;
     }
     if (actualReps === undefined || !Number.isInteger(actualReps) || actualReps < 0) {
       Alert.alert('请先填写次数', '当前组次数必须是非负整数。');
+      setIsCompletingSet(false);
       return;
     }
     if (!(await confirmExceptionalSetInput(actualWeight, actualReps))) {
+      setIsCompletingSet(false);
       return;
     }
 
-    const savedSet = await saveSetPatch(targetSet, {
-      ...(pendingPatch ?? {}),
-      actualReps,
-      actualWeight,
-      completed: true,
-      skipped: false,
-    });
+    let savedSet: WorkoutSet | null = null;
+    try {
+      savedSet = await saveSetPatch(targetSet, {
+        ...(pendingPatch ?? {}),
+        actualReps,
+        actualWeight,
+        completed: true,
+        skipped: false,
+      });
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : '本组数据保存失败。');
+      setIsCompletingSet(false);
+      return;
+    }
     if (!savedSet) {
       Alert.alert('保存失败', '本组数据未保存，请重试。');
+      setIsCompletingSet(false);
       return;
     }
 
@@ -871,14 +884,17 @@ export default function WorkoutRoute() {
     if (nextPendingSet) {
       setActiveMemberId(nextPendingSet.memberId);
       setWorkoutReadyToFinish(false);
+      setIsCompletingSet(false);
       return;
     }
 
     if (hasNextExercise) {
       goNextExercise();
+      setIsCompletingSet(false);
       return;
     }
     setWorkoutReadyToFinish(true);
+    setIsCompletingSet(false);
   }
 
   function handleDeleteSet(setId: string) {
@@ -1262,7 +1278,7 @@ export default function WorkoutRoute() {
   }
 
   async function applyWorkoutAdjustment() {
-    if (!activeRecord || !detail) {
+    if (!activeRecord || !detail || isApplyingAdjustment) {
       return;
     }
 
@@ -1275,35 +1291,42 @@ export default function WorkoutRoute() {
       return;
     }
 
-    if (adjustmentOperation === 'extra_set') {
-      await addExtraSetsForMembers(targetMemberIds);
-      setAdjustmentSheetVisible(false);
-      return;
-    }
-
-    if (adjustmentOperation === 'remove_set') {
-      await removeLastSetsForMembers(targetMemberIds);
-      if (!completedSetDeletionConfirm) {
+    setIsApplyingAdjustment(true);
+    const adjustmentStartedAt = Date.now();
+    try {
+      if (adjustmentOperation === 'extra_set') {
+        await addExtraSetsForMembers(targetMemberIds);
         setAdjustmentSheetVisible(false);
+        return;
       }
-      return;
-    }
 
-    if (adjustmentOperation === 'skip') {
-      await skipCurrentExerciseForMembers(targetMemberIds);
-      setAdjustmentSheetVisible(false);
-      return;
-    }
+      if (adjustmentOperation === 'remove_set') {
+        await removeLastSetsForMembers(targetMemberIds);
+        if (!completedSetDeletionConfirm) {
+          setAdjustmentSheetVisible(false);
+        }
+        return;
+      }
 
-    if (adjustmentOperation === 'replace') {
-      setAdjustmentSheetVisible(false);
-      await openReplaceSheet();
-      return;
-    }
+      if (adjustmentOperation === 'skip') {
+        await skipCurrentExerciseForMembers(targetMemberIds);
+        setAdjustmentSheetVisible(false);
+        return;
+      }
 
-    if (adjustmentOperation === 'temporary') {
-      setAdjustmentSheetVisible(false);
-      await openTemporaryExerciseSheet();
+      if (adjustmentOperation === 'replace') {
+        setAdjustmentSheetVisible(false);
+        await openReplaceSheet();
+        return;
+      }
+
+      if (adjustmentOperation === 'temporary') {
+        setAdjustmentSheetVisible(false);
+        await openTemporaryExerciseSheet();
+      }
+    } finally {
+      setIsApplyingAdjustment(false);
+      console.log('[workout-adjustment] local operation duration_ms=', Date.now() - adjustmentStartedAt);
     }
   }
 
@@ -1322,9 +1345,12 @@ export default function WorkoutRoute() {
   async function openReplaceSheetAfterConfirm() {
     if (!activeRecord) return;
     const [exercises, alternatives] = await Promise.all([
-      repositories.exerciseRepository.listExercises(),
+      exercisePickerCacheRef.current
+        ? Promise.resolve(exercisePickerCacheRef.current)
+        : repositories.exerciseRepository.listExercises(),
       repositories.exerciseRepository.listAlternatives(activeRecord.exerciseId),
     ]);
+    exercisePickerCacheRef.current = exercises;
     const alternativeIds = new Set(alternatives.map((item) => item.alternativeExerciseId));
     setReplacementExercises(
       exercises
@@ -1339,7 +1365,9 @@ export default function WorkoutRoute() {
   }
 
   async function openTemporaryExerciseSheet() {
-    const exercises = await repositories.exerciseRepository.listExercises();
+    const exercises =
+      exercisePickerCacheRef.current ?? (await repositories.exerciseRepository.listExercises());
+    exercisePickerCacheRef.current = exercises;
     setReplacementExercises(exercises.slice().sort((left, right) => left.name.localeCompare(right.name)));
     setExercisePickerMode('addTemporary');
   }
@@ -1637,8 +1665,9 @@ export default function WorkoutRoute() {
                   key={currentDisplaySet.id}
                   exercise={activeExercise}
                   effortDisplay={preferences.effortDisplay}
+                  isCompletingSet={isCompletingSet}
                   isResting={isCurrentMemberResting}
-                  isWorkoutReadyToFinish={isWorkoutReadyToFinish}
+                  isWorkoutReadyToFinish={false}
                   memberName={membersById.get(currentDisplaySet.memberId)?.displayName ?? '成员'}
                   onCompleteSet={() => void completeCurrentRound()}
                   onNotesChange={(v) => saveSetPatchDebounced(currentDisplaySet, { notes: v })}
@@ -1744,6 +1773,7 @@ export default function WorkoutRoute() {
         onOperationChange={setAdjustmentOperation}
         onScopeChange={setAdjustmentScope}
         onToggleMember={toggleAdjustmentMember}
+        isApplying={isApplyingAdjustment}
         operation={adjustmentOperation}
         scope={adjustmentScope}
         selectedMemberIds={selectedAdjustmentMemberIds}
@@ -1903,6 +1933,7 @@ function WorkoutAdjustmentSheet({
   onOperationChange,
   onScopeChange,
   onToggleMember,
+  isApplying,
   operation,
   scope,
   selectedMemberIds,
@@ -1918,6 +1949,7 @@ function WorkoutAdjustmentSheet({
   onOperationChange: (operation: WorkoutAdjustmentOperation) => void;
   onScopeChange: (scope: WorkoutAdjustmentScope) => void;
   onToggleMember: (memberId: string) => void;
+  isApplying: boolean;
   operation: WorkoutAdjustmentOperation;
   scope: WorkoutAdjustmentScope;
   selectedMemberIds: string[];
@@ -2042,8 +2074,8 @@ function WorkoutAdjustmentSheet({
         <AppButton onPress={onEditParticipants} variant="secondary">
           编辑参与成员
         </AppButton>
-        <AppButton disabled={needsScope && selectedCount <= 0} onPress={onApply}>
-          确认调整
+        <AppButton disabled={isApplying || (needsScope && selectedCount <= 0)} onPress={onApply}>
+          {isApplying ? '处理中…' : '确认调整'}
         </AppButton>
       </View>
     </AppModalSheet>
