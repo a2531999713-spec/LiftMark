@@ -96,6 +96,23 @@ describe('SQLitePlanRepository.deleteUserPlan', () => {
   });
 });
 
+describe('SQLitePlanRepository.listPlanExercisesForDays', () => {
+  it('uses one scoped query for all requested training days', async () => {
+    const getAllAsync = jest.fn<(...args: unknown[]) => Promise<never[]>>(async () => []);
+    const repository = new SQLitePlanRepository(async () => ({ getAllAsync }) as never);
+
+    await expect(repository.listPlanExercisesForDays([])).resolves.toEqual([]);
+    expect(getAllAsync).not.toHaveBeenCalled();
+
+    await expect(repository.listPlanExercisesForDays(['day_1', 'day_2'])).resolves.toEqual([]);
+    expect(getAllAsync).toHaveBeenCalledTimes(1);
+    const [sql, ...params] = getAllAsync.mock.calls[0];
+    expect(sql).toContain('pe.plan_day_id IN (?, ?)');
+    expect(sql).toContain('INNER JOIN plan_templates');
+    expect(params).toEqual(['day_1', 'day_2']);
+  });
+});
+
 describe('SQLitePlanRepository.updateUserPlan', () => {
   it('rejects system plans and rebuilds only plan structure for editable plans', async () => {
     const transaction = {

@@ -1,6 +1,10 @@
 ﻿# Onboarding 模块概览
 
-更新时间：2026-06-30
+更新时间：2026-07-15
+
+## v2.9.0
+
+推荐结果支持完整系统计划预览。预览使用全屏覆盖层并复用计划详情 view model，不离开 onboarding route，因此已填写草稿保持不变。应用推荐后复制用户副本、激活小组计划并保证活动周期。
 
 ## 模块职责
 
@@ -21,4 +25,3 @@ Onboarding 模块负责新用户首次训练信息完善和推荐计划选择。
 | `src/domain/onboarding/trainingProfile.types.ts` | 训练信息草稿类型。 |
 | `src/domain/plan/planRecommendation.ts` | 推荐计划匹配逻辑。 |
 | `src/tests/plan-recommendation.test.ts` | 推荐规则单元测试。 |
-

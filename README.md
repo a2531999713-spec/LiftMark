@@ -21,6 +21,8 @@ Authenticated Account -> AccountScope -> Group -> Member -> Plan -> Plan Cycle
 -> Transactional Server Sync
 ```
 
+LiftMark v2.9.0 adds a metadata-first recommended plan library at `/plan/library` and a complete read-only system scheme preview at `/plan/scheme/[schemeId]`. Detail loading follows `scheme -> template -> phases/days -> batched prescriptions -> batched exercises`; copying creates an account-owned plan, activates it for the selected group, and ensures an active plan cycle. See [`docs/03-architecture/system-plan-library-preview-implementation-2026-07.md`](./docs/03-architecture/system-plan-library-preview-implementation-2026-07.md).
+
 The mobile P1 plan-cycle/report/history flow is implemented on the existing local-first architecture: training completion produces an account-scoped report, plan-cycle completion/archive produces an idempotent summary, and history supports current/archive/free/manual filters without N+1 detail reads. See `docs/03-architecture/plan-cycle-report-history-implementation-2026-07.md` for routes, data flow, scope rules, tests, and the remaining device acceptance step.
 
 Training reminder settings are local-notification first: business configuration syncs by account and group, while Expo schedule identifiers stay on the current device. See `docs/03-architecture/training-reminder-implementation-2026-07.md`.

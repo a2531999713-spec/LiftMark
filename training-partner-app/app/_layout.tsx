@@ -131,6 +131,8 @@ export default function RootLayout() {
         <Stack.Screen name="history/group-exercise/[exerciseId]" options={{ headerShown: false }} />
         <Stack.Screen name="history/[sessionId]" options={{ title: '' }} />
         <Stack.Screen name="plan/[planId]" options={{ title: '' }} />
+        <Stack.Screen name="plan/library" options={{ title: '' }} />
+        <Stack.Screen name="plan/scheme/[schemeId]" options={{ title: '' }} />
         <Stack.Screen name="plan/edit/[planId]" options={{ title: '编辑计划' }} />
         <Stack.Screen name="plan/edit-day/[dayId]" options={{ title: '' }} />
         <Stack.Screen name="plan/cycle/[cycleId]" options={{ headerShown: false }} />

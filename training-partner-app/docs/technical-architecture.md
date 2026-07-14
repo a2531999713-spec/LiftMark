@@ -1,3 +1,12 @@
+## 2026-07-15 v2.9.0 系统计划库与预览架构
+
+- `features/plan-library/systemPlanLibrary.ts` 承载纯筛选、稳定排序和结构化目录校验。
+- `systemSchemePreview.ts` 统一 `ready / metadata_only / unavailable` view model、周分组、处方格式和时长区间估算。
+- `PlanRepository.listPlanExercisesForDays(dayIds)` 通过 scoped join 一次批量读取处方；系统详情不再逐训练日查询。
+- `SystemSchemeDetailContent` 被独立详情路由与 onboarding 全屏覆盖层共享。
+- `activateTrainingPlanForGroup()` 在结构兼容后调用 `ensureActivePlanCycle()`，保证新复制/导入/切换计划具有当前周期。
+- 无 schema、API、共享 DTO 或服务端变更。
+
 ## 2026-07-11 P1 计划周期、报告与历史查询补充
 
 - 新增 `domain/report/trainingReport.service.ts` 与 `domain/plan/planCycle.service.ts` 作为报告和周期统计的纯领域口径。

@@ -130,6 +130,7 @@ describe('training mainline service', () => {
         updateGroup: jest.fn(async () => updatedGroup),
       },
       planRepository: {
+        ensureActivePlanCycle: jest.fn(async () => ({ id: 'cycle_test' })),
         listPlanPhases: jest.fn(async () => [
           {
             endWeek: 8,
@@ -156,6 +157,10 @@ describe('training mainline service', () => {
       currentPhaseType: 'hypertrophy',
       currentWeek: 1,
     }));
+    expect((repositories as any).planRepository.ensureActivePlanCycle).toHaveBeenCalledWith({
+      groupId: 'group_test',
+      plan: activePlan,
+    });
   });
 
   // 测试 1：无账号时 createTrainingGroupMainline 抛出 no account，不写匿名 group
@@ -217,6 +222,7 @@ describe('training mainline service', () => {
     const repositories = {
       groupRepository: { updateGroup: jest.fn(async () => updatedGroup) },
       planRepository: {
+        ensureActivePlanCycle: jest.fn(async () => ({ id: 'cycle_imported' })),
         listPlanPhases: jest.fn(async () => [
           { endWeek: 8, id: 'phase_test', name: 'Strength', orderIndex: 1, planId: 'plan_imported', startWeek: 1, type: 'strength' },
         ]),

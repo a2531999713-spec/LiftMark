@@ -154,6 +154,70 @@ export class SQLitePlanRepository implements PlanRepository {
     return row ? mapPlanCycle(row) : null;
   }
 
+  async ensureActivePlanCycle(input: { groupId: string; plan: PlanTemplate; startDate?: string }): Promise<PlanCycle> {
+    const existing = await this.getActivePlanCycle({ groupId: input.groupId, planId: input.plan.id });
+    if (existing) return existing;
+
+    const db = await this.getDb();
+    const ownerUserId = await getRequiredCurrentUserId();
+    const now = nowIso();
+    const startDate = input.startDate ?? now.slice(0, 10);
+    const nextIndexRow = await db.getFirstAsync<{ max_index: number | null }>(
+      `SELECT MAX(cycle_index) AS max_index FROM plan_cycles
+       WHERE owner_user_id = ? AND group_id = ? AND plan_id = ?`,
+      ownerUserId,
+      input.groupId,
+      input.plan.id,
+    );
+    const cycleIndex = (nextIndexRow?.max_index ?? 0) + 1;
+    const cycleId = createId('cycle');
+    const endDate = new Date(`${startDate}T00:00:00`);
+    endDate.setDate(endDate.getDate() + input.plan.durationWeeks * 7 - 1);
+    const cycle: PlanCycle = {
+      id: cycleId,
+      ownerUserId,
+      groupId: input.groupId,
+      planId: input.plan.id,
+      cycleIndex,
+      name: `${input.plan.name} 周期 ${cycleIndex}`,
+      startDate,
+      endDate: endDate.toISOString().slice(0, 10),
+      plannedWeeks: input.plan.durationWeeks,
+      actualStartDate: startDate,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.runAsync(
+      `INSERT INTO plan_cycles (
+        id, owner_user_id, group_id, plan_id, cycle_index, name, start_date, end_date,
+        planned_weeks, actual_start_date, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+      cycle.id,
+      ownerUserId,
+      cycle.groupId,
+      cycle.planId,
+      cycle.cycleIndex,
+      cycle.name,
+      cycle.startDate,
+      cycle.endDate ?? null,
+      cycle.plannedWeeks,
+      cycle.actualStartDate ?? null,
+      cycle.createdAt,
+      cycle.updatedAt,
+    );
+    await enqueueSyncCandidate({
+      entityType: 'planCycles',
+      localId: cycle.id,
+      operation: 'create',
+      ownerUserId,
+      payload: cycle,
+      status: 'pending_create',
+      updatedAt: now,
+    });
+    return cycle;
+  }
+
   async listPlanCycles(input: { groupId?: string; planId?: string; status?: PlanCycle['status'] }): Promise<PlanCycle[]> {
     const db = await this.getDb();
     const userId = await getCurrentAccountUserId();
@@ -528,6 +592,26 @@ export class SQLitePlanRepository implements PlanRepository {
     return rows.map(mapPlanExercise);
   }
 
+  async listPlanExercisesForDays(planDayIds: string[]): Promise<PlanExercise[]> {
+    if (planDayIds.length === 0) return [];
+
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getPlanAccountScope(userId, 'pt');
+    const placeholders = planDayIds.map(() => '?').join(', ');
+    const rows = await db.getAllAsync<PlanExerciseRow>(
+      `SELECT pe.* FROM plan_exercises pe
+       INNER JOIN plan_days pd ON pd.id = pe.plan_day_id
+       INNER JOIN plan_templates pt ON pt.id = pd.plan_id
+       WHERE pe.plan_day_id IN (${placeholders})
+         AND ${scope.where}
+       ORDER BY pd.week ASC, pd.weekday ASC, pe.order_index ASC`,
+      ...planDayIds,
+      ...scope.params,
+    );
+    return rows.map(mapPlanExercise);
+  }
+
   async createUserPlan(input: CreateUserPlanInput): Promise<PlanTemplate> {
     const db = await this.getDb();
     const ownerUserId = await getRequiredCurrentUserId();
@@ -768,9 +852,7 @@ export class SQLitePlanRepository implements PlanRepository {
     );
     const phases = await this.listPlanPhases(templatePlanId);
     const days = await this.listPlanDays(templatePlanId);
-    const exercises = (
-      await Promise.all(days.map((day) => this.listPlanExercises(day.id)))
-    ).flat();
+    const exercises = await this.listPlanExercisesForDays(days.map((day) => day.id));
     const draft = createUserPlanCopyDraft({
       sourceTemplate,
       phases,
@@ -888,9 +970,7 @@ export class SQLitePlanRepository implements PlanRepository {
     );
     const phases = await this.listPlanPhases(input.sourcePlanId);
     const days = await this.listPlanDays(input.sourcePlanId);
-    const exercises = (
-      await Promise.all(days.map((day) => this.listPlanExercises(day.id)))
-    ).flat();
+    const exercises = await this.listPlanExercisesForDays(days.map((day) => day.id));
     const draft = createUserPlanCopyDraft({
       sourceTemplate,
       phases,

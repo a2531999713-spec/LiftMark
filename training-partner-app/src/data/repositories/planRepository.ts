@@ -69,6 +69,7 @@ export type ImportUserPlanInput = {
 export interface PlanRepository {
   getPlanById(planId: ID): Promise<PlanTemplate | null>;
   getActivePlanCycle(input: GetActivePlanCycleInput): Promise<PlanCycle | null>;
+  ensureActivePlanCycle(input: EnsureActivePlanCycleInput): Promise<PlanCycle>;
   getPlanCycleSummary(planCycleId: ID): Promise<PlanCycleSummary | null>;
   getPlanCycleOverview(planCycleId: ID): Promise<PlanCycleOverview>;
   listUserPlans(): Promise<PlanTemplate[]>;
@@ -76,6 +77,7 @@ export interface PlanRepository {
   listPlanPhases(planId: ID): Promise<PlanPhase[]>;
   listPlanDays(planId: ID): Promise<PlanDay[]>;
   listPlanExercises(planDayId: ID): Promise<PlanExercise[]>;
+  listPlanExercisesForDays(planDayIds: ID[]): Promise<PlanExercise[]>;
   createUserPlan(input: CreateUserPlanInput): Promise<PlanTemplate>;
   updateUserPlan(input: UpdateUserPlanInput): Promise<PlanTemplate>;
   copySystemSchemeToUserPlan(input: CopySystemSchemeToUserPlanInput): Promise<PlanTemplate>;
@@ -96,6 +98,12 @@ export type DuplicatePlanInput = {
 export type GetActivePlanCycleInput = {
   groupId: ID;
   planId: ID;
+};
+
+export type EnsureActivePlanCycleInput = {
+  groupId: ID;
+  plan: PlanTemplate;
+  startDate?: string;
 };
 
 export type ListPlanCyclesInput = {

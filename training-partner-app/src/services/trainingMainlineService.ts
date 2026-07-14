@@ -197,5 +197,10 @@ export async function activateTrainingPlanForGroup(
     return { group, plan: input.plan, repaired: false, repairedItems: [] };
   });
 
+  await repositories.planRepository.ensureActivePlanCycle({
+    groupId: compatibleGroup.id,
+    plan: input.plan,
+  });
+
   return { group: compatibleGroup, phaseType: compatibleGroup.currentPhaseType };
 }

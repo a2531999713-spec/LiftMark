@@ -3,6 +3,7 @@ import type { ID } from '@/domain/common/ids';
 import type { PlanTemplate } from './plan.types';
 
 export type SystemTrainingSchemeLevel = 'beginner' | 'intermediate' | 'advanced' | 'all';
+export type SystemTrainingSchemeEquipment = 'gym' | 'home_dumbbell';
 
 export type SystemTrainingScheme = {
   id: ID;
@@ -15,6 +16,7 @@ export type SystemTrainingScheme = {
   audience: string;
   dayStructure: string;
   description: string;
+  equipment: SystemTrainingSchemeEquipment;
   equipmentRequirement: string;
   experienceRequirement: string;
   isRecommended: boolean;
@@ -47,6 +49,7 @@ export const systemTrainingSchemes: SystemTrainingScheme[] = [
     audience: '刚开始训练、训练中断后重新开始、每周能训练 2-3 天的人',
     dayStructure: '全身 A / 全身 B / 全身 C',
     description: '用深蹲、卧推、硬拉、推举、划船和核心动作建立基础能力。',
+    equipment: 'gym',
     equipmentRequirement: '健身房完整器械，或至少有杠铃、哑铃和下拉/划船替代',
     experienceRequirement: '0-3 个月训练经验',
     isRecommended: true,
@@ -69,6 +72,7 @@ export const systemTrainingSchemes: SystemTrainingScheme[] = [
     dayStructure: 'Day 1 推 Push / Day 2 拉 Pull / Day 3 腿 Legs',
     description:
       '推、拉、腿三天循环，使用双进阶：所有工作组达到目标次数上限后下次加重；连续低于目标下限时降重 5%-10%。',
+    equipment: 'gym',
     equipmentRequirement: '健身房完整器械',
     experienceRequirement: '3-12 个月或以上训练经验',
     isRecommended: true,
@@ -90,6 +94,7 @@ export const systemTrainingSchemes: SystemTrainingScheme[] = [
     audience: '每周能稳定训练 4 天、想用身体部位分化增加容量的人',
     dayStructure: 'Day 1 胸 + 三头 / Day 2 背 + 二头 / Day 3 肩 / Day 4 腿',
     description: '按身体部位拆分训练容量，主项动作在前，孤立动作收尾，适合常规健身房增肌训练。',
+    equipment: 'gym',
     equipmentRequirement: '健身房完整器械',
     experienceRequirement: '3-12 个月或以上训练经验',
     isRecommended: true,
@@ -111,6 +116,7 @@ export const systemTrainingSchemes: SystemTrainingScheme[] = [
     audience: '每周能训练 4 天、希望兼顾增肌和动作练习的人',
     dayStructure: '上肢 A / 下肢 A / 上肢 B / 下肢 B',
     description: '以复合动作为主，按上下肢拆分容量，避免单日内容过长。',
+    equipment: 'gym',
     equipmentRequirement: '健身房完整器械',
     experienceRequirement: '3-12 个月训练经验',
     isRecommended: true,
@@ -132,6 +138,7 @@ export const systemTrainingSchemes: SystemTrainingScheme[] = [
     audience: '有基础动作经验、想优先提升主项力量的人',
     dayStructure: '5x5 A / 5x5 B / 5x5 C',
     description: '三天全身力量训练，小步加重，主项优先，辅助动作保持克制。',
+    equipment: 'gym',
     equipmentRequirement: '杠铃、深蹲架、卧推凳和基础拉力器械',
     experienceRequirement: '3 个月以上训练经验',
     isRecommended: true,
@@ -153,6 +160,7 @@ export const systemTrainingSchemes: SystemTrainingScheme[] = [
     audience: '减脂期、希望保留力量和训练习惯的人',
     dayStructure: '力量保留 / 全身容量 / 后链与体能',
     description: '减少不必要高容量，保留主项表现和全身肌肉刺激。',
+    equipment: 'gym',
     equipmentRequirement: '健身房完整器械',
     experienceRequirement: '有基础动作经验更适合',
     isRecommended: true,
@@ -174,6 +182,7 @@ export const systemTrainingSchemes: SystemTrainingScheme[] = [
     audience: '疲劳较高、训练中断后恢复、或短期需要降负荷的人',
     dayStructure: '恢复 A / 恢复 B',
     description: '以动作质量、轻负荷和稳定恢复为先，减少高压力主项。',
+    equipment: 'gym',
     equipmentRequirement: '健身房基础器械或可替代轻器械',
     experienceRequirement: '任何训练经验',
     isRecommended: true,
@@ -195,6 +204,7 @@ export const systemTrainingSchemes: SystemTrainingScheme[] = [
     audience: '只有哑铃、无法稳定去健身房、或居家训练的人',
     dayStructure: '哑铃上肢 / 哑铃下肢 / 哑铃全身',
     description: '围绕哑铃推、拉、蹲、髋铰链和核心动作建立居家训练闭环。',
+    equipment: 'home_dumbbell',
     equipmentRequirement: '哑铃和基础训练空间',
     experienceRequirement: '0-12 个月训练经验',
     isRecommended: true,

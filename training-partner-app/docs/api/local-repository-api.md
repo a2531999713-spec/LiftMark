@@ -1,6 +1,13 @@
 ﻿# 本地 Repository API 文档
 
-更新时间：2026-07-11
+更新时间：2026-07-15
+
+## 2026-07-15 契约补充：系统计划完整预览与激活周期
+
+- `PlanRepository.listPlanExercisesForDays(planDayIds)` 必须通过 `plan_days -> plan_templates` scoped join 批量返回处方，空 ID 数组直接返回空数组；详情页不得逐 day 调用 `listPlanExercises()`。
+- `PlanRepository.ensureActivePlanCycle({ groupId, plan, startDate? })` 复用当前 owner + group + plan 的 active cycle；不存在时创建账号所属周期并进入同步队列。
+- `copySystemSchemeToUserPlan()` 仍只复制可用系统模板；重复副本决策在 application/service 层按 `originSchemeId` 完成。
+- 系统模板读取与用户副本写入继续服从当前账号作用域，不允许把系统模板直接设为活动计划。
 
 ## 2026-07-11 契约补充：计划周期、训练报告与历史聚合
 

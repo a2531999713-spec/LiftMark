@@ -18,11 +18,9 @@ import type { PlanCycleOverview, PlanDay, PlanTemplate } from '@/domain/plan/pla
 import { getPlanCycleStatusLabel, isPlanCycleReadyToComplete } from '@/domain/plan/planCycle.service';
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 import {
-  describeSchemeGoal,
-  describeSchemeLevel,
   listSystemTrainingSchemes,
-  type SystemTrainingScheme,
 } from '@/domain/plan/systemSchemes';
+import { SystemSchemeCard } from '@/features/plan-library/SystemSchemeCard';
 import { pickImportedPlanDocument } from '@/services/planDocumentService';
 import { createCurrentPlanFile, PlanFileError, serializePlanFile } from '@/services/planFileService';
 import {
@@ -179,14 +177,11 @@ export default function PlanRoute() {
   const [stats, setStats] = useState<PlanDashboardStats>(emptyStats);
   const [cycleOverview, setCycleOverview] = useState<PlanCycleOverview | null>(null);
   const [dismissedCycleId, setDismissedCycleId] = useState<string | null>(null);
-  const [selectedScheme, setSelectedScheme] = useState<SystemTrainingScheme | null>(null);
-  const [previewScheme, setPreviewScheme] = useState<SystemTrainingScheme | null>(null);
   const [activationPrompt, setActivationPrompt] = useState<ActivationPrompt | null>(null);
   const [sharePrompt, setSharePrompt] = useState<SharePrompt | null>(null);
   const [notice, setNotice] = useState<PlanNotice | null>(null);
   const [isManageVisible, setManageVisible] = useState(false);
   const [isActionsVisible, setActionsVisible] = useState(false);
-  const [isSchemeLibraryVisible, setSchemeLibraryVisible] = useState(false);
   const [moreMenuInlineOpen, setMoreMenuInlineOpen] = useState(false);
   const [deletePromptPlan, setDeletePromptPlan] = useState<PlanTemplate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -196,7 +191,6 @@ export default function PlanRoute() {
   const [emptyPlanIds, setEmptyPlanIds] = useState<Set<string>>(new Set());
 
   const availableSchemes = useMemo(() => systemSchemes.filter((scheme) => scheme.isAvailable), [systemSchemes]);
-  const upcomingSchemes = useMemo(() => systemSchemes.filter((scheme) => !scheme.isAvailable), [systemSchemes]);
 
   const loadPlans = useCallback(async () => {
     // 已有数据时不强制 loading（避免切 Tab 白屏），只在无数据时显示 loading
@@ -504,78 +498,6 @@ export default function PlanRoute() {
     setSelectedGroupId,
   ]);
 
-  const openUseScheme = useCallback((scheme: SystemTrainingScheme) => {
-    if (!scheme.isAvailable || !scheme.templatePlanId) {
-      setNotice({
-        title: '方案暂未开放',
-        message: '该系统方案还在补齐动作和进阶规则，暂时不能复制为我的计划。',
-      });
-      return;
-    }
-
-    if (!guardFeature('create_plan', { userPlanCount: userPlans.length })) {
-      return;
-    }
-
-    setSchemeLibraryVisible(false);
-    setSelectedScheme(scheme);
-  }, [guardFeature, userPlans.length]);
-
-  const confirmUseSelectedScheme = useCallback(async () => {
-    if (!selectedScheme) {
-      return;
-    }
-
-    if (!guardFeature('create_plan', { userPlanCount: userPlans.length })) {
-      return;
-    }
-
-    setIsWorking(true);
-    try {
-      const { group: targetGroup } = await ensureTrainingGroupMainline(repositories, {
-        displayName: currentUserDisplayName,
-        groupName: '我的训练小组',
-        selectedGroupId,
-        userId: currentUserId,
-      });
-      setSelectedGroupId(targetGroup.id);
-
-      const plan = await repositories.planRepository.copySystemSchemeToUserPlan({
-        scheme: selectedScheme,
-        name: selectedScheme.title.replace('方案', '计划'),
-      });
-      const { group: updatedGroup } = await activateTrainingPlanForGroup(repositories, {
-        group: targetGroup,
-        plan,
-      });
-      setGroup(updatedGroup);
-      setActivePlan(plan);
-      await loadPlans();
-      setSelectedScheme(null);
-      setNotice({
-        title: '已复制到我的计划',
-        message: `“${plan.name}”已设为当前训练计划。`,
-      });
-    } catch (copyError) {
-      setNotice({
-        title: '复制失败',
-        message: copyError instanceof Error ? copyError.message : '使用系统方案失败。',
-      });
-    } finally {
-      setIsWorking(false);
-    }
-  }, [
-    currentUserDisplayName,
-    currentUserId,
-    guardFeature,
-    loadPlans,
-    repositories,
-    selectedGroupId,
-    selectedScheme,
-    setSelectedGroupId,
-    userPlans.length,
-  ]);
-
   const deletePlan = useCallback(async () => {
     if (!deletePromptPlan) {
       return;
@@ -797,6 +719,24 @@ export default function PlanRoute() {
               <AppText tone="muted" variant="caption">
                 可以创建或导入计划，也可以先复制系统方案。
               </AppText>
+              <View style={styles.inlineActions}>
+                <AppButton icon="library-outline" onPress={() => router.push('/plan/library' as never)} size="sm">
+                  使用系统方案
+                </AppButton>
+                <AppButton
+                  icon="add-outline"
+                  onPress={() => {
+                    if (guardFeature('create_plan', { userPlanCount: userPlans.length })) router.push('/plan/create' as never);
+                  }}
+                  size="sm"
+                  variant="secondary"
+                >
+                  创建计划
+                </AppButton>
+                <AppButton icon="download-outline" onPress={() => void importPlan()} size="sm" variant="secondary">
+                  导入计划
+                </AppButton>
+              </View>
             </AppCard>
           ) : (
             <View style={styles.dayList}>
@@ -916,10 +856,10 @@ export default function PlanRoute() {
         />
         <PlanActionRow
           icon="library-outline"
-          label="主流计划库"
+          label="推荐计划库"
           onPress={() => {
             setActionsVisible(false);
-            setSchemeLibraryVisible(true);
+            router.push('/plan/library' as never);
           }}
         />
         <PlanActionRow
@@ -959,47 +899,6 @@ export default function PlanRoute() {
             setManageVisible(true);
           }}
         />
-      </AppModalSheet>
-
-      <AppModalSheet
-        contentStyle={styles.libraryContent}
-        onClose={() => setSchemeLibraryVisible(false)}
-        subtitle="系统方案只是模板，点击使用后才会复制为我的计划。"
-        title="计划库"
-        visible={isSchemeLibraryVisible}
-      >
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={styles.list}>
-            {availableSchemes.map((scheme) => (
-              <SchemeCard
-                key={scheme.id}
-                onPreview={() => setPreviewScheme(scheme)}
-                onUse={() => openUseScheme(scheme)}
-                scheme={scheme}
-              />
-            ))}
-            {upcomingSchemes.length > 0 ? (
-              <AppCard style={styles.upcomingCard} tone="soft">
-                <View style={styles.planRow}>
-                  <View style={styles.schemeIconMuted}>
-                    <Ionicons color={colors.textMuted} name="layers-outline" size={20} />
-                  </View>
-                  <View style={styles.planRowText}>
-                    <AppText variant="subtitle">更多方案开发中</AppText>
-                    <AppText tone="muted" variant="caption">
-                      {upcomingSchemes
-                        .slice(0, 4)
-                        .map((scheme) => scheme.title)
-                        .join('、')}
-                      {upcomingSchemes.length > 4 ? ` 等 ${upcomingSchemes.length} 个` : ''}
-                    </AppText>
-                  </View>
-                  <Tag label="收起展示" tone="neutral" />
-                </View>
-              </AppCard>
-            ) : null}
-          </View>
-        </ScrollView>
       </AppModalSheet>
 
       <AppModalSheet
@@ -1181,10 +1080,12 @@ export default function PlanRoute() {
               />
               <View style={styles.list}>
                 {availableSchemes.slice(0, 3).map((scheme) => (
-                  <SchemeCard
+                  <SystemSchemeCard
                     key={scheme.id}
-                    onPreview={() => setPreviewScheme(scheme)}
-                    onUse={() => openUseScheme(scheme)}
+                    onPress={() => {
+                      setManageVisible(false);
+                      router.push({ pathname: '/plan/scheme/[schemeId]', params: { schemeId: scheme.id } } as never);
+                    }}
                     scheme={scheme}
                   />
                 ))}
@@ -1192,7 +1093,7 @@ export default function PlanRoute() {
                   <AppButton
                     onPress={() => {
                       setManageVisible(false);
-                      setSchemeLibraryVisible(true);
+                      router.push('/plan/library' as never);
                     }}
                     variant="secondary"
                     size="sm"
@@ -1232,79 +1133,6 @@ export default function PlanRoute() {
             删除计划
           </AppButton>
         </View>
-      </AppModalSheet>
-
-      <AppModalSheet
-        onClose={() => setSelectedScheme(null)}
-        subtitle="系统会复制一份到“我的计划”，复制后你可以编辑自己的版本。"
-        title="使用此方案？"
-        visible={Boolean(selectedScheme)}
-      >
-        {selectedScheme ? (
-          <AppCard style={styles.compactPreview} tone="soft">
-            <View style={styles.tagRow}>
-              <Tag label={describeSchemeGoal(selectedScheme.goal)} tone="brand" />
-              <Tag label={describeSchemeLevel(selectedScheme.level)} tone="accent" />
-              <Tag label={`每周 ${selectedScheme.frequencyPerWeek} 天`} tone="neutral" />
-            </View>
-            <AppText variant="bodySmall" weight="900">
-              {selectedScheme.title}
-            </AppText>
-            <AppText tone="muted" variant="caption">
-              {selectedScheme.subtitle}
-            </AppText>
-          </AppCard>
-        ) : null}
-        <View style={styles.modalButtons}>
-          <AppButton onPress={() => setSelectedScheme(null)} variant="secondary">
-            取消
-          </AppButton>
-          <AppButton disabled={isWorking} onPress={() => void confirmUseSelectedScheme()}>
-            复制到我的计划
-          </AppButton>
-        </View>
-      </AppModalSheet>
-
-      <AppModalSheet
-        onClose={() => setPreviewScheme(null)}
-        subtitle={previewScheme?.subtitle}
-        title={previewScheme?.title ?? '方案预览'}
-        visible={Boolean(previewScheme)}
-      >
-        {previewScheme ? (
-          <>
-            <View style={styles.tagRow}>
-              <Tag label={describeSchemeGoal(previewScheme.goal)} tone="brand" />
-              <Tag label={describeSchemeLevel(previewScheme.level)} tone="accent" />
-              <Tag label={`每周 ${previewScheme.frequencyPerWeek} 天`} tone="neutral" />
-              <Tag label={`${previewScheme.durationWeeks} 周`} tone="neutral" />
-            </View>
-            <AppCard style={styles.compactPreview} tone="soft">
-              <AppText tone="muted" variant="caption">
-                训练日结构
-              </AppText>
-              <AppText variant="bodySmall" weight="900">
-                {previewScheme.dayStructure}
-              </AppText>
-              <AppText tone="muted" variant="bodySmall">
-                {previewScheme.description}
-              </AppText>
-            </AppCard>
-            <View style={styles.modalButtons}>
-              <AppButton onPress={() => setPreviewScheme(null)} variant="secondary">
-                关闭
-              </AppButton>
-              <AppButton
-                onPress={() => {
-                  setPreviewScheme(null);
-                  openUseScheme(previewScheme);
-                }}
-              >
-                使用此方案
-              </AppButton>
-            </View>
-          </>
-        ) : null}
       </AppModalSheet>
 
       <AppModalSheet
@@ -1402,50 +1230,6 @@ function PlanActionRow({
       </AppText>
       <Ionicons color={colors.textMuted} name="chevron-forward" size={18} />
     </Pressable>
-  );
-}
-
-function SchemeCard({
-  onPreview,
-  onUse,
-  scheme,
-}: {
-  onPreview: () => void;
-  onUse: () => void;
-  scheme: SystemTrainingScheme;
-}) {
-  return (
-    <AppCard style={styles.schemeCard}>
-      <View style={styles.planRow}>
-        <View style={styles.schemeIcon}>
-          <Ionicons color={colors.primary} name="barbell-outline" size={20} />
-        </View>
-        <View style={styles.planRowText}>
-          <AppText variant="subtitle">{scheme.title}</AppText>
-          <AppText tone="muted" variant="caption">
-            {scheme.subtitle}
-          </AppText>
-        </View>
-        <Tag label="可复制模板" tone="success" />
-      </View>
-      <View style={styles.tagRow}>
-        <Tag label={describeSchemeGoal(scheme.goal)} tone="brand" />
-        <Tag label={describeSchemeLevel(scheme.level)} tone="accent" />
-        <Tag label={`每周 ${scheme.frequencyPerWeek} 练`} tone="neutral" />
-        <Tag label={`${scheme.durationWeeks} 周`} tone="neutral" />
-      </View>
-      <AppText tone="muted" variant="bodySmall">
-        {scheme.dayStructure}
-      </AppText>
-      <View style={styles.inlineActions}>
-        <AppButton onPress={onPreview} size="sm" variant="secondary">
-          预览
-        </AppButton>
-        <AppButton onPress={onUse} size="sm">
-          使用此方案
-        </AppButton>
-      </View>
-    </AppCard>
   );
 }
 

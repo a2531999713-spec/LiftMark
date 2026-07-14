@@ -1,7 +1,16 @@
 # Plan 模块实现文档
 
-更新时间：2026-07-08
+更新时间：2026-07-15
 对应代码目录：`training-partner-app/`
+
+## 2026-07-15 系统计划库与预览
+
+- `app/plan/library.tsx` 只处理目录元数据；`app/plan/scheme/[schemeId].tsx` 处理单方案详情与复制动作。
+- `src/features/plan-library/` 包含共享卡片、共享详情内容、筛选/校验、预览 view model 和复制协调服务。
+- `listPlanExercisesForDays()` 替代详情与复制路径中的逐 day Promise 查询。
+- `copyAndActivateSystemScheme()` 按 `originSchemeId` 复用已有副本；需要新副本时仍调用 `copySystemSchemeToUserPlan()`，之后统一激活。
+- 激活服务调用 `ensureActivePlanCycle()`；不修改 workout session 或历史报告绑定。
+- 本轮无 migration、API 和服务器部署。
 
 ## 2026-07-11 计划周期完成、归档与总结
 

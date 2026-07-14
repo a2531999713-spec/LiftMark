@@ -11,7 +11,7 @@ type AppModalSheetProps = {
   children: ReactNode;
   footer?: ReactNode;
   onClose: () => void;
-  position?: 'bottom' | 'center';
+  position?: 'bottom' | 'center' | 'full';
   subtitle?: string;
   title: string;
   visible: boolean;
@@ -29,10 +29,10 @@ export function AppModalSheet({
   visible,
 }: AppModalSheetProps) {
   return (
-    <Modal animationType={position === 'bottom' ? 'slide' : 'fade'} transparent visible={visible} onRequestClose={onClose}>
-      <View style={[styles.backdrop, position === 'center' && styles.centerBackdrop]}>
+    <Modal animationType={position === 'center' ? 'fade' : 'slide'} transparent visible={visible} onRequestClose={onClose}>
+      <View style={[styles.backdrop, position === 'center' && styles.centerBackdrop, position === 'full' && styles.fullBackdrop]}>
         <Pressable accessibilityRole="button" onPress={onClose} style={StyleSheet.absoluteFill} />
-        <AppCard style={[styles.panel, position === 'center' && styles.centerPanel]}>
+        <AppCard style={[styles.panel, position === 'center' && styles.centerPanel, position === 'full' && styles.fullPanel]}>
           <View style={styles.header}>
             <View style={styles.titleBlock}>
               <AppText variant="title">{title}</AppText>
@@ -66,6 +66,15 @@ const styles = StyleSheet.create({
   },
   centerPanel: {
     maxWidth: 480,
+  },
+  fullBackdrop: {
+    padding: 0,
+  },
+  fullPanel: {
+    borderRadius: 0,
+    flex: 1,
+    paddingBottom: spacing.xl,
+    paddingTop: spacing.xxxl,
   },
   closeButton: {
     alignItems: 'center',

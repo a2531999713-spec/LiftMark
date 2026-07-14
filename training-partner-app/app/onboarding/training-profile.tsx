@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppButton, AppCard, AppModalSheet, AppText, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
@@ -14,6 +14,10 @@ import type {
 } from '@/domain/onboarding/trainingProfile.types';
 import { recommendPlans } from '@/domain/plan/planRecommendation';
 import { listSystemTrainingSchemes } from '@/domain/plan/systemSchemes';
+import type { SystemTrainingScheme } from '@/domain/plan/systemSchemes';
+import { SystemSchemeDetailContent } from '@/features/plan-library/SystemSchemeDetailContent';
+import { loadSystemSchemePreview, type SystemSchemePreview } from '@/features/plan-library/systemSchemePreview';
+import { activateTrainingPlanForGroup } from '@/services/trainingMainlineService';
 import { useAuthStore } from '@/store/authStore';
 import { setTrainingOnboardingStatus } from '@/features/onboarding/application/postLoginDestination';
 import { colors, radius, spacing } from '@/theme';
@@ -88,6 +92,8 @@ export default function TrainingProfileOnboardingRoute() {
   const [selectedSchemeId, setSelectedSchemeId] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [preview, setPreview] = useState<SystemSchemePreview | null>(null);
+  const [previewWeek, setPreviewWeek] = useState(1);
 
   const profile = useMemo<TrainingProfileDraft>(
     () => ({
@@ -174,13 +180,7 @@ export default function TrainingProfileOnboardingRoute() {
         name: selectedRecommendation.scheme.title,
         scheme: selectedRecommendation.scheme,
       });
-      const phases = await repositories.planRepository.listPlanPhases(plan.id);
-      await repositories.groupRepository.updateGroup(group.id, {
-        activePlanId: plan.id,
-        currentPhaseType: phases[0]?.type ?? 'custom',
-        currentWeek: 1,
-        fridayEnabled: plan.frequencyPerWeek >= 3,
-      });
+      await activateTrainingPlanForGroup(repositories, { group, plan });
 
       if (user?.id) {
         await setTrainingOnboardingStatus(user.id, 'completed');
@@ -194,6 +194,20 @@ export default function TrainingProfileOnboardingRoute() {
       });
     } finally {
       setIsWorking(false);
+    }
+  };
+
+  const openPlanPreview = async (scheme: SystemTrainingScheme) => {
+    try {
+      await initializeLocalDatabase();
+      const nextPreview = await loadSystemSchemePreview(repositories, scheme);
+      setPreviewWeek(nextPreview.weeks[0]?.week ?? 1);
+      setPreview(nextPreview);
+    } catch (error) {
+      setNotice({
+        title: '计划详情暂时无法加载',
+        message: error instanceof Error ? error.message : '请稍后重试。',
+      });
     }
   };
 
@@ -267,6 +281,7 @@ export default function TrainingProfileOnboardingRoute() {
 
       {step === 3 ? (
         <StepRecommendation
+          onPreview={(scheme) => void openPlanPreview(scheme)}
           onSelectScheme={setSelectedSchemeId}
           recommendations={recommendations}
           selectedSchemeId={selectedRecommendation?.scheme.id}
@@ -289,6 +304,22 @@ export default function TrainingProfileOnboardingRoute() {
           </AppButton>
         )}
       </View>
+
+      <AppModalSheet
+        contentStyle={styles.previewContent}
+        onClose={() => setPreview(null)}
+        position="full"
+        subtitle="关闭后会继续保留你刚才填写的训练资料。"
+        title={preview?.scheme.title ?? '计划详情'}
+        visible={Boolean(preview)}
+      >
+        {preview ? (
+          <ScrollView contentContainerStyle={styles.previewScroll} showsVerticalScrollIndicator={false}>
+            <SystemSchemeDetailContent onSelectWeek={setPreviewWeek} preview={preview} selectedWeek={previewWeek} />
+            <AppButton onPress={() => setPreview(null)}>返回推荐结果</AppButton>
+          </ScrollView>
+        ) : null}
+      </AppModalSheet>
 
       <AppModalSheet
         onClose={() => setNotice(null)}
@@ -570,10 +601,12 @@ function StepBase({
 }
 
 function StepRecommendation({
+  onPreview,
   onSelectScheme,
   recommendations,
   selectedSchemeId,
 }: {
+  onPreview: (scheme: SystemTrainingScheme) => void;
   onSelectScheme: (schemeId: string) => void;
   recommendations: ReturnType<typeof recommendPlans>;
   selectedSchemeId?: string;
@@ -615,6 +648,9 @@ function StepRecommendation({
               {primary.reasons[0] ?? primary.scheme.recommendationReason}
             </AppText>
           </AppCard>
+          <AppButton onPress={() => onPreview(primary.scheme)} variant="dark">
+            查看计划详情
+          </AppButton>
         </AppCard>
       ) : null}
 
@@ -803,6 +839,13 @@ const styles = StyleSheet.create({
   },
   primaryAction: {
     flex: 1,
+  },
+  previewContent: {
+    flex: 1,
+  },
+  previewScroll: {
+    gap: spacing.xl,
+    paddingBottom: spacing.xxxl,
   },
   progressFill: {
     backgroundColor: colors.primary,

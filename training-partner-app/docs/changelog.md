@@ -1,5 +1,13 @@
 # 变更记录
 
+## 2026-07-15 - v2.9.0 system-plan-library-preview
+
+- 新增推荐计划库、四类筛选/搜索、完整系统方案详情和 onboarding 草稿安全预览。
+- 新增批量 `listPlanExercisesForDays`、结构化 catalog validation、详情降级、时长区间与复制双击锁。
+- 已有系统方案副本默认复用；明确确认后才重复复制；复制/复用后统一激活并保证活动周期。
+- 8 套真实 seed 校验通过；完整 Jest 46 套件/220 用例通过。
+- 无 SQLite/PostgreSQL migration、API、共享 DTO 或服务器部署。
+
 ## 2026-07-11 - plan-cycle-report-history
 
 - 新增训练报告详情、旧报告只读 fallback、周期完成/归档总结和周期感知历史筛选。

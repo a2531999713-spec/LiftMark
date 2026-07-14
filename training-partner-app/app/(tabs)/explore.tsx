@@ -5,12 +5,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AuthGateSheets } from '@/components/auth';
-import { AppButton, AppCard, AppModalSheet, AppText, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
+import { AppButton, AppCard, AppText, Screen, SectionHeader, Tag, VisualHeroCard } from '@/components/ui';
 import { liftmarkImages } from '@/assets/images';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
-import type { Group } from '@/domain/group/group.types';
-import { resolveSelectedGroup } from '@/domain/group/selected-group';
-import type { PhaseType, PlanTemplate } from '@/domain/plan/plan.types';
+import type { PlanTemplate } from '@/domain/plan/plan.types';
 import {
   describeSchemeGoal,
   describeSchemeLevel,
@@ -19,39 +17,13 @@ import {
   type SystemTrainingScheme,
 } from '@/domain/plan/systemSchemes';
 import { useAuthGate } from '@/hooks/useAuthGate';
-import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { colors, radius, spacing } from '@/theme';
 
-type NoticeState = {
-  message: string;
-  title: string;
-};
-
-type ActivationPrompt = {
-  message: string;
-  plan: PlanTemplate;
-  title: string;
-};
-
 type IconName = ComponentProps<typeof Ionicons>['name'];
-
-function describePlanSource(source: PlanTemplate['source']) {
-  const labels: Record<PlanTemplate['source'], string> = {
-    system: '系统方案',
-    user: '自建计划',
-    system_copy: '系统方案副本',
-    blank_created: '空白创建',
-    imported: '导入计划',
-    duplicated: '复制计划',
-  };
-  return labels[source];
-}
 
 export default function ExploreRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { guardFeature, sheets } = useAuthGate();
-  const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
-  const setSelectedGroupId = useSelectedGroupStore((state) => state.setSelectedGroupId);
   const systemSchemes = useMemo(() => listSystemTrainingSchemes(), []);
   const featuredSchemes = useMemo(() => systemSchemes.filter((scheme) => scheme.isAvailable).slice(0, 3), [systemSchemes]);
   const upcomingSchemes = useMemo(() => systemSchemes.filter((scheme) => !scheme.isAvailable), [systemSchemes]);
@@ -59,25 +31,12 @@ export default function ExploreRoute() {
     () => systemSchemes.find((scheme) => scheme.id === SYSTEM_SCHEME_CLASSIC_PPL_ID) ?? null,
     [systemSchemes],
   );
-  const [group, setGroup] = useState<Group | null>(null);
   const [userPlans, setUserPlans] = useState<PlanTemplate[]>([]);
-  const [selectedScheme, setSelectedScheme] = useState<SystemTrainingScheme | null>(null);
-  const [activationPrompt, setActivationPrompt] = useState<ActivationPrompt | null>(null);
-  const [notice, setNotice] = useState<NoticeState | null>(null);
-  const [isWorking, setIsWorking] = useState(false);
 
   const loadExploreState = useCallback(async () => {
     await initializeLocalDatabase();
-    const [{ group: nextGroup }, nextUserPlans] = await Promise.all([
-      resolveSelectedGroup(repositories.groupRepository, selectedGroupId),
-      repositories.planRepository.listUserPlans(),
-    ]);
-    if (nextGroup && nextGroup.id !== selectedGroupId) {
-      setSelectedGroupId(nextGroup.id);
-    }
-    setGroup(nextGroup);
-    setUserPlans(nextUserPlans);
-  }, [repositories, selectedGroupId, setSelectedGroupId]);
+    setUserPlans(await repositories.planRepository.listUserPlans());
+  }, [repositories]);
 
   useFocusEffect(
     useCallback(() => {
@@ -85,101 +44,20 @@ export default function ExploreRoute() {
     }, [loadExploreState]),
   );
 
-  const resolvePhaseTypeForPlan = useCallback(
-    async (planId: string): Promise<PhaseType> => {
-      const phases = await repositories.planRepository.listPlanPhases(planId);
-      return phases[0]?.type ?? 'custom';
-    },
-    [repositories],
-  );
-
   const findCopiedPlan = useCallback(
     (schemeId: string) => userPlans.find((plan) => plan.originSchemeId === schemeId || (schemeId === SYSTEM_SCHEME_CLASSIC_PPL_ID && plan.name.includes('经典三分化 PPL'))),
     [userPlans],
   );
 
-  const setCurrentPlan = useCallback(
-    async (plan: PlanTemplate) => {
-      if (!group) {
-        setNotice({ title: '还没有小组', message: '初始化小组后，才能设置当前训练计划。' });
-        return;
-      }
-
-      if (!guardFeature('edit_plan')) {
-        return;
-      }
-
-      setIsWorking(true);
-      try {
-        await repositories.groupRepository.updateGroup(group.id, {
-          activePlanId: plan.id,
-          currentPhaseType: await resolvePhaseTypeForPlan(plan.id),
-          currentWeek: 1,
-        });
-        await loadExploreState();
-        setActivationPrompt(null);
-        setNotice({
-          title: '已设为当前计划',
-          message: `训练页将读取“${plan.name}”，今日训练内容会按新计划刷新。`,
-        });
-      } catch (error) {
-        setNotice({ title: '设置失败', message: error instanceof Error ? error.message : '设置当前计划失败。' });
-      } finally {
-        setIsWorking(false);
-      }
-    },
-    [group, guardFeature, loadExploreState, repositories, resolvePhaseTypeForPlan],
-  );
-
-  const copyScheme = useCallback(
-    async (scheme: SystemTrainingScheme) => {
-      if (!guardFeature('create_plan', { userPlanCount: userPlans.length })) {
-        return;
-      }
-
-      setIsWorking(true);
-      try {
-        const plan = await repositories.planRepository.copySystemSchemeToUserPlan({
-          name: scheme.title.replace('方案', '计划'),
-          scheme,
-        });
-        const nextUserPlans = await repositories.planRepository.listUserPlans();
-        setUserPlans(nextUserPlans);
-        setSelectedScheme(null);
-        setActivationPrompt({
-          plan,
-          title: '已复制到我的计划',
-          message: `“${plan.name}”已经可以编辑和执行。是否设为当前训练计划？`,
-        });
-      } catch (error) {
-        setNotice({ title: '复制失败', message: error instanceof Error ? error.message : '使用系统方案失败。' });
-      } finally {
-        setIsWorking(false);
-      }
-    },
-    [guardFeature, repositories, userPlans.length],
-  );
-
   const openScheme = useCallback(
     (scheme: SystemTrainingScheme) => {
-      const copiedPlan = findCopiedPlan(scheme.id);
-      if (copiedPlan) {
-        setActivationPrompt({
-          plan: copiedPlan,
-          title: '已在我的计划中',
-          message: `“${copiedPlan.name}”已经复制过，可以直接设为当前训练计划。`,
-        });
-        return;
-      }
-
-      setSelectedScheme(scheme);
+      router.push({ pathname: '/plan/scheme/[schemeId]', params: { schemeId: scheme.id } } as never);
     },
-    [findCopiedPlan],
+    [],
   );
 
   const openPpl = useCallback(() => {
     if (!pplScheme) {
-      setNotice({ title: '方案暂不可用', message: '经典三分化 PPL 模板暂时无法加载。' });
       return;
     }
 
@@ -195,12 +73,12 @@ export default function ExploreRoute() {
       }
       title="探索"
     >
-      <View style={styles.searchBox}>
+      <Pressable accessibilityRole="button" onPress={() => router.push('/plan/library' as never)} style={styles.searchBox}>
         <Ionicons color={colors.textMuted} name="search-outline" size={18} />
         <AppText tone="muted" variant="bodySmall">
-          搜索计划、动作
+          搜索训练计划
         </AppText>
-      </View>
+      </Pressable>
 
       <VisualHeroCard
         eyebrow="推荐方案"
@@ -211,7 +89,7 @@ export default function ExploreRoute() {
       >
         <View style={styles.heroActions}>
           <AppButton icon="barbell-outline" onPress={openPpl} size="sm">
-            使用 PPL
+            查看 PPL
           </AppButton>
           <AppButton icon="calendar-outline" onPress={() => router.push('/(tabs)/today')} size="sm" variant="dark">
             去训练
@@ -318,79 +196,9 @@ export default function ExploreRoute() {
         ) : null}
       </View>
 
-      {isWorking ? (
-        <AppText tone="muted" variant="caption">
-          正在处理计划...
-        </AppText>
-      ) : null}
-
-      <AppModalSheet
-        onClose={() => setSelectedScheme(null)}
-        subtitle="系统会复制一份到“我的计划”，复制后你可以编辑自己的版本。"
-        title="使用此方案？"
-        visible={Boolean(selectedScheme)}
-      >
-        {selectedScheme ? (
-          <AppCard style={styles.schemePreview} tone="soft">
-            <View style={styles.planMetaRow}>
-              <Tag label={describeSchemeGoal(selectedScheme.goal)} tone="brand" />
-              <Tag label={describeSchemeLevel(selectedScheme.level)} tone="accent" />
-              <Tag label={`每周 ${selectedScheme.frequencyPerWeek} 天`} tone="neutral" />
-            </View>
-            <AppText variant="bodySmall" weight="900">
-              {selectedScheme.title}
-            </AppText>
-            <AppText tone="muted" variant="bodySmall">
-              {selectedScheme.description}
-            </AppText>
-          </AppCard>
-        ) : null}
-        <View style={styles.modalButtons}>
-          <AppButton onPress={() => setSelectedScheme(null)} variant="secondary">
-            取消
-          </AppButton>
-          <AppButton disabled={isWorking} onPress={() => (selectedScheme ? void copyScheme(selectedScheme) : undefined)}>
-            复制到我的计划
-          </AppButton>
-        </View>
-      </AppModalSheet>
-
-      <AppModalSheet
-        onClose={() => setActivationPrompt(null)}
-        subtitle={activationPrompt?.message}
-        title={activationPrompt?.title ?? '计划已准备好'}
-        visible={Boolean(activationPrompt)}
-      >
-        {activationPrompt ? (
-          <AppCard style={styles.schemePreview} tone="soft">
-            <AppText variant="bodySmall" weight="900">
-              {activationPrompt.plan.name}
-            </AppText>
-            <AppText tone="muted" variant="caption">
-              {describePlanSource(activationPrompt.plan.source)} · {activationPrompt.plan.durationWeeks} 周 · 每周{' '}
-              {activationPrompt.plan.frequencyPerWeek} 天
-            </AppText>
-          </AppCard>
-        ) : null}
-        <View style={styles.modalButtons}>
-          <AppButton onPress={() => setActivationPrompt(null)} variant="secondary">
-            稍后
-          </AppButton>
-          <AppButton disabled={isWorking} onPress={() => (activationPrompt ? void setCurrentPlan(activationPrompt.plan) : undefined)}>
-            设为当前
-          </AppButton>
-        </View>
-      </AppModalSheet>
-
-      <AppModalSheet
-        onClose={() => setNotice(null)}
-        position="center"
-        subtitle={notice?.message}
-        title={notice?.title ?? '提示'}
-        visible={Boolean(notice)}
-      >
-        <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
-      </AppModalSheet>
+      <AppButton icon="library-outline" onPress={() => router.push('/plan/library' as never)} variant="secondary">
+        查看完整推荐计划库
+      </AppButton>
 
       <AuthGateSheets {...sheets} />
     </Screen>

@@ -101,8 +101,9 @@ export default function PlanDetailRoute() {
       }
 
       const days = await repositories.planRepository.listPlanDays(plan.id);
-      const exerciseLists = await Promise.all(days.map((day) => repositories.planRepository.listPlanExercises(day.id)));
-      const exerciseIds = Array.from(new Set(exerciseLists.flatMap((exercises) => exercises.map((exercise) => exercise.exerciseId))));
+      const planExercises = await repositories.planRepository.listPlanExercisesForDays(days.map((day) => day.id));
+      const exerciseLists = days.map((day) => planExercises.filter((exercise) => exercise.planDayId === day.id));
+      const exerciseIds = Array.from(new Set(planExercises.map((exercise) => exercise.exerciseId)));
       const exercises = await repositories.exerciseRepository.listExercisesByIds(exerciseIds);
 
       setDetail({

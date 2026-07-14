@@ -1,5 +1,14 @@
 ﻿# LiftMark 项目交接记录
 
+## 2026-07-15 v2.9.0 推荐计划库交接
+
+- 新路由：`/plan/library`、`/plan/scheme/[schemeId]`；计划页和探索页旧方案预览弹层已停用。
+- 共享能力位于 `src/features/plan-library/`；详情一次批量读取处方与动作，支持元数据降级。
+- 8 套当前系统方案已通过真实 seed catalog validation。
+- 复制默认复用 `originSchemeId` 相同副本；明确确认后才重复复制；激活后保证 active plan cycle。
+- onboarding 的详情覆盖层不离开当前 route，因此草稿保留。
+- 无 SQLite/PostgreSQL migration、API 或服务器部署。
+
 ## 2026-07-11 plan-cycle-report-history 交接
 
 - 路由：`/report/[sessionId]` 和 `/plan/cycle/[cycleId]`；训练结束、历史详情、计划周期卡和周期训练列表均已接入。
