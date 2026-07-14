@@ -347,3 +347,6 @@ Excel 训练计划的 seed 设计映射：
 - API migration `006_member_profile_avatar_fields` adds cloud member profile avatar fields for account-avatar propagation.
 - `/groups/:id/members` and `/sync/groups-pull` return member avatars with member profile avatar preferred over account avatar.
 - Pending-training accept writes cloud sync tables and returns session/sets for immediate local SQLite history insertion.
+# 训练提醒（v2.6.0）
+
+`trainingReminderRepository` 管理账号/小组作用域内的业务提醒记录并入同步队列；`trainingReminderService` 负责通知生命周期；`notificationService` 是 Expo 调度适配层。`notification_ids_json` 是本机运行态，不进入同步 payload。

@@ -290,3 +290,6 @@ npm run android:preview
 - 启动性能调整：根布局后台启动本地 DB 初始化，seed 增加版本标记跳过重复全量 seed；auth session 远程校验超时后保留 stored session 离线进入。
 - 已验证：移动端 `npm run typecheck -- --pretty false`、`npm run lint`、`npm test -- --runInBand`；线上 `/api/health` 返回 200，认证相关 POST 空请求返回 400 校验错误而非网络错误。
 - 未执行：`npm run android:preview` 真机安装回归；后续应重点验证训练中退出再进、休息结束提示、总结同步计划后再次开始训练。
+# v2.6.0 交接
+
+训练提醒已使用 Expo 本地通知完成。权限仅在用户首次开启时请求；保存前按本账号记录的本机 ID 取消旧调度并重新创建，通知点击进入今日页。后续维护不得使用 `cancelAllScheduledNotificationsAsync()`。

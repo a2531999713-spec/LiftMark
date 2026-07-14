@@ -322,3 +322,6 @@
 - 已验证：`npm run typecheck -- --pretty false`、`npm run lint`、`npm test -- --runInBand`；线上 `/api/health`、`/auth/password/login`、`/auth/send-code`、`/auth/login-with-code` 路由可达。
 - 待真机验收：Android 预览包完整训练执行流、后台恢复、总结同步到计划后的再次开始训练。
 
+# v2.6.0 已完成：训练提醒设置与本地通知
+
+已完成本地训练提醒闭环；服务端推送、跨设备提醒、成员互相提醒和 AI 时间预测仍不在当前范围。

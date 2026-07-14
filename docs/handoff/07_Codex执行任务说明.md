@@ -165,3 +165,6 @@ feat: add training report and calorie estimate
 feat: add local workout reminders
 chore: reserve exercise catalog icon fields
 ```
+# v2.6.0 执行说明更新
+
+v2.5.0 已完成并合并。账号隔离由 repository 作用域与自动化测试持续保护；后续 Sprint 只对新增功能执行针对性的真机验收，不再重复要求 176/188 双账号人工切换。
