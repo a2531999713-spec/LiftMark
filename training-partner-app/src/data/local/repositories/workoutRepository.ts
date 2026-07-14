@@ -745,7 +745,14 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
             Number.isFinite(latestWeightRow.actual_weight)
               ? latestWeightRow.actual_weight
               : null;
-          const plannedWeight = suggestedPlannedWeight ?? latestActualWeight;
+          const fixedPlannedWeight =
+            planExercise.intensityType === 'fixed' &&
+            planExercise.fixedWeight !== null &&
+            planExercise.fixedWeight !== undefined &&
+            Number.isFinite(planExercise.fixedWeight)
+              ? planExercise.fixedWeight
+              : null;
+          const plannedWeight = fixedPlannedWeight ?? suggestedPlannedWeight ?? latestActualWeight;
 
           for (let setNumber = 1; setNumber <= setCount; setNumber += 1) {
             await txn.runAsync(

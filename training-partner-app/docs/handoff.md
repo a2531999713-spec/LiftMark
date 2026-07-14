@@ -293,3 +293,9 @@ npm run android:preview
 # v2.6.0 交接
 
 训练提醒已使用 Expo 本地通知完成。权限仅在用户首次开启时请求；保存前按本账号记录的本机 ID 取消旧调度并重新创建，通知点击进入今日页。后续维护不得使用 `cancelAllScheduledNotificationsAsync()`。
+# v2.7.0 交接：训练计划精细编辑与动作处方
+
+- `app/plan/create.tsx` 与 `app/plan/edit/[planId].tsx` 都使用 `PlanEditOverview`；旧创建页的训练日共享组次逻辑已移除。
+- `src/components/plan/planEditorValidation.ts` 负责处方校验和摘要，`planEditDraft.ts` 负责新 ID 的深复制和持久化映射。
+- 已兼容读取旧 `rpeTarget/rirTarget`，新 UI 不展示且不删除旧字段。
+- 未执行设备 APK 验证；未进行服务端部署。动作图标功能仍延期。

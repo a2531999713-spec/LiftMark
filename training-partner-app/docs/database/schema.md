@@ -512,3 +512,6 @@ Sprint 1 已落地 `schema_migrations` 版本表：
 - 恢复 176 账号时，应登录 176 后触发一次 fullPull，让云端 176 记录重新写回本地。
 - 不建议通过卸载 App 或清空 SQLite 来恢复；如果本机还有未上云的新训练，清库会造成真正的数据丢失。
 - 旧版本错误归属到 188 的本地记录，只有在 176 云端存在对应记录时才会被当前账号 pull 认领；云端不存在的本地脏数据不会被盲目搬回。
+## v2.7 plan prescription usage
+
+本轮复用既有 `plan_exercises` 处方列，以及 `workout_exercise_records` 的 planned sets/reps/range/%1RM/rest/notes 和 `workout_sets.planned_weight` 快照列。没有 schema 或 migration 变更；编辑计划不得更新已有训练快照。

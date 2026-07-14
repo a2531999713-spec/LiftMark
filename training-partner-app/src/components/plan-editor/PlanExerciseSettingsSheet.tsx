@@ -6,6 +6,7 @@ import { AppButton, AppCard, AppModalSheet, AppText, Tag } from '@/components/ui
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { ExercisePriority, IntensityType, ReferenceLift } from '@/domain/plan/plan.types';
 import type { PlanExerciseDraft } from '@/components/plan/planEditTypes';
+import { kgToLb, lbToKg } from '@/domain/preferences/user-preferences.types';
 import { colors, radius, spacing, typography } from '@/theme';
 
 type PlanExerciseSettingsSheetProps = {
@@ -18,6 +19,7 @@ type PlanExerciseSettingsSheetProps = {
   onReplace: () => void;
   onSave: () => void;
   visible: boolean;
+  weightUnit?: 'kg' | 'lb';
 };
 
 const priorityOptions: { label: string; sublabel: string; value: ExercisePriority }[] = [
@@ -50,14 +52,18 @@ export function PlanExerciseSettingsSheet({
   onReplace,
   onSave,
   visible,
+  weightUnit = 'kg',
 }: PlanExerciseSettingsSheetProps) {
   if (!draft) {
     return null;
   }
 
   const isRangeMode = draft.repMin !== null && draft.repMin !== undefined;
-  const percentValue = draft.percent1RM ? `${Math.round(draft.percent1RM * 100)}` : '';
-  const fixedWeight = draft.fixedWeight ? `${draft.fixedWeight}` : '';
+  const percentValue = draft.percent1RM !== null && draft.percent1RM !== undefined ? `${Math.round(draft.percent1RM * 100)}` : '';
+  const fixedWeight =
+    draft.fixedWeight !== null && draft.fixedWeight !== undefined
+      ? `${weightUnit === 'lb' ? Math.round(kgToLb(draft.fixedWeight) * 10) / 10 : draft.fixedWeight}`
+      : '';
 
   return (
     <AppModalSheet
@@ -123,7 +129,7 @@ export function PlanExerciseSettingsSheet({
 
           <FieldGroup title="计划组次">
             <View style={styles.fieldGrid}>
-              <Stepper label="组数" suffix="组" onChange={(sets) => onChange({ sets })} value={draft.sets} />
+              <Stepper label="组数" maximum={20} minimum={1} suffix="组" onChange={(sets) => onChange({ sets })} value={draft.sets} />
               <ToggleField
                 label="次数模式"
                 options={[
@@ -141,11 +147,11 @@ export function PlanExerciseSettingsSheet({
               />
               {isRangeMode ? (
                 <>
-                  <Stepper label="最小次数" suffix="次" onChange={(repMin) => onChange({ repMin })} value={draft.repMin ?? 8} />
-                  <Stepper label="最大次数" suffix="次" onChange={(repMax) => onChange({ repMax })} value={draft.repMax ?? 12} />
+                  <Stepper label="最小次数" maximum={100} minimum={1} suffix="次" onChange={(repMin) => onChange({ repMin })} value={draft.repMin ?? 8} />
+                  <Stepper label="最大次数" maximum={100} minimum={1} suffix="次" onChange={(repMax) => onChange({ repMax })} value={draft.repMax ?? 12} />
                 </>
               ) : (
-                <Stepper label="次数" suffix="次" onChange={(reps) => onChange({ reps })} value={draft.reps ?? 8} />
+                <Stepper label="次数" maximum={100} minimum={1} suffix="次" onChange={(reps) => onChange({ reps })} value={draft.reps ?? 8} />
               )}
             </View>
           </FieldGroup>
@@ -205,9 +211,9 @@ export function PlanExerciseSettingsSheet({
                 label="重量"
                 onChangeText={(value) => {
                   const parsed = Number(value);
-                  onChange({ fixedWeight: Number.isFinite(parsed) ? parsed : null });
+                  onChange({ fixedWeight: Number.isFinite(parsed) ? (weightUnit === 'lb' ? lbToKg(parsed) : parsed) : null });
                 }}
-                suffix="kg"
+                suffix={weightUnit}
                 value={fixedWeight}
               />
             ) : null}
@@ -217,6 +223,8 @@ export function PlanExerciseSettingsSheet({
             <View style={styles.fieldGrid}>
               <Stepper
                 label="休息时间"
+                maximum={600}
+                minimum={0}
                 step={30}
                 suffix="秒"
                 onChange={(restSeconds) => onChange({ restSeconds })}
@@ -246,12 +254,16 @@ function FieldGroup({ children, title }: { children: ReactNode; title: string })
 
 function Stepper({
   label,
+  maximum,
+  minimum = 1,
   onChange,
   step = 1,
   suffix,
   value,
 }: {
   label: string;
+  maximum?: number;
+  minimum?: number;
   onChange: (value: number) => void;
   step?: number;
   suffix: string;
@@ -263,13 +275,13 @@ function Stepper({
         {label}
       </AppText>
       <View style={styles.stepperRow}>
-        <Pressable accessibilityRole="button" onPress={() => onChange(Math.max(1, value - step))} style={styles.stepButton}>
+        <Pressable accessibilityRole="button" onPress={() => onChange(Math.max(minimum, value - step))} style={styles.stepButton}>
           <Ionicons color={colors.text} name="remove-outline" size={17} />
         </Pressable>
         <AppText variant="bodySmall" weight="900">
           {value} {suffix}
         </AppText>
-        <Pressable accessibilityRole="button" onPress={() => onChange(value + step)} style={styles.stepButton}>
+        <Pressable accessibilityRole="button" onPress={() => onChange(maximum === undefined ? value + step : Math.min(maximum, value + step))} style={styles.stepButton}>
           <Ionicons color={colors.text} name="add-outline" size={17} />
         </Pressable>
       </View>

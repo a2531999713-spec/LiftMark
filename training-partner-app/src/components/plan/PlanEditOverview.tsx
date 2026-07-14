@@ -12,8 +12,10 @@ import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { PlanTemplate, Weekday } from '@/domain/plan/plan.types';
 import { colors, radius, spacing, typography } from '@/theme';
 
-import { createPlanDraftId, createPlanExerciseDraft } from './planEditDraft';
+import { createPlanDraftId, createPlanExerciseDraft, duplicatePlanDayDraft, duplicatePlanExerciseDraft } from './planEditDraft';
 import type { PlanDayDraft, PlanEditDraft, PlanExerciseDraft, PlanExerciseMap } from './planEditTypes';
+import { formatPlanExercisePrescription, validatePlanEditorDraft } from './planEditorValidation';
+import { useUserPreferences } from '@/hooks/useUserPreferences';
 
 type PlanEditOverviewProps = {
   allExercises: Exercise[];
@@ -70,6 +72,7 @@ export function PlanEditOverview({
   const [deleteExerciseTarget, setDeleteExerciseTarget] = useState<{ dayId: string; exerciseDraftId: string } | null>(null);
   const [deleteDayTarget, setDeleteDayTarget] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const { preferences } = useUserPreferences();
 
   const weekOptions = useMemo(
     () => Array.from(new Set(draft.days.map((day) => day.week))).sort((left, right) => left - right),
@@ -83,7 +86,7 @@ export function PlanEditOverview({
   const activeDay = visibleDays.find((day) => day.id === activeDayId) ?? visibleDays[0] ?? draft.days[0];
   const settingsDay = settingsTarget ? draft.days.find((day) => day.id === settingsTarget.dayId) : undefined;
   const settingsExercise = settingsDay?.exercises.find((exercise) => exercise.id === settingsTarget?.exerciseDraftId);
-  const validation = useMemo(() => validateDraft(draft), [draft]);
+  const validation = useMemo(() => validatePlanEditorDraft(draft), [draft]);
   const activeDaySetCount = activeDay?.exercises.reduce((sum, exercise) => sum + exercise.sets, 0) ?? 0;
 
   const updateDraftDays = (updater: (days: PlanDayDraft[]) => PlanDayDraft[]) => {
@@ -213,16 +216,22 @@ export function PlanEditOverview({
           ...day,
           exercises: [
             ...day.exercises,
-            {
-              ...settingsExercise,
-              id: createPlanDraftId('plan_exercise'),
-              orderIndex: day.exercises.length,
-            },
+            duplicatePlanExerciseDraft(settingsExercise, day.exercises.length),
           ],
         };
       }),
     );
     setSettingsTarget(null);
+  };
+
+  const duplicateDay = (dayId: string) => {
+    const sourceDay = draft.days.find((day) => day.id === dayId);
+    if (!sourceDay) return;
+    const usedWeekdays = new Set(draft.days.filter((day) => day.week === sourceDay.week).map((day) => day.weekday));
+    const weekday = ([1, 2, 3, 4, 5, 6, 7] as Weekday[]).find((item) => !usedWeekdays.has(item)) ?? sourceDay.weekday;
+    const copiedDay = duplicatePlanDayDraft(sourceDay, weekday);
+    updateDraftDays((days) => [...days, copiedDay]);
+    setActiveDayId(copiedDay.id);
   };
 
   const saveWithValidation = () => {
@@ -312,6 +321,7 @@ export function PlanEditOverview({
                       active={day.id === activeDay?.id}
                       day={day}
                       onDelete={() => setDeleteDayTarget(day.id)}
+                      onDuplicate={() => duplicateDay(day.id)}
                     />
                   </DraggableRow>
                 ))}
@@ -421,6 +431,7 @@ export function PlanEditOverview({
                         draft={exerciseDraft}
                         exercise={exerciseMap[exerciseDraft.exerciseId]}
                         orderLabel={String.fromCharCode(65 + index)}
+                        weightUnit={preferences.weightUnit}
                       />
                     </DraggableRow>
                   ))}
@@ -485,11 +496,16 @@ export function PlanEditOverview({
           }
         }}
         onSave={() => setSettingsTarget(null)}
+        weightUnit={preferences.weightUnit}
         visible={Boolean(settingsTarget)}
       />
 
       <ConfirmSheet
-        message="删除后该训练日不再包含这个动作，保存计划后才会写入模板。"
+        message={
+          deleteExerciseTarget && draft.days.find((day) => day.id === deleteExerciseTarget.dayId)?.exercises.length === 1
+            ? '这是该训练日最后一个动作。删除后本训练日无法保存，需重新添加动作或删除训练日。'
+            : '删除后该训练日不再包含这个动作，保存计划后才会写入模板。'
+        }
         onCancel={() => setDeleteExerciseTarget(null)}
         onConfirm={() => {
           if (deleteExerciseTarget) {
@@ -692,10 +708,12 @@ function PlanDayRow({
   active,
   day,
   onDelete,
+  onDuplicate,
 }: {
   active: boolean;
   day: PlanDayDraft;
   onDelete: () => void;
+  onDuplicate: () => void;
 }) {
   const setCount = day.exercises.reduce((sum, exercise) => sum + exercise.sets, 0);
   return (
@@ -716,6 +734,9 @@ function PlanDayRow({
       <Pressable accessibilityRole="button" onPress={onDelete} style={styles.iconButton}>
         <Ionicons color={colors.textMuted} name="trash-outline" size={16} />
       </Pressable>
+      <Pressable accessibilityRole="button" onPress={onDuplicate} style={styles.iconButton}>
+        <Ionicons color={colors.primary} name="copy-outline" size={16} />
+      </Pressable>
       <Ionicons color={colors.textSubtle} name="menu-outline" size={18} />
     </View>
   );
@@ -725,10 +746,12 @@ function PlanExerciseRow({
   draft,
   exercise,
   orderLabel,
+  weightUnit,
 }: {
   draft: PlanExerciseDraft;
   exercise?: Exercise;
   orderLabel: string;
+  weightUnit: 'kg' | 'lb';
 }) {
   const badgeStyles = [styles.exercisePriorityA, styles.exercisePriorityB, styles.exercisePriorityC, styles.exercisePriorityD];
   const textStyles = [styles.exercisePriorityTextA, styles.exercisePriorityTextB, styles.exercisePriorityTextC, styles.exercisePriorityTextD];
@@ -745,24 +768,24 @@ function PlanExerciseRow({
           {exercise?.name ?? '训练动作'}
         </AppText>
       </View>
-      <AppText style={styles.exerciseCell} tone="muted" variant="caption">
-        {formatReps(draft)}
-      </AppText>
-      <AppText style={styles.exerciseCell} tone="muted" variant="caption">
-        休息 {draft.restSeconds ?? 90}s
+      <AppText numberOfLines={1} style={styles.exerciseCell} tone="muted" variant="caption">
+        {formatPlanExercisePrescription(draft, weightUnit)}
       </AppText>
       <Ionicons color={colors.textSubtle} name="menu-outline" size={18} />
     </View>
   );
 }
 
-function ValidationCard({ validation }: { validation: ReturnType<typeof validateDraft> }) {
+function ValidationCard({ validation }: { validation: ReturnType<typeof validatePlanEditorDraft> }) {
+  const messages = validation.isValid
+    ? [{ label: '所有训练日与动作处方均可保存；修改不会回写历史训练。', ok: true }]
+    : validation.errors.map((error) => ({ label: error.message, ok: false }));
   return (
     <AppCard style={styles.card}>
       <SectionHeader title="保存校验" />
       <View style={styles.validationBox}>
-        {validation.messages.map((message) => (
-          <View key={message.label} style={styles.validationRow}>
+        {messages.map((message, index) => (
+          <View key={`${message.label}-${index}`} style={styles.validationRow}>
             <Ionicons color={message.ok ? colors.success : colors.warning} name={message.ok ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={18} />
             <AppText tone={message.ok ? 'default' : 'warning'} variant="bodySmall">
               {message.label}
@@ -801,36 +824,6 @@ function ConfirmSheet({
   );
 }
 
-function validateDraft(draft: PlanEditDraft) {
-  const emptyDays = draft.days.filter((day) => day.exercises.length === 0);
-  const incompleteExercises = draft.days.flatMap((day) =>
-    day.exercises.filter((exercise) => {
-      const hasReps = Boolean(exercise.reps) || Boolean(exercise.repMin && exercise.repMax);
-      return !exercise.sets || !hasReps || !exercise.restSeconds;
-    }),
-  );
-  const errors = [
-    emptyDays.length > 0 ? `有 ${emptyDays.length} 个训练日还没有动作。` : null,
-    incompleteExercises.length > 0 ? `有 ${incompleteExercises.length} 个动作缺少组数、次数或休息。` : null,
-  ].filter((item): item is string => Boolean(item));
-
-  return {
-    errors,
-    isValid: errors.length === 0,
-    messages: [
-      { label: '每个训练日至少 1 个动作', ok: emptyDays.length === 0 },
-      { label: '动作组数、次数、休息时间已完整', ok: incompleteExercises.length === 0 },
-      { label: '该修改不会回写历史训练', ok: true },
-    ],
-  };
-}
-
-function formatReps(exercise: PlanExerciseDraft) {
-  if (exercise.repMin && exercise.repMax) {
-    return `${exercise.sets}组 × ${exercise.repMin}-${exercise.repMax}次`;
-  }
-  return `${exercise.sets}组 × ${exercise.reps ?? 8}次`;
-}
 
 const styles = StyleSheet.create({
   bottomBar: {

@@ -93,6 +93,7 @@ npm run dev
 - Architecture target: [`LiftMark-完整架构设计方案.md`](./LiftMark-完整架构设计方案.md)
 - Phased convergence plan: [`练刻 LiftMark 分阶段架构收敛执行计划.md`](./练刻%20LiftMark%20分阶段架构收敛执行计划.md)
 - Current-state audit: [`docs/03-architecture/current-state-audit-2026-07-11.md`](./docs/03-architecture/current-state-audit-2026-07-11.md)
+- Plan prescription editor: [`docs/03-architecture/plan-exercise-prescription-editor-implementation-2026-07.md`](./docs/03-architecture/plan-exercise-prescription-editor-implementation-2026-07.md)
 - Handoff entry: [`docs/handoff/00_README_交接入口.md`](./docs/handoff/00_README_交接入口.md)
 - Mobile technical architecture: [`training-partner-app/docs/technical-architecture.md`](./training-partner-app/docs/technical-architecture.md)
 - Sync architecture: [`training-partner-app/docs/sync-architecture.md`](./training-partner-app/docs/sync-architecture.md)

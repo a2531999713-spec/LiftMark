@@ -32,6 +32,25 @@ export function createPlanExerciseDraft(exerciseId: string, index: number): Plan
   };
 }
 
+export function duplicatePlanExerciseDraft(exercise: PlanExerciseDraft, orderIndex: number): PlanExerciseDraft {
+  return {
+    ...exercise,
+    id: createPlanDraftId('plan_exercise'),
+    notes: exercise.notes ?? undefined,
+    orderIndex,
+  };
+}
+
+export function duplicatePlanDayDraft(day: PlanDayDraft, weekday: Weekday): PlanDayDraft {
+  return {
+    ...day,
+    exercises: day.exercises.map((exercise, orderIndex) => duplicatePlanExerciseDraft(exercise, orderIndex)),
+    id: createPlanDraftId('day'),
+    title: `${day.title || '训练日'} 副本`,
+    weekday,
+  };
+}
+
 export function buildPlanEditDraft(
   plan: PlanTemplate,
   days: PlanDay[],

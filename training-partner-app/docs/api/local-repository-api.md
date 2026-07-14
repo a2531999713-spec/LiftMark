@@ -281,3 +281,6 @@ export interface ProgressionRepository {
 
 - Repository 是否在第一版就接受事务对象。
 - 本地 Repository 与未来 remote sync Repository 的接口拆分方式。
+## v2.7 plan prescription input
+
+`CreateUserPlanDayInput.exercises` 已逐动作承载 `sets`、`reps` 或 `repMin/repMax`、`intensityType`、`fixedWeight`、`percent1RM`、`referenceLift`、`restSeconds`、`priority` 和 `notes`。页面必须先校验，不得把训练日共享默认值复制给所有动作。

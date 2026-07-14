@@ -350,3 +350,6 @@ Excel 训练计划的 seed 设计映射：
 # 训练提醒（v2.6.0）
 
 `trainingReminderRepository` 管理账号/小组作用域内的业务提醒记录并入同步队列；`trainingReminderService` 负责通知生命周期；`notificationService` 是 Expo 调度适配层。`notification_ids_json` 是本机运行态，不进入同步 payload。
+# v2.7.0 计划动作处方
+
+`PlanExerciseDraft` 是页面草稿，不直接持久化；`buildPlanEditDraft` 从每条 `PlanExercise` 恢复独立字段，`toUpdateUserPlanInput` 再映射为 repository 输入。训练启动创建 snapshot 后，计划修改不会回写 session、record、set 或报告。固定重量处方优先写入 `workout_sets.planned_weight`。本轮不需要迁移或服务端变更。

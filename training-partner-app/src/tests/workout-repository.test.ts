@@ -226,6 +226,42 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
     expect(insertedSetParams[0][9]).toBe(72.5);
   });
 
+  it('uses a fixed plan prescription as the workout set snapshot weight', async () => {
+    const insertedSetParams: unknown[][] = [];
+    const transaction = {
+      getFirstAsync: jest.fn(async () => null),
+      getAllAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM plan_exercises')) return [{ ...planExerciseRow, fixed_weight: 82.5, intensity_type: 'fixed' }];
+        if (sql.includes('FROM group_members')) return [memberRow];
+        if (sql.includes('FROM member_profiles')) return [];
+        if (sql.includes('FROM exercises')) return [exerciseRow];
+        return [];
+      }),
+      runAsync: jest.fn(async (sql: string, ...params: unknown[]) => {
+        if (sql.includes('INSERT INTO workout_sets')) insertedSetParams.push(params);
+      }),
+    };
+    const db = {
+      getFirstAsync: jest.fn(async (sql: string) => (sql.includes('FROM groups') ? visibleGroupRow : null)),
+      withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => callback(transaction)),
+    };
+
+    await new SQLiteWorkoutRepository(async () => db as never).createSessionFromTodayPlan({
+      date: '2026-06-30',
+      groupId: 'group_1',
+      phaseId: 'phase_strength',
+      planCycleId: 'cycle_current',
+      planId: 'plan_current',
+      title: '固定重量训练',
+      trainingMode: 'group_local',
+      week: 8,
+      weekday: 3,
+    });
+
+    expect(insertedSetParams[0][8]).toBe(82.5);
+    expect(insertedSetParams[0][9]).toBe(82.5);
+  });
+
   it('reuses an existing open session only when the selected plan, week, day, and mode match', async () => {
     const transaction = {
       getFirstAsync: jest.fn(async () => openSessionRow),
