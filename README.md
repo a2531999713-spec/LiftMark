@@ -29,6 +29,8 @@ The v2.7.1 stability pass keeps workout completion local-first, restores report/
 
 The v2.7.2 consistency pass restores data-rich record insights, resolves onboarding per account after recovery, moves body metrics into “我的”, and excludes unfinished sessions from dashboard statistics. See `docs/03-architecture/history-onboarding-bodymetrics-plan-consistency-implementation-2026-07.md`.
 
+The v2.8.0 progression pass creates deterministic, member-and-exercise scoped next-session suggestions locally after a completed workout. It never rewrites plans or historical sets; see `docs/03-architecture/progression-suggestions-implementation-2026-07.md`.
+
 ## Requirements
 
 - Node.js 22.13 or newer.

@@ -1143,6 +1143,74 @@ async function applyTrainingReminders(
   return applied;
 }
 
+/**
+ * Progression suggestions are only meaningful when all three referenced local entities
+ * are visible in the current account and group.  Do not let a remote payload widen
+ * local visibility merely because it contains a valid-looking member or exercise id.
+ */
+async function applyProgressionSuggestions(
+  db: LocalDatabase,
+  rows: ServerRow[],
+  currentUserId: string,
+  reclaimExisting: boolean,
+): Promise<number> {
+  let applied = 0;
+  for (const row of rows) {
+    const payload = normalizePayload(row);
+    const sessionId = asString(pick(payload, ['sessionId', 'session_id']));
+    const memberId = asString(pick(payload, ['memberId', 'member_id']));
+    const exerciseId = asString(pick(payload, ['exerciseId', 'exercise_id']));
+    if (!sessionId || !memberId || !exerciseId) continue;
+
+    const visibleReference = await db.getFirstAsync<{ id: string }>(
+      `SELECT ws.id
+       FROM workout_sessions ws
+       INNER JOIN groups g ON g.id = ws.group_id
+       INNER JOIN group_members gm ON gm.id = ? AND gm.group_id = ws.group_id AND gm.deleted_at IS NULL
+       INNER JOIN exercises e ON e.id = ?
+       WHERE ws.id = ? AND ws.owner_user_id = ? AND g.deleted_at IS NULL AND ws.deleted_at IS NULL
+       LIMIT 1`,
+      memberId,
+      exerciseId,
+      sessionId,
+      currentUserId,
+    );
+    if (!visibleReference) continue;
+
+    const serverUpdatedAt = resolveTimestamp(row);
+    const insertValues: DbValue[] = [
+      asString(pick(payload, ['id'])) ?? row.client_id ?? row.id,
+      memberId,
+      exerciseId,
+      sessionId,
+      asString(pick(payload, ['suggestion'])) ?? 'maintain',
+      asNumber(pick(payload, ['suggestedWeight', 'suggested_weight'])),
+      asString(pick(payload, ['reason'])) ?? '当前训练样本不足，建议维持安排并继续积累数据。',
+      asString(pick(payload, ['createdAt', 'created_at'])) ?? row.created_at,
+      asString(pick(payload, ['updatedAt', 'updated_at'])) ?? serverUpdatedAt,
+    ];
+    const wrote = await upsertWithRemoteId(db, {
+      table: 'progression_suggestions',
+      localId: insertValues[0] as string,
+      remoteId: row.id,
+      reclaimExisting,
+      serverUpdatedAt,
+      serverDeletedAt: row.deleted_at,
+      currentUserId,
+      insertColumns: [
+        'id', 'member_id', 'exercise_id', 'session_id', 'suggestion', 'suggested_weight', 'reason', 'created_at', 'updated_at',
+      ],
+      insertValues,
+      updateColumns: [
+        'member_id', 'exercise_id', 'session_id', 'suggestion', 'suggested_weight', 'reason', 'created_at', 'updated_at',
+      ],
+      updateValues: insertValues.slice(1),
+    });
+    if (wrote) applied += 1;
+  }
+  return applied;
+}
+
 type PullEntityCounts = {
   groupMembers: number;
   groups: number;
@@ -1151,6 +1219,7 @@ type PullEntityCounts = {
   planDays: number;
   planExercises: number;
   planPhases: number;
+  progressionSuggestions: number;
   trainingReminders: number;
   trainingReports: number;
   trainingPlans: number;
@@ -1182,6 +1251,7 @@ function buildRemoteCounts(changes: Record<string, ServerRow[]>): PullEntityCoun
     planDays: countChangeRows(changes, 'planDays'),
     planExercises: countChangeRows(changes, 'planExercises'),
     planPhases: countChangeRows(changes, 'planPhases'),
+    progressionSuggestions: countChangeRows(changes, 'progressionSuggestions'),
     trainingReminders: countChangeRows(changes, 'trainingReminders'),
     trainingReports: countChangeRows(changes, 'trainingReports'),
     trainingPlans: countChangeRows(changes, 'trainingPlans'),
@@ -1202,6 +1272,7 @@ async function countVisibleLocalData(db: LocalDatabase, currentUserId: string): 
     groupMembers,
     trainingPlans,
     planPhases,
+    progressionSuggestions,
     planCycles,
     planCycleSummaries,
     trainingReports,
@@ -1240,6 +1311,12 @@ async function countVisibleLocalData(db: LocalDatabase, currentUserId: string): 
     countFirst(
       db,
       `SELECT COUNT(*) AS count FROM plan_phases
+       WHERE owner_user_id = ? AND deleted_at IS NULL`,
+      currentUserId,
+    ),
+    countFirst(
+      db,
+      `SELECT COUNT(*) AS count FROM progression_suggestions
        WHERE owner_user_id = ? AND deleted_at IS NULL`,
       currentUserId,
     ),
@@ -1297,6 +1374,7 @@ async function countVisibleLocalData(db: LocalDatabase, currentUserId: string): 
     planDays,
     planExercises,
     planPhases,
+    progressionSuggestions,
     trainingReminders,
     trainingReports,
     trainingPlans,
@@ -1594,6 +1672,7 @@ export async function pullFromServer(
     ['trainingReports', () => applyTrainingReports(db, (changes.trainingReports as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['planCycleSummaries', () => applyPlanCycleSummaries(db, (changes.planCycleSummaries as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['trainingReminders', () => applyTrainingReminders(db, (changes.trainingReminders as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
+    ['progressionSuggestions', () => applyProgressionSuggestions(db, (changes.progressionSuggestions as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['bodyMetrics', () => applyBodyMetrics(db, (changes.bodyMetrics as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
   ];
 

@@ -1,11 +1,11 @@
 ﻿# Progression 模块实现文档
 
-更新时间：2026-06-11  
+更新时间：2026-07-15
 对应代码目录：`training-partner-app/`；Sprint 1 已创建基础类型和 Repository 骨架，稳定性 Sprint 新增进阶建议中文展示映射。
 
 ## 1. 模块职责
 
-训练完成后基于完成情况、失败次数和双进阶规则生成下次建议。
+训练完成后基于完成情况、失败次数和双进阶规则生成下次建议。v2.8.0 已实现纯领域规则、按账号/小组隔离的 SQLite Repository、确定性 ID 幂等写入与后台生成；建议不会修改训练计划或历史训练。
 
 ## 2. 主要文件
 
@@ -19,12 +19,12 @@
 
 ## 3. 核心类/函数
 
-### getStrengthProgressionSuggestion()
+### getProgressionDecision()
 
 文件：见主要文件列表  
 符号：`getStrengthProgressionSuggestion()`  
 搜索锚点：`getStrengthProgressionSuggestion()`  
-职责：根据完成率 生成增力建议。  
+职责：基于快照和最近三次同成员/动作表现生成增力、增肌或通用保守建议。
 调用方：history, workout-summary-flow  
 依赖：workout, weight, exercise, member  
 测试：见 `test-plan.md`  
@@ -35,12 +35,12 @@
 2. 保持输入输出可测试。
 3. 修改后同步相关模块和流程文档。
 
-### getHypertrophyProgressionSuggestion()
+### resolveProgressionStrategy()
 
 文件：见主要文件列表  
 符号：`getHypertrophyProgressionSuggestion()`  
 搜索锚点：`getHypertrophyProgressionSuggestion()`  
-职责：根据次数区间、动作质量生成增肌建议。  
+职责：按 progressionRuleId、训练快照、计划目标和次数处方顺序确定 strength/hypertrophy/general。
 调用方：history, workout-summary-flow  
 依赖：workout, weight, exercise, member  
 测试：见 `test-plan.md`  
@@ -109,3 +109,4 @@
 - 2026-06-08：根据需求文档、开发文档和 Excel 计划初始化模块实现说明。
 - 2026-06-09：同步 Sprint 1 代码骨架：Progression 类型、Repository 接口和 SQLite 实现骨架已创建。
 - 2026-06-11：同步稳定性与基础体验 Sprint：新增 `progression.labels.ts`，避免 UI 直接展示内部枚举。
+- 2026-07-15：v2.8.0 完成确定性建议、作用域、同步 pull 与训练/总结/报告/历史入口。

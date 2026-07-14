@@ -25,6 +25,7 @@ import { WorkoutLiveStatsBar } from '@/components/workout/WorkoutLiveStatsBar';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
+import type { ProgressionSuggestion } from '@/domain/progression/progression.types';
 import { DEFAULT_BARBELL_INCREMENT, DEFAULT_DUMBBELL_INCREMENT } from '@/domain/weight/weight-calculator';
 import {
   WORKOUT_EXTRA_SET_NOTE,
@@ -178,6 +179,7 @@ export default function WorkoutRoute() {
   const [, setWorkoutReadyToFinish] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeProgressionSuggestion, setActiveProgressionSuggestion] = useState<ProgressionSuggestion | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [isCompletingSet, setIsCompletingSet] = useState(false);
   const [isApplyingAdjustment, setIsApplyingAdjustment] = useState(false);
@@ -538,8 +540,9 @@ export default function WorkoutRoute() {
           }).catch(() => undefined);
         }
         router.replace({ pathname: '/workout/summary/[sessionId]', params: { sessionId } });
-        // 报告/同步属于后置任务，绝不阻塞用户进入总结页；报告失败时摘要页走只读回退。
+        // 报告、进阶建议和同步属于后置任务，绝不阻塞用户进入总结页。
         void repositories.workoutRepository.generateTrainingReport(sessionId).catch(() => undefined);
+        void repositories.progressionRepository.createSuggestionsForSession(sessionId).catch(() => undefined);
         void requestImmediateSync().catch(() => undefined);
     } catch (finishError) {
       setError(finishError instanceof Error ? finishError.message : '完成训练失败。');
@@ -616,10 +619,12 @@ export default function WorkoutRoute() {
   }, [confirmDiscardWorkout, detail, elapsedSeconds, guardFeature, isFinishing, saveCompletedWorkout, sessionId]);
 
   const activeRecord = detail?.exercises[activeExerciseIndex] ?? null;
+  const activeRecordId = activeRecord?.id;
   const activeExercise = activeRecord ? exerciseMap[activeRecord.exerciseId] ?? null : null;
-  const activeSets = activeRecord
-    ? detail?.sets.filter((set) => set.exerciseRecordId === activeRecord.id) ?? []
-    : [];
+  const activeSets = useMemo(
+    () => activeRecordId ? detail?.sets.filter((set) => set.exerciseRecordId === activeRecordId) ?? [] : [],
+    [activeRecordId, detail?.sets],
+  );
   const memberOrder = useMemo(() => members.map((member) => member.id), [members]);
   const exerciseSetProgress = activeRecord
     ? getWorkoutExerciseSetProgress(activeSets, activeRecord.id)
@@ -700,6 +705,57 @@ export default function WorkoutRoute() {
     const prefIncrement = parseIncrementKg(preferences.weightIncrement);
     return prefIncrement || profileIncrement;
   }, [currentProfile, activeExercise, preferences.weightIncrement]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const exerciseId = activeRecord?.exerciseId;
+    const status = detail?.session.status;
+    const startedAt = detail?.session.startedAt;
+    const currentSessionId = detail?.session.id;
+    void Promise.resolve()
+      .then(() => exerciseId && currentMemberId && status === 'in_progress'
+        ? repositories.progressionRepository.getLatestSuggestion(currentMemberId, exerciseId)
+        : null)
+      .then((suggestion) => {
+        const isEarlierThanSession = !suggestion || !startedAt || suggestion.createdAt < startedAt;
+        if (!cancelled) {
+          setActiveProgressionSuggestion(
+            suggestion && suggestion.sessionId !== currentSessionId && isEarlierThanSession && (suggestion.suggestedWeight ?? -1) >= 0
+              ? suggestion
+              : null,
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setActiveProgressionSuggestion(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRecord?.exerciseId, currentMemberId, detail?.session.id, detail?.session.startedAt, detail?.session.status, repositories]);
+
+  const applyActiveProgressionSuggestion = useCallback(async () => {
+    if (!activeProgressionSuggestion || !activeRecord || !detail || activeProgressionSuggestion.suggestedWeight === undefined) return;
+    const pendingSets = activeSets.filter((set) => set.memberId === currentMemberId && !set.completed && !set.skipped);
+    if (pendingSets.length === 0) return;
+    const apply = async () => {
+      for (const set of pendingSets) {
+        await saveSetPatch(set, { plannedWeight: activeProgressionSuggestion.suggestedWeight });
+      }
+      setActiveProgressionSuggestion(null);
+    };
+    const hasManualWeight = pendingSets.some(
+      (set) => set.actualWeight !== undefined && set.actualWeight !== set.plannedWeight,
+    );
+    if (hasManualWeight) {
+      Alert.alert('替换未完成组计划重量？', '你已手动调整重量。应用建议只会更新当前成员未完成组的计划重量，不会修改已完成组或训练计划。', [
+        { text: '取消', style: 'cancel' },
+        { text: '应用建议', onPress: () => void apply() },
+      ]);
+      return;
+    }
+    await apply();
+  }, [activeProgressionSuggestion, activeRecord, activeSets, currentMemberId, detail, saveSetPatch]);
   const previousCompletedWeightForCurrentSet = currentDisplaySet
     ? [...activeSets]
         .filter(
@@ -1660,6 +1716,23 @@ export default function WorkoutRoute() {
                 />
               ) : null}
 
+              {activeProgressionSuggestion?.suggestedWeight !== undefined ? (
+                <AppCard style={styles.progressionCard} tone="soft">
+                  <View style={styles.progressionIcon}>
+                    <Ionicons color={colors.primary} name="trending-up-outline" size={20} />
+                  </View>
+                  <View style={styles.progressionCopy}>
+                    <AppText tone="muted" variant="caption">上次建议</AppText>
+                    <AppText variant="bodySmall" weight="900">
+                      {activeProgressionSuggestion.suggestion === 'increase' ? '加重至' : '参考重量'} {activeProgressionSuggestion.suggestedWeight} kg
+                    </AppText>
+                  </View>
+                  <AppButton onPress={() => void applyActiveProgressionSuggestion()} size="sm">
+                    应用到本次
+                  </AppButton>
+                </AppCard>
+              ) : null}
+
               {currentDisplaySet ? (
                 <CurrentSetRecorder
                   key={currentDisplaySet.id}
@@ -2448,6 +2521,23 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  progressionCard: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  progressionCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  progressionIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
   },
   memberDoneActions: {
     flexDirection: 'row',

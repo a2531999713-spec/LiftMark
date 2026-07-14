@@ -12,6 +12,7 @@ import { estimateOneRM } from '@/domain/history/history-analysis';
 import { resolveDefaultTrainingMemberId } from '@/domain/member/member-selection';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { PlanDay, PlanExercise, PlanTemplate } from '@/domain/plan/plan.types';
+import type { ProgressionSuggestion } from '@/domain/progression/progression.types';
 import type { GroupWorkoutConsentSummary } from '@/domain/sync/workoutSync.types';
 import { WORKOUT_TEMPORARY_EXERCISE_NOTE, summarizeWorkoutAdjustments, summarizeWorkoutSets } from '@/domain/workout/workout.service';
 import type { WorkoutSessionDetail, WorkoutSummary } from '@/domain/workout/workout.types';
@@ -22,6 +23,7 @@ import {
   requestMemberConsentPlaceholder,
 } from '@/services/groupWorkoutConsentService';
 import { colors, radius, spacing } from '@/theme';
+import { ProgressionSuggestionList } from '@/features/progression/ProgressionSuggestionList';
 
 type SummaryView = {
   bestExerciseName: string;
@@ -114,6 +116,9 @@ export default function WorkoutSummaryRoute() {
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [progressionSuggestions, setProgressionSuggestions] = useState<ProgressionSuggestion[]>([]);
+  const [progressionStatus, setProgressionStatus] = useState<'generating' | 'ready' | 'failed'>('generating');
+  const [exerciseNamesById, setExerciseNamesById] = useState<Record<string, string>>({});
 
   const loadSummary = useCallback(async () => {
     if (!sessionId) {
@@ -142,6 +147,7 @@ export default function WorkoutSummaryRoute() {
         nextDetail.exercises.map((exercise) => exercise.exerciseId),
       );
       const exerciseMap = Object.fromEntries(exercises.map((exercise) => [exercise.id, exercise]));
+      const suggestions = await repositories.progressionRepository.listSuggestionsForSession(sessionId);
       const plan = await repositories.planRepository.getPlanById(nextDetail.session.planId);
       if (plan) {
         const days = await repositories.planRepository.listPlanDays(plan.id);
@@ -161,7 +167,9 @@ export default function WorkoutSummaryRoute() {
       setSummary(summarizeWorkoutSets(sessionId, nextDetail.sets));
       setView(buildSummaryView(nextDetail, members, exerciseMap));
       setProfilesByMemberId(Object.fromEntries(memberProfiles));
+      setExerciseNamesById(Object.fromEntries(exercises.map((exercise) => [exercise.id, exercise.name])));
       setConsentSummary(buildGroupWorkoutConsentSummary(nextDetail, members, resolveDefaultTrainingMemberId(members)));
+      setProgressionSuggestions(suggestions);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '训练总结加载失败。');
     } finally {
@@ -169,10 +177,25 @@ export default function WorkoutSummaryRoute() {
     }
   }, [repositories, sessionId]);
 
+  const generateProgressionSuggestions = useCallback(async () => {
+    if (!sessionId) return;
+    setProgressionStatus('generating');
+    try {
+      const suggestions = await repositories.progressionRepository.createSuggestionsForSession(sessionId);
+      setProgressionSuggestions(suggestions);
+      setProgressionStatus('ready');
+    } catch {
+      setProgressionStatus('failed');
+    }
+  }, [repositories, sessionId]);
+
   useFocusEffect(
     useCallback(() => {
-      void loadSummary();
-    }, [loadSummary]),
+      void (async () => {
+        await loadSummary();
+        await generateProgressionSuggestions();
+      })();
+    }, [generateProgressionSuggestions, loadSummary]),
   );
 
   const completionRate = summary && summary.totalSets > 0 ? summary.completedSets / summary.totalSets : 0;
@@ -382,6 +405,15 @@ export default function WorkoutSummaryRoute() {
             />
             <MetricCard label="总训练时长" value={`${view.durationMinutes} min`} />
           </View>
+
+          <ProgressionSuggestionList
+            emptyDescription={progressionStatus === 'failed' ? '建议生成失败不会影响训练记录或报告。你可以稍后重新生成。' : undefined}
+            exerciseNames={exerciseNamesById}
+            isGenerating={progressionStatus === 'generating'}
+            memberNames={Object.fromEntries(view.memberRows.map((row) => [row.memberId, row.memberName]))}
+            onRetry={() => void generateProgressionSuggestions()}
+            suggestions={progressionSuggestions}
+          />
 
           {adjustmentSummary?.hasAdjustments ? (
             <AppCard style={styles.adjustmentCard}>

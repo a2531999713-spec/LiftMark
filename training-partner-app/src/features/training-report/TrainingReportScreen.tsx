@@ -1,8 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppCard, AppText, EmptyState, Screen, SectionHeader, Tag } from '@/components/ui';
+import { createLocalRepositories } from '@/data/local';
+import type { ProgressionSuggestion } from '@/domain/progression/progression.types';
+import { ProgressionSuggestionList } from '@/features/progression/ProgressionSuggestionList';
 import type { TrainingReportDetail, TrainingReportSessionType } from '@/domain/report/trainingReport.types';
 import { colors, radius, spacing } from '@/theme';
 
@@ -37,6 +41,29 @@ function formatNumber(value: number): string {
 export function TrainingReportScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const { reload, state } = useTrainingReportController(sessionId);
+  const repositories = useMemo(() => createLocalRepositories(), []);
+  const [suggestions, setSuggestions] = useState<ProgressionSuggestion[]>([]);
+  const [suggestionStatus, setSuggestionStatus] = useState<'ready' | 'failed' | 'generating'>('ready');
+  const loadSuggestions = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      setSuggestions(await repositories.progressionRepository.listSuggestionsForSession(sessionId));
+      setSuggestionStatus('ready');
+    } catch {
+      setSuggestionStatus('failed');
+    }
+  }, [repositories, sessionId]);
+  const regenerateSuggestions = useCallback(async () => {
+    if (!sessionId) return;
+    setSuggestionStatus('generating');
+    try {
+      setSuggestions(await repositories.progressionRepository.createSuggestionsForSession(sessionId));
+      setSuggestionStatus('ready');
+    } catch {
+      setSuggestionStatus('failed');
+    }
+  }, [repositories, sessionId]);
+  useFocusEffect(useCallback(() => { void loadSuggestions(); }, [loadSuggestions]));
   return (
     <Screen safeTop={false} subtitle="训练结果、成员完成情况与动作明细" title="训练报告">
       {state.status === 'loading' ? <ReportSkeleton /> : null}
@@ -46,7 +73,14 @@ export function TrainingReportScreen() {
       {state.status === 'error' ? (
         <EmptyState actionLabel="重新加载" description={state.message} onActionPress={() => void reload()} title="报告暂时无法加载" />
       ) : null}
-      {state.status === 'ready' ? <ReportContent report={state.report} /> : null}
+      {state.status === 'ready' ? (
+        <ReportContent
+          onRegenerateSuggestions={regenerateSuggestions}
+          report={state.report}
+          suggestionStatus={suggestionStatus}
+          suggestions={suggestions}
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -64,7 +98,17 @@ function ReportSkeleton() {
   );
 }
 
-function ReportContent({ report }: { report: TrainingReportDetail }) {
+function ReportContent({
+  onRegenerateSuggestions,
+  report,
+  suggestionStatus,
+  suggestions,
+}: {
+  onRegenerateSuggestions: () => void;
+  report: TrainingReportDetail;
+  suggestionStatus: 'ready' | 'failed' | 'generating';
+  suggestions: ProgressionSuggestion[];
+}) {
   return (
     <>
       {report.isHistoricalFallback ? (
@@ -135,6 +179,15 @@ function ReportContent({ report }: { report: TrainingReportDetail }) {
           </View>
         ) : null}
       </AppCard>
+
+      <ProgressionSuggestionList
+        emptyDescription={suggestionStatus === 'failed' ? '建议暂未生成；训练报告和历史记录未受影响。' : undefined}
+        exerciseNames={Object.fromEntries(report.exercises.map((exercise) => [exercise.exerciseId, exercise.exerciseName]))}
+        isGenerating={suggestionStatus === 'generating'}
+        memberNames={Object.fromEntries(report.members.map((member) => [member.memberId, member.memberName]))}
+        onRetry={onRegenerateSuggestions}
+        suggestions={suggestions}
+      />
 
       <SectionHeader subtitle="训练整体汇总之外，按参与成员分别统计。" title="成员完成情况" />
       <View style={styles.memberList}>

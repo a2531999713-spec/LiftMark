@@ -190,7 +190,7 @@ export type WorkoutSessionDetail = {
 export type SaveWorkoutSetInput = Partial<
   Pick<
     WorkoutSet,
-    'actualWeight' | 'actualReps' | 'actualRestSeconds' | 'completed' | 'notes' | 'rpe' | 'skipped'
+    'actualWeight' | 'actualReps' | 'actualRestSeconds' | 'completed' | 'notes' | 'plannedWeight' | 'rpe' | 'skipped'
   >
 > & {
   id: ID;

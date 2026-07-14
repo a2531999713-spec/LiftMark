@@ -1413,9 +1413,10 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
     await db.runAsync(
       `UPDATE workout_sets
-       SET actual_weight = ?, actual_reps = ?, rpe = ?, rir = ?,
+       SET planned_weight = ?, actual_weight = ?, actual_reps = ?, rpe = ?, rir = ?,
            actual_rest_seconds = ?, completed = ?, skipped = ?, notes = ?, updated_at = ?
        WHERE id = ?`,
+      updated.plannedWeight ?? null,
       updated.actualWeight ?? null,
       updated.actualReps ?? null,
       updated.rpe ?? null,

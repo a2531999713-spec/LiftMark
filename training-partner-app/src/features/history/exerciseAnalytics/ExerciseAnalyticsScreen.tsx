@@ -4,6 +4,9 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppButton, AppText, EmptyState, Screen, Tag } from '@/components/ui';
+import { createLocalRepositories } from '@/data/local';
+import type { ProgressionSuggestion } from '@/domain/progression/progression.types';
+import { formatProgressionSuggestionLabel } from '@/domain/progression/progression.labels';
 import { colors, radius, spacing } from '@/theme';
 import { DateRangeSelector, useDateRange } from '@/features/history/shared/DateRangeSelector';
 import {
@@ -28,11 +31,13 @@ export function ExerciseAnalyticsScreen() {
   const { exerciseId } = useLocalSearchParams<{ exerciseId: string }>();
   const { range, setRange } = useDateRange('30d');
   const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
+  const repositories = useMemo(() => createLocalRepositories(), []);
   const [metric, setMetric] = useState<ExerciseMetric>('oneRm');
   const [dataset, setDataset] = useState<HistoryDataset | null>(null);
   const [view, setView] = useState<ExerciseAnalyticsView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [progressionSuggestions, setProgressionSuggestions] = useState<ProgressionSuggestion[]>([]);
 
   const load = useCallback(async () => {
     if (!exerciseId) {
@@ -47,12 +52,22 @@ export function ExerciseAnalyticsScreen() {
       const nextDataset = await loadHistoryDataset(range, selectedGroupId);
       setDataset(nextDataset);
       setView(buildExerciseAnalytics(nextDataset, exerciseId));
+      if (nextDataset.currentMember) {
+        setProgressionSuggestions(await repositories.progressionRepository.listSuggestionsForMemberExercise({
+          exerciseId,
+          groupId: nextDataset.group.id,
+          limit: 5,
+          memberId: nextDataset.currentMember.id,
+        }));
+      } else {
+        setProgressionSuggestions([]);
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '动作分析加载失败。');
     } finally {
       setIsLoading(false);
     }
-  }, [exerciseId, range, selectedGroupId]);
+  }, [exerciseId, range, repositories, selectedGroupId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -195,6 +210,24 @@ export function ExerciseAnalyticsScreen() {
               </AppText>
             </View>
           </SectionCard>
+
+          <SectionCard action={<Tag label={`${progressionSuggestions.length} 条`} tone="brand" />} title="最近进阶建议">
+            {progressionSuggestions.length === 0 ? (
+              <EmptyState description="完成该动作的有效工作组后，会在这里保留最近建议。" title="暂无进阶建议" />
+            ) : (
+              <View style={styles.progressionList}>
+                {progressionSuggestions.map((suggestion) => (
+                  <View key={suggestion.id} style={styles.progressionRow}>
+                    <View style={styles.progressionCopy}>
+                      <AppText variant="bodySmall" weight="900">{formatProgressionSuggestionLabel(suggestion.suggestion)}</AppText>
+                      <AppText tone="muted" variant="caption" numberOfLines={2}>{suggestion.reason}</AppText>
+                    </View>
+                    {suggestion.suggestedWeight !== undefined ? <Tag label={`${suggestion.suggestedWeight} kg`} tone="brand" /> : null}
+                  </View>
+                ))}
+              </View>
+            )}
+          </SectionCard>
         </>
       ) : null}
 
@@ -224,6 +257,9 @@ const styles = StyleSheet.create({
   recordList: {
     gap: spacing.sm,
   },
+  progressionCopy: { flex: 1, gap: spacing.xxs },
+  progressionList: { gap: spacing.sm },
+  progressionRow: { alignItems: 'center', backgroundColor: colors.backgroundElevated, borderRadius: radius.md, flexDirection: 'row', gap: spacing.sm, padding: spacing.sm },
   screen: {
     gap: spacing.lg,
     paddingBottom: spacing.xxxxl,

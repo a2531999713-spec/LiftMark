@@ -588,6 +588,7 @@ describe('SQLiteWorkoutRepository.saveSet', () => {
     expect(saved.actualRestSeconds).toBe(95);
     expect(db.runAsync).toHaveBeenCalledWith(
       expect.stringContaining('actual_rest_seconds'),
+      null,
       100,
       5,
       8,

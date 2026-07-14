@@ -20,6 +20,13 @@ export function validateWorkoutSetInput(input: SaveWorkoutSetInput): void {
   }
 
   if (
+    input.plannedWeight !== undefined &&
+    (!Number.isFinite(input.plannedWeight) || input.plannedWeight < 0)
+  ) {
+    throw new Error('Planned weight must be a finite non-negative number.');
+  }
+
+  if (
     input.rpe !== undefined &&
     (!Number.isInteger(input.rpe) || input.rpe < 1 || input.rpe > 10)
   ) {
