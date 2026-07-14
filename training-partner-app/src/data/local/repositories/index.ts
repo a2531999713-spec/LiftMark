@@ -8,6 +8,7 @@ import { SQLiteProgressionRepository } from './progressionRepository';
 import { SQLiteUserPreferencesRepository } from './userPreferencesRepository';
 import { SQLiteWorkoutRepository } from './workoutRepository';
 import { SQLiteTrainingReportRepository } from './trainingReportRepository';
+import { SQLiteTrainingReminderRepository } from './trainingReminderRepository';
 import { SQLiteHistoryRepository } from './historyRepository';
 
 export function createLocalRepositories() {
@@ -22,5 +23,6 @@ export function createLocalRepositories() {
     workoutRepository: new SQLiteWorkoutRepository(getDatabase),
     progressionRepository: new SQLiteProgressionRepository(getDatabase),
     trainingReportRepository: new SQLiteTrainingReportRepository(getDatabase),
+    trainingReminderRepository: new SQLiteTrainingReminderRepository(getDatabase),
   };
 }

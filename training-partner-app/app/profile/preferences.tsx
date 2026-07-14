@@ -92,6 +92,7 @@ export default function ProfilePreferencesRoute() {
       {!isLoading && !error ? (
         <>
           <AppCard style={styles.card}>
+            <SettingsRow label="训练提醒" value="设置训练日与本机通知" />
             <SettingsRow label="默认单位" value={weightUnitLabel} />
             <SettingsRow label="杠铃加重单位" value={`${profile?.barbellIncrement ?? 2.5} kg`} />
             <SettingsRow label="哑铃加重单位" value={`${profile?.dumbbellIncrement ?? 2.5} kg`} />
@@ -105,6 +106,10 @@ export default function ProfilePreferencesRoute() {
             <SettingsRow label="RPE / RIR" value={effortLabel} />
             <SettingsRow label="周五策略" value={fridayStrategyLabel(group?.fridayStrategy)} />
           </AppCard>
+
+          <AppButton icon="notifications-outline" onPress={() => router.push('/profile/training-reminders' as never)} variant="secondary">
+            设置训练提醒
+          </AppButton>
 
           <AppButton
             onPress={() => {

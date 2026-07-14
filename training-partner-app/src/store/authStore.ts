@@ -17,6 +17,7 @@ import type {
 import { readStoredSession, saveStoredSession } from '@/services/auth/tokenStorage';
 import { getMembership, type Membership } from '@/services/membershipService';
 import { repairLocalDataOwnership } from '@/services/ownershipRepairService';
+import { cancelCurrentAccountTrainingReminderSchedules } from '@/services/trainingReminderService';
 import { sync } from '@/sync/syncOrchestrator';
 
 type AuthStore = {
@@ -189,6 +190,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   async login(input) {
     set({ error: null, isLoading: true });
     try {
+      await cancelCurrentAccountTrainingReminderSchedules().catch(() => undefined);
       const result = await authService.login(input);
       if (!result.ok) {
         switchRuntimeAccountScope(null);
@@ -220,6 +222,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   async loginWithCode(input) {
     set({ error: null, isLoading: true });
     try {
+      await cancelCurrentAccountTrainingReminderSchedules().catch(() => undefined);
       const result = await authService.loginWithCode(input);
       if (!result.ok) {
         switchRuntimeAccountScope(null);
@@ -251,6 +254,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   async logout() {
     set({ error: null, isLoading: true });
     try {
+      await cancelCurrentAccountTrainingReminderSchedules().catch(() => undefined);
       await authService.logout();
       switchRuntimeAccountScope(null);
       set({
@@ -273,6 +277,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   async register(input) {
     set({ error: null, isLoading: true });
     try {
+      await cancelCurrentAccountTrainingReminderSchedules().catch(() => undefined);
       const result = await authService.register(input);
       if (!result.ok) {
         switchRuntimeAccountScope(null);

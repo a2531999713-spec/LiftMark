@@ -1027,6 +1027,20 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 24,
+    name: 'training_reminder_device_schedule_metadata',
+    async up(db) {
+      const columns = await (db as SQLiteDatabase).getAllAsync<{ name: string }>(
+        'PRAGMA table_info(training_reminders)',
+      );
+      if (!columns.some((column) => column.name === 'notification_ids_json')) {
+        // Expo notification identifiers belong to this device only. They are intentionally
+        // excluded from the sync registry and only let us cancel schedules we created.
+        await db.execAsync('ALTER TABLE training_reminders ADD COLUMN notification_ids_json TEXT;');
+      }
+    },
+  },
 ];
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {

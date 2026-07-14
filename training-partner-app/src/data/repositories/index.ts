@@ -4,4 +4,5 @@ export type { GroupRepository } from './groupRepository';
 export type { MemberRepository } from './memberRepository';
 export type { PlanRepository } from './planRepository';
 export type { ProgressionRepository } from './progressionRepository';
+export type { TrainingReminderRepository } from './trainingReminderRepository';
 export type { WorkoutRepository } from './workoutRepository';

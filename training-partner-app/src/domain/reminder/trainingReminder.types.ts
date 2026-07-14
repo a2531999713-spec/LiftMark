@@ -27,3 +27,22 @@ export type TrainingReminder = {
   updatedAt: string;
 };
 
+/** Expo identifiers are device-runtime state and deliberately never synced. */
+export type TrainingReminderScheduleMetadata = {
+  notificationIds: string[];
+  lastScheduledAt?: string;
+};
+
+export type TrainingReminderSettings = {
+  enabled: boolean;
+  weekdays: number[];
+  remindTime: string;
+  beforeThirtyMinutes: boolean;
+  beforeTenMinutes: boolean;
+  todayPlan: boolean;
+};
+
+export type UpsertTrainingReminderInput = Omit<TrainingReminder, 'id' | 'createdAt' | 'updatedAt' | 'lastScheduledAt' | 'lastFiredAt'> & {
+  id?: ID;
+};
+

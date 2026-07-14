@@ -44,6 +44,7 @@ export default function ProfileIndexRoute() {
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [currentMember, setCurrentMember] = useState<GroupMember | null>(null);
   const [currentProfile, setCurrentProfile] = useState<MemberProfile | null>(null);
+  const [reminderSummary, setReminderSummary] = useState('未开启');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,15 +65,19 @@ export default function ProfileIndexRoute() {
       }
       const members = await repositories.memberRepository.listMembers(group.id);
       const member = resolveDefaultTrainingMember(members, latestUser?.id);
-      const [profile, cachedProfile] = await Promise.all([
+      const [profile, cachedProfile, reminders] = await Promise.all([
         member ? repositories.memberRepository.getMemberProfile(member.id) : Promise.resolve(null),
         latestUser ? getAccountProfileCache(latestUser.id) : Promise.resolve(null),
+        repositories.trainingReminderRepository.listByOwnerAndGroup(group.id),
       ]);
 
       setCurrentGroup(group);
       setCurrentMember(member);
       setCurrentProfile(profile);
       setAccountProfile(cachedProfile);
+      const enabledReminders = reminders.filter((item) => item.enabled);
+      const first = enabledReminders[0];
+      setReminderSummary(first ? `已开启 · ${first.remindTime ?? '--:--'}` : '未开启');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '账号中心加载失败。');
     } finally {
@@ -168,6 +173,7 @@ export default function ProfileIndexRoute() {
 
           <ProfileGroup title="偏好与权益">
             <AccountMenuRow icon="barbell-outline" label="训练偏好" onPress={() => router.push('/preferences' as never)} />
+            <AccountMenuRow icon="notifications-outline" label="训练提醒" trailing={reminderSummary} onPress={() => router.push('/profile/training-reminders' as never)} />
             <AccountMenuRow
               icon="diamond-outline"
               label="会员 / 激活码"

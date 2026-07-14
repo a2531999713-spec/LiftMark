@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { HistoryListItem } from '@/domain/history/history.types';
 import type { PlanCycleOverview } from '@/domain/plan/plan.types';
+import { disableTrainingRemindersForGroup } from '@/services/trainingReminderService';
 
 export type PlanCycleControllerState =
   | { status: 'loading'; overview: null; sessions: HistoryListItem[] }
@@ -47,7 +48,8 @@ export function usePlanCycleController(planCycleId?: string) {
     if (!planCycleId) return;
     setWorking(true);
     try {
-      await repositories.planRepository.completePlanCycle({ planCycleId });
+      const summary = await repositories.planRepository.completePlanCycle({ planCycleId });
+      await disableTrainingRemindersForGroup(summary.groupId);
       await load();
     } finally {
       setWorking(false);
@@ -58,7 +60,8 @@ export function usePlanCycleController(planCycleId?: string) {
     if (!planCycleId) return;
     setWorking(true);
     try {
-      await repositories.planRepository.archivePlanCycle({ planCycleId });
+      const summary = await repositories.planRepository.archivePlanCycle({ planCycleId });
+      await disableTrainingRemindersForGroup(summary.groupId);
       await load();
     } finally {
       setWorking(false);

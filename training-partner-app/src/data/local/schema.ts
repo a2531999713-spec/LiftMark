@@ -373,6 +373,7 @@ CREATE TABLE IF NOT EXISTS training_reminders (
   timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
   title_template TEXT NOT NULL,
   body_template TEXT NOT NULL,
+  notification_ids_json TEXT,
   last_scheduled_at TEXT,
   last_fired_at TEXT,
   remote_id TEXT,

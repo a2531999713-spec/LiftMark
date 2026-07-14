@@ -8,6 +8,8 @@ import { initializeLocalDatabase } from '@/data/local';
 import { useAuthStore } from '@/store/authStore';
 import { sync, getLastSyncAt } from '@/sync/syncOrchestrator';
 import { colors, spacing } from '@/theme';
+import * as Notifications from 'expo-notifications';
+import { reconcileTrainingReminderSchedules } from '@/services/trainingReminderService';
 
 const SYNC_THROTTLE_MS = 30_000;
 
@@ -33,11 +35,23 @@ export default function RootLayout() {
       if (currentUser) {
         // 启动时触发同步（pull + push），受 30 秒节流控制
         triggerAppSync();
+        void reconcileTrainingReminderSchedules().catch((error) => console.warn('[app] reminder reconcile failed', error));
       }
     }
     void boot().catch((error) => {
       console.error('启动初始化失败', error);
     });
+  }, []);
+
+  useEffect(() => {
+    const handleResponse = (response: Notifications.NotificationResponse) => {
+      const data = response.notification.request.content.data;
+      // Reminder payload can become stale after plan changes; Today is always safe.
+      if (data && typeof data === 'object') router.push('/(tabs)/today' as never);
+    };
+    const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
+    void Notifications.getLastNotificationResponseAsync().then((response) => { if (response) handleResponse(response); });
+    return () => subscription.remove();
   }, []);
 
   // App 从后台回到前台时触发同步（30 秒节流）
@@ -121,6 +135,7 @@ export default function RootLayout() {
         <Stack.Screen name="profile/training-identity" options={{ title: '' }} />
         <Stack.Screen name="profile/groups" options={{ title: '' }} />
         <Stack.Screen name="profile/preferences" options={{ title: '' }} />
+        <Stack.Screen name="profile/training-reminders" options={{ title: '' }} />
         <Stack.Screen name="profile/data" options={{ title: '' }} />
         <Stack.Screen name="profile/privacy" options={{ title: '' }} />
         <Stack.Screen name="profile/sync" options={{ title: '' }} />
