@@ -10,12 +10,12 @@ import { getPlanCycleStatusLabel } from '@/domain/plan/planCycle.service';
 import { DateRangeSelector, useDateRange } from '@/features/history/shared/DateRangeSelector';
 import { RecentDateStrip } from '@/features/history/shared/RecentDateStrip';
 import { buildTrendBuckets, findBucketForDate } from '@/features/history/shared/dateRange';
-import { ChartCard, IconButton, MetricGrid, PageHeader, SectionCard, SegmentControl } from '@/features/history/shared/HistoryUi';
+import { ChartCard, IconButton, InsightList, MetricGrid, PageHeader, SectionCard, SegmentControl } from '@/features/history/shared/HistoryUi';
 import { colors, radius, spacing } from '@/theme';
 
 import { defaultHistoryFilter, resolveScopedHistoryFilter, type ScopedHistoryFilterState } from './historyFilter.state';
 import { useHistoryListController } from './useHistoryListController';
-import { buildHistoryTrendInsight } from './historyInsights';
+import { buildHistoryTrendInsight, buildRecordHomeInsights } from './historyInsights';
 
 type RecordScope = 'personal' | 'group';
 
@@ -93,6 +93,7 @@ export function CycleAwareRecordHomeScreen() {
   const filterLabel = getFilterLabel(filter, state.cycles);
   const emptyCopy = getEmptyCopy(filter);
   const trendInsight = useMemo(() => buildHistoryTrendInsight(state.items), [state.items]);
+  const analysisInsights = useMemo(() => buildRecordHomeInsights(state.items, scope), [scope, state.items]);
 
   const chooseBaseFilter = (next: HistoryFilter) => {
     if (next.kind === 'cycle') {
@@ -154,21 +155,27 @@ export function CycleAwareRecordHomeScreen() {
           <SectionCard title="趋势说明">
             <AppText tone="muted" variant="bodySmall">{trendInsight}</AppText>
           </SectionCard>
-          <SectionCard title="训练分析">
-            <View style={styles.analysisActions}>
+          <Pressable accessibilityRole="button" onPress={() => router.push((scope === 'personal' ? '/history/analytics' : '/history/group') as never)}>
+            <SectionCard
+              action={<AppText tone="brand" variant="caption" weight="900">查看{scope === 'personal' ? '训练' : '小组'}分析 ›</AppText>}
+              title={scope === 'personal' ? '训练趋势' : '小组洞察'}
+            >
+              <InsightList insights={analysisInsights.slice(0, 3)} />
               {scope === 'personal' ? (
-                <Pressable onPress={() => router.push('/history/analytics' as never)} style={styles.analysisAction}>
-                  <AppText tone="brand" variant="bodySmall" weight="900">查看完整训练分析</AppText>
-                </Pressable>
+                <View style={styles.analysisActions}>
+                  <Pressable onPress={() => router.push('/history/analytics' as never)} style={styles.analysisAction}>
+                    <AppText tone="brand" variant="bodySmall" weight="900">完整训练分析</AppText>
+                  </Pressable>
+                </View>
               ) : (
-                <>
+                <View style={styles.analysisActions}>
                   <Pressable onPress={() => router.push('/history/group' as never)} style={styles.analysisAction}><AppText tone="brand" variant="bodySmall" weight="900">小组分析</AppText></Pressable>
                   <Pressable onPress={() => router.push('/history/group/exercise-compare' as never)} style={styles.analysisAction}><AppText tone="brand" variant="bodySmall" weight="900">动作对比</AppText></Pressable>
                   <Pressable onPress={() => router.push('/history/group/attendance' as never)} style={styles.analysisAction}><AppText tone="brand" variant="bodySmall" weight="900">出勤率</AppText></Pressable>
-                </>
+                </View>
               )}
-            </View>
-          </SectionCard>
+            </SectionCard>
+          </Pressable>
           <SectionCard subtitle="点击日期筛选当天训练。" title="近期训练日期">
             <RecentDateStrip
               countsByDate={countsByDate}

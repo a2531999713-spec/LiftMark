@@ -1521,29 +1521,6 @@ export default function TodayRoute() {
             </View>
           ) : null}
 
-          {!error && groups.length > 0 ? (
-            <View style={styles.quickActionRow}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push('/profile/body-metrics' as never)}
-                style={({ pressed }) => [styles.quickActionCard, pressed && styles.pressed]}
-              >
-                <View style={styles.quickActionIcon}>
-                  <Ionicons color={colors.primary} name="scale-outline" size={20} />
-                </View>
-                <View style={styles.quickActionText}>
-                  <AppText variant="bodySmall" weight="900">
-                    记录体重
-                  </AppText>
-                  <AppText tone="muted" variant="caption">
-                    {latestWeightLabel ?? '点击快速记录今日体重'}
-                  </AppText>
-                </View>
-                <Ionicons color={colors.textSubtle} name="chevron-forward" size={18} />
-              </Pressable>
-            </View>
-          ) : null}
-
           {error ? (
             <HomeEmptyState
               actionLabel="重新加载"
@@ -1725,9 +1702,11 @@ export default function TodayRoute() {
           displayName={displayName}
           groups={groups}
           liftmarkId={liftmarkId}
+          latestWeightLabel={latestWeightLabel}
           membershipLabel={membershipLabel}
           members={members}
           onAboutPress={() => navigateFromAccountMenu(() => router.push('/about' as never))}
+          onBodyMetricsPress={() => navigateFromAccountMenu(() => router.push('/profile/body-metrics' as never))}
           onAvatarPick={pickAccountAvatar}
           onAvatarRemove={removeAccountAvatar}
           onClose={() => setAccountMenuVisible(false)}

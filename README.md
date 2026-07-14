@@ -27,6 +27,8 @@ Training reminder settings are local-notification first: business configuration 
 
 The v2.7.1 stability pass keeps workout completion local-first, restores report/history resilience, and tightens safe member-id repair after pull without relaxing account or group scope. See `docs/03-architecture/workout-report-history-stability-implementation-2026-07.md`.
 
+The v2.7.2 consistency pass restores data-rich record insights, resolves onboarding per account after recovery, moves body metrics into “我的”, and excludes unfinished sessions from dashboard statistics. See `docs/03-architecture/history-onboarding-bodymetrics-plan-consistency-implementation-2026-07.md`.
+
 ## Requirements
 
 - Node.js 22.13 or newer.

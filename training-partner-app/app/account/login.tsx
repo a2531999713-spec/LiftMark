@@ -25,7 +25,7 @@ const LIFTMARK_ID_RE = /^LM[A-Z0-9]{6,16}$/i;
 const CODE_RE = /^\d{4,6}$/;
 
 export default function LoginRoute() {
-  const { authStatus, isLoading, login, loginWithCode, sendCode } = useAuthStore();
+  const { isLoading, login, loginWithCode, sendCode } = useAuthStore();
   const [mode, setMode] = useState<LoginMode>('password');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -36,12 +36,6 @@ export default function LoginRoute() {
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [sending, setSending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
-
-  useEffect(() => {
-    if (authStatus === 'authenticated' || authStatus === 'offline_authenticated') {
-      router.replace('/onboarding/training-profile' as never);
-    }
-  }, [authStatus]);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -103,7 +97,6 @@ export default function LoginRoute() {
         alert('登录失败', message);
         return;
       }
-      router.replace('/onboarding/training-profile' as never);
       return;
     }
 
@@ -119,7 +112,6 @@ export default function LoginRoute() {
       alert('登录失败', message);
       return;
     }
-    router.replace('/onboarding/training-profile' as never);
   };
 
   return (

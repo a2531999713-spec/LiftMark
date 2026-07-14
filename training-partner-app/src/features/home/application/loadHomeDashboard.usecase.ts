@@ -39,25 +39,27 @@ export async function loadHomeDashboardSnapshot(input: {
   const [summary, performanceRows, completedRows, recentCount] = await Promise.all([
     db.getFirstAsync<SummaryRow>(
       `SELECT
-         COUNT(DISTINCT CASE WHEN sets.completed = 1 THEN sessions.id END) AS session_count,
-         SUM(CASE WHEN sets.completed = 1 THEN 1 ELSE 0 END) AS completed_sets,
-         COALESCE(SUM(CASE WHEN sets.completed = 1
+         COUNT(DISTINCT CASE WHEN sets.completed = 1 AND sets.skipped = 0 THEN sessions.id END) AS session_count,
+         SUM(CASE WHEN sets.completed = 1 AND sets.skipped = 0 THEN 1 ELSE 0 END) AS completed_sets,
+         COALESCE(SUM(CASE WHEN sets.completed = 1 AND sets.skipped = 0
            THEN COALESCE(sets.actual_weight, sets.planned_weight, 0) * COALESCE(sets.actual_reps, sets.planned_reps, 0)
            ELSE 0 END), 0) AS volume,
          COALESCE((SELECT SUM(MAX(0, CAST((julianday(scoped_sessions.finished_at) - julianday(scoped_sessions.started_at)) * 86400 AS INTEGER)))
            FROM workout_sessions scoped_sessions
            WHERE scoped_sessions.owner_user_id = ? AND scoped_sessions.group_id = ?
              AND scoped_sessions.date BETWEEN ? AND ?
+             AND scoped_sessions.status = 'completed'
              AND scoped_sessions.deleted_at IS NULL
              AND scoped_sessions.started_at IS NOT NULL AND scoped_sessions.finished_at IS NOT NULL
              AND EXISTS (SELECT 1 FROM workout_sets scoped_sets
                WHERE scoped_sets.session_id = scoped_sessions.id AND scoped_sets.member_id = ?
-                 AND scoped_sets.completed = 1 AND scoped_sets.deleted_at IS NULL)
+                 AND scoped_sets.completed = 1 AND scoped_sets.skipped = 0 AND scoped_sets.deleted_at IS NULL)
          ), 0) AS duration_seconds
        FROM workout_sessions sessions
        LEFT JOIN workout_sets sets ON sets.session_id = sessions.id AND sets.member_id = ? AND sets.deleted_at IS NULL
        WHERE sessions.owner_user_id = ? AND sessions.group_id = ?
          AND sessions.date BETWEEN ? AND ?
+         AND sessions.status = 'completed'
          AND sessions.deleted_at IS NULL`,
       ownerUserId,
       input.groupId,
@@ -76,7 +78,7 @@ export async function loadHomeDashboardSnapshot(input: {
        JOIN workout_sessions sessions ON sessions.id = sets.session_id
        JOIN workout_exercise_records records ON records.id = sets.exercise_record_id
        WHERE sessions.owner_user_id = ? AND sessions.group_id = ? AND sets.member_id = ?
-         AND sets.completed = 1 AND sets.skipped = 0
+         AND sessions.status = 'completed' AND sets.completed = 1 AND sets.skipped = 0
          AND sessions.deleted_at IS NULL AND sets.deleted_at IS NULL AND records.deleted_at IS NULL
        ORDER BY sessions.date DESC, sets.updated_at DESC
        LIMIT ?`,
@@ -86,15 +88,21 @@ export async function loadHomeDashboardSnapshot(input: {
     db.getAllAsync<{ plan_id: string; week: number; weekday: number }>(
       `SELECT DISTINCT plan_id, week, weekday
        FROM workout_sessions
-       WHERE owner_user_id = ? AND group_id = ? AND status = 'completed' AND deleted_at IS NULL`,
+       WHERE owner_user_id = ? AND group_id = ? AND status = 'completed' AND deleted_at IS NULL
+         AND EXISTS (SELECT 1 FROM workout_sets scoped_sets
+           WHERE scoped_sets.session_id = workout_sessions.id AND scoped_sets.member_id = ?
+             AND scoped_sets.completed = 1 AND scoped_sets.skipped = 0 AND scoped_sets.deleted_at IS NULL)`,
       ownerUserId,
       input.groupId,
+      input.memberId,
     ),
     db.getFirstAsync<{ count: number }>(
       `SELECT COUNT(*) AS count FROM workout_sessions
        WHERE owner_user_id = ? AND group_id = ? AND deleted_at IS NULL
+         AND status = 'completed'
          AND EXISTS (SELECT 1 FROM workout_sets sets
-           WHERE sets.session_id = workout_sessions.id AND sets.member_id = ? AND sets.deleted_at IS NULL)`,
+           WHERE sets.session_id = workout_sessions.id AND sets.member_id = ?
+             AND sets.completed = 1 AND sets.skipped = 0 AND sets.deleted_at IS NULL)`,
       ...ownerParams,
     ),
   ]);

@@ -61,9 +61,11 @@ type AccountPanelProps = {
   displayName: string;
   groups: Group[];
   liftmarkId?: string;
+  latestWeightLabel?: string | null;
   membershipLabel: string;
   members: GroupMember[];
   onAboutPress: () => void;
+  onBodyMetricsPress: () => void;
   onAvatarPick: (source: AvatarPickSource) => Promise<void>;
   onAvatarRemove: () => Promise<void>;
   onClose: () => void;
@@ -108,9 +110,11 @@ export function AccountPanel({
   displayName,
   groups,
   liftmarkId,
+  latestWeightLabel,
   membershipLabel,
   members,
   onAboutPress,
+  onBodyMetricsPress,
   onAvatarPick,
   onAvatarRemove,
   onClose,
@@ -265,9 +269,11 @@ export function AccountPanel({
               currentGroup={currentGroup}
               displayName={displayName}
               liftmarkId={liftmarkId}
+              latestWeightLabel={latestWeightLabel}
               membershipLabel={membershipLabel}
               memberCount={members.length}
               onAboutPress={onAboutPress}
+              onBodyMetricsPress={onBodyMetricsPress}
               onBackupPress={() => setMode('backup')}
               onEditPress={() => {
                 setDraft(initialDraft);
@@ -362,9 +368,11 @@ type MainPanelProps = {
   currentGroup?: Group | null;
   displayName: string;
   liftmarkId?: string;
+  latestWeightLabel?: string | null;
   membershipLabel: string;
   memberCount: number;
   onAboutPress: () => void;
+  onBodyMetricsPress: () => void;
   onBackupPress: () => void;
   onEditPress: () => void;
   onFeedbackPress: () => void;
@@ -386,9 +394,11 @@ function MainPanel({
   currentGroup,
   displayName,
   liftmarkId,
+  latestWeightLabel,
   membershipLabel,
   memberCount,
   onAboutPress,
+  onBodyMetricsPress,
   onBackupPress,
   onEditPress,
   onFeedbackPress,
@@ -449,6 +459,7 @@ function MainPanel({
         <AccountPanelRow icon="diamond-outline" label="会员 / 激活码" onPress={onMembershipPress} trailing={membershipLabel} />
         <Divider />
         <AccountPanelRow icon="barbell-outline" label="训练偏好" onPress={onPreferencesPress} />
+        <AccountPanelRow description="记录体重、体脂和围度" icon="scale-outline" label="身体数据" onPress={onBodyMetricsPress} trailing={latestWeightLabel ?? '去记录'} />
       </View>
 
       <View style={styles.section}>

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppButton, AppCard, AppModalSheet, AppText, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
@@ -15,6 +15,7 @@ import type {
 import { recommendPlans } from '@/domain/plan/planRecommendation';
 import { listSystemTrainingSchemes } from '@/domain/plan/systemSchemes';
 import { useAuthStore } from '@/store/authStore';
+import { setTrainingOnboardingStatus } from '@/features/onboarding/application/postLoginDestination';
 import { colors, radius, spacing } from '@/theme';
 
 type NoticeState = { message: string; title: string };
@@ -181,6 +182,10 @@ export default function TrainingProfileOnboardingRoute() {
         fridayEnabled: plan.frequencyPerWeek >= 3,
       });
 
+      if (user?.id) {
+        await setTrainingOnboardingStatus(user.id, 'completed');
+      }
+
       router.replace('/(tabs)/today' as never);
     } catch (error) {
       setNotice({
@@ -192,10 +197,25 @@ export default function TrainingProfileOnboardingRoute() {
     }
   };
 
+  const skipOnboarding = () => {
+    Alert.alert('暂不设置训练资料？', '你可以之后从“我的”中继续设置，当前不会再自动跳转到这里。', [
+      { text: '继续设置', style: 'cancel' },
+      {
+        text: '暂不设置',
+        onPress: () => {
+          void (async () => {
+            if (user?.id) await setTrainingOnboardingStatus(user.id, 'skipped');
+            router.replace('/(tabs)/today' as never);
+          })();
+        },
+      },
+    ]);
+  };
+
   return (
     <Screen contentStyle={styles.screen}>
       <View style={styles.topBar}>
-        <Pressable accessibilityRole="button" onPress={() => router.replace('/(tabs)/today' as never)} style={styles.backButton}>
+        <Pressable accessibilityRole="button" onPress={skipOnboarding} style={styles.backButton}>
           <Ionicons color={colors.textStrong} name="arrow-back" size={22} />
         </Pressable>
         <View style={styles.progressTrack}>

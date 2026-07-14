@@ -15,7 +15,7 @@ import {
 import type { BodyMetric, BodyMetricGoal, BodyMetricGoalType } from '@/domain/body/body-metrics.types';
 import { resolveDefaultTrainingMember } from '@/domain/member/member-selection';
 import type { GroupMember } from '@/domain/member/member.types';
-import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
+import { saveCurrentBodyMetric } from '@/features/body-metrics/application/saveCurrentBodyMetric';
 import { useSelectedGroupStore } from '@/store/selectedGroupStore';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { colors, radius, spacing, typography } from '@/theme';
@@ -104,19 +104,6 @@ function formatValue(value?: number, unit = ''): string {
   return value === undefined ? '未填' : `${value}${unit}`;
 }
 
-function summarizeTraining(details: WorkoutSessionDetail[], memberId: string): BodyTrainingCorrelationInput {
-  const memberDetails = details.filter((detail) => detail.sets.some((set) => set.memberId === memberId && set.completed));
-  const completedSets = memberDetails.flatMap((detail) => detail.sets).filter((set) => set.memberId === memberId && set.completed);
-  return {
-    completedSets: completedSets.length,
-    sessionCount: memberDetails.length,
-    totalVolume: completedSets.reduce(
-      (sum, set) => sum + (set.actualWeight ?? set.plannedWeight ?? 0) * (set.actualReps ?? set.plannedReps ?? 0),
-      0,
-    ),
-  };
-}
-
 export default function BodyMetricsRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
   const selectedGroupId = useSelectedGroupStore((state) => state.selectedGroupId);
@@ -157,21 +144,27 @@ export default function BodyMetricsRoute() {
         return;
       }
 
-      const [nextMetrics, nextGoal, sessions] = await Promise.all([
+      const [nextMetrics, nextGoal, history] = await Promise.all([
         repositories.bodyMetricsRepository.listMetrics(member.id),
         repositories.bodyMetricsRepository.getGoal(member.id),
-        repositories.workoutRepository.listSessions({
+        repositories.historyRepository.listHistoryItems({
+          currentPlanCycleId: undefined,
+          filter: { kind: 'all' },
           fromDate: getLocalDateString(addDays(new Date(), -27)),
           groupId: group.id,
           limit: 100,
+          memberId: member.id,
           toDate: getLocalDateString(),
         }),
       ]);
-      const details = await Promise.all(sessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)));
       setMetrics(nextMetrics);
       setGoal(nextGoal);
       setGoalDraft(toGoalDraft(nextGoal));
-      setTrainingSummary(summarizeTraining(details, member.id));
+      setTrainingSummary({
+        completedSets: history.items.reduce((sum, item) => sum + item.completedSets, 0),
+        sessionCount: history.items.length,
+        totalVolume: history.items.reduce((sum, item) => sum + item.totalVolume, 0),
+      });
       setDraft(toDraft(nextMetrics.find((metric) => metric.date === getLocalDateString()) ?? null));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '身体数据加载失败。');
@@ -201,7 +194,7 @@ export default function BodyMetricsRoute() {
     setIsSaving(true);
     setError(null);
     try {
-      const saved = await repositories.bodyMetricsRepository.upsertMetric({
+      await saveCurrentBodyMetric(repositories, {
         bicepCm: parseNumber(draft.bicepCm),
         bodyFatPercent: parseNumber(draft.bodyFatPercent),
         calfCm: parseNumber(draft.calfCm),
@@ -214,26 +207,6 @@ export default function BodyMetricsRoute() {
         waistCm: parseNumber(draft.waistCm),
         weightKg: parseNumber(draft.weightKg),
       });
-      void enqueueSyncCandidate({
-        entityType: 'bodyMetrics',
-        localId: saved.id,
-        operation: 'update',
-        payload: {
-          bodyFatPercent: saved.bodyFatPercent,
-          bicepCm: saved.bicepCm,
-          calfCm: saved.calfCm,
-          chestCm: saved.chestCm,
-          date: saved.date,
-          hipCm: saved.hipCm,
-          memberId: saved.memberId,
-          notes: saved.notes,
-          thighCm: saved.thighCm,
-          waistCm: saved.waistCm,
-          weightKg: saved.weightKg,
-        },
-        status: 'pending_update',
-        updatedAt: saved.updatedAt,
-      }).catch(() => undefined);
       await load();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '身体数据保存失败。');
@@ -332,7 +305,16 @@ export default function BodyMetricsRoute() {
               </View>
               <DateStepper date={draft.date} onChange={(date) => setDraft((current) => ({ ...current, date }))} />
             </View>
-            <MetricInput label="体重" unit="kg" value={draft.weightKg} onChangeText={(value) => setDraft((current) => ({ ...current, weightKg: value }))} />
+            <MetricInput
+              label="体重"
+              onAdjust={(delta) => setDraft((current) => ({
+                ...current,
+                weightKg: `${Math.max(0, Math.round(((Number(current.weightKg) || 0) + delta) * 10) / 10)}`,
+              }))}
+              unit="kg"
+              value={draft.weightKg}
+              onChangeText={(value) => setDraft((current) => ({ ...current, weightKg: value }))}
+            />
             <TextInput
               multiline
               onChangeText={(value) => setDraft((current) => ({ ...current, notes: value }))}
@@ -577,11 +559,13 @@ function DateStepper({ date, onChange }: { date: string; onChange: (date: string
 
 function MetricInput({
   label,
+  onAdjust,
   onChangeText,
   unit,
   value,
 }: {
   label: string;
+  onAdjust?: (delta: number) => void;
   onChangeText: (value: string) => void;
   unit: string;
   value: string;
@@ -604,6 +588,12 @@ function MetricInput({
         style={styles.input}
         value={value}
       />
+      {onAdjust ? (
+        <View style={styles.weightAdjustRow}>
+          <Pressable accessibilityRole="button" onPress={() => onAdjust(-0.1)} style={styles.weightAdjustButton}><AppText variant="bodySmall" weight="900">−0.1</AppText></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => onAdjust(0.1)} style={styles.weightAdjustButton}><AppText tone="brand" variant="bodySmall" weight="900">+0.1</AppText></Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -845,4 +835,6 @@ const styles = StyleSheet.create({
   trendBlock: {
     gap: spacing.sm,
   },
+  weightAdjustButton: { alignItems: 'center', backgroundColor: colors.backgroundElevated, borderRadius: radius.md, flex: 1, justifyContent: 'center', minHeight: 40 },
+  weightAdjustRow: { flexDirection: 'row', gap: spacing.sm },
 });

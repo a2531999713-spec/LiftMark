@@ -116,7 +116,7 @@ function formatKg(value: number): string {
 }
 
 function summarizeWorkoutDetails(details: WorkoutSessionDetail[]): Pick<PlanDashboardStats, 'weeklyCompletedSets' | 'weeklyVolume'> {
-  const completedSets = details.flatMap((detail) => detail.sets).filter((set) => set.completed);
+  const completedSets = details.flatMap((detail) => detail.sets).filter((set) => set.completed && !set.skipped);
   return {
     weeklyCompletedSets: completedSets.length,
     weeklyVolume: completedSets.reduce(
@@ -137,7 +137,7 @@ function buildRecentSessions(details: WorkoutSessionDetail[]): Pick<
   'recentSessionsCompletedSets' | 'recentSessionsVolume' | 'recentSessionsLabels' | 'recentSessionDate'
 > {
   const completedDetails = details
-    .filter((detail) => detail.sets.some((set) => set.completed))
+    .filter((detail) => detail.session.status === 'completed' && detail.sets.some((set) => set.completed && !set.skipped))
     .sort((left, right) => left.session.date.localeCompare(right.session.date));
 
   if (completedDetails.length === 0) {
@@ -276,7 +276,7 @@ export default function PlanRoute() {
             toDate: today,
             limit: 120,
           })
-        ).filter((session) => session.planId === nextActivePlan.id);
+        ).filter((session) => session.planId === nextActivePlan.id && session.status === 'completed');
         const details = await Promise.all(sessions.map((session) => repositories.workoutRepository.getSessionDetail(session.id)));
         const weeklyDetails = details.filter((detail) => detail.session.date >= weekStart && detail.session.date <= today);
         const weeklySummary = summarizeWorkoutDetails(weeklyDetails);
@@ -285,7 +285,7 @@ export default function PlanRoute() {
         nextStats = {
           ...weeklySummary,
           ...recentStats,
-          weeklySessionCount: weeklyDetails.filter((detail) => detail.sets.some((set) => set.completed)).length,
+          weeklySessionCount: weeklyDetails.filter((detail) => detail.sets.some((set) => set.completed && !set.skipped)).length,
         };
         const cycles = await repositories.planRepository.listPlanCycles({
           groupId: nextGroup.id,

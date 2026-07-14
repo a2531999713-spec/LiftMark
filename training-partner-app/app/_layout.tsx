@@ -10,6 +10,7 @@ import { sync, getLastSyncAt } from '@/sync/syncOrchestrator';
 import { colors, spacing } from '@/theme';
 import * as Notifications from 'expo-notifications';
 import { reconcileTrainingReminderSchedules } from '@/services/trainingReminderService';
+import { resolvePostLoginDestination } from '@/features/onboarding/application/postLoginDestination';
 
 const SYNC_THROTTLE_MS = 30_000;
 
@@ -80,7 +81,18 @@ export default function RootLayout() {
     }
 
     if ((authStatus === 'authenticated' || authStatus === 'offline_authenticated') && isLoginRoute) {
-      router.replace('/onboarding/training-profile' as never);
+      const userId = useAuthStore.getState().user?.id;
+      if (!userId) return;
+      let cancelled = false;
+      void (async () => {
+        // New devices must let account-scoped recovery populate existing plans/profiles before onboarding is decided.
+        if (authStatus === 'authenticated') {
+          await sync().catch(() => undefined);
+        }
+        const next = await resolvePostLoginDestination(userId);
+        if (!cancelled) router.replace(next.destination as never);
+      })();
+      return () => { cancelled = true; };
     }
   }, [authStatus, segments]);
 
