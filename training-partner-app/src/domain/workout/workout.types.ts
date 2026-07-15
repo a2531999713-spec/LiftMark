@@ -89,6 +89,17 @@ export type CreateSessionFromTodayPlanInput = {
   trainingMode?: WorkoutTrainingMode;
 };
 
+export type ApplyRecoveryWeightReductionInput = {
+  memberIds: ID[];
+  reductionPercent?: number;
+  sessionId: ID;
+};
+
+export type ApplyRecoveryWeightReductionResult = {
+  skippedSetCount: number;
+  updatedSetCount: number;
+};
+
 export type CreateManualSessionInput = {
   groupId: ID;
   planId?: ID | null;
