@@ -161,6 +161,33 @@ function createPlanExerciseRow(patch: Record<string, unknown> = {}) {
   };
 }
 
+function createRecoveryRow(patch: Record<string, unknown> = {}) {
+  return {
+    client_id: 'recovery_local_176',
+    created_at: '2026-07-15T07:00:00.000Z',
+    deleted_at: null,
+    id: 'recovery_remote_176',
+    member_client_id: 'member_176',
+    payload: {
+      appetiteScore: 4,
+      date: '2026-07-15',
+      fatigueScore: 2,
+      id: 'recovery_local_176',
+      jointPainScore: 1,
+      memberId: 'member_176',
+      motivationScore: 4,
+      recommendation: 'normal',
+      sleepScore: 5,
+      sorenessScore: 2,
+      totalScore: 26,
+      updatedAt: '2026-07-15T08:00:00.000Z',
+    },
+    updated_at: '2026-07-15T08:00:00.000Z',
+    user_id: 'user_176',
+    ...patch,
+  };
+}
+
 describe('pullFromServer account isolation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -341,5 +368,91 @@ describe('pullFromServer account isolation', () => {
       expect.anything(),
       expect.anything(),
     );
+  });
+
+  it('pulls recovery logs only through an exact visible member mapping', async () => {
+    const db = createDbMock();
+    db.getFirstAsync.mockImplementation(async (...args: unknown[]) => {
+      const [sql] = args;
+      const query = String(sql);
+      if (query.includes('FROM group_members gm') && query.includes('gm.local_member_id')) {
+        return { id: 'member_local_176' };
+      }
+      return null;
+    });
+    mockInitializeLocalDatabase.mockResolvedValue(db as never);
+    mockApiRequest.mockResolvedValue({
+      changes: { recoveryLogs: [createRecoveryRow()] },
+      serverTime: '2026-07-15T09:00:00.000Z',
+    });
+
+    const result = await pullFromServer({ fullPull: true });
+
+    const recoveryInsert = db.runAsync.mock.calls.find(([sql]) =>
+      String(sql).includes('INSERT INTO recovery_logs'),
+    );
+    expect(result.pulled).toBe(1);
+    expect(recoveryInsert).toBeTruthy();
+    expect(recoveryInsert).toEqual(expect.arrayContaining([
+      expect.stringContaining('INSERT INTO recovery_logs'),
+      'recovery_local_176',
+      'user_176',
+      'member_local_176',
+      '2026-07-15',
+    ]));
+  });
+
+  it('reuses the existing local daily id when another device pulls the same member and date', async () => {
+    const db = createDbMock();
+    db.getFirstAsync.mockImplementation(async (...args: unknown[]) => {
+      const [sql] = args;
+      const query = String(sql);
+      if (query.includes('FROM group_members gm') && query.includes('gm.local_member_id')) {
+        return { id: 'member_local_176' };
+      }
+      if (query.includes('FROM recovery_logs') && query.includes('ORDER BY updated_at DESC')) {
+        return { id: 'recovery_existing_daily' };
+      }
+      return null;
+    });
+    mockInitializeLocalDatabase.mockResolvedValue(db as never);
+    mockApiRequest.mockResolvedValue({
+      changes: { recoveryLogs: [createRecoveryRow()] },
+      serverTime: '2026-07-15T09:00:00.000Z',
+    });
+
+    await pullFromServer({ fullPull: true });
+
+    const recoveryInsert = db.runAsync.mock.calls.find(([sql]) =>
+      String(sql).includes('INSERT INTO recovery_logs'),
+    );
+    expect(recoveryInsert?.[1]).toBe('recovery_existing_daily');
+  });
+
+  it('does not attach a pulled recovery log when its member is outside visible account groups', async () => {
+    const db = createDbMock();
+    db.getFirstAsync.mockResolvedValue(null);
+    mockInitializeLocalDatabase.mockResolvedValue(db as never);
+    mockApiRequest.mockResolvedValue({
+      changes: {
+        recoveryLogs: [
+          createRecoveryRow({
+            member_client_id: 'member_other_group',
+            payload: {
+              ...(createRecoveryRow().payload as Record<string, unknown>),
+              memberId: 'member_other_group',
+            },
+          }),
+        ],
+      },
+      serverTime: '2026-07-15T09:00:00.000Z',
+    });
+
+    const result = await pullFromServer({ fullPull: true });
+
+    expect(result.pulled).toBe(0);
+    expect(
+      db.runAsync.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO recovery_logs')),
+    ).toBe(false);
   });
 });
