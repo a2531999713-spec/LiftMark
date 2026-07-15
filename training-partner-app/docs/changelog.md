@@ -1,5 +1,13 @@
 # 变更记录
 
+## 2026-07-15 - v2.10.0 recovery-readiness
+
+- 新增六项恢复评估、确定性评分/安全规则、同日编辑、最近趋势与 Today 紧凑入口。
+- 新增 scoped Recovery Repository、`recoveryLogs` pull、非阻塞开始提示和小组成员状态。
+- 新增明确确认的 A/B/C session 快照过滤与未完成组临时降重，不回写 plan/history/progression。
+- typecheck、lint 和全量 Jest 50 套件/256 用例通过。
+- 无 SQLite/PostgreSQL migration、API、共享 DTO 或服务器部署。
+
 ## 2026-07-15 - v2.9.0 system-plan-library-preview
 
 - 新增推荐计划库、四类筛选/搜索、完整系统方案详情和 onboarding 草稿安全预览。

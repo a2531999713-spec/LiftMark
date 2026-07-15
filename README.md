@@ -2,6 +2,13 @@
 
 LiftMark is a three-client strength-training system. Mobile training writes to SQLite first; PostgreSQL is the authoritative cloud recovery and conflict-arbitration source.
 
+## Current release: v2.10.0 recovery readiness
+
+- Six daily signals produce deterministic recovery guidance and an optional, session-only training adjustment.
+- The Today screen loads recovery independently from the plan so a recovery read failure cannot block workout startup.
+- Recovery records are account-, group-, and member-scoped, written to SQLite first, and synchronized through the existing `recoveryLogs` contract.
+- Recovery guidance never modifies plan templates, historical workouts, or long-term progression suggestions.
+
 ## Repository structure
 
 | Path | Responsibility |

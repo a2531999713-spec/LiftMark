@@ -1,7 +1,16 @@
 ﻿# Recovery 模块实现文档
 
-更新时间：2026-06-30  
-对应代码目录：`training-partner-app/`；已实现恢复评分引擎，并将 A/B/C 过滤以“动作筛选”接入今日训练和 session 创建。
+更新时间：2026-07-15
+对应代码目录：`training-partner-app/`；v2.10.0 已将恢复评分、每日记录、同步、趋势和 session-only 调整完整产品化。
+
+## v2.10.0 实现摘要
+
+- 六项总分为 `sleep + appetite + motivation + (6-soreness) + (6-joint) + (6-fatigue)`，范围 6–30。
+- 硬规则优先于总分：关节或疲劳 5、总分不高于 12、明显不适均建议优先恢复。
+- `RecoveryRepository` 提供 daily get/upsert、history、latest、trend、soft delete；所有操作校验 owner 和可见成员。
+- 今日页异步读取，不阻塞 plan；`/recovery` 支持同日编辑和最近 10 条真实日期趋势。
+- 建议应用前必须确认；动作在内存过滤，重量只更新新 session 的所选成员未完成计划组。
+- 详细设计见仓库级 `docs/03-architecture/recovery-readiness-implementation-2026-07.md`。
 
 ## 1. 模块职责
 
@@ -13,6 +22,9 @@
 |---|---|
 | `src/domain/recovery/recovery.types.ts` | 恢复评分类型。 |
 | `src/domain/recovery/recovery-engine.ts` | 恢复建议计算。 |
+| `src/domain/recovery/recovery-workout.service.ts` | session 动作与重量调整纯规则。 |
+| `src/data/local/repositories/recoveryRepository.ts` | scoped 每日记录、趋势与同步队列。 |
+| `src/features/recovery/RecoveryScreen.tsx` | 六项评估、建议和趋势页面。 |
 | `src/domain/plan/plan.service.ts` | `filterExercisesByRecovery`，按动作筛选状态过滤计划动作。 |
 | `app/(tabs)/today.tsx` | 展示“动作筛选”，并把筛选后的 `planExerciseIds` 传入 session 创建。 |
 | `src/tests/recovery.test.ts` | 恢复算法测试。 |

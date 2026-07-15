@@ -1,13 +1,17 @@
 ﻿# Recovery 测试计划
 
-更新时间：2026-06-09
+更新时间：2026-07-15
+
+## v2.10.0 自动化结果
+
+- 全量 Jest：50 套件、256 用例通过。
+- 恢复相关：评分阈值/硬规则/连续低状态、六项 UI model、当日幂等、账号与小组隔离、pull 精确挂载、A/B/C 过滤、无 A 防空 session、重量取整、0/空重量保护。
 
 ## 1. 单元测试范围
 
-- 高分 -> normal。
-- 中等 -> remove_c。
-- 较低 -> only_a。
-- 关节痛高 -> only_a / bad。
+- 25–30 且无硬风险 -> normal；21–24 -> remove_c；17–20 -> reduce_weight；13–16 -> only_a；不高于 12 -> rest。
+- fatigue=4 / soreness=4、joint=4、joint/fatigue=5、明显不适等硬规则。
+- 连续三条低建议且均分低于 17 -> deload；不自动改计划周期。
 
 ## 2. 集成测试范围
 

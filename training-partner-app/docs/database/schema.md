@@ -2,6 +2,13 @@
 
 更新时间：2026-07-06
 
+## 2026-07-15 补充：恢复状态不新增 migration
+
+- 现有 `recovery_logs` 已包含六项评分、total、recommendation、owner、sync metadata 和 soft delete 字段，本轮不改表。
+- 逻辑唯一键为 `owner_user_id + member_id + date`；Repository 在排他事务中查询并 upsert，新记录 ID 由该三元组确定性生成。
+- pull 同样优先复用当前 owner/member/date 的本地行，避免不同设备同日记录形成重复展示。
+- 不新增 PostgreSQL migration；通用 `recoveryLogs` sync entity 已能承载当前字段。
+
 ## 2026-07-11 补充：P1 周期、报告与历史筛选
 
 - 本轮无 migration；继续使用 migration v23 已存在的 `plan_cycles`、`plan_cycle_summaries` 和 `training_reports`。

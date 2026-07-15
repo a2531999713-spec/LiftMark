@@ -2,6 +2,14 @@
 
 更新时间：2026-07-15
 
+## 2026-07-15 契约补充：恢复状态
+
+- `RecoveryRepository.getDailyLog/upsertDailyLog/listMemberLogs/getLatestLog/getRecentAssessmentTrend/softDeleteLog` 均要求显式 `ownerUserId + memberId`。
+- Repository 必须确认 owner 等于当前认证账号，且 member 通过未删除 group/member scoped join 可见。
+- `upsertDailyLog` 在排他事务中按 owner/member/date 查找；新记录使用确定性 ID，已有记录保留原 ID 和 `created_at`。
+- 本地保存成功后才 enqueue `recoveryLogs`；读取和趋势排除软删除行，不跨小组按昵称推断成员。
+- `WorkoutRepository.applyRecoveryWeightReduction` 只接受显式 session/member 列表并返回更新/跳过组数量。
+
 ## 2026-07-15 契约补充：系统计划完整预览与激活周期
 
 - `PlanRepository.listPlanExercisesForDays(planDayIds)` 必须通过 `plan_days -> plan_templates` scoped join 批量返回处方，空 ID 数组直接返回空数组；详情页不得逐 day 调用 `listPlanExercises()`。

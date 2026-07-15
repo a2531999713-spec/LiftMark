@@ -3,6 +3,11 @@
 更新时间：2026-07-15
 对应代码目录：`training-partner-app/`
 
+## 2026-07-15 恢复调整边界
+
+- 恢复建议从完整当日 `PlanExercise[]` 在内存中筛选，并只把选中的 ID 写入新 session 快照。
+- 不更新 `plan_templates`、`plan_days` 或 `plan_exercises`；系统模板和用户计划处方保持不变。
+
 ## 2026-07-15 系统计划库与预览
 
 - `app/plan/library.tsx` 只处理目录元数据；`app/plan/scheme/[schemeId].tsx` 处理单方案详情与复制动作。

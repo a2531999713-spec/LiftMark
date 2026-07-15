@@ -1,5 +1,14 @@
 ﻿# LiftMark 项目交接记录
 
+## 2026-07-15 v2.10.0 恢复状态交接
+
+- 新路由 `/recovery`；Today 独立异步加载今日成员的状态，失败不阻塞计划或开始训练。
+- 新增 scoped `RecoveryRepository`、完整恢复引擎、session 调整 service 和 recovery pull。
+- 同日编辑复用现有记录；确定性 ID 为 `recovery_{owner}_{member}_{date}`，旧记录则保留原 ID。
+- 小组共享动作结构保持不变；最保守已评估状态只作为默认建议，必须确认，可按原计划拒绝。
+- 调整只作用于新 session；不修改 plan、历史 session/set 或 progression suggestion。
+- 无 migration、API/PostgreSQL 和服务器部署。typecheck、lint、50 套件/256 用例已通过。
+
 ## 2026-07-15 v2.9.0 推荐计划库交接
 
 - 新路由：`/plan/library`、`/plan/scheme/[schemeId]`；计划页和探索页旧方案预览弹层已停用。

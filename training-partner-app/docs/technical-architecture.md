@@ -1,3 +1,13 @@
+## 2026-07-15 v2.10.0 恢复状态架构
+
+- `domain/recovery/recovery-engine.ts` 只负责六项评分、阈值、硬覆盖和确定性 reasons；不返回颜色或 JSX。
+- `recovery-workout.service.ts` 将 recommendation 映射到共享动作快照与重量调整，纯函数不写 plan。
+- `SQLiteRecoveryRepository` 的所有查询从当前 owner 与可见 group/member scope 进入，同成员同日本地事务 upsert 后入队。
+- Today 计划和恢复状态分两条加载链；恢复失败只影响状态卡，避免“首页暂时无法加载”。
+- 恢复动作过滤只使用内存中的完整 `PlanExercise[]`；session 创建后才在单一事务中调整当前 session、所选成员、未完成且未跳过的 sets。
+- pull 仅按 member id/local_member_id/remote_id 在当前可见小组内精确挂载，不按昵称推断。
+- 现有 schema 与 generic sync contract 足够，无移动端/后端 migration 或 API 变更。
+
 ## 2026-07-15 v2.9.0 系统计划库与预览架构
 
 - `features/plan-library/systemPlanLibrary.ts` 承载纯筛选、稳定排序和结构化目录校验。

@@ -3,6 +3,13 @@
 更新时间：2026-07-15
 对应代码目录：`training-partner-app/`；Sprint 1 已创建基础类型和 Repository 骨架，稳定性 Sprint 新增进阶建议中文展示映射。
 
+## 2026-07-15 与恢复建议的关系
+
+- progression 是长期“下次训练”建议；recovery 是当天、当前 session 的临时调整。
+- 执行页先显示上次 progression 建议，再显示今日降幅与取整后的本次建议。
+- 应用 progression 时，如本 session 已确认恢复降重，则先按 progression 基准再应用今日降幅。
+- 永不修改 `progression_suggestions.suggested_weight`，不会因单日恢复不足把长期建议改为 decrease。
+
 ## 1. 模块职责
 
 训练完成后基于完成情况、失败次数和双进阶规则生成下次建议。v2.8.0 已实现纯领域规则、按账号/小组隔离的 SQLite Repository、确定性 ID 幂等写入与后台生成；建议不会修改训练计划或历史训练。

@@ -3,6 +3,14 @@
 更新时间：2026-07-03  
 对应代码目录：`training-partner-app/`；Sprint 4 已实现从今日训练创建 session、生成 records/sets、训练执行页和即时保存。
 
+## 2026-07-15 addendum: recovery-only session adjustment
+
+- 开始训练使用完整计划生成原始选择，再根据已确认建议过滤共享动作快照；无 A 动作时不创建空 session。
+- 临时降重只处理当前账号可见的新 session、所选成员、未完成/未跳过/未删除的计划组。
+- 默认降幅 7.5%，按成员器械增量取整；0、null、NaN 或负数不写入。
+- 预填 `actual_weight` 仅在仍等于旧 `planned_weight` 时同步更新，绝不覆盖手工重量。
+- 计划、历史 session、已完成组和其他成员均不修改。
+
 ## 2026-07-03 addendum: pending training upload and accept
 
 - `app/workout/upload-members.tsx` only lists real group members with `userId`; local members are skipped with an inline notice.

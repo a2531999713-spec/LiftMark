@@ -6,6 +6,15 @@
 
 ## 当前目标
 
+### 2026-07-15 v2.10.0 状态
+
+- `/recovery`、今日紧凑状态卡、六项评分、趋势与同日编辑已实现。
+- 开始训练采用内存动作过滤；确认后只写新 session 快照和该 session 的未完成组重量。
+- 小组成员状态独立保存；最保守状态只作为共享 session 调整建议，用户可拒绝。
+- `RecoveryRepository` 使用当前 owner + 可见 group/member scope；本地成功后再后台同步。
+- 没有 SQLite/PostgreSQL migration、API 或部署变更；每成员独立动作结构仍延期。
+- 详细交接见 `12_recovery_readiness_2026-07-15.md`。
+
 ### 2026-07-15 v2.9.0 状态
 
 - 推荐计划库与完整系统方案详情已经实现；入口为 `/plan/library` 与 `/plan/scheme/[schemeId]`。
