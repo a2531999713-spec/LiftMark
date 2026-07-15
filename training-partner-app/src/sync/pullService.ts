@@ -1143,6 +1143,115 @@ async function applyTrainingReminders(
   return applied;
 }
 
+async function applyRecoveryLogs(
+  db: LocalDatabase,
+  rows: ServerRow[],
+  currentUserId: string,
+  reclaimExisting: boolean,
+): Promise<number> {
+  let applied = 0;
+  const validRecommendations = new Set([
+    'normal',
+    'remove_c',
+    'only_a',
+    'reduce_weight',
+    'deload',
+    'rest',
+  ]);
+
+  for (const row of rows) {
+    const payload = normalizePayload(row);
+    const remoteMemberId =
+      asString(pick(payload, ['memberId', 'member_id', 'memberClientId'])) ?? row.member_client_id;
+    const date = asString(pick(payload, ['date']));
+    if (!remoteMemberId || !date) continue;
+
+    const visibleMember = await db.getFirstAsync<{ id: string }>(
+      `SELECT gm.id
+       FROM group_members gm
+       INNER JOIN groups g ON g.id = gm.group_id
+       WHERE (gm.id = ? OR gm.local_member_id = ? OR gm.remote_id = ?)
+         AND gm.deleted_at IS NULL
+         AND g.deleted_at IS NULL
+         AND (
+           g.owner_user_id = ?
+           OR EXISTS (
+             SELECT 1 FROM group_members account_member
+             WHERE account_member.group_id = g.id
+               AND account_member.user_id = ?
+               AND account_member.deleted_at IS NULL
+           )
+         )
+       LIMIT 1`,
+      remoteMemberId,
+      remoteMemberId,
+      remoteMemberId,
+      currentUserId,
+      currentUserId,
+    );
+    if (!visibleMember) continue;
+
+    const scores = [
+      asInt(pick(payload, ['sleepScore', 'sleep_score'])),
+      asInt(pick(payload, ['appetiteScore', 'appetite_score'])),
+      asInt(pick(payload, ['motivationScore', 'motivation_score'])),
+      asInt(pick(payload, ['sorenessScore', 'soreness_score'])),
+      asInt(pick(payload, ['jointPainScore', 'joint_pain_score'])),
+      asInt(pick(payload, ['fatigueScore', 'fatigue_score'])),
+    ];
+    const totalScore = asInt(pick(payload, ['totalScore', 'total_score']));
+    if (scores.some((score) => score === null || score < 1 || score > 5) || totalScore === null) {
+      continue;
+    }
+    const recommendationValue = asString(pick(payload, ['recommendation'])) ?? 'normal';
+    const recommendation = validRecommendations.has(recommendationValue)
+      ? recommendationValue
+      : 'normal';
+    const existingDaily = await db.getFirstAsync<{ id: string }>(
+      `SELECT id FROM recovery_logs
+       WHERE owner_user_id = ? AND member_id = ? AND date = ?
+       ORDER BY updated_at DESC LIMIT 1`,
+      currentUserId,
+      visibleMember.id,
+      date,
+    );
+    const serverUpdatedAt = resolveTimestamp(row);
+    const insertValues: DbValue[] = [
+      existingDaily?.id ?? asString(pick(payload, ['id'])) ?? row.client_id ?? row.id,
+      visibleMember.id,
+      date,
+      ...(scores as number[]),
+      totalScore,
+      recommendation,
+      asString(pick(payload, ['createdAt', 'created_at'])) ?? row.created_at,
+      asString(pick(payload, ['updatedAt', 'updated_at'])) ?? serverUpdatedAt,
+    ];
+    const wrote = await upsertWithRemoteId(db, {
+      table: 'recovery_logs',
+      localId: insertValues[0] as string,
+      remoteId: row.id,
+      reclaimExisting,
+      serverUpdatedAt,
+      serverDeletedAt: row.deleted_at,
+      currentUserId,
+      insertColumns: [
+        'id', 'member_id', 'date', 'sleep_score', 'appetite_score', 'motivation_score',
+        'soreness_score', 'joint_pain_score', 'fatigue_score', 'total_score',
+        'recommendation', 'created_at', 'updated_at',
+      ],
+      insertValues,
+      updateColumns: [
+        'member_id', 'date', 'sleep_score', 'appetite_score', 'motivation_score',
+        'soreness_score', 'joint_pain_score', 'fatigue_score', 'total_score',
+        'recommendation', 'created_at', 'updated_at',
+      ],
+      updateValues: insertValues.slice(1),
+    });
+    if (wrote) applied += 1;
+  }
+  return applied;
+}
+
 /**
  * Progression suggestions are only meaningful when all three referenced local entities
  * are visible in the current account and group.  Do not let a remote payload widen
@@ -1672,6 +1781,7 @@ export async function pullFromServer(
     ['trainingReports', () => applyTrainingReports(db, (changes.trainingReports as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['planCycleSummaries', () => applyPlanCycleSummaries(db, (changes.planCycleSummaries as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['trainingReminders', () => applyTrainingReminders(db, (changes.trainingReminders as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
+    ['recoveryLogs', () => applyRecoveryLogs(db, (changes.recoveryLogs as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['progressionSuggestions', () => applyProgressionSuggestions(db, (changes.progressionSuggestions as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
     ['bodyMetrics', () => applyBodyMetrics(db, (changes.bodyMetrics as ServerRow[] | undefined) ?? [], currentUserId, reclaimExisting)],
   ];

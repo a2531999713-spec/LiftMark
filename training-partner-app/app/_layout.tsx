@@ -118,6 +118,7 @@ export default function RootLayout() {
         <Stack.Screen name="workout/[sessionId]" options={{ headerShown: false }} />
         <Stack.Screen name="workout/summary/[sessionId]" options={{ headerShown: false }} />
         <Stack.Screen name="report/[sessionId]" options={{ headerShown: false }} />
+        <Stack.Screen name="recovery" options={{ headerShown: false }} />
         <Stack.Screen name="member/new" options={{ headerShown: false }} />
         <Stack.Screen name="member/[memberId]" options={{ headerShown: false }} />
         <Stack.Screen name="history/manual" options={{ headerShown: false }} />

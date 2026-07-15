@@ -5,6 +5,7 @@ import { SQLiteGroupRepository } from './groupRepository';
 import { SQLiteMemberRepository } from './memberRepository';
 import { SQLitePlanRepository } from './planRepository';
 import { SQLiteProgressionRepository } from './progressionRepository';
+import { SQLiteRecoveryRepository } from './recoveryRepository';
 import { SQLiteUserPreferencesRepository } from './userPreferencesRepository';
 import { SQLiteWorkoutRepository } from './workoutRepository';
 import { SQLiteTrainingReportRepository } from './trainingReportRepository';
@@ -22,6 +23,7 @@ export function createLocalRepositories() {
     userPreferencesRepository: new SQLiteUserPreferencesRepository(getDatabase),
     workoutRepository: new SQLiteWorkoutRepository(getDatabase),
     progressionRepository: new SQLiteProgressionRepository(getDatabase),
+    recoveryRepository: new SQLiteRecoveryRepository(getDatabase),
     trainingReportRepository: new SQLiteTrainingReportRepository(getDatabase),
     trainingReminderRepository: new SQLiteTrainingReminderRepository(getDatabase),
   };
