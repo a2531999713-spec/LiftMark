@@ -2,6 +2,7 @@ import { createId } from '@/domain/common/ids';
 import { nowIso } from '@/domain/common/time';
 import type { WorkoutRepository } from '@/data/repositories/workoutRepository';
 import { calculateSuggestedWeight } from '@/domain/weight/weight-calculator';
+import { calculateRecoveryAdjustedWeight } from '@/domain/recovery/recovery-workout.service';
 import { FREE_TRAINING_PLAN_ID } from '@/domain/workout/workout.types';
 import { getPlanExerciseInitialReps, getPlanExerciseSetCount } from '@/domain/workout/workout.service';
 import { estimateTrainingCalories, getTrainingIntensityLevel } from '@/domain/report/trainingReport.service';
@@ -14,6 +15,8 @@ import type {
   CreateManualSessionV2Input,
   AddWorkoutExerciseInput,
   AddWorkoutSetInput,
+  ApplyRecoveryWeightReductionInput,
+  ApplyRecoveryWeightReductionResult,
   ManualWorkoutExerciseInput,
   ListHistorySessionsByScopeInput,
   ListOpenWorkoutSessionsForDateInput,
@@ -795,6 +798,116 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     }
 
     return session;
+  }
+
+  async applyRecoveryWeightReduction(
+    input: ApplyRecoveryWeightReductionInput,
+  ): Promise<ApplyRecoveryWeightReductionResult> {
+    const memberIds = [...new Set(input.memberIds)];
+    if (memberIds.length === 0) return { skippedSetCount: 0, updatedSetCount: 0 };
+    const db = await this.getDb();
+    const ownerUserId = await getRequiredCurrentUserId();
+    const session = await db.getFirstAsync<{ group_id: string; id: string }>(
+      `SELECT id, group_id FROM workout_sessions
+       WHERE id = ? AND owner_user_id = ? AND status IN ('draft', 'in_progress')
+         AND deleted_at IS NULL
+       LIMIT 1`,
+      input.sessionId,
+      ownerUserId,
+    );
+    if (!session) throw new Error('Recovery adjustment target session is not visible or editable.');
+
+    const memberPlaceholders = memberIds.map(() => '?').join(', ');
+    const rows = await db.getAllAsync<{
+      actual_weight: number | null;
+      barbell_increment: number | null;
+      dumbbell_increment: number | null;
+      equipment: string | null;
+      id: string;
+      member_id: string;
+      planned_weight: number | null;
+    }>(
+      `SELECT sets.id, sets.member_id, sets.planned_weight, sets.actual_weight,
+              exercises.equipment, profiles.barbell_increment, profiles.dumbbell_increment
+       FROM workout_sets sets
+       INNER JOIN workout_exercise_records records
+         ON records.id = sets.exercise_record_id AND records.session_id = sets.session_id
+       INNER JOIN workout_sessions sessions
+         ON sessions.id = sets.session_id AND sessions.owner_user_id = sets.owner_user_id
+       INNER JOIN group_members members
+         ON members.id = sets.member_id AND members.group_id = sessions.group_id
+       LEFT JOIN exercises ON exercises.id = records.exercise_id
+       LEFT JOIN member_profiles profiles
+         ON profiles.member_id = sets.member_id
+        AND profiles.group_id = sessions.group_id
+        AND profiles.owner_user_id = sessions.owner_user_id
+        AND profiles.deleted_at IS NULL
+       WHERE sets.session_id = ?
+         AND sets.member_id IN (${memberPlaceholders})
+         AND sets.owner_user_id = ?
+         AND sets.completed = 0
+         AND sets.skipped = 0
+         AND sets.deleted_at IS NULL
+         AND members.deleted_at IS NULL`,
+      input.sessionId,
+      ...memberIds,
+      ownerUserId,
+    );
+
+    const now = nowIso();
+    const updated: { id: string; memberId: string; plannedWeight: number }[] = [];
+    let skippedSetCount = 0;
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const row of rows) {
+        const profileIncrement = row.equipment === 'dumbbell'
+          ? row.dumbbell_increment
+          : row.barbell_increment;
+        const adjustedWeight = calculateRecoveryAdjustedWeight(
+          row.planned_weight,
+          input.reductionPercent ?? 7.5,
+          profileIncrement && profileIncrement > 0 ? profileIncrement : 2.5,
+        );
+        if (adjustedWeight === null) {
+          skippedSetCount += 1;
+          continue;
+        }
+        await txn.runAsync(
+          `UPDATE workout_sets
+           SET planned_weight = ?,
+               actual_weight = CASE WHEN actual_weight = planned_weight THEN ? ELSE actual_weight END,
+               updated_at = ?
+           WHERE id = ? AND owner_user_id = ? AND session_id = ?
+             AND completed = 0 AND skipped = 0 AND deleted_at IS NULL`,
+          adjustedWeight,
+          adjustedWeight,
+          now,
+          row.id,
+          ownerUserId,
+          input.sessionId,
+        );
+        updated.push({ id: row.id, memberId: row.member_id, plannedWeight: adjustedWeight });
+      }
+    });
+
+    await Promise.all(
+      updated.map((set) =>
+        enqueueSyncCandidate({
+          entityType: 'workoutSets',
+          localId: set.id,
+          operation: 'update',
+          ownerUserId,
+          payload: {
+            groupId: session.group_id,
+            memberId: set.memberId,
+            plannedWeight: set.plannedWeight,
+            sessionId: input.sessionId,
+          },
+          status: 'pending_update',
+          updatedAt: now,
+        }),
+      ),
+    );
+    return { skippedSetCount, updatedSetCount: updated.length };
   }
 
   async createManualSessionV2(input: CreateManualSessionV2Input): Promise<WorkoutSession> {

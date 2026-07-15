@@ -26,6 +26,7 @@ import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { ProgressionSuggestion } from '@/domain/progression/progression.types';
+import { calculateRecoveryAdjustedWeight } from '@/domain/recovery/recovery-workout.service';
 import { DEFAULT_BARBELL_INCREMENT, DEFAULT_DUMBBELL_INCREMENT } from '@/domain/weight/weight-calculator';
 import {
   WORKOUT_EXTRA_SET_NOTE,
@@ -162,7 +163,15 @@ function confirmExceptionalSetInput(weight: number, reps: number): Promise<boole
 }
 
 export default function WorkoutRoute() {
-  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const { recoveryReductionPercent, sessionId } = useLocalSearchParams<{
+    recoveryReductionPercent?: string;
+    sessionId: string;
+  }>();
+  const parsedRecoveryReduction = Number(recoveryReductionPercent);
+  const activeRecoveryReduction =
+    Number.isFinite(parsedRecoveryReduction) && parsedRecoveryReduction > 0
+      ? parsedRecoveryReduction
+      : null;
   const repositories = useMemo(() => createLocalRepositories(), []);
   const { authMode, guardFeature, sheets } = useAuthGate();
   const { preferences } = useUserPreferences();
@@ -706,6 +715,15 @@ export default function WorkoutRoute() {
     return prefIncrement || profileIncrement;
   }, [currentProfile, activeExercise, preferences.weightIncrement]);
 
+  const progressionWeightAfterRecovery =
+    activeRecoveryReduction === null || activeProgressionSuggestion?.suggestedWeight === undefined
+      ? (activeProgressionSuggestion?.suggestedWeight ?? null)
+      : calculateRecoveryAdjustedWeight(
+          activeProgressionSuggestion.suggestedWeight,
+          activeRecoveryReduction,
+          currentIncrement,
+        );
+
   useEffect(() => {
     let cancelled = false;
     const exerciseId = activeRecord?.exerciseId;
@@ -738,9 +756,15 @@ export default function WorkoutRoute() {
     if (!activeProgressionSuggestion || !activeRecord || !detail || activeProgressionSuggestion.suggestedWeight === undefined) return;
     const pendingSets = activeSets.filter((set) => set.memberId === currentMemberId && !set.completed && !set.skipped);
     if (pendingSets.length === 0) return;
+    const nextWeight = progressionWeightAfterRecovery;
+    if (nextWeight === null) return;
     const apply = async () => {
       for (const set of pendingSets) {
-        await saveSetPatch(set, { plannedWeight: activeProgressionSuggestion.suggestedWeight });
+        const actualWeightWasPrefilled = set.actualWeight === set.plannedWeight;
+        await saveSetPatch(set, {
+          ...(actualWeightWasPrefilled ? { actualWeight: nextWeight } : {}),
+          plannedWeight: nextWeight,
+        });
       }
       setActiveProgressionSuggestion(null);
     };
@@ -755,7 +779,15 @@ export default function WorkoutRoute() {
       return;
     }
     await apply();
-  }, [activeProgressionSuggestion, activeRecord, activeSets, currentMemberId, detail, saveSetPatch]);
+  }, [
+    activeProgressionSuggestion,
+    activeRecord,
+    activeSets,
+    currentMemberId,
+    detail,
+    progressionWeightAfterRecovery,
+    saveSetPatch,
+  ]);
   const previousCompletedWeightForCurrentSet = currentDisplaySet
     ? [...activeSets]
         .filter(
@@ -1716,20 +1748,38 @@ export default function WorkoutRoute() {
                 />
               ) : null}
 
-              {activeProgressionSuggestion?.suggestedWeight !== undefined ? (
+              {activeProgressionSuggestion?.suggestedWeight !== undefined || activeRecoveryReduction !== null ? (
                 <AppCard style={styles.progressionCard} tone="soft">
                   <View style={styles.progressionIcon}>
                     <Ionicons color={colors.primary} name="trending-up-outline" size={20} />
                   </View>
                   <View style={styles.progressionCopy}>
-                    <AppText tone="muted" variant="caption">上次建议</AppText>
-                    <AppText variant="bodySmall" weight="900">
-                      {activeProgressionSuggestion.suggestion === 'increase' ? '加重至' : '参考重量'} {activeProgressionSuggestion.suggestedWeight} kg
-                    </AppText>
+                    {activeProgressionSuggestion?.suggestedWeight !== undefined ? (
+                      <>
+                        <AppText tone="muted" variant="caption">上次建议</AppText>
+                        <AppText variant="bodySmall" weight="900">
+                          {activeProgressionSuggestion.suggestion === 'increase' ? '加重至' : '参考重量'} {activeProgressionSuggestion.suggestedWeight} kg
+                        </AppText>
+                      </>
+                    ) : null}
+                    {activeRecoveryReduction !== null ? (
+                      <>
+                        <AppText tone="warning" variant="caption" weight="800">
+                          今日恢复调整：临时降低 {activeRecoveryReduction}%
+                        </AppText>
+                        {progressionWeightAfterRecovery ?? currentDisplaySet?.plannedWeight ? (
+                          <AppText variant="bodySmall" weight="900">
+                            本次建议 {progressionWeightAfterRecovery ?? currentDisplaySet?.plannedWeight} kg
+                          </AppText>
+                        ) : null}
+                      </>
+                    ) : null}
                   </View>
-                  <AppButton onPress={() => void applyActiveProgressionSuggestion()} size="sm">
-                    应用到本次
-                  </AppButton>
+                  {activeProgressionSuggestion?.suggestedWeight !== undefined ? (
+                    <AppButton onPress={() => void applyActiveProgressionSuggestion()} size="sm">
+                      应用到本次
+                    </AppButton>
+                  ) : null}
                 </AppCard>
               ) : null}
 

@@ -24,6 +24,7 @@ import {
 } from '@/components/home';
 import { AppButton, AppCard, AppModalSheet, AppText, EmptyState, Screen, Tag } from '@/components/ui';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
+import { getRequiredCurrentUserId } from '@/data/local/accountScope';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { Group } from '@/domain/group/group.types';
 import { resolveDefaultTrainingMember, resolveDefaultTrainingMemberId } from '@/domain/member/member-selection';
@@ -39,6 +40,12 @@ import type {
   Weekday,
 } from '@/domain/plan/plan.types';
 import type { RecoveryMode } from '@/domain/plan/plan.service';
+import {
+  resolveRecoveryWorkoutAdjustment,
+  shouldPromptForRecovery,
+  summarizeMemberRecovery,
+} from '@/domain/recovery/recovery-workout.service';
+import type { RecoveryAssessmentResult } from '@/domain/recovery/recovery.types';
 import { resolveHomeStatus, type HomeStatus } from '@/domain/home/home-status';
 import { calculateSuggestedWeight } from '@/domain/weight/weight-calculator';
 import type {
@@ -47,6 +54,11 @@ import type {
 } from '@/domain/workout/workout.types';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { loadHomeDashboardSnapshot } from '@/features/home/application/loadHomeDashboard.usecase';
+import { RecoveryStatusCard } from '@/features/recovery/RecoveryStatusCard';
+import {
+  getAssessmentForLog,
+  getRecoveryRecommendationLabel,
+} from '@/features/recovery/recoveryPresentation';
 import {
   deleteAccountAvatar,
   getAccountProfileCache,
@@ -75,6 +87,28 @@ type NoticeState = {
   message: string;
   title: string;
 };
+
+type RecoveryWeightIntent = {
+  memberIds: string[];
+  reductionPercent: number;
+};
+
+type RecoveryStartProposal = {
+  adjustedInput: CreateSessionFromTodayPlanInput | null;
+  assessment: RecoveryAssessmentResult;
+  originalInput: CreateSessionFromTodayPlanInput;
+  removedExerciseNames: string[];
+  unassessedCount: number;
+  weightIntent: RecoveryWeightIntent | null;
+};
+
+function getMemberRecoveryLabel(assessment: RecoveryAssessmentResult | null | undefined): string {
+  if (!assessment) return '未评估';
+  if (assessment.status === 'good') return '状态良好';
+  if (assessment.status === 'normal') return '状态一般';
+  if (assessment.status === 'rest') return '更适合恢复';
+  return '恢复不足';
+}
 
 type WeeklyOverview = {
   completedSets: number;
@@ -556,6 +590,9 @@ export default function TodayRoute() {
   const [isAccountMenuVisible, setAccountMenuVisible] = useState(false);
   const [isDaySheetVisible, setDaySheetVisible] = useState(false);
   const [isScopeSheetVisible, setScopeSheetVisible] = useState(false);
+  const [isRecoveryPromptVisible, setRecoveryPromptVisible] = useState(false);
+  const [recoveryStartProposal, setRecoveryStartProposal] = useState<RecoveryStartProposal | null>(null);
+  const [isRestOverrideConfirmation, setRestOverrideConfirmation] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
   const [selectedWeekday, setSelectedWeekday] = useState<Weekday | null>(null);
   const [isPlanSelectionManual, setPlanSelectionManual] = useState(false);
@@ -564,6 +601,8 @@ export default function TodayRoute() {
   const [conflictingSession, setConflictingSession] = useState<WorkoutSession | null>(null);
   const [pendingWorkoutStart, setPendingWorkoutStart] =
     useState<CreateSessionFromTodayPlanInput | null>(null);
+  const [pendingRecoveryWeightIntent, setPendingRecoveryWeightIntent] =
+    useState<RecoveryWeightIntent | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -572,7 +611,14 @@ export default function TodayRoute() {
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const [announcementVisible, setAnnouncementVisible] = useState(false);
   const [latestWeightLabel, setLatestWeightLabel] = useState<string | null>(null);
+  const [recoveryByMemberId, setRecoveryByMemberId] = useState<
+    Record<string, RecoveryAssessmentResult | null>
+  >({});
+  const [isRecoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryLoadFailed, setRecoveryLoadFailed] = useState(false);
   const loadHomeRequestRef = useRef(0);
+  const recoveryPromptDismissedRef = useRef(false);
+  const recoveryPromptScopeRef = useRef<string | null>(null);
   const lastAnnouncementFetchRef = useRef(0);
   const ANNOUNCEMENT_FETCH_THROTTLE_MS = 5 * 60 * 1000;
   // 用 ref 存储 group/todayPlan 用于 hasData 判断，避免放进 loadHome 依赖列表导致无限循环
@@ -865,6 +911,64 @@ export default function TodayRoute() {
     }, [loadHome]),
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      const scopeKey = group?.id ?? null;
+      if (recoveryPromptScopeRef.current !== scopeKey) {
+        recoveryPromptScopeRef.current = scopeKey;
+        recoveryPromptDismissedRef.current = false;
+      }
+      if (!group || members.length === 0) {
+        setRecoveryByMemberId({});
+        setRecoveryLoading(false);
+        setRecoveryLoadFailed(false);
+        return () => {
+          cancelled = true;
+        };
+      }
+
+      setRecoveryLoading(true);
+      setRecoveryLoadFailed(false);
+      setRecoveryByMemberId(
+        Object.fromEntries(members.map((member) => [member.id, null])),
+      );
+      void (async () => {
+        try {
+          const ownerUserId = await getRequiredCurrentUserId();
+          const logs = await Promise.all(
+            members.map((member) =>
+              repositories.recoveryRepository.getDailyLog({
+                date: getLocalDateString(),
+                memberId: member.id,
+                ownerUserId,
+              }),
+            ),
+          );
+          if (cancelled) return;
+          setRecoveryByMemberId(
+            Object.fromEntries(
+              members.map((member, index) => [
+                member.id,
+                logs[index] ? getAssessmentForLog(logs[index]!) : null,
+              ]),
+            ),
+          );
+        } catch (recoveryError) {
+          if (cancelled) return;
+          console.warn('[home] recovery status load failed', recoveryError);
+          setRecoveryLoadFailed(true);
+        } finally {
+          if (!cancelled) setRecoveryLoading(false);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [group, members, repositories]),
+  );
+
   const loadAnnouncement = useCallback(async () => {
     if (authStatus !== 'authenticated' && authStatus !== 'offline_authenticated') {
       return;
@@ -912,7 +1016,9 @@ export default function TodayRoute() {
     }
   }, [guardFeature, loadHome, repositories, selectedGroupId, setSelectedGroupId, user]);
 
-  const resolveSelectedWorkoutPlan = useCallback(async (): Promise<TodayPlanResult | null> => {
+  const resolveSelectedWorkoutPlan = useCallback(async (
+    mode: RecoveryMode = recoveryMode,
+  ): Promise<TodayPlanResult | null> => {
     if (!group || !activePlan) {
       return null;
     }
@@ -942,7 +1048,7 @@ export default function TodayRoute() {
         groupId: group.id,
         phaseType: phaseForSelectedWeek?.type ?? group.currentPhaseType,
         planId: activePlan.id,
-        recoveryMode,
+        recoveryMode: mode,
         weekday,
       });
     } catch (planError) {
@@ -965,7 +1071,7 @@ export default function TodayRoute() {
             groupId: compatibility.group.id,
             phaseType: repairedPhaseForWeek?.type ?? compatibility.group.currentPhaseType,
             planId: activePlan.id,
-            recoveryMode,
+            recoveryMode: mode,
             weekday,
           });
           setPlanPhases(repairedPhases);
@@ -997,7 +1103,7 @@ export default function TodayRoute() {
     todayWeekday,
   ]);
 
-  const openWorkoutScope = useCallback(async () => {
+  const openWorkoutScope = useCallback(async (options?: { skipRecoveryPrompt?: boolean }) => {
     if (!guardFeature('start_workout')) {
       return;
     }
@@ -1070,10 +1176,33 @@ export default function TodayRoute() {
       return;
     }
 
+    const shouldPromptForAssessment = shouldPromptForRecovery({
+      currentMemberId: currentMemberId ?? null,
+      dismissed: recoveryPromptDismissedRef.current,
+      hasDailyAssessment: Boolean(currentMemberId && recoveryByMemberId[currentMemberId]),
+      loadFailed: recoveryLoadFailed,
+      loading: isRecoveryLoading,
+      skipPrompt: options?.skipRecoveryPrompt,
+    });
+    if (shouldPromptForAssessment) {
+      setRecoveryPromptVisible(true);
+      return;
+    }
+
     setRecordScope(nextScope);
     setSelectedParticipantIds(participantMemberIds);
     setScopeSheetVisible(true);
-  }, [group, guardFeature, members, repositories, resolveSelectedWorkoutPlan, user?.id]);
+  }, [
+    group,
+    guardFeature,
+    isRecoveryLoading,
+    members,
+    recoveryByMemberId,
+    recoveryLoadFailed,
+    repositories,
+    resolveSelectedWorkoutPlan,
+    user?.id,
+  ]);
 
   const toggleParticipant = useCallback((memberId: string) => {
     setSelectedParticipantIds((current) =>
@@ -1084,7 +1213,10 @@ export default function TodayRoute() {
   }, []);
 
   const createWorkoutSession = useCallback(
-    async (input: CreateSessionFromTodayPlanInput) => {
+    async (
+      input: CreateSessionFromTodayPlanInput,
+      weightIntent: RecoveryWeightIntent | null = null,
+    ) => {
       const session = await repositories.workoutRepository.createSessionFromTodayPlan(input);
       void enqueueSyncCandidate({
         entityType: 'workoutSessions',
@@ -1108,6 +1240,13 @@ export default function TodayRoute() {
         status: 'pending_create',
         updatedAt: session.updatedAt,
       }).catch(() => undefined);
+      if (weightIntent) {
+        await repositories.workoutRepository.applyRecoveryWeightReduction({
+          memberIds: weightIntent.memberIds,
+          reductionPercent: weightIntent.reductionPercent,
+          sessionId: session.id,
+        });
+      }
       const detail = await repositories.workoutRepository.getSessionDetail(session.id);
       void Promise.all(
         detail.exercises.map((record) =>
@@ -1142,9 +1281,49 @@ export default function TodayRoute() {
       setScopeSheetVisible(false);
       setConflictingSession(null);
       setPendingWorkoutStart(null);
-      router.push({ pathname: '/workout/[sessionId]', params: { sessionId: session.id } });
+      setPendingRecoveryWeightIntent(null);
+      router.push({
+        pathname: '/workout/[sessionId]',
+        params: {
+          sessionId: session.id,
+          ...(weightIntent
+            ? { recoveryReductionPercent: `${weightIntent.reductionPercent}` }
+            : {}),
+        },
+      });
     },
     [repositories],
+  );
+
+  const beginWorkoutStart = useCallback(
+    async (
+      input: CreateSessionFromTodayPlanInput,
+      weightIntent: RecoveryWeightIntent | null,
+    ) => {
+      const openSessions = await repositories.workoutRepository.listOpenSessionsForDate({
+        date: input.date,
+        groupId: input.groupId,
+      });
+      const matchingSession = openSessions.find((session) =>
+        isSameWorkoutSelection(session, input),
+      );
+      if (matchingSession) {
+        router.push({ pathname: '/workout/[sessionId]', params: { sessionId: matchingSession.id } });
+        return;
+      }
+      const conflict = openSessions.find((session) => !isSameWorkoutSelection(session, input));
+
+      if (conflict) {
+        setPendingWorkoutStart(input);
+        setPendingRecoveryWeightIntent(weightIntent);
+        setConflictingSession(conflict);
+        setScopeSheetVisible(false);
+        return;
+      }
+
+      await createWorkoutSession(input, weightIntent);
+    },
+    [createWorkoutSession, repositories],
   );
 
   const startWorkout = useCallback(async () => {
@@ -1170,7 +1349,7 @@ export default function TodayRoute() {
     setError(null);
 
     try {
-      const resolvedPlan = await resolveSelectedWorkoutPlan();
+      const resolvedPlan = await resolveSelectedWorkoutPlan('good');
 
       if (!group || !resolvedPlan?.day || resolvedPlan.isRestDay || resolvedPlan.exercises.length === 0) {
         setScopeSheetVisible(false);
@@ -1178,7 +1357,7 @@ export default function TodayRoute() {
         return;
       }
 
-      const startInput: CreateSessionFromTodayPlanInput = {
+      const originalInput: CreateSessionFromTodayPlanInput = {
         date: getLocalDateString(),
         groupId: group.id,
         phaseId: resolvedPlan.phase.id,
@@ -1192,25 +1371,40 @@ export default function TodayRoute() {
         weekday: resolvedPlan.day.weekday,
       };
 
-      const openSessions = await repositories.workoutRepository.listOpenSessionsForDate({
-        date: startInput.date,
-        groupId: startInput.groupId,
-      });
-      const hasMatchingOpenSession = openSessions.some((session) =>
-        isSameWorkoutSelection(session, startInput),
-      );
-      const conflict = hasMatchingOpenSession
-        ? null
-        : openSessions.find((session) => !isSameWorkoutSelection(session, startInput));
-
-      if (conflict) {
-        setPendingWorkoutStart(startInput);
-        setConflictingSession(conflict);
+      const recoverySummary = summarizeMemberRecovery(participantMemberIds, recoveryByMemberId);
+      const mostConservative = recoverySummary.mostConservative;
+      if (mostConservative && mostConservative.recommendation !== 'normal') {
+        const adjustment = resolveRecoveryWorkoutAdjustment(
+          resolvedPlan.exercises,
+          mostConservative,
+        );
+        const adjustedInput = adjustment.canCreateSession
+          ? {
+              ...originalInput,
+              planExerciseIds: adjustment.exercises.map((exercise) => exercise.id),
+            }
+          : null;
+        setRecoveryStartProposal({
+          adjustedInput,
+          assessment: mostConservative,
+          originalInput,
+          removedExerciseNames: adjustment.removedExercises.map(
+            (planExercise) => exerciseMap[planExercise.exerciseId]?.name ?? '未命名动作',
+          ),
+          unassessedCount: recoverySummary.unassessedCount,
+          weightIntent: adjustment.weightReductionPercent
+            ? {
+                memberIds: participantMemberIds,
+                reductionPercent: adjustment.weightReductionPercent,
+              }
+            : null,
+        });
+        setRestOverrideConfirmation(false);
         setScopeSheetVisible(false);
         return;
       }
 
-      await createWorkoutSession(startInput);
+      await beginWorkoutStart(originalInput, null);
     } catch (startError) {
       // 用 setNotice 而非 setError：setError 会让整个首页显示"首页暂时无法加载"，而 setNotice 只弹友好提示
       setNotice({
@@ -1221,16 +1415,44 @@ export default function TodayRoute() {
       setIsStarting(false);
     }
   }, [
-    createWorkoutSession,
+    beginWorkoutStart,
+    exerciseMap,
     group,
     guardFeature,
     members,
     recordScope,
-    repositories,
+    recoveryByMemberId,
     resolveSelectedWorkoutPlan,
     selectedParticipantIds,
     user?.id,
   ]);
+
+  const confirmRecoveryStart = useCallback(
+    async (useAdjustment: boolean) => {
+      if (!recoveryStartProposal) return;
+      const input = useAdjustment
+        ? recoveryStartProposal.adjustedInput
+        : recoveryStartProposal.originalInput;
+      if (!input) return;
+      setIsStarting(true);
+      try {
+        await beginWorkoutStart(
+          input,
+          useAdjustment ? recoveryStartProposal.weightIntent : null,
+        );
+        setRecoveryStartProposal(null);
+        setRestOverrideConfirmation(false);
+      } catch (startError) {
+        setNotice({
+          title: '开始训练失败',
+          message: startError instanceof Error ? startError.message : '请稍后重试。',
+        });
+      } finally {
+        setIsStarting(false);
+      }
+    },
+    [beginWorkoutStart, recoveryStartProposal],
+  );
 
   const continueConflictingSession = useCallback(() => {
     if (!conflictingSession) {
@@ -1240,6 +1462,7 @@ export default function TodayRoute() {
     const sessionId = conflictingSession.id;
     setConflictingSession(null);
     setPendingWorkoutStart(null);
+    setPendingRecoveryWeightIntent(null);
     router.push({ pathname: '/workout/[sessionId]', params: { sessionId } });
   }, [conflictingSession]);
 
@@ -1256,7 +1479,7 @@ export default function TodayRoute() {
         id: conflictingSession.id,
         status: 'cancelled',
       });
-      await createWorkoutSession(pendingWorkoutStart);
+      await createWorkoutSession(pendingWorkoutStart, pendingRecoveryWeightIntent);
     } catch (startError) {
       setNotice({
         title: '开始训练失败',
@@ -1265,7 +1488,13 @@ export default function TodayRoute() {
     } finally {
       setIsStarting(false);
     }
-  }, [conflictingSession, createWorkoutSession, pendingWorkoutStart, repositories]);
+  }, [
+    conflictingSession,
+    createWorkoutSession,
+    pendingRecoveryWeightIntent,
+    pendingWorkoutStart,
+    repositories,
+  ]);
 
   const changeRecordScope = useCallback(
     (scope: WorkoutRecordScope) => {
@@ -1286,6 +1515,9 @@ export default function TodayRoute() {
 
   const currentMember = resolveDefaultTrainingMember(members, user?.id);
   const currentProfile = currentMember ? (profiles[currentMember.id] ?? null) : null;
+  const currentRecoveryAssessment = currentMember
+    ? (recoveryByMemberId[currentMember.id] ?? null)
+    : null;
   const planExercises = useMemo(() => todayPlan?.exercises ?? [], [todayPlan]);
   const focusExercises = useMemo(
     () => getFocusExercises(planExercises, exerciseMap),
@@ -1620,6 +1852,18 @@ export default function TodayRoute() {
                 subtitle={planSubtitle}
               />
 
+              <RecoveryStatusCard
+                assessment={currentRecoveryAssessment}
+                error={recoveryLoadFailed}
+                loading={isRecoveryLoading}
+                onPress={() =>
+                  router.push({
+                    pathname: '/recovery' as never,
+                    params: currentMember ? { memberId: currentMember.id } : {},
+                  })
+                }
+              />
+
               {isRestState ? (
                 <HomeEmptyState
                   actionLabel={todayPlan?.isRestDay ? '查看本周安排' : '调整动作筛选'}
@@ -1751,6 +1995,10 @@ export default function TodayRoute() {
         currentMemberId={currentMember?.id}
         isStarting={isStarting}
         members={members}
+        onAssessMember={(memberId) => {
+          setScopeSheetVisible(false);
+          router.push({ pathname: '/recovery' as never, params: { memberId } });
+        }}
         onClose={() => setScopeSheetVisible(false)}
         onScopeChange={changeRecordScope}
         onStart={() => void startWorkout()}
@@ -1758,13 +2006,176 @@ export default function TodayRoute() {
         scope={recordScope}
         selectedMemberIds={selectedParticipantIds}
         profiles={profiles}
+        recoveryByMemberId={recoveryByMemberId}
         visible={isScopeSheetVisible}
       />
+
+      <AppModalSheet
+        onClose={() => setRecoveryPromptVisible(false)}
+        position="center"
+        subtitle="花约 20 秒记录六项状态，或直接按原计划继续。"
+        title="今天还没有记录恢复状态"
+        visible={isRecoveryPromptVisible}
+      >
+        <View style={styles.recoveryPromptActions}>
+          <AppButton
+            onPress={() => {
+              setRecoveryPromptVisible(false);
+              router.push({
+                pathname: '/recovery' as never,
+                params: currentMember ? { memberId: currentMember.id } : {},
+              });
+            }}
+            size="lg"
+          >
+            快速评估
+          </AppButton>
+          <AppButton
+            onPress={() => {
+              recoveryPromptDismissedRef.current = true;
+              setRecoveryPromptVisible(false);
+              void openWorkoutScope({ skipRecoveryPrompt: true });
+            }}
+            size="lg"
+            variant="secondary"
+          >
+            直接开始
+          </AppButton>
+        </View>
+      </AppModalSheet>
+
+      <AppModalSheet
+        onClose={() => {
+          setRecoveryStartProposal(null);
+          setRestOverrideConfirmation(false);
+        }}
+        position="center"
+        subtitle={
+          isRestOverrideConfirmation
+            ? '今天的状态更适合恢复。确认后仍会使用完整原计划，本次不会应用恢复调整。'
+            : recoveryStartProposal?.unassessedCount
+              ? `还有 ${recoveryStartProposal.unassessedCount} 位成员未评估，本次建议仅供参考。`
+              : '建议来自所选成员中最保守的今日状态，只有确认后才应用到本次训练。'
+        }
+        title={isRestOverrideConfirmation ? '仍按原计划训练？' : '确认今日训练调整'}
+        visible={Boolean(recoveryStartProposal)}
+      >
+        {recoveryStartProposal ? (
+          <View style={styles.recoveryProposalBody}>
+            <AppCard style={styles.recoveryProposalSummary} tone="soft">
+              <View style={styles.recoveryProposalHeader}>
+                <View style={styles.recoveryProposalCopy}>
+                  <AppText variant="subtitle" weight="900">
+                    {recoveryStartProposal.assessment.title}
+                  </AppText>
+                  <AppText tone="muted" variant="bodySmall">
+                    {recoveryStartProposal.assessment.summary}
+                  </AppText>
+                </View>
+                <Tag
+                  label={getRecoveryRecommendationLabel(
+                    recoveryStartProposal.assessment.recommendation,
+                  )}
+                  tone={
+                    recoveryStartProposal.assessment.status === 'normal'
+                      ? 'brand'
+                      : recoveryStartProposal.assessment.status === 'low'
+                        ? 'warning'
+                        : 'danger'
+                  }
+                />
+              </View>
+              {recoveryStartProposal.weightIntent ? (
+                <AppText tone="warning" variant="bodySmall" weight="800">
+                  本次未完成计划组重量临时降低约 {recoveryStartProposal.weightIntent.reductionPercent}%
+                </AppText>
+              ) : null}
+              {recoveryStartProposal.removedExerciseNames.length > 0 ? (
+                <View style={styles.removedExerciseList}>
+                  <AppText variant="bodySmall" weight="900">
+                    将暂时移除 {recoveryStartProposal.removedExerciseNames.length} 个动作
+                  </AppText>
+                  {recoveryStartProposal.removedExerciseNames.map((name) => (
+                    <AppText key={name} tone="muted" variant="caption">
+                      · {name}
+                    </AppText>
+                  ))}
+                </View>
+              ) : null}
+              {!recoveryStartProposal.adjustedInput &&
+              recoveryStartProposal.assessment.recommendation === 'only_a' ? (
+                <AppText tone="warning" variant="bodySmall" weight="800">
+                  当前训练日没有 A 类动作，不能创建空训练。请选择按原计划训练或返回调整。
+                </AppText>
+              ) : null}
+            </AppCard>
+
+            {recoveryStartProposal.assessment.recommendation === 'rest' ? (
+              isRestOverrideConfirmation ? (
+                <>
+                  <AppButton
+                    loading={isStarting}
+                    onPress={() => void confirmRecoveryStart(false)}
+                    size="lg"
+                    variant="danger"
+                  >
+                    确认按原计划训练
+                  </AppButton>
+                  <AppButton
+                    onPress={() => setRestOverrideConfirmation(false)}
+                    variant="secondary"
+                  >
+                    返回建议
+                  </AppButton>
+                </>
+              ) : (
+                <>
+                  <AppButton
+                    onPress={() => {
+                      setRecoveryStartProposal(null);
+                      setRestOverrideConfirmation(false);
+                    }}
+                    size="lg"
+                  >
+                    今天休息
+                  </AppButton>
+                  <AppButton
+                    onPress={() => setRestOverrideConfirmation(true)}
+                    variant="secondary"
+                  >
+                    仍按原计划训练
+                  </AppButton>
+                </>
+              )
+            ) : (
+              <>
+                <AppButton
+                  disabled={!recoveryStartProposal.adjustedInput}
+                  loading={isStarting}
+                  onPress={() => void confirmRecoveryStart(true)}
+                  size="lg"
+                >
+                  应用建议并开始
+                </AppButton>
+                <AppButton
+                  loading={isStarting}
+                  onPress={() => void confirmRecoveryStart(false)}
+                  size="lg"
+                  variant="secondary"
+                >
+                  按原计划训练
+                </AppButton>
+              </>
+            )}
+          </View>
+        ) : null}
+      </AppModalSheet>
 
       <AppModalSheet
         onClose={() => {
           setConflictingSession(null);
           setPendingWorkoutStart(null);
+          setPendingRecoveryWeightIntent(null);
         }}
         position="center"
         subtitle="今天还有一场未完成训练，与当前选择的计划或训练日不同。"
@@ -1815,6 +2226,7 @@ export default function TodayRoute() {
             onPress={() => {
               setConflictingSession(null);
               setPendingWorkoutStart(null);
+              setPendingRecoveryWeightIntent(null);
             }}
             variant="ghost"
           >
@@ -2027,6 +2439,7 @@ function WorkoutScopeSheet({
   currentMemberId,
   isStarting,
   members,
+  onAssessMember,
   onClose,
   onScopeChange,
   onStart,
@@ -2034,11 +2447,13 @@ function WorkoutScopeSheet({
   scope,
   selectedMemberIds,
   profiles,
+  recoveryByMemberId,
   visible,
 }: {
   currentMemberId?: string;
   isStarting: boolean;
   members: GroupMember[];
+  onAssessMember: (memberId: string) => void;
   onClose: () => void;
   onScopeChange: (scope: WorkoutRecordScope) => void;
   onStart: () => void;
@@ -2046,6 +2461,7 @@ function WorkoutScopeSheet({
   scope: WorkoutRecordScope;
   selectedMemberIds: string[];
   profiles: Record<string, MemberProfile | null>;
+  recoveryByMemberId: Record<string, RecoveryAssessmentResult | null>;
   visible: boolean;
 }) {
   const selectedCount = scope === 'solo_local' ? (currentMemberId ? 1 : 0) : selectedMemberIds.length;
@@ -2099,6 +2515,17 @@ function WorkoutScopeSheet({
             <AppText tone="muted" variant="caption">
               其他小组成员不会出现在本次训练执行页。
             </AppText>
+            {currentMemberId ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => onAssessMember(currentMemberId)}
+                style={styles.memberRecoveryLink}
+              >
+                <AppText tone="brand" variant="caption" weight="900">
+                  {getMemberRecoveryLabel(recoveryByMemberId[currentMemberId])} · 查看状态
+                </AppText>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       ) : (
@@ -2106,40 +2533,48 @@ function WorkoutScopeSheet({
           {members.map((member) => {
             const selected = selectedMemberIds.includes(member.id);
             return (
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: selected }}
+              <View
                 key={member.id}
-                onPress={() => onToggleMember(member.id)}
-                style={({ pressed }) => [
-                  styles.memberSelectRow,
-                  selected && styles.memberSelectRowActive,
-                  pressed && styles.pressed,
-                ]}
+                style={[styles.memberSelectRow, selected && styles.memberSelectRowActive]}
               >
-                <View style={selected && styles.memberSelectAvatarActiveWrap}>
-                  <Avatar
-                    avatarLocalUri={profiles[member.id]?.avatarLocalUri}
-                    avatarThumbUrl={profiles[member.id]?.avatarThumbUrl}
-                    avatarUrl={profiles[member.id]?.avatarUrl ?? member.avatarUrl}
-                    name={member.displayName}
-                    size={38}
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: selected }}
+                  onPress={() => onToggleMember(member.id)}
+                  style={({ pressed }) => [styles.memberSelectMain, pressed && styles.pressed]}
+                >
+                  <View style={selected && styles.memberSelectAvatarActiveWrap}>
+                    <Avatar
+                      avatarLocalUri={profiles[member.id]?.avatarLocalUri}
+                      avatarThumbUrl={profiles[member.id]?.avatarThumbUrl}
+                      avatarUrl={profiles[member.id]?.avatarUrl ?? member.avatarUrl}
+                      name={member.displayName}
+                      size={38}
+                    />
+                  </View>
+                  <View style={styles.memberSelectText}>
+                    <AppText variant="bodySmall" weight="900">{member.displayName}</AppText>
+                    <AppText tone="muted" variant="caption">
+                      {member.id === currentMemberId ? '当前成员' : '参与本次训练后等待确认同步'}
+                    </AppText>
+                  </View>
+                  <Ionicons
+                    color={selected ? colors.primary : colors.textMuted}
+                    name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={21}
                   />
-                </View>
-                <View style={styles.memberSelectText}>
-                  <AppText variant="bodySmall" weight="900">
-                    {member.displayName}
+                </Pressable>
+                <Pressable
+                  accessibilityLabel={`评估 ${member.displayName} 的今日状态`}
+                  accessibilityRole="button"
+                  onPress={() => onAssessMember(member.id)}
+                  style={styles.memberRecoveryButton}
+                >
+                  <AppText tone="brand" variant="caption" weight="900">
+                    {getMemberRecoveryLabel(recoveryByMemberId[member.id])}
                   </AppText>
-                  <AppText tone="muted" variant="caption">
-                    {member.id === currentMemberId ? '当前成员' : '参与本次训练后等待确认同步'}
-                  </AppText>
-                </View>
-                <Ionicons
-                  color={selected ? colors.primary : colors.textMuted}
-                  name={selected ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={21}
-                />
-              </Pressable>
+                </Pressable>
+              </View>
             );
           })}
         </View>
@@ -2561,6 +2996,28 @@ const styles = StyleSheet.create({
   memberSelectList: {
     gap: spacing.sm,
   },
+  memberRecoveryButton: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    borderLeftColor: colors.border,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    minWidth: 78,
+    paddingHorizontal: spacing.sm,
+  },
+  memberRecoveryLink: {
+    alignSelf: 'flex-start',
+    minHeight: 32,
+    justifyContent: 'center',
+  },
+  memberSelectMain: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    minHeight: 66,
+    padding: spacing.md,
+  },
   memberSelectRow: {
     alignItems: 'center',
     backgroundColor: colors.surface,
@@ -2568,9 +3025,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: spacing.md,
     minHeight: 68,
-    padding: spacing.md,
+    overflow: 'hidden',
   },
   memberSelectRowActive: {
     borderColor: colors.primary,
@@ -2628,6 +3084,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: radius.pill,
     height: '100%',
+  },
+  recoveryPromptActions: {
+    gap: spacing.sm,
+  },
+  recoveryProposalBody: {
+    gap: spacing.sm,
+  },
+  recoveryProposalCopy: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  recoveryProposalHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+  },
+  recoveryProposalSummary: {
+    gap: spacing.md,
+  },
+  removedExerciseList: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    gap: spacing.xs,
+    padding: spacing.sm,
   },
   planProgressRow: {
     gap: spacing.xs,

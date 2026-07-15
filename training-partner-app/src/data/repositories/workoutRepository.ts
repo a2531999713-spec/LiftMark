@@ -2,6 +2,8 @@ import type { ID } from '@/domain/common/ids';
 import type {
   AddWorkoutExerciseInput,
   AddWorkoutSetInput,
+  ApplyRecoveryWeightReductionInput,
+  ApplyRecoveryWeightReductionResult,
   CreateSessionFromTodayPlanInput,
   CreateManualSessionInput,
   CreateManualSessionV2Input,
@@ -17,6 +19,7 @@ import type {
 } from '@/domain/workout/workout.types';
 
 export interface WorkoutRepository {
+  applyRecoveryWeightReduction(input: ApplyRecoveryWeightReductionInput): Promise<ApplyRecoveryWeightReductionResult>;
   createSessionFromTodayPlan(input: CreateSessionFromTodayPlanInput): Promise<WorkoutSession>;
   createManualSession(input: CreateManualSessionInput): Promise<WorkoutSession>;
   createManualSessionV2(input: CreateManualSessionV2Input): Promise<WorkoutSession>;
