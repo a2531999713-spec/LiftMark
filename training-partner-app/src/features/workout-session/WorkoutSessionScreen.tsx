@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -36,12 +37,16 @@ import {
   WORKOUT_TEMPORARY_EXERCISE_NOTE,
   checkShortWorkout,
   getWorkoutCursorFromQueue,
+  getWorkoutCompletionState,
+  getWorkoutExerciseProgressStatus,
   getNextWorkoutSetForRotation,
   getWorkoutExerciseSetProgress,
   getWorkoutRecordInitialReps,
+  resolveWorkoutSetCompletionInput,
   summarizeWorkoutAdjustments,
 } from '@/domain/workout/workout.service';
 import type {
+  AddWorkoutSetInput,
   SaveWorkoutSetInput,
   WorkoutSessionDetail,
   WorkoutSet,
@@ -50,12 +55,12 @@ import { useAuthGate } from '@/hooks/useAuthGate';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
 import { finishWorkoutSession } from '@/features/workout-session/application/finishWorkoutSession.usecase';
 import { saveWorkoutSet } from '@/features/workout-session/application/saveWorkoutSet.usecase';
-import { WorkoutAutosaveService } from '@/features/workout-session/services/workoutAutosave.service';
+import type { WorkoutExecutionPhase, WorkoutLifecycle } from '@/features/workout-session/model/workoutSession.state';
+import { schedulePostWorkoutTasks } from '@/features/workout-session/services/postWorkoutTaskScheduler.service';
+import { WorkoutWriteCoordinator } from '@/features/workout-session/services/workoutWriteCoordinator.service';
 import { parseIncrementKg } from '@/domain/preferences/user-preferences.types';
 import { syncGroupMembersAvatar } from '@/services/memberSyncService';
-import { queueNewAchievementUnlocks } from '@/services/achievementUnlockService';
-import { enqueueSyncCandidate } from '@/sync/syncQueue';
-import { requestImmediateSync } from '@/sync/syncService';
+import { enqueueSyncCandidatesBatch } from '@/sync/syncQueue';
 import { colors, radius, spacing } from '@/theme';
 
 function formatTimer(seconds: number): string {
@@ -187,13 +192,10 @@ export default function WorkoutRoute() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
   const [memberRestState, setMemberRestState] = useState<Record<string, MemberRestTimerState>>({});
-  const [, setWorkoutReadyToFinish] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [localSaveState, setLocalSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const [executionPhase, setExecutionPhase] = useState<WorkoutExecutionPhase>('loading');
   const [activeProgressionSuggestion, setActiveProgressionSuggestion] = useState<ProgressionSuggestion | null>(null);
-  const [isFinishing, setIsFinishing] = useState(false);
-  const [isCompletingSet, setIsCompletingSet] = useState(false);
-  const [isApplyingAdjustment, setIsApplyingAdjustment] = useState(false);
   const [exercisePickerMode, setExercisePickerMode] = useState<'addTemporary' | 'replace' | null>(null);
   const [isAdjustmentSheetVisible, setAdjustmentSheetVisible] = useState(false);
   const [adjustmentOperation, setAdjustmentOperation] = useState<WorkoutAdjustmentOperation>('extra_set');
@@ -206,10 +208,40 @@ export default function WorkoutRoute() {
     useState<ParticipantRemovalConfirm>(null);
   const [error, setError] = useState<string | null>(null);
   const latestSetByIdRef = useRef<Record<string, WorkoutSet>>({});
-  const pendingSetPatchesRef = useRef<Record<string, Omit<SaveWorkoutSetInput, 'id'>>>({});
   const setSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const exercisePickerCacheRef = useRef<Exercise[] | null>(null);
-  const autosaveRef = useRef(new WorkoutAutosaveService());
+  const lifecycleRef = useRef<WorkoutLifecycle>('active');
+  const mountedRef = useRef(true);
+  const finishingRef = useRef(false);
+  const completingSetRef = useRef(false);
+  const adjustmentOperationRef = useRef(false);
+  const activeExerciseIndexRef = useRef(0);
+  const activeMemberIdRef = useRef<string | null>(null);
+  const writeCoordinator = useMemo(
+    () => new WorkoutWriteCoordinator(async (patches) => {
+      if (!sessionId) throw new Error('Missing workout session id.');
+      return repositories.workoutRepository.saveSetPatchesBatch({ patches, sessionId });
+    }),
+    [repositories, sessionId],
+  );
+  const isLoading = executionPhase === 'loading';
+  const isFinishing = executionPhase === 'closing';
+  const isCompletingSet = executionPhase === 'saving_set';
+  const isApplyingAdjustment = executionPhase === 'adjusting';
+  const setWorkoutReadyToFinish = useCallback((_ready: boolean) => undefined, []);
+  const setIsCompletingSet = useCallback((value: boolean) => {
+    completingSetRef.current = value;
+    if (mountedRef.current) setExecutionPhase(value ? 'saving_set' : 'active');
+  }, []);
+  const setIsApplyingAdjustment = useCallback((value: boolean) => {
+    adjustmentOperationRef.current = value;
+    if (mountedRef.current) setExecutionPhase(value ? 'adjusting' : 'active');
+  }, []);
+
+  useEffect(() => {
+    activeExerciseIndexRef.current = activeExerciseIndex;
+    activeMemberIdRef.current = activeMemberId;
+  }, [activeExerciseIndex, activeMemberId]);
 
   useEffect(() => {
     latestSetByIdRef.current = Object.fromEntries((detail?.sets ?? []).map((set) => [set.id, set]));
@@ -234,7 +266,7 @@ export default function WorkoutRoute() {
     if (!sessionId) {
       return;
     }
-    setIsLoading(true);
+    setExecutionPhase('loading');
     setError(null);
     try {
       if (authMode === 'guest_preview') {
@@ -285,11 +317,10 @@ export default function WorkoutRoute() {
             ? Math.min(index, nextDetail.exercises.length - 1)
             : 0,
       );
-      setWorkoutReadyToFinish(!cursor && nextDetail.sets.some((set) => set.completed || set.skipped));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '训练记录加载失败。');
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setExecutionPhase('active');
     }
   }, [authMode, repositories, sessionId]);
 
@@ -305,59 +336,50 @@ export default function WorkoutRoute() {
         return null;
       }
 
-      const pendingTimer = setSaveTimersRef.current[set.id];
-      if (pendingTimer) {
-        clearTimeout(pendingTimer);
-        delete setSaveTimersRef.current[set.id];
-      }
-      delete pendingSetPatchesRef.current[set.id];
       const optimisticSet: WorkoutSet = {
-        ...set,
+        ...(latestSetByIdRef.current[set.id] ?? set),
         ...patch,
         updatedAt: new Date().toISOString(),
       };
       latestSetByIdRef.current[set.id] = optimisticSet;
       setDetail((current) => replaceSet(current, optimisticSet));
+      setLocalSaveState('saving');
       setError(null);
       try {
-        const saved = await saveWorkoutSet(autosaveRef.current, repositories.workoutRepository, {
-          id: set.id,
-          ...patch,
-        });
+        writeCoordinator.schedulePatch(set.id, patch);
+        const startedAt = Date.now();
+        const diagnostics = writeCoordinator.getDiagnostics();
+        const saved = await saveWorkoutSet(writeCoordinator, set.id);
+        if (!saved) return null;
         latestSetByIdRef.current[saved.id] = saved;
         setDetail((current) => replaceSet(current, saved));
         setLastSavedAt(new Date().toISOString());
-        void enqueueSyncCandidate({
-          entityType: 'workoutSets',
-          localId: saved.id,
-          operation: 'update',
-          payload: {
-            actualReps: saved.actualReps,
-            actualRestSeconds: saved.actualRestSeconds,
-            actualWeight: saved.actualWeight,
-            completed: saved.completed,
-            exerciseRecordId: saved.exerciseRecordId,
-            memberId: saved.memberId,
-            notes: saved.notes,
-            plannedReps: saved.plannedReps,
-            plannedWeight: saved.plannedWeight,
-            rpe: saved.rpe,
-            sessionId: saved.sessionId,
-            setNumber: saved.setNumber,
-            skipped: saved.skipped,
-          },
-          status: 'pending_update',
-          updatedAt: saved.updatedAt,
-        }).catch(() => undefined);
+        setLocalSaveState('saved');
+        if (lifecycleRef.current === 'active') setExecutionPhase('active');
+        if (__DEV__) {
+          console.log('[workout-set-performance]', {
+            localSaveMs: Date.now() - startedAt,
+            queuedRevisionCount: diagnostics.queuedRevisionCount,
+            setId: set.id,
+            syncQueueScheduleMs: 0,
+            totalMs: Date.now() - startedAt,
+          });
+        }
         return saved;
       } catch (saveError) {
         setError(saveError instanceof Error ? saveError.message : '本组保存失败。');
-        setDetail((current) => replaceSet(current, set));
+        setExecutionPhase('save_failed');
+        setLocalSaveState('failed');
         return null;
       }
     },
-    [guardFeature, repositories],
+    [guardFeature, writeCoordinator],
   );
+
+  const cancelDebounceTimers = useCallback(() => {
+    Object.values(setSaveTimersRef.current).forEach((timer) => clearTimeout(timer));
+    setSaveTimersRef.current = {};
+  }, []);
 
   const consumePendingSetPatch = useCallback((setId: string): Omit<SaveWorkoutSetInput, 'id'> | null => {
     const pendingTimer = setSaveTimersRef.current[setId];
@@ -365,67 +387,76 @@ export default function WorkoutRoute() {
       clearTimeout(pendingTimer);
       delete setSaveTimersRef.current[setId];
     }
-    const patch = pendingSetPatchesRef.current[setId];
-    if (!patch) {
-      return null;
-    }
-    delete pendingSetPatchesRef.current[setId];
-    return patch;
+    return null;
   }, []);
 
   const flushDebouncedSetWrites = useCallback(async () => {
-    const pendingEntries = Object.entries(pendingSetPatchesRef.current);
-    Object.values(setSaveTimersRef.current).forEach((timer) => clearTimeout(timer));
-    setSaveTimersRef.current = {};
-    pendingSetPatchesRef.current = {};
-    await Promise.all(
-      pendingEntries.map(async ([setId, patch]) => {
-        const set = latestSetByIdRef.current[setId];
-        if (set) await saveSetPatch(set, patch);
-      }),
-    );
-  }, [saveSetPatch]);
+    cancelDebounceTimers();
+    const savedSets = await writeCoordinator.flushSession();
+    if (savedSets.length > 0 && mountedRef.current) {
+      const savedById = new Map(savedSets.map((set) => [set.id, set]));
+      savedSets.forEach((set) => { latestSetByIdRef.current[set.id] = set; });
+      setDetail((current) => current
+        ? { ...current, sets: current.sets.map((set) => savedById.get(set.id) ?? set) }
+        : current);
+      setLastSavedAt(new Date().toISOString());
+      setLocalSaveState('saved');
+    }
+  }, [cancelDebounceTimers, writeCoordinator]);
 
   useEffect(() => {
-    const autosave = autosaveRef.current;
+    mountedRef.current = true;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' && lifecycleRef.current === 'active' && !finishingRef.current) {
+        void flushDebouncedSetWrites().catch(() => undefined);
+      }
+    });
     return () => {
-      void flushDebouncedSetWrites().then(() => autosave.flush()).catch(() => undefined);
+      mountedRef.current = false;
+      lifecycleRef.current = 'unmounted';
+      cancelDebounceTimers();
+      subscription.remove();
     };
-  }, [flushDebouncedSetWrites]);
+  }, [cancelDebounceTimers, flushDebouncedSetWrites]);
 
   const saveSetPatchDebounced = useCallback(
     (set: WorkoutSet, patch: Omit<SaveWorkoutSetInput, 'id'>) => {
       const currentSet = latestSetByIdRef.current[set.id] ?? set;
-      const nextPatch = {
-        ...(pendingSetPatchesRef.current[set.id] ?? {}),
-        ...patch,
-      };
-      pendingSetPatchesRef.current[set.id] = nextPatch;
+      writeCoordinator.schedulePatch(set.id, patch);
 
       const optimisticSet: WorkoutSet = {
         ...currentSet,
-        ...nextPatch,
+        ...patch,
         updatedAt: new Date().toISOString(),
       };
       latestSetByIdRef.current[set.id] = optimisticSet;
       setDetail((current) => replaceSet(current, optimisticSet));
+      setLocalSaveState('saving');
 
       const existingTimer = setSaveTimersRef.current[set.id];
       if (existingTimer) {
         clearTimeout(existingTimer);
       }
       setSaveTimersRef.current[set.id] = setTimeout(() => {
-        const patchToSave = pendingSetPatchesRef.current[set.id];
-        delete pendingSetPatchesRef.current[set.id];
         delete setSaveTimersRef.current[set.id];
-        if (!patchToSave) {
-          return;
-        }
         const latestSet = latestSetByIdRef.current[set.id] ?? optimisticSet;
-        void saveSetPatch(latestSet, patchToSave);
+        void saveWorkoutSet(writeCoordinator, latestSet.id)
+          .then((saved) => {
+            if (!saved || !mountedRef.current) return;
+            latestSetByIdRef.current[saved.id] = saved;
+            setDetail((current) => replaceSet(current, saved));
+            setLastSavedAt(new Date().toISOString());
+            setLocalSaveState('saved');
+          })
+          .catch((saveError: unknown) => {
+            if (!mountedRef.current) return;
+            setExecutionPhase('save_failed');
+            setLocalSaveState('failed');
+            setError(saveError instanceof Error ? saveError.message : '本组保存失败，请重试。');
+          });
       }, 450);
     },
-    [saveSetPatch],
+    [writeCoordinator],
   );
 
   useEffect(() => {
@@ -511,70 +542,60 @@ export default function WorkoutRoute() {
     if (!sessionId) {
       return;
     }
-    if (isFinishing) {
+    if (finishingRef.current) {
       return;
     }
     if (!guardFeature('save_workout')) {
       return;
     }
 
-      setIsFinishing(true);
+      finishingRef.current = true;
+      lifecycleRef.current = 'finishing';
+      setExecutionPhase('closing');
       setError(null);
       try {
-        await finishWorkoutSession({
-          autosave: autosaveRef.current,
-          flushDebouncedWrites: flushDebouncedSetWrites,
+        const performance = await finishWorkoutSession({
+          cancelDebounceTimers,
+          coordinator: writeCoordinator,
           repository: repositories.workoutRepository,
           sessionId,
         });
-        if (detail) {
-          void enqueueSyncCandidate({
-            entityType: 'workoutSessions',
-            localId: detail.session.id,
-            operation: 'update',
-            payload: {
-              date: detail.session.date,
-              groupId: detail.session.groupId,
-              planCycleId: detail.session.planCycleId,
-              planDayId: detail.session.planDayId,
-              planId: detail.session.planId,
-              recordedByUserId: detail.session.recordedByUserId,
-              sourceDeviceId: detail.session.sourceDeviceId,
-              status: 'completed',
-              title: detail.session.title,
-              trainingMode: detail.session.trainingMode,
-              week: detail.session.week,
-              weekday: detail.session.weekday,
-            },
-            status: 'pending_update',
-            updatedAt: new Date().toISOString(),
-          }).catch(() => undefined);
-        }
+        const routeStartedAt = Date.now();
+        lifecycleRef.current = 'finished';
         router.replace({ pathname: '/workout/summary/[sessionId]', params: { sessionId } });
         // 报告、进阶建议和同步属于后置任务，绝不阻塞用户进入总结页。
-        void repositories.workoutRepository.generateTrainingReport(sessionId).catch(() => undefined);
-        void repositories.progressionRepository.createSuggestionsForSession(sessionId).catch(() => undefined);
-        void (async () => {
-          const ownerUserId = await getRequiredCurrentUserId();
-          const [before, after] = await Promise.all([
-            repositories.achievementRepository.getAchievementSnapshot({ ownerUserId, excludeSessionId: sessionId }),
-            repositories.achievementRepository.getAchievementSnapshot({ ownerUserId }),
-          ]);
-          await queueNewAchievementUnlocks({ userId: ownerUserId, before, after });
-        })().catch(() => undefined);
-        void requestImmediateSync().catch(() => undefined);
+        if (__DEV__) {
+          console.log('[workout-finish-performance]', {
+            autosaveDrainMs: performance.autosaveDrainMs,
+            completedSetCount: detail?.sets.filter((set) => set.completed).length ?? 0,
+            exerciseCount: detail?.exercises.length ?? 0,
+            finishTransactionMs: performance.finishTransactionMs,
+            flushDebounceMs: 0,
+            participantCount: members.length,
+            pendingPatchCount: performance.pendingPatchCount,
+            pendingWriteKeyCount: performance.pendingWriteKeyCount,
+            queuedSyncCandidateCount: 0,
+            routeMs: Date.now() - routeStartedAt,
+            sessionId,
+            setCount: detail?.sets.length ?? 0,
+            totalCriticalMs: performance.totalCriticalMs,
+          });
+        }
+        schedulePostWorkoutTasks(sessionId);
     } catch (finishError) {
       setError(finishError instanceof Error ? finishError.message : '完成训练失败。');
-    } finally {
-      setIsFinishing(false);
+      finishingRef.current = false;
+      lifecycleRef.current = 'active';
+      writeCoordinator.resume();
+      if (mountedRef.current) setExecutionPhase('save_failed');
     }
-  }, [detail, flushDebouncedSetWrites, guardFeature, isFinishing, repositories, sessionId]);
+  }, [cancelDebounceTimers, detail, guardFeature, members.length, repositories, sessionId, writeCoordinator]);
 
   const finishWorkout = useCallback(async () => {
     if (!sessionId) {
       return;
     }
-    if (isFinishing) {
+    if (finishingRef.current) {
       return;
     }
     if (!guardFeature('save_workout')) {
@@ -635,7 +656,7 @@ export default function WorkoutRoute() {
     }
 
     await saveCompletedWorkout();
-  }, [confirmDiscardWorkout, detail, elapsedSeconds, guardFeature, isFinishing, saveCompletedWorkout, sessionId]);
+  }, [confirmDiscardWorkout, detail, elapsedSeconds, guardFeature, saveCompletedWorkout, sessionId]);
 
   const activeRecord = detail?.exercises[activeExerciseIndex] ?? null;
   const activeRecordId = activeRecord?.id;
@@ -712,9 +733,26 @@ export default function WorkoutRoute() {
     return detail.exercises.map((record, index) => ({
       id: record.id,
       name: exerciseMap[record.exerciseId]?.name ?? record.exerciseId,
-      status: index < activeExerciseIndex ? 'completed' as const : index === activeExerciseIndex ? 'current' as const : 'upcoming' as const,
+      status: getWorkoutExerciseProgressStatus(detail.sets, record.id, index === activeExerciseIndex),
     }));
   }, [detail, exerciseMap, activeExerciseIndex]);
+  const workoutCompletionState = useMemo(
+    () => getWorkoutCompletionState(detail?.sets ?? []),
+    [detail?.sets],
+  );
+  const localSaveStatus = localSaveState === 'failed'
+    ? '保存失败'
+    : localSaveState === 'saving' || executionPhase === 'closing'
+      ? '正在保存到本机'
+      : localSaveState === 'saved' || lastSavedAt
+        ? '已保存到本机'
+        : '等待记录';
+  const nextIncompleteExerciseIndex = useMemo(() => {
+    if (!detail) return -1;
+    return detail.exercises.findIndex((record, index) =>
+      index !== activeExerciseIndex &&
+      detail.sets.some((set) => set.exerciseRecordId === record.id && !set.completed && !set.skipped));
+  }, [activeExerciseIndex, detail]);
 
   const currentProfile = currentMemberId ? profiles[currentMemberId] ?? null : null;
   // 用户偏好的重量步进优先于 member profile 的默认值
@@ -771,11 +809,12 @@ export default function WorkoutRoute() {
     const apply = async () => {
       for (const set of pendingSets) {
         const actualWeightWasPrefilled = set.actualWeight === set.plannedWeight;
-        await saveSetPatch(set, {
+        writeCoordinator.schedulePatch(set.id, {
           ...(actualWeightWasPrefilled ? { actualWeight: nextWeight } : {}),
           plannedWeight: nextWeight,
         });
       }
+      await flushDebouncedSetWrites();
       setActiveProgressionSuggestion(null);
     };
     const hasManualWeight = pendingSets.some(
@@ -796,7 +835,8 @@ export default function WorkoutRoute() {
     currentMemberId,
     detail,
     progressionWeightAfterRecovery,
-    saveSetPatch,
+    flushDebouncedSetWrites,
+    writeCoordinator,
   ]);
   const previousCompletedWeightForCurrentSet = currentDisplaySet
     ? [...activeSets]
@@ -885,7 +925,7 @@ export default function WorkoutRoute() {
   }
 
   async function completeCurrentRound() {
-    if (isCompletingSet) return;
+    if (completingSetRef.current) return;
     const targetSet = currentDisplaySet && !currentDisplaySet.completed && !currentDisplaySet.skipped
       ? currentDisplaySet
       : null;
@@ -903,6 +943,11 @@ export default function WorkoutRoute() {
     }
 
     setIsCompletingSet(true);
+    const targetSessionId = targetSet.sessionId;
+    const targetSetId = targetSet.id;
+    const targetExerciseRecordId = targetSet.exerciseRecordId;
+    const targetMemberId = targetSet.memberId;
+    const targetExerciseIndex = activeExerciseIndex;
     const pendingPatch = consumePendingSetPatch(targetSet.id);
     const targetDraft = pendingPatch ? { ...targetSet, ...pendingPatch } : targetSet;
     const previousCompletedWeight = [...activeSets]
@@ -915,18 +960,20 @@ export default function WorkoutRoute() {
           Number.isFinite(set.actualWeight),
       )
       .sort((left, right) => right.setNumber - left.setNumber)[0]?.actualWeight;
-    const actualWeight = targetDraft.actualWeight ?? targetDraft.plannedWeight ?? previousCompletedWeight;
-    const actualReps =
-      targetDraft.actualReps ??
-      targetDraft.plannedReps ??
-      (activeRecord ? getWorkoutRecordInitialReps(activeRecord) : undefined);
+    const isBodyweightExercise = activeExercise?.isBodyweight === true || activeExercise?.equipment === 'bodyweight';
+    const { actualReps, actualWeight } = resolveWorkoutSetCompletionInput({
+      fallbackReps: activeRecord ? getWorkoutRecordInitialReps(activeRecord) : undefined,
+      isBodyweightExercise,
+      previousCompletedWeight,
+      set: targetDraft,
+    });
 
     if (actualWeight === undefined || !Number.isFinite(actualWeight)) {
       Alert.alert('请先填写重量', '当前组没有可用的建议重量，请填写实际重量后再保存。');
       setIsCompletingSet(false);
       return;
     }
-    if (actualReps === undefined || !Number.isInteger(actualReps) || actualReps < 0) {
+    if (actualReps === undefined || !Number.isInteger(actualReps) || actualReps <= 0) {
       Alert.alert('请先填写次数', '当前组次数必须是非负整数。');
       setIsCompletingSet(false);
       return;
@@ -956,6 +1003,17 @@ export default function WorkoutRoute() {
       return;
     }
 
+    if (
+      savedSet.id !== targetSetId ||
+      savedSet.sessionId !== targetSessionId ||
+      savedSet.exerciseRecordId !== targetExerciseRecordId ||
+      savedSet.memberId !== targetMemberId
+    ) {
+      setError('训练组状态已变化，请刷新后重试。');
+      setIsCompletingSet(false);
+      return;
+    }
+
     const nextActiveSets = activeSets.map((set) => (set.id === savedSet.id ? savedSet : set));
     const nextPendingSet = activeRecord
       ? getNextWorkoutSetForRotation(nextActiveSets, memberOrder, activeRecord.id)
@@ -979,6 +1037,14 @@ export default function WorkoutRoute() {
       }));
     }
 
+    const cursorStillTargetsCapturedSet =
+      activeExerciseIndexRef.current === targetExerciseIndex &&
+      activeMemberIdRef.current === targetMemberId;
+    if (!cursorStillTargetsCapturedSet) {
+      setIsCompletingSet(false);
+      return;
+    }
+
     if (nextPendingSet) {
       setActiveMemberId(nextPendingSet.memberId);
       setWorkoutReadyToFinish(false);
@@ -996,8 +1062,12 @@ export default function WorkoutRoute() {
   }
 
   function handleDeleteSet(setId: string) {
+    writeCoordinator.discardSet(setId);
     setDetail((current) => removeSet(current, setId));
-    void repositories.workoutRepository.deleteSet(setId).catch((deleteError) => {
+    void repositories.workoutRepository.deleteSetsBatch({
+      sessionId: detail?.session.id ?? sessionId,
+      setIds: [setId],
+    }).catch((deleteError) => {
       setError(deleteError instanceof Error ? deleteError.message : '删除训练组失败。');
       void loadWorkout();
     });
@@ -1023,10 +1093,27 @@ export default function WorkoutRoute() {
     );
   }
 
+  async function saveAndExitWorkout() {
+    if (finishingRef.current || completingSetRef.current || adjustmentOperationRef.current) return;
+    finishingRef.current = true;
+    lifecycleRef.current = 'leaving';
+    setExecutionPhase('closing');
+    try {
+      await flushDebouncedSetWrites();
+      router.replace('/(tabs)/today');
+    } catch (saveError) {
+      finishingRef.current = false;
+      lifecycleRef.current = 'active';
+      setExecutionPhase('save_failed');
+      setError(saveError instanceof Error ? saveError.message : '保存并退出失败，请重试。');
+    }
+  }
+
   function handleBack() {
-    Alert.alert('退出训练？', '训练数据已自动保存，可以稍后回来继续。', [
+    Alert.alert('退出训练？', '请选择保留进度稍后继续，或正式结束本次训练。', [
       { text: '继续训练', style: 'cancel' },
-      { text: '结束并返回', style: 'destructive', onPress: () => void finishWorkout() },
+      { text: '保存并退出', onPress: () => void saveAndExitWorkout() },
+      { text: '结束训练', style: 'destructive', onPress: () => void finishWorkout() },
     ]);
   }
 
@@ -1065,10 +1152,11 @@ export default function WorkoutRoute() {
 
     try {
       setError(null);
-      const addedSets = await Promise.all(
-        uniqueTargetMemberIds.map((memberId) => {
+      const addedSets = await repositories.workoutRepository.addSetsToExerciseRecordsBatch({
+        sessionId: detail.session.id,
+        sets: uniqueTargetMemberIds.map((memberId) => {
           const defaults = getExtraSetDefaults(memberId);
-          return repositories.workoutRepository.addSetToExerciseRecord({
+          return {
             completed: false,
             exerciseRecordId: activeRecord.id,
             memberId,
@@ -1076,9 +1164,9 @@ export default function WorkoutRoute() {
             reps: defaults.reps,
             sessionId: detail.session.id,
             weight: defaults.weight,
-          });
+          };
         }),
-      );
+      });
 
       setDetail((current) =>
         current
@@ -1092,36 +1180,9 @@ export default function WorkoutRoute() {
       setWorkoutReadyToFinish(false);
       setLastSavedAt(new Date().toISOString());
 
-      void Promise.all(
-        addedSets.map((set) =>
-          enqueueSyncCandidate({
-            entityType: 'workoutSets',
-            localId: set.id,
-            operation: 'create',
-            payload: {
-              actualReps: set.actualReps,
-              actualRestSeconds: set.actualRestSeconds,
-              actualWeight: set.actualWeight,
-              completed: set.completed,
-              exerciseRecordId: set.exerciseRecordId,
-              memberId: set.memberId,
-              notes: set.notes,
-              plannedReps: set.plannedReps,
-              plannedWeight: set.plannedWeight,
-              rpe: set.rpe,
-              sessionId: set.sessionId,
-              setNumber: set.setNumber,
-              skipped: set.skipped,
-            },
-            status: 'pending_create',
-            updatedAt: set.updatedAt,
-          }),
-        ),
-      ).catch((syncError) => {
-        console.warn('Failed to enqueue extra workout set sync candidate', syncError);
-      });
     } catch (addError) {
       setError(addError instanceof Error ? addError.message : '添加加做组失败。');
+      throw addError;
     }
   }
 
@@ -1166,13 +1227,18 @@ export default function WorkoutRoute() {
     );
     setWorkoutReadyToFinish(false);
     setLastSavedAt(new Date().toISOString());
+    targetSets.forEach((set) => writeCoordinator.discardSet(set.id));
 
     try {
-      await Promise.all(targetSets.map((set) => repositories.workoutRepository.deleteSet(set.id)));
+      await repositories.workoutRepository.deleteSetsBatch({
+        sessionId: detail.session.id,
+        setIds: targetSets.map((set) => set.id),
+      });
       setCompletedSetDeletionConfirm(null);
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : '删除训练组失败。');
       void loadWorkout();
+      throw deleteError;
     }
   }
 
@@ -1193,7 +1259,7 @@ export default function WorkoutRoute() {
 
     try {
       setError(null);
-      const addedSets: WorkoutSet[] = [];
+      const setsToAdd: AddWorkoutSetInput[] = [];
       for (const record of detail.exercises) {
         const plannedSetCount = Math.max(
           1,
@@ -1203,43 +1269,19 @@ export default function WorkoutRoute() {
             .map((set) => set.setNumber),
         );
         for (let index = 0; index < plannedSetCount; index += 1) {
-          const set = await repositories.workoutRepository.addSetToExerciseRecord({
+          setsToAdd.push({
             completed: false,
             exerciseRecordId: record.id,
             memberId,
             reps: getWorkoutRecordInitialReps(record),
             sessionId: detail.session.id,
           });
-          addedSets.push(set);
         }
       }
-
-      void Promise.all(
-        addedSets.map((set) =>
-          enqueueSyncCandidate({
-            entityType: 'workoutSets',
-            localId: set.id,
-            operation: 'create',
-            payload: {
-              actualReps: set.actualReps,
-              actualRestSeconds: set.actualRestSeconds,
-              actualWeight: set.actualWeight,
-              completed: set.completed,
-              exerciseRecordId: set.exerciseRecordId,
-              memberId: set.memberId,
-              notes: set.notes,
-              plannedReps: set.plannedReps,
-              plannedWeight: set.plannedWeight,
-              rpe: set.rpe,
-              sessionId: set.sessionId,
-              setNumber: set.setNumber,
-              skipped: set.skipped,
-            },
-            status: 'pending_create',
-            updatedAt: set.updatedAt,
-          }),
-        ),
-      ).catch(() => undefined);
+      const addedSets = await repositories.workoutRepository.addSetsToExerciseRecordsBatch({
+        sessionId: detail.session.id,
+        sets: setsToAdd,
+      });
 
       const addedMember = allGroupMembers.find((member) => member.id === memberId);
       if (addedMember) {
@@ -1283,6 +1325,7 @@ export default function WorkoutRoute() {
     }
 
     try {
+      memberSets.forEach((set) => writeCoordinator.discardSet(set.id));
       await repositories.workoutRepository.deleteMemberSetsInSession(detail.session.id, memberId);
       const nextMemberId = members.find((member) => member.id !== memberId)?.id ?? null;
       setDetail((current) =>
@@ -1360,23 +1403,23 @@ export default function WorkoutRoute() {
     }
 
     try {
-      await Promise.all(
-        targetSets.map((set) =>
-          saveSetPatch(set, {
-            completed: false,
-            notes: set.notes ? `${set.notes}；${WORKOUT_SKIPPED_EXERCISE_NOTE}` : WORKOUT_SKIPPED_EXERCISE_NOTE,
-            skipped: true,
-          }),
-        ),
-      );
+      targetSets.forEach((set) => {
+        writeCoordinator.schedulePatch(set.id, {
+          completed: false,
+          notes: set.notes ? `${set.notes}；${WORKOUT_SKIPPED_EXERCISE_NOTE}` : WORKOUT_SKIPPED_EXERCISE_NOTE,
+          skipped: true,
+        });
+      });
+      await flushDebouncedSetWrites();
       await refreshDetailCursor();
     } catch (skipError) {
       setError(skipError instanceof Error ? skipError.message : '本次跳过动作失败。');
+      throw skipError;
     }
   }
 
   async function applyWorkoutAdjustment() {
-    if (!activeRecord || !detail || isApplyingAdjustment) {
+    if (!activeRecord || !detail || adjustmentOperationRef.current) {
       return;
     }
 
@@ -1390,7 +1433,7 @@ export default function WorkoutRoute() {
     }
 
     setIsApplyingAdjustment(true);
-    const adjustmentStartedAt = Date.now();
+    const adjustmentStartedAt = getNowMs();
     try {
       if (adjustmentOperation === 'extra_set') {
         await addExtraSetsForMembers(targetMemberIds);
@@ -1422,9 +1465,19 @@ export default function WorkoutRoute() {
         setAdjustmentSheetVisible(false);
         await openTemporaryExerciseSheet();
       }
+    } catch (adjustmentError) {
+      setError(adjustmentError instanceof Error ? adjustmentError.message : '训练调整失败，请重试。');
     } finally {
       setIsApplyingAdjustment(false);
-      console.log('[workout-adjustment] local operation duration_ms=', Date.now() - adjustmentStartedAt);
+      if (__DEV__) {
+        console.log('[workout-adjustment-performance]', {
+          memberCount: targetMemberIds.length,
+          operation: adjustmentOperation,
+          repositoryMs: getNowMs() - adjustmentStartedAt,
+          setCount: activeSets.filter((set) => targetMemberIds.includes(set.memberId)).length,
+          totalMs: getNowMs() - adjustmentStartedAt,
+        });
+      }
     }
   }
 
@@ -1495,6 +1548,7 @@ export default function WorkoutRoute() {
     try {
       const note = `${WORKOUT_REPLACEMENT_NOTE}：${reason}`;
       await repositories.workoutRepository.updateExerciseRecordExercise(activeRecord.id, exercise.id, note);
+      const ownerUserId = await getRequiredCurrentUserId();
       const nextExercises = { ...exerciseMap, [exercise.id]: exercise };
       setExerciseMap(nextExercises);
       setDetail({
@@ -1510,10 +1564,11 @@ export default function WorkoutRoute() {
             : record,
         ),
       });
-      void enqueueSyncCandidate({
+      void enqueueSyncCandidatesBatch([{
         entityType: 'workoutExerciseRecords',
         localId: activeRecord.id,
         operation: 'update',
+        ownerUserId,
         payload: {
           exerciseId: exercise.id,
           groupId: detail.session.groupId,
@@ -1533,7 +1588,7 @@ export default function WorkoutRoute() {
         },
         status: 'pending_update',
         updatedAt: new Date().toISOString(),
-      }).catch(() => undefined);
+      }]).catch(() => undefined);
       setExercisePickerMode(null);
     } catch (replaceError) {
       setError(replaceError instanceof Error ? replaceError.message : '动作替换失败。');
@@ -1601,10 +1656,12 @@ export default function WorkoutRoute() {
       }
       if (nextRecord) {
         const now = new Date().toISOString();
-        void enqueueSyncCandidate({
+        const ownerUserId = await getRequiredCurrentUserId();
+        void enqueueSyncCandidatesBatch([{
           entityType: 'workoutExerciseRecords',
           localId: nextRecord.id,
           operation: 'create',
+          ownerUserId,
           payload: {
             exerciseId: nextRecord.exerciseId,
             groupId: detail.session.groupId,
@@ -1624,15 +1681,13 @@ export default function WorkoutRoute() {
           },
           status: 'pending_create',
           updatedAt: now,
-        }).catch(() => undefined);
-        void Promise.all(
-          nextDetail.sets
-            .filter((set) => set.exerciseRecordId === nextRecord.id)
-            .map((set) =>
-              enqueueSyncCandidate({
-                entityType: 'workoutSets',
+        }, ...nextDetail.sets
+          .filter((set) => set.exerciseRecordId === nextRecord.id)
+          .map((set) => ({
+                entityType: 'workoutSets' as const,
                 localId: set.id,
-                operation: 'create',
+                operation: 'create' as const,
+                ownerUserId,
                 payload: {
                   actualReps: set.actualReps,
                   actualRestSeconds: set.actualRestSeconds,
@@ -1648,11 +1703,10 @@ export default function WorkoutRoute() {
                   setNumber: set.setNumber,
                   skipped: set.skipped,
                 },
-                status: 'pending_create',
+                status: 'pending_create' as const,
                 updatedAt: set.updatedAt,
-              }),
-            ),
-        ).catch(() => undefined);
+              })),
+        ]).catch(() => undefined);
       }
     } catch (addError) {
       setError(addError instanceof Error ? addError.message : '添加临时动作失败。');
@@ -1669,7 +1723,7 @@ export default function WorkoutRoute() {
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.topBar}>
-          <Pressable accessibilityRole="button" onPress={handleBack} style={styles.backButton}>
+          <Pressable accessibilityRole="button" disabled={isFinishing} onPress={handleBack} style={styles.backButton}>
             <Ionicons color={colors.textStrong} name="arrow-back" size={24} />
           </Pressable>
           <View style={styles.topTitleGroup}>
@@ -1680,9 +1734,9 @@ export default function WorkoutRoute() {
               {sessionSubtitle}
             </AppText>
           </View>
-          <Pressable accessibilityRole="button" onPress={confirmFinishWorkout}>
+          <Pressable accessibilityRole="button" disabled={isFinishing} onPress={confirmFinishWorkout}>
             <AppText tone="danger" variant="body" weight="700">
-              结束训练
+              {isFinishing ? '正在保存最后修改…' : '结束训练'}
             </AppText>
           </Pressable>
         </View>
@@ -1798,7 +1852,7 @@ export default function WorkoutRoute() {
                   key={currentDisplaySet.id}
                   exercise={activeExercise}
                   effortDisplay={preferences.effortDisplay}
-                  isCompletingSet={isCompletingSet}
+                  isCompletingSet={isCompletingSet || isFinishing}
                   isResting={isCurrentMemberResting}
                   isWorkoutReadyToFinish={false}
                   memberName={membersById.get(currentDisplaySet.memberId)?.displayName ?? '成员'}
@@ -1824,12 +1878,20 @@ export default function WorkoutRoute() {
                 />
               ) : (
                 <MemberExerciseCompleteCard
+                  canFinishWorkout={workoutCompletionState.canFinishFromCompletionCard}
                   hasNextExercise={hasNextExercise}
                   hasPendingForOtherMember={hasPendingForOtherMember}
+                  incompleteSetCount={workoutCompletionState.incompleteSetCount}
                   memberName={membersById.get(currentMemberId)?.displayName ?? '成员'}
                   nextMemberName={pendingRotationSet ? membersById.get(pendingRotationSet.memberId)?.displayName : undefined}
                   onAddSet={confirmAddExtraSet}
-                  onNextExercise={goNextExercise}
+                  onNextExercise={() => {
+                    if (nextIncompleteExerciseIndex >= 0) {
+                      setActiveExerciseIndex(nextIncompleteExerciseIndex);
+                    } else {
+                      goNextExercise();
+                    }
+                  }}
                   onSwitchNextMember={() => {
                     if (pendingRotationSet?.memberId) {
                       setActiveMemberId(pendingRotationSet.memberId);
@@ -1873,12 +1935,12 @@ export default function WorkoutRoute() {
               ) : null}
               <View style={styles.savedBadge}>
                 <Ionicons
-                  color={lastSavedAt ? colors.success : colors.darkMuted}
-                  name={lastSavedAt ? 'checkmark-circle' : 'time-outline'}
+                  color={localSaveState === 'failed' ? colors.danger : lastSavedAt ? colors.success : colors.darkMuted}
+                  name={localSaveState === 'failed' ? 'alert-circle' : lastSavedAt ? 'checkmark-circle' : 'time-outline'}
                   size={14}
                 />
-                <AppText tone={lastSavedAt ? 'muted' : 'muted'} variant="caption">
-                  {lastSavedAt ? '已自动保存' : '等待记录'}
+                <AppText tone={localSaveState === 'failed' ? 'danger' : 'muted'} variant="caption">
+                  {localSaveStatus}
                 </AppText>
               </View>
             </View>
@@ -1996,8 +2058,10 @@ export default function WorkoutRoute() {
 }
 
 function MemberExerciseCompleteCard({
+  canFinishWorkout,
   hasNextExercise,
   hasPendingForOtherMember,
+  incompleteSetCount,
   memberName,
   nextMemberName,
   onAddSet,
@@ -2005,8 +2069,10 @@ function MemberExerciseCompleteCard({
   onNextExercise,
   onSwitchNextMember,
 }: {
+  canFinishWorkout: boolean;
   hasNextExercise: boolean;
   hasPendingForOtherMember: boolean;
+  incompleteSetCount: number;
   memberName: string;
   nextMemberName?: string;
   onAddSet: () => void;
@@ -2024,7 +2090,9 @@ function MemberExerciseCompleteCard({
           {memberName} 当前动作已完成
         </AppText>
         <AppText tone="muted" variant="caption">
-          可以给他加做一组，或继续记录下一位成员。
+          {canFinishWorkout
+            ? '所有训练组均已记录，可以结束本次训练。'
+            : `还剩 ${incompleteSetCount} 组未记录，可以继续训练或加做一组。`}
         </AppText>
       </View>
       <View style={styles.memberDoneActions}>
@@ -2043,11 +2111,11 @@ function MemberExerciseCompleteCard({
         ) : (
           <Pressable
             accessibilityRole="button"
-            onPress={hasNextExercise ? onNextExercise : onFinish}
+            onPress={canFinishWorkout ? onFinish : onNextExercise}
             style={styles.memberDonePrimary}
           >
             <AppText tone="inverse" variant="caption" weight="900">
-              {hasNextExercise ? '下个动作' : '结束训练'}
+              {canFinishWorkout ? '结束训练' : hasNextExercise ? '下个动作' : '查看未完成动作'}
             </AppText>
           </Pressable>
         )}

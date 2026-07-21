@@ -207,6 +207,32 @@ export type SaveWorkoutSetInput = Partial<
   id: ID;
 };
 
+export type SaveWorkoutSetPatch = Omit<SaveWorkoutSetInput, 'id'>;
+
+export type SaveWorkoutSetPatchesBatchInput = {
+  patches: SaveWorkoutSetInput[];
+  sessionId: ID;
+};
+
+export type CompleteWorkoutSessionAtomicInput = SaveWorkoutSetPatchesBatchInput & {
+  finishedAt?: string;
+};
+
+export type CompleteWorkoutSessionAtomicResult = {
+  session: WorkoutSession;
+  sets: WorkoutSet[];
+};
+
+export type AddWorkoutSetsBatchInput = {
+  sessionId: ID;
+  sets: AddWorkoutSetInput[];
+};
+
+export type DeleteWorkoutSetsBatchInput = {
+  sessionId: ID;
+  setIds: ID[];
+};
+
 export type WorkoutSummary = {
   sessionId: ID;
   completedSets: number;

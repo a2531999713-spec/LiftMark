@@ -1,5 +1,14 @@
 ﻿# LiftMark 项目交接记录
 
+## 2026-07-21 v2.11.1 写入管线交接
+
+- 逐输入 autosave Promise chain 已删除，改为每 set 最新 patch 合并和批量 SQLite 写入。
+- session 完成与最终 set 在一个事务内提交；路由后再运行队列恢复、报告、进阶、成就和网络同步。
+- 返回、双击锁、失败重试、真实 set 进度、自重 0kg 与多人批量调整已修复。
+- 无 migration/API/服务端部署；typecheck、lint、58 suites/293 tests、arm64 release build 通过。
+- NE2210 隔离 15/64/200 set 原子结束为 21.913/73.742/210.561ms；未使用 176 业务数据。
+- 仍需 188 完整 UI、断网/重启/恢复同步验收；v2.11.0 服务端仍未部署。
+
 ## 2026-07-21 v2.11.0 成就连续性交接
 
 - 新路由 `/achievements`；Today 在核心训练内容后显示紧凑连续性卡，AccountPanel 仅通过 props 接收摘要和导航回调。

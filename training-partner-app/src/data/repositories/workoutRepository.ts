@@ -2,15 +2,20 @@ import type { ID } from '@/domain/common/ids';
 import type {
   AddWorkoutExerciseInput,
   AddWorkoutSetInput,
+  AddWorkoutSetsBatchInput,
   ApplyRecoveryWeightReductionInput,
   ApplyRecoveryWeightReductionResult,
+  CompleteWorkoutSessionAtomicInput,
+  CompleteWorkoutSessionAtomicResult,
   CreateSessionFromTodayPlanInput,
   CreateManualSessionInput,
   CreateManualSessionV2Input,
+  DeleteWorkoutSetsBatchInput,
   ListOpenWorkoutSessionsForDateInput,
   ListHistorySessionsByScopeInput,
   ListSessionsInput,
   SaveWorkoutSetInput,
+  SaveWorkoutSetPatchesBatchInput,
   UpdateWorkoutSessionInput,
   WorkoutSessionAggregation,
   WorkoutSession,
@@ -29,9 +34,13 @@ export interface WorkoutRepository {
   updateSession(input: UpdateWorkoutSessionInput): Promise<WorkoutSession>;
   addExerciseToSession(input: AddWorkoutExerciseInput): Promise<WorkoutSessionDetail>;
   addSetToExerciseRecord(input: AddWorkoutSetInput): Promise<WorkoutSet>;
+  addSetsToExerciseRecordsBatch(input: AddWorkoutSetsBatchInput): Promise<WorkoutSet[]>;
   updateExerciseRecordExercise(recordId: ID, exerciseId: ID, notes?: string): Promise<void>;
   saveSet(input: SaveWorkoutSetInput): Promise<WorkoutSet>;
+  saveSetPatchesBatch(input: SaveWorkoutSetPatchesBatchInput): Promise<WorkoutSet[]>;
+  completeSessionAtomic(input: CompleteWorkoutSessionAtomicInput): Promise<CompleteWorkoutSessionAtomicResult>;
   deleteSet(setId: ID): Promise<void>;
+  deleteSetsBatch(input: DeleteWorkoutSetsBatchInput): Promise<void>;
   deleteMemberSet(setId: ID, memberId: ID): Promise<void>;
   deleteExerciseRecord(recordId: ID): Promise<void>;
   deleteSession(sessionId: ID): Promise<void>;

@@ -1,6 +1,21 @@
 ﻿# 本地 Repository API 文档
 
-更新时间：2026-07-15
+更新时间：2026-07-21
+
+## 2026-07-21 契约补充：训练批量写入
+
+```ts
+WorkoutRepository.saveSetPatchesBatch({ sessionId, patches })
+WorkoutRepository.completeSessionAtomic({ sessionId, patches, finishedAt })
+WorkoutRepository.addSetsToExerciseRecordsBatch(input)
+WorkoutRepository.deleteSetsBatch(input)
+```
+
+- 所有入口先验证当前账号和可见小组/session scope；不能按全局 ID 直接更新。
+- patch 按 set 合并后一次读取目标，在单个排他事务中写入，并维护 `sync_status/sync_error/updated_at`。
+- atomic complete 在同一事务最后更新 session completed/finished_at/sync metadata；已完成 session 幂等返回。
+- batch 事务内禁止网络、报告、progression、achievement 和逐实体数据库初始化。
+- 软删除 set 不硬删除历史，也会丢弃协调器中的过期 pending patch。
 
 ## 2026-07-21 契约补充：成就快照
 

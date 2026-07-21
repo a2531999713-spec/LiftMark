@@ -6,7 +6,7 @@ import { calculateRecoveryAdjustedWeight } from '@/domain/recovery/recovery-work
 import { FREE_TRAINING_PLAN_ID } from '@/domain/workout/workout.types';
 import { getPlanExerciseInitialReps, getPlanExerciseSetCount } from '@/domain/workout/workout.service';
 import { estimateTrainingCalories, getTrainingIntensityLevel } from '@/domain/report/trainingReport.service';
-import { enqueueSyncCandidate } from '@/sync/syncQueue';
+import { enqueueSyncCandidate, enqueueSyncCandidatesBatch } from '@/sync/syncQueue';
 import type { SyncEntityType } from '@/sync/syncTypes';
 import { getInstallationDeviceId } from '@/sync/device/deviceIdentity';
 import type {
@@ -15,13 +15,18 @@ import type {
   CreateManualSessionV2Input,
   AddWorkoutExerciseInput,
   AddWorkoutSetInput,
+  AddWorkoutSetsBatchInput,
   ApplyRecoveryWeightReductionInput,
   ApplyRecoveryWeightReductionResult,
+  CompleteWorkoutSessionAtomicInput,
+  CompleteWorkoutSessionAtomicResult,
+  DeleteWorkoutSetsBatchInput,
   ManualWorkoutExerciseInput,
   ListHistorySessionsByScopeInput,
   ListOpenWorkoutSessionsForDateInput,
   ListSessionsInput,
   SaveWorkoutSetInput,
+  SaveWorkoutSetPatchesBatchInput,
   UpdateWorkoutSessionInput,
   WorkoutSessionAggregation,
   WorkoutSession,
@@ -453,12 +458,13 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   }
 
   private async enqueueDeletedEntities(entities: DeletedEntity[], updatedAt: string): Promise<void> {
-    await Promise.all(
-      entities.map((entity) =>
-        enqueueSyncCandidate({
+    const ownerUserId = await getCurrentAccountUserId();
+    await enqueueSyncCandidatesBatch(
+      entities.map((entity) => ({
           entityType: entity.entityType,
           localId: entity.localId,
           operation: 'delete',
+          ownerUserId,
           payload: {
             groupId: entity.groupId,
             parentServerId: entity.parentServerId ?? entity.sessionId,
@@ -467,9 +473,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
           remoteId: entity.remoteId ?? undefined,
           status: 'pending_delete',
           updatedAt,
-        }).catch(() => undefined),
-      ),
-    );
+        })),
+    ).catch(() => undefined);
   }
 
   private normalizeManualExercises(input: CreateManualSessionInput): ManualWorkoutExerciseInput[] {
@@ -1326,8 +1331,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
           id, owner_user_id, session_id, plan_cycle_id, plan_day_id, plan_exercise_id, exercise_id, order_index,
           replaced_from_exercise_id, priority, planned_sets, planned_reps,
           planned_rep_min, planned_rep_max, planned_rpe, planned_rir,
-          planned_percent_1rm, planned_rest_seconds, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          planned_percent_1rm, planned_rest_seconds, notes, sync_status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_create', ?, ?)`,
         recordId,
         ownerUserId,
         session.id,
@@ -1347,6 +1352,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         null,
         null,
         input.notes ?? '编辑记录新增动作',
+        now,
+        now,
       );
 
       for (const memberId of memberIds) {
@@ -1356,8 +1363,8 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
               id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
               recorded_by_user_id, source_device_id,
               planned_weight, actual_weight, planned_reps, actual_reps,
-              rpe, rir, actual_rest_seconds, completed, skipped, notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              rpe, rir, actual_rest_seconds, completed, skipped, notes, sync_status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_create', ?, ?)`,
             createId('set'),
             ownerUserId,
             session.id,
@@ -1459,6 +1466,111 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     return mapWorkoutSet(setRow);
   }
 
+  async addSetsToExerciseRecordsBatch(input: AddWorkoutSetsBatchInput): Promise<WorkoutSet[]> {
+    if (input.sets.length === 0) return [];
+    if (input.sets.some((set) => set.sessionId !== input.sessionId)) {
+      throw new Error('All workout sets must belong to the requested session.');
+    }
+
+    const db = await this.getDb();
+    const sourceDeviceId = await getInstallationDeviceId();
+    const session = await requireRow(
+      await this.getSession(input.sessionId),
+      `Workout session not visible: ${input.sessionId}`,
+    );
+    const ownerUserId = await this.getVisibleGroupOwnerUserId(session.groupId);
+    const recordIds = [...new Set(input.sets.map((set) => set.exerciseRecordId))];
+    const records = await db.getAllAsync<WorkoutExerciseRecordRow>(
+      `SELECT * FROM workout_exercise_records
+       WHERE session_id = ? AND id IN (${recordIds.map(() => '?').join(', ')}) AND deleted_at IS NULL`,
+      input.sessionId,
+      ...recordIds,
+    );
+    if (records.length !== recordIds.length) {
+      throw new Error('One or more workout exercise records are not available.');
+    }
+
+    const maxRows = await db.getAllAsync<{
+      exercise_record_id: string;
+      max_set_number: number | null;
+      member_id: string;
+    }>(
+      `SELECT exercise_record_id, member_id, MAX(set_number) AS max_set_number
+       FROM workout_sets
+       WHERE session_id = ? AND deleted_at IS NULL
+       GROUP BY exercise_record_id, member_id`,
+      input.sessionId,
+    );
+    const nextNumber = new Map(
+      maxRows.map((row) => [
+        `${row.exercise_record_id}:${row.member_id}`,
+        (row.max_set_number ?? 0) + 1,
+      ]),
+    );
+    const now = nowIso();
+    const rows: WorkoutSetRow[] = input.sets.map((set) => {
+      const key = `${set.exerciseRecordId}:${set.memberId}`;
+      const setNumber = nextNumber.get(key) ?? 1;
+      nextNumber.set(key, setNumber + 1);
+      return {
+        actual_reps: set.reps ?? null,
+        actual_rest_seconds: null,
+        actual_weight: set.weight ?? null,
+        completed: set.completed === false ? 0 : 1,
+        created_at: now,
+        exercise_record_id: set.exerciseRecordId,
+        id: createId('set'),
+        member_id: set.memberId,
+        notes: set.notes ?? null,
+        planned_reps: set.reps ?? null,
+        planned_weight: set.weight ?? null,
+        recorded_by_user_id: session.recordedByUserId ?? ownerUserId,
+        rir: set.rir ?? null,
+        rpe: set.rpe ?? null,
+        session_id: input.sessionId,
+        set_number: setNumber,
+        skipped: set.skipped ? 1 : 0,
+        source_device_id: session.sourceDeviceId ?? sourceDeviceId,
+        updated_at: now,
+      };
+    });
+
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const row of rows) {
+        await txn.runAsync(
+          `INSERT INTO workout_sets (
+            id, owner_user_id, session_id, exercise_record_id, member_id, set_number,
+            recorded_by_user_id, source_device_id, planned_weight, actual_weight,
+            planned_reps, actual_reps, rpe, rir, actual_rest_seconds, completed, skipped,
+            notes, sync_status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_create', ?, ?)`,
+          row.id,
+          ownerUserId,
+          row.session_id,
+          row.exercise_record_id,
+          row.member_id,
+          row.set_number,
+          row.recorded_by_user_id ?? null,
+          row.source_device_id ?? null,
+          row.planned_weight,
+          row.actual_weight,
+          row.planned_reps,
+          row.actual_reps,
+          row.rpe,
+          row.rir,
+          row.actual_rest_seconds ?? null,
+          row.completed,
+          row.skipped,
+          row.notes,
+          now,
+          now,
+        );
+      }
+    });
+
+    return rows.map(mapWorkoutSet);
+  }
+
   async updateExerciseRecordExercise(recordId: string, exerciseId: string, notes?: string): Promise<void> {
     const db = await this.getDb();
     const userId = await getCurrentAccountUserId();
@@ -1483,12 +1595,207 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       `UPDATE workout_exercise_records
        SET exercise_id = ?,
             replaced_from_exercise_id = COALESCE(replaced_from_exercise_id, exercise_id),
-            notes = COALESCE(?, notes)
+            notes = COALESCE(?, notes),
+            sync_status = CASE WHEN remote_id IS NULL THEN 'pending_create' ELSE 'pending_update' END,
+            sync_error = NULL,
+            updated_at = ?
        WHERE id = ?`,
       exerciseId,
       notes ?? null,
+      nowIso(),
       recordId,
     );
+  }
+
+  async saveSetPatchesBatch(input: SaveWorkoutSetPatchesBatchInput): Promise<WorkoutSet[]> {
+    if (input.patches.length === 0) return [];
+
+    const mergedById = new Map<string, SaveWorkoutSetInput>();
+    for (const patch of input.patches) {
+      validateWorkoutSetInput(patch);
+      const current = mergedById.get(patch.id);
+      mergedById.set(patch.id, { ...current, ...patch, id: patch.id });
+    }
+    const patches = [...mergedById.values()];
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+    const visibleSession = await db.getFirstAsync<WorkoutSessionRow>(
+      `SELECT session.* FROM workout_sessions session
+       INNER JOIN groups ON groups.id = session.group_id
+       WHERE session.id = ?
+         AND ${scope.where}
+         AND session.deleted_at IS NULL
+         AND groups.deleted_at IS NULL
+       LIMIT 1`,
+      input.sessionId,
+      ...scope.params,
+    );
+    if (!visibleSession) {
+      throw new Error(`Workout session not visible for current account: ${input.sessionId}`);
+    }
+
+    const placeholders = patches.map(() => '?').join(', ');
+    const rows = await db.getAllAsync<WorkoutSetRow>(
+      `SELECT * FROM workout_sets
+       WHERE session_id = ? AND id IN (${placeholders}) AND deleted_at IS NULL`,
+      input.sessionId,
+      ...patches.map((patch) => patch.id),
+    );
+    if (rows.length !== patches.length) {
+      const found = new Set(rows.map((row) => row.id));
+      const missing = patches.filter((patch) => !found.has(patch.id)).map((patch) => patch.id);
+      throw new Error(`Workout sets not visible in session: ${missing.join(', ')}`);
+    }
+
+    const rowById = new Map(rows.map((row) => [row.id, row]));
+    const now = nowIso();
+    const updatedSets = patches.map((patch) => {
+      const row = rowById.get(patch.id)!;
+      return {
+        ...mapWorkoutSet(row),
+        ...patch,
+        id: row.id,
+        sessionId: row.session_id,
+        exerciseRecordId: row.exercise_record_id,
+        memberId: row.member_id,
+        setNumber: row.set_number,
+        createdAt: row.created_at,
+        updatedAt: now,
+      } satisfies WorkoutSet;
+    });
+
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const updated of updatedSets) {
+        await txn.runAsync(
+          `UPDATE workout_sets
+           SET planned_weight = ?, actual_weight = ?, actual_reps = ?, rpe = ?, rir = ?,
+               actual_rest_seconds = ?, completed = ?, skipped = ?, notes = ?,
+               sync_status = CASE WHEN remote_id IS NULL THEN 'pending_create' ELSE 'pending_update' END,
+               sync_error = NULL, updated_at = ?
+           WHERE id = ? AND session_id = ? AND deleted_at IS NULL`,
+          updated.plannedWeight ?? null,
+          updated.actualWeight ?? null,
+          updated.actualReps ?? null,
+          updated.rpe ?? null,
+          updated.rir ?? null,
+          updated.actualRestSeconds ?? null,
+          updated.completed ? 1 : 0,
+          updated.skipped ? 1 : 0,
+          updated.notes ?? null,
+          now,
+          updated.id,
+          input.sessionId,
+        );
+      }
+    });
+
+    return updatedSets;
+  }
+
+  async completeSessionAtomic(
+    input: CompleteWorkoutSessionAtomicInput,
+  ): Promise<CompleteWorkoutSessionAtomicResult> {
+    const db = await this.getDb();
+    const userId = await getCurrentAccountUserId();
+    const scope = getGroupAccountScope(userId, 'groups');
+    const sessionRow = await db.getFirstAsync<WorkoutSessionRow>(
+      `SELECT session.* FROM workout_sessions session
+       INNER JOIN groups ON groups.id = session.group_id
+       WHERE session.id = ?
+         AND ${scope.where}
+         AND session.deleted_at IS NULL
+         AND groups.deleted_at IS NULL
+       LIMIT 1`,
+      input.sessionId,
+      ...scope.params,
+    );
+    if (!sessionRow) {
+      throw new Error(`Workout session not visible for current account: ${input.sessionId}`);
+    }
+    if (sessionRow.status === 'completed') {
+      return { session: mapWorkoutSession(sessionRow), sets: [] };
+    }
+
+    const mergedById = new Map<string, SaveWorkoutSetInput>();
+    for (const patch of input.patches) {
+      validateWorkoutSetInput(patch);
+      const current = mergedById.get(patch.id);
+      mergedById.set(patch.id, { ...current, ...patch, id: patch.id });
+    }
+    const patches = [...mergedById.values()];
+    const rows = patches.length === 0
+      ? []
+      : await db.getAllAsync<WorkoutSetRow>(
+          `SELECT * FROM workout_sets
+           WHERE session_id = ? AND id IN (${patches.map(() => '?').join(', ')}) AND deleted_at IS NULL`,
+          input.sessionId,
+          ...patches.map((patch) => patch.id),
+        );
+    if (rows.length !== patches.length) {
+      throw new Error('One or more pending workout sets are no longer available.');
+    }
+    const rowById = new Map(rows.map((row) => [row.id, row]));
+    const finishedAt = input.finishedAt ?? nowIso();
+    const updatedSets = patches.map((patch) => {
+      const row = rowById.get(patch.id)!;
+      return {
+        ...mapWorkoutSet(row),
+        ...patch,
+        id: row.id,
+        sessionId: row.session_id,
+        exerciseRecordId: row.exercise_record_id,
+        memberId: row.member_id,
+        setNumber: row.set_number,
+        createdAt: row.created_at,
+        updatedAt: finishedAt,
+      } satisfies WorkoutSet;
+    });
+
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const updated of updatedSets) {
+        await txn.runAsync(
+          `UPDATE workout_sets
+           SET planned_weight = ?, actual_weight = ?, actual_reps = ?, rpe = ?, rir = ?,
+               actual_rest_seconds = ?, completed = ?, skipped = ?, notes = ?,
+               sync_status = CASE WHEN remote_id IS NULL THEN 'pending_create' ELSE 'pending_update' END,
+               sync_error = NULL, updated_at = ?
+           WHERE id = ? AND session_id = ? AND deleted_at IS NULL`,
+          updated.plannedWeight ?? null,
+          updated.actualWeight ?? null,
+          updated.actualReps ?? null,
+          updated.rpe ?? null,
+          updated.rir ?? null,
+          updated.actualRestSeconds ?? null,
+          updated.completed ? 1 : 0,
+          updated.skipped ? 1 : 0,
+          updated.notes ?? null,
+          finishedAt,
+          updated.id,
+          input.sessionId,
+        );
+      }
+      await txn.runAsync(
+        `UPDATE workout_sessions
+         SET status = 'completed', finished_at = ?,
+             sync_status = CASE WHEN remote_id IS NULL THEN 'pending_create' ELSE 'pending_update' END,
+             sync_error = NULL, updated_at = ?
+         WHERE id = ? AND deleted_at IS NULL`,
+        finishedAt,
+        finishedAt,
+        input.sessionId,
+      );
+    });
+
+    return {
+      session: mapWorkoutSession({
+        ...sessionRow,
+        finished_at: finishedAt,
+        status: 'completed',
+        updated_at: finishedAt,
+      }),
+      sets: updatedSets,
+    };
   }
 
   async saveSet(input: SaveWorkoutSetInput): Promise<WorkoutSet> {
@@ -1527,7 +1834,9 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     await db.runAsync(
       `UPDATE workout_sets
        SET planned_weight = ?, actual_weight = ?, actual_reps = ?, rpe = ?, rir = ?,
-           actual_rest_seconds = ?, completed = ?, skipped = ?, notes = ?, updated_at = ?
+           actual_rest_seconds = ?, completed = ?, skipped = ?, notes = ?,
+           sync_status = CASE WHEN remote_id IS NULL THEN 'pending_create' ELSE 'pending_update' END,
+           sync_error = NULL, updated_at = ?
        WHERE id = ?`,
       updated.plannedWeight ?? null,
       updated.actualWeight ?? null,
@@ -1595,6 +1904,38 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       now,
     );
     await this.cleanupEmptyExerciseRecords(row.session_id);
+  }
+
+  async deleteSetsBatch(input: DeleteWorkoutSetsBatchInput): Promise<void> {
+    const setIds = [...new Set(input.setIds)];
+    if (setIds.length === 0) return;
+    const db = await this.getDb();
+    const visibleSession = await this.getSession(input.sessionId);
+    if (!visibleSession) {
+      throw new Error(`Workout session not visible for current account: ${input.sessionId}`);
+    }
+    const rows = await db.getAllAsync<{ id: string }>(
+      `SELECT id FROM workout_sets
+       WHERE session_id = ? AND id IN (${setIds.map(() => '?').join(', ')}) AND deleted_at IS NULL`,
+      input.sessionId,
+      ...setIds,
+    );
+    if (rows.length !== setIds.length) {
+      throw new Error('One or more workout sets are not available for deletion.');
+    }
+    const now = nowIso();
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      await txn.runAsync(
+        `UPDATE workout_sets
+         SET deleted_at = ?, sync_status = 'pending_delete', sync_error = NULL, updated_at = ?
+         WHERE session_id = ? AND id IN (${setIds.map(() => '?').join(', ')}) AND deleted_at IS NULL`,
+        now,
+        now,
+        input.sessionId,
+        ...setIds,
+      );
+    });
+    await this.cleanupEmptyExerciseRecords(input.sessionId);
   }
 
   async deleteMemberSet(setId: string, memberId: string): Promise<void> {
@@ -1985,21 +2326,7 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
   }
 
   async finishSession(sessionId: string): Promise<void> {
-    const db = await this.getDb();
-    const now = nowIso();
-    const visibleSession = await this.getSession(sessionId);
-    if (!visibleSession) {
-      throw new Error(`Workout session not visible for current account: ${sessionId}`);
-    }
-    await db.runAsync(
-      `UPDATE workout_sessions
-       SET status = ?, finished_at = ?, updated_at = ?
-       WHERE id = ?`,
-      'completed',
-      now,
-      now,
-      sessionId,
-    );
+    await this.completeSessionAtomic({ patches: [], sessionId });
   }
 
   async generateTrainingReport(sessionId: string): Promise<void> {

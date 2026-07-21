@@ -2,6 +2,18 @@
 
 更新时间：2026-06-15
 
+## 2026-07-21 v2.11.1 回归范围
+
+- 同一 set 100/500 次连续输入只保留最终合并值，不形成等长 Promise/SQLite 写链。
+- 写入中出现的新 patch 最多形成一个 next batch；失败 patch 保留并可重试。
+- 50 个 pending set 与 session completed 在一次事务中提交；重复 finish 幂等。
+- finish 不等待队列网络 push、报告、progression 或 achievement，失败不得跳转或伪装完成。
+- 正常 finish 后 unmount 不重复 flush；保存退出保持 `in_progress`，返回/结束/放弃语义互斥。
+- 真实 set 状态覆盖 partial/pending/skipped/completed；浏览后续动作不改变前序完成事实。
+- 自重 0kg 可完成、缺少 reps 不可完成；多人加减组/跳过/新增参与者/progression 使用 batch。
+- 队列覆盖账号隔离、去重、delete 优先、重复活动行收敛和 dirty `sync_status` 重建。
+- 真机性能必须使用 188 或隔离数据库，不得向 176 写入测试训练。
+
 ## 2026-06-30 补充
 
 - 完成本组后有计划休息时，应写入 `actualRestSeconds`；提前跳过休息应覆盖为实际经过秒数。

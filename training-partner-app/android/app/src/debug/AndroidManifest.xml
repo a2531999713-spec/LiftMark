@@ -3,5 +3,13 @@
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
-    <application android:usesCleartextTraffic="true" tools:targetApi="28" tools:ignore="GoogleAppIndexingWarning" tools:replace="android:usesCleartextTraffic" />
+    <application android:usesCleartextTraffic="true" tools:targetApi="28" tools:ignore="GoogleAppIndexingWarning" tools:replace="android:usesCleartextTraffic">
+        <receiver
+            android:name=".WorkoutPerformanceBenchmarkReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.liftmark.app.RUN_WORKOUT_BENCHMARK" />
+            </intent-filter>
+        </receiver>
+    </application>
 </manifest>

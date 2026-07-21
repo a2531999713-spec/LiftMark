@@ -2,22 +2,22 @@ import { describe, expect, it } from '@jest/globals';
 
 import { workoutSessionReducer } from '@/features/workout-session/model/workoutSession.reducer';
 import { initialWorkoutSessionState } from '@/features/workout-session/model/workoutSession.state';
-import { WorkoutAutosaveService } from '@/features/workout-session/services/workoutAutosave.service';
+import { WorkoutWriteCoordinator } from '@/features/workout-session/services/workoutWriteCoordinator.service';
 import { getRestTimerSnapshot } from '@/features/workout-session/services/workoutRestTimer.service';
 
 describe('workout session architecture', () => {
-  it('serializes rapid writes to the same set', async () => {
-    const service = new WorkoutAutosaveService();
-    const events: number[] = [];
-    const first = service.enqueue('set-a', async () => {
-      await Promise.resolve();
-      events.push(1);
+  it('coalesces rapid writes to the same set', async () => {
+    const batches: unknown[][] = [];
+    const coordinator = new WorkoutWriteCoordinator(async (patches) => {
+      batches.push(patches);
+      return patches as never;
     });
-    const second = service.enqueue('set-a', async () => {
-      events.push(2);
-    });
-    await Promise.all([first, second]);
-    expect(events).toEqual([1, 2]);
+    for (let value = 1; value <= 100; value += 1) {
+      coordinator.schedulePatch('set-a', { actualWeight: value });
+    }
+    await coordinator.flushSession();
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toEqual([{ id: 'set-a', actualWeight: 100 }]);
   });
 
   it('derives rest time from timestamps after background time passes', () => {

@@ -15,7 +15,7 @@ export function workoutSessionReducer(
         exercises: action.exercises,
         activeParticipantId: action.activeParticipantId,
         activeExerciseIndex: action.activeExerciseIndex,
-        status: 'ready',
+        status: 'active',
         recoverableError: null,
       };
     case 'statusChanged':
@@ -25,18 +25,18 @@ export function workoutSessionReducer(
     case 'writeQueued':
       return state.pendingWriteIds.includes(action.setId)
         ? state
-        : { ...state, pendingWriteIds: [...state.pendingWriteIds, action.setId], status: 'saving' };
+        : { ...state, pendingWriteIds: [...state.pendingWriteIds, action.setId], status: 'saving_set' };
     case 'writeFinished': {
       const pendingWriteIds = state.pendingWriteIds.filter((id) => id !== action.setId);
       return {
         ...state,
         pendingWriteIds,
         lastSavedAt: action.savedAt ?? state.lastSavedAt,
-        status: pendingWriteIds.length === 0 ? 'recording' : state.status,
+        status: pendingWriteIds.length === 0 ? 'active' : state.status,
       };
     }
     case 'recoverableError':
-      return { ...state, recoverableError: action.message, status: action.message ? 'error' : state.status };
+      return { ...state, recoverableError: action.message, status: action.message ? 'save_failed' : state.status };
     case 'sheetChanged':
       return {
         ...state,

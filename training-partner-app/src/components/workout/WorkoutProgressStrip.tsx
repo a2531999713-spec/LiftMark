@@ -7,7 +7,7 @@ import { colors, radius, spacing } from '@/theme';
 type ExerciseProgressItem = {
   id: string;
   name: string;
-  status: 'completed' | 'current' | 'upcoming';
+  status: 'completed' | 'current' | 'partial' | 'pending' | 'skipped';
 };
 
 type WorkoutProgressStripProps = {
@@ -27,7 +27,7 @@ export function WorkoutProgressStrip({
     return null;
   }
 
-  const completedCount = exercises.filter((e) => e.status === 'completed').length;
+  const completedCount = exercises.filter((e) => e.status === 'completed' || e.status === 'skipped').length;
 
   if (mode === 'dock') {
     return (
@@ -42,12 +42,12 @@ export function WorkoutProgressStrip({
         </View>
         <View style={styles.dockProgress}>
           <View style={styles.dockTrack}>
-            <View style={[styles.dockFill, { width: `${((currentIndex + 1) / exercises.length) * 100}%` }]} />
+            <View style={[styles.dockFill, { width: `${(completedCount / exercises.length) * 100}%` }]} />
           </View>
         </View>
         <View style={styles.dockExercises}>
           {exercises.map((exercise, index) => {
-            const isCompleted = exercise.status === 'completed';
+            const isCompleted = exercise.status === 'completed' || exercise.status === 'skipped';
             const isCurrent = exercise.status === 'current';
 
             return (
@@ -85,7 +85,7 @@ export function WorkoutProgressStrip({
       </View>
       <View style={styles.exerciseList}>
         {exercises.map((exercise, index) => {
-          const isCompleted = exercise.status === 'completed';
+          const isCompleted = exercise.status === 'completed' || exercise.status === 'skipped';
           const isCurrent = exercise.status === 'current';
 
           return (

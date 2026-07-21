@@ -316,6 +316,64 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
   });
 });
 
+describe('SQLiteWorkoutRepository workout write batches', () => {
+  const createSetRow = (id: string) => ({
+    id,
+    session_id: 'session_open',
+    exercise_record_id: 'record_1',
+    member_id: 'member_1',
+    recorded_by_user_id: 'user-a',
+    source_device_id: 'device-a',
+    set_number: Number(id.split('_').at(-1) ?? 1),
+    planned_weight: 40,
+    actual_weight: 40,
+    planned_reps: 8,
+    actual_reps: 8,
+    rpe: null,
+    rir: null,
+    actual_rest_seconds: null,
+    completed: 0,
+    skipped: 0,
+    notes: null,
+    created_at: '2026-06-30T00:00:00.000Z',
+    updated_at: '2026-06-30T00:00:00.000Z',
+  });
+
+  it('completes 50 pending sets and the session in one transaction', async () => {
+    const rows = Array.from({ length: 50 }, (_, index) => createSetRow(`set_${index + 1}`));
+    const transaction = { runAsync: jest.fn(async () => undefined) };
+    const db = {
+      getFirstAsync: jest.fn(async () => openSessionRow),
+      getAllAsync: jest.fn(async () => rows),
+      withExclusiveTransactionAsync: jest.fn(async (task: (txn: typeof transaction) => Promise<void>) => task(transaction)),
+    };
+    const repository = new SQLiteWorkoutRepository(async () => db as never);
+    const result = await repository.completeSessionAtomic({
+      patches: rows.map((row) => ({ completed: true, id: row.id })),
+      sessionId: 'session_open',
+    });
+
+    expect(db.getFirstAsync).toHaveBeenCalledTimes(1);
+    expect(db.getAllAsync).toHaveBeenCalledTimes(1);
+    expect(db.withExclusiveTransactionAsync).toHaveBeenCalledTimes(1);
+    expect(transaction.runAsync).toHaveBeenCalledTimes(51);
+    expect(result.session.status).toBe('completed');
+    expect(result.sets).toHaveLength(50);
+  });
+
+  it('returns idempotently when the session is already completed', async () => {
+    const db = {
+      getFirstAsync: jest.fn(async () => ({ ...openSessionRow, status: 'completed' })),
+      getAllAsync: jest.fn(async () => []),
+      withExclusiveTransactionAsync: jest.fn(),
+    };
+    const repository = new SQLiteWorkoutRepository(async () => db as never);
+    const result = await repository.completeSessionAtomic({ patches: [], sessionId: 'session_open' });
+    expect(result.session.status).toBe('completed');
+    expect(db.withExclusiveTransactionAsync).not.toHaveBeenCalled();
+  });
+});
+
 describe('SQLiteWorkoutRepository.createManualSession', () => {
   it('writes multiple manual exercises with independent set values', async () => {
     const exerciseRecordParams: unknown[][] = [];
@@ -635,6 +693,7 @@ describe('SQLiteWorkoutRepository.updateExerciseRecordExercise', () => {
       expect.stringContaining('replaced_from_exercise_id = COALESCE(replaced_from_exercise_id, exercise_id)'),
       'exercise_dumbbell_bench',
       null,
+      '2026-06-30T00:00:00.000Z',
       'record_1',
     );
   });
@@ -655,6 +714,7 @@ describe('SQLiteWorkoutRepository.updateExerciseRecordExercise', () => {
       expect.stringContaining('notes = COALESCE(?, notes)'),
       'exercise_dumbbell_bench',
       '本次替换：器械被占',
+      '2026-06-30T00:00:00.000Z',
       'record_1',
     );
   });
