@@ -23,6 +23,7 @@ import { RotationOrderCard } from '@/components/workout/RotationOrderCard';
 import { WorkoutProgressStrip } from '@/components/workout/WorkoutProgressStrip';
 import { WorkoutLiveStatsBar } from '@/components/workout/WorkoutLiveStatsBar';
 import { createLocalRepositories, initializeLocalDatabase } from '@/data/local';
+import { getRequiredCurrentUserId } from '@/data/local/accountScope';
 import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { ProgressionSuggestion } from '@/domain/progression/progression.types';
@@ -52,6 +53,7 @@ import { saveWorkoutSet } from '@/features/workout-session/application/saveWorko
 import { WorkoutAutosaveService } from '@/features/workout-session/services/workoutAutosave.service';
 import { parseIncrementKg } from '@/domain/preferences/user-preferences.types';
 import { syncGroupMembersAvatar } from '@/services/memberSyncService';
+import { queueNewAchievementUnlocks } from '@/services/achievementUnlockService';
 import { enqueueSyncCandidate } from '@/sync/syncQueue';
 import { requestImmediateSync } from '@/sync/syncService';
 import { colors, radius, spacing } from '@/theme';
@@ -552,6 +554,14 @@ export default function WorkoutRoute() {
         // 报告、进阶建议和同步属于后置任务，绝不阻塞用户进入总结页。
         void repositories.workoutRepository.generateTrainingReport(sessionId).catch(() => undefined);
         void repositories.progressionRepository.createSuggestionsForSession(sessionId).catch(() => undefined);
+        void (async () => {
+          const ownerUserId = await getRequiredCurrentUserId();
+          const [before, after] = await Promise.all([
+            repositories.achievementRepository.getAchievementSnapshot({ ownerUserId, excludeSessionId: sessionId }),
+            repositories.achievementRepository.getAchievementSnapshot({ ownerUserId }),
+          ]);
+          await queueNewAchievementUnlocks({ userId: ownerUserId, before, after });
+        })().catch(() => undefined);
         void requestImmediateSync().catch(() => undefined);
     } catch (finishError) {
       setError(finishError instanceof Error ? finishError.message : '完成训练失败。');

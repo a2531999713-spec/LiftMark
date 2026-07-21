@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
@@ -24,6 +24,10 @@ import {
 } from '@/services/groupWorkoutConsentService';
 import { colors, radius, spacing } from '@/theme';
 import { ProgressionSuggestionList } from '@/features/progression/ProgressionSuggestionList';
+import { AchievementUnlockSheet } from '@/features/achievements/AchievementUnlockSheet';
+import { consumePendingAchievementUnlocks, subscribeToAchievementUnlocks } from '@/services/achievementUnlockService';
+import { useAuthStore } from '@/store/authStore';
+import type { AchievementProgress } from '@liftmark/shared';
 
 type SummaryView = {
   bestExerciseName: string;
@@ -106,6 +110,7 @@ function buildSummaryView(
 
 export default function WorkoutSummaryRoute() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const userId = useAuthStore((state) => state.user?.id ?? null);
   const repositories = useMemo(() => createLocalRepositories(), []);
   const [detail, setDetail] = useState<WorkoutSessionDetail | null>(null);
   const [summary, setSummary] = useState<WorkoutSummary | null>(null);
@@ -119,6 +124,24 @@ export default function WorkoutSummaryRoute() {
   const [progressionSuggestions, setProgressionSuggestions] = useState<ProgressionSuggestion[]>([]);
   const [progressionStatus, setProgressionStatus] = useState<'generating' | 'ready' | 'failed'>('generating');
   const [exerciseNamesById, setExerciseNamesById] = useState<Record<string, string>>({});
+  const [unlockedAchievements, setUnlockedAchievements] = useState<AchievementProgress[]>([]);
+  const [unlockUserId, setUnlockUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+    const consume = () => {
+      void consumePendingAchievementUnlocks(userId).then((items) => {
+        if (items.length > 0) {
+          setUnlockUserId(userId);
+          setUnlockedAchievements(items);
+        }
+      });
+    };
+    consume();
+    return subscribeToAchievementUnlocks(userId, consume);
+  }, [userId]);
 
   const loadSummary = useCallback(async () => {
     if (!sessionId) {
@@ -553,6 +576,14 @@ export default function WorkoutSummaryRoute() {
       >
         <AppButton onPress={() => setNotice(null)}>知道了</AppButton>
       </AppModalSheet>
+      <AchievementUnlockSheet
+        achievements={unlockUserId === userId ? unlockedAchievements : []}
+        onClose={() => setUnlockedAchievements([])}
+        onViewAll={() => {
+          setUnlockedAchievements([]);
+          router.push('/achievements' as never);
+        }}
+      />
     </Screen>
   );
 }
