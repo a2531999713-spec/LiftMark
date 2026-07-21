@@ -1,4 +1,5 @@
 import { closeDb, db } from './connection';
+import { ACHIEVEMENT_CATALOG } from '@liftmark/shared';
 import {
   SYSTEM_USER_ID,
   SYSTEM_USER_LIFTMARK_ID,
@@ -9,36 +10,13 @@ import { env } from '../config/env';
 import { createId, createLiftmarkId } from '../utils/ids';
 import { hashPassword } from '../utils/security';
 
-const achievementDefinitions = [
-  {
-    code: 'first_workout',
-    name: '首次完成训练',
-    description: '完成并同步第一条训练记录。',
-    metric: 'completed_workouts',
-    target: 1,
-  },
-  {
-    code: 'streak_3_days',
-    name: '连续训练 3 天',
-    description: '连续 3 天都有完成训练。',
-    metric: 'training_streak_days',
-    target: 3,
-  },
-  {
-    code: 'ten_workouts',
-    name: '累计完成 10 次训练',
-    description: '累计完成 10 次训练。',
-    metric: 'completed_workouts',
-    target: 10,
-  },
-  {
-    code: 'volume_10000',
-    name: '累计训练容量达标',
-    description: '累计训练容量达到 10000 kg。',
-    metric: 'total_volume',
-    target: 10000,
-  },
-];
+const achievementDefinitions = ACHIEVEMENT_CATALOG.map((definition) => ({
+  code: definition.code,
+  name: definition.name,
+  description: definition.description,
+  metric: definition.metric,
+  target: definition.target,
+}));
 
 async function seedAdmin() {
   if (!env.adminInitialPassword || (!env.adminPhone && !env.adminEmail)) {
@@ -83,24 +61,28 @@ async function seedAdmin() {
 }
 
 async function seedAchievements() {
+  const now = new Date();
   for (const definition of achievementDefinitions) {
     const existing = await db('achievement_definitions').where({ code: definition.code }).first();
     if (existing) {
       await db('achievement_definitions').where({ id: existing.id }).update({
         ...definition,
         enabled: true,
-        updated_at: new Date(),
+        updated_at: now,
       });
     } else {
       await db('achievement_definitions').insert({
         id: createId('achdef'),
         ...definition,
         enabled: true,
-        created_at: new Date(),
-        updated_at: new Date(),
+        created_at: now,
+        updated_at: now,
       });
     }
   }
+  await db('achievement_definitions')
+    .whereIn('code', ['streak_3_days', 'ten_workouts'])
+    .update({ enabled: false, updated_at: now });
   console.log('成就定义已同步。');
 }
 
