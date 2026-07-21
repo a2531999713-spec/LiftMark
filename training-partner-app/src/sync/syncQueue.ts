@@ -330,6 +330,169 @@ export async function enqueueSyncCandidate(entity: SyncEntity): Promise<void> {
   );
 }
 
+function getOperationPriority(operation: SyncEntity['operation']): number {
+  if (operation === 'delete') return 3;
+  if (operation === 'create') return 2;
+  return 1;
+}
+
+export async function enqueueSyncCandidatesBatch(entities: SyncEntity[]): Promise<number> {
+  if (entities.length === 0) return 0;
+  const db = await initializeLocalDatabase();
+  const now = new Date().toISOString();
+  const currentUserId = await getCurrentAccountUserId();
+  const candidatesByKey = new Map<string, SyncEntity & { ownerUserId: string | null }>();
+
+  for (const entity of entities) {
+    const resolvedOwner = await resolveEntityOwnerUserId(db, entity);
+    if (resolvedOwner && currentUserId && resolvedOwner !== currentUserId) {
+      console.warn('[syncQueue] CROSS-ACCOUNT SKIP batch enqueue', entity.entityType, entity.localId);
+      continue;
+    }
+    const ownerUserId = resolvedOwner ?? currentUserId;
+    const key = `${ownerUserId ?? '<null>'}:${entity.entityType}:${entity.localId}`;
+    const previous = candidatesByKey.get(key);
+    if (!previous || getOperationPriority(entity.operation) >= getOperationPriority(previous.operation)) {
+      candidatesByKey.set(key, { ...previous, ...entity, ownerUserId });
+    }
+  }
+
+  const candidates = [...candidatesByKey.values()];
+  if (candidates.length === 0) return 0;
+  const owners = [...new Set(candidates.map((candidate) => candidate.ownerUserId).filter(Boolean))] as string[];
+  const includesNullOwner = candidates.some((candidate) => candidate.ownerUserId === null);
+  const ownerClauses = [
+    owners.length > 0 ? `owner_user_id IN (${owners.map(() => '?').join(', ')})` : '',
+    includesNullOwner ? 'owner_user_id IS NULL' : '',
+  ].filter(Boolean);
+  const existingRows = await db.getAllAsync<SyncQueueRow>(
+    `SELECT * FROM local_sync_queue
+     WHERE (${ownerClauses.join(' OR ')})
+       AND status IN ('pending_create', 'pending_update', 'pending_delete', 'sync_failed')
+     ORDER BY created_at DESC`,
+    ...owners,
+  );
+  const existingByKey = new Map<string, SyncQueueRow>();
+  const duplicateIds: string[] = [];
+  existingRows.forEach((row) => {
+    const key = `${row.owner_user_id ?? '<null>'}:${row.entity_type}:${row.local_id}`;
+    if (existingByKey.has(key)) duplicateIds.push(row.id);
+    else existingByKey.set(key, row);
+  });
+
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    if (duplicateIds.length > 0) {
+      await txn.runAsync(
+        `UPDATE local_sync_queue
+         SET status = 'synced', sync_error = NULL, updated_at = ?
+         WHERE id IN (${duplicateIds.map(() => '?').join(', ')})`,
+        now,
+        ...duplicateIds,
+      );
+    }
+    for (const candidate of candidates) {
+      const key = `${candidate.ownerUserId ?? '<null>'}:${candidate.entityType}:${candidate.localId}`;
+      const existing = existingByKey.get(key);
+      const preserveDelete = existing?.operation === 'delete' && candidate.operation !== 'delete';
+      const operation = preserveDelete ? existing.operation : candidate.operation;
+      const status = preserveDelete ? existing.status : normalizeQueueStatus({ ...candidate, operation });
+      const payload = preserveDelete ? existing.payload : JSON.stringify(candidate.payload ?? {});
+      if (existing) {
+        await txn.runAsync(
+          `UPDATE local_sync_queue
+           SET owner_user_id = ?, remote_id = ?, operation = ?, status = ?, payload = ?,
+               sync_error = NULL, updated_at = ?
+           WHERE id = ?`,
+          candidate.ownerUserId,
+          candidate.remoteId ?? existing.remote_id,
+          operation,
+          status,
+          payload,
+          candidate.updatedAt ?? now,
+          existing.id,
+        );
+      } else {
+        await txn.runAsync(
+          `INSERT INTO local_sync_queue (
+            id, owner_user_id, entity_type, local_id, remote_id, operation, status, payload,
+            attempts, sync_error, last_attempted_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?)`,
+          createId('sync_queue'),
+          candidate.ownerUserId,
+          candidate.entityType,
+          candidate.localId,
+          candidate.remoteId ?? null,
+          operation,
+          status,
+          payload,
+          now,
+          candidate.updatedAt ?? now,
+        );
+      }
+    }
+  });
+  return candidates.length;
+}
+
+export async function reconcileDirtyWorkoutSyncQueue(options: { sessionId?: string } = {}): Promise<number> {
+  const db = await initializeLocalDatabase();
+  const ownerUserId = await getCurrentAccountUserId();
+  if (!ownerUserId) return 0;
+  const sessionClause = options.sessionId ? 'AND session.id = ?' : '';
+  const params = options.sessionId ? [ownerUserId, options.sessionId] : [ownerUserId];
+  type DirtyRow = { id: string; remote_id: string | null; sync_status: SyncStatus; updated_at: string };
+  const sessions = await db.getAllAsync<DirtyRow>(
+    `SELECT session.id, session.remote_id, session.sync_status, session.updated_at
+     FROM workout_sessions session
+     INNER JOIN groups ON groups.id = session.group_id
+     WHERE COALESCE(session.owner_user_id, groups.owner_user_id) = ?
+       AND session.sync_status IN ('local_only', 'pending_create', 'pending_update', 'pending_delete', 'sync_failed')
+       ${sessionClause}`,
+    ...params,
+  );
+  const records = await db.getAllAsync<DirtyRow>(
+    `SELECT record.id, record.remote_id, record.sync_status, record.updated_at
+     FROM workout_exercise_records record
+     INNER JOIN workout_sessions session ON session.id = record.session_id
+     INNER JOIN groups ON groups.id = session.group_id
+     WHERE COALESCE(record.owner_user_id, session.owner_user_id, groups.owner_user_id) = ?
+       AND record.sync_status IN ('local_only', 'pending_create', 'pending_update', 'pending_delete', 'sync_failed')
+       ${sessionClause}`,
+    ...params,
+  );
+  const sets = await db.getAllAsync<DirtyRow>(
+    `SELECT workout_set.id, workout_set.remote_id, workout_set.sync_status, workout_set.updated_at
+     FROM workout_sets workout_set
+     INNER JOIN workout_sessions session ON session.id = workout_set.session_id
+     INNER JOIN groups ON groups.id = session.group_id
+     WHERE COALESCE(workout_set.owner_user_id, session.owner_user_id, groups.owner_user_id) = ?
+       AND workout_set.sync_status IN ('local_only', 'pending_create', 'pending_update', 'pending_delete', 'sync_failed')
+       ${sessionClause}`,
+    ...params,
+  );
+  const toEntity = (entityType: SyncEntity['entityType'], row: DirtyRow): SyncEntity => {
+    const operation = row.sync_status === 'pending_delete'
+      ? 'delete'
+      : row.remote_id || row.sync_status === 'pending_update'
+        ? 'update'
+        : 'create';
+    return {
+      entityType,
+      localId: row.id,
+      operation,
+      ownerUserId,
+      remoteId: row.remote_id ?? undefined,
+      status: operation === 'delete' ? 'pending_delete' : operation === 'create' ? 'pending_create' : 'pending_update',
+      updatedAt: row.updated_at,
+    };
+  };
+  return enqueueSyncCandidatesBatch([
+    ...sessions.map((row) => toEntity('workoutSessions', row)),
+    ...records.map((row) => toEntity('workoutExerciseRecords', row)),
+    ...sets.map((row) => toEntity('workoutSets', row)),
+  ]);
+}
+
 export async function countPendingSyncItems(): Promise<number> {
   const db = await initializeLocalDatabase();
   const currentUserId = await getCurrentAccountUserId();

@@ -1,12 +1,10 @@
-import type { WorkoutRepository } from '@/data/repositories/workoutRepository';
-import type { SaveWorkoutSetInput, WorkoutSet } from '@/domain/workout/workout.types';
+import type { WorkoutSet } from '@/domain/workout/workout.types';
 
-import type { WorkoutAutosaveService } from '../services/workoutAutosave.service';
+import type { WorkoutWriteCoordinator } from '../services/workoutWriteCoordinator.service';
 
 export function saveWorkoutSet(
-  autosave: WorkoutAutosaveService,
-  repository: WorkoutRepository,
-  input: SaveWorkoutSetInput,
-): Promise<WorkoutSet> {
-  return autosave.enqueue(input.id, () => repository.saveSet(input));
+  coordinator: WorkoutWriteCoordinator,
+  setId: string,
+): Promise<WorkoutSet | null> {
+  return coordinator.flushSet(setId);
 }
