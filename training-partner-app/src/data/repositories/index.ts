@@ -1,3 +1,4 @@
+export type { AchievementRepository } from './achievementRepository';
 export type { BodyMetricsRepository } from './bodyMetricsRepository';
 export type { ExerciseRepository } from './exerciseRepository';
 export type { GroupRepository } from './groupRepository';

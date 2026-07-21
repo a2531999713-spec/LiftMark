@@ -1,4 +1,5 @@
 import { getDatabase } from '../db';
+import { SQLiteAchievementRepository } from './achievementRepository';
 import { SQLiteBodyMetricsRepository } from './bodyMetricsRepository';
 import { SQLiteExerciseRepository } from './exerciseRepository';
 import { SQLiteGroupRepository } from './groupRepository';
@@ -14,6 +15,7 @@ import { SQLiteHistoryRepository } from './historyRepository';
 
 export function createLocalRepositories() {
   return {
+    achievementRepository: new SQLiteAchievementRepository(getDatabase),
     bodyMetricsRepository: new SQLiteBodyMetricsRepository(getDatabase),
     exerciseRepository: new SQLiteExerciseRepository(getDatabase),
     groupRepository: new SQLiteGroupRepository(getDatabase),
