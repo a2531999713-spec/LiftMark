@@ -1,5 +1,14 @@
 # 变更记录
 
+## 2026-07-21 - v2.11.1 workout-write-pipeline-stability
+
+- 用 bounded latest-patch coordinator 替换逐输入 autosave Promise chain。
+- 新增 set 批量写入/增删与 session 原子完成，同步队列和所有派生任务移出结束关键路径。
+- 修复 lifecycle 重复 flush、双击重入、失败推进、返回语义、真实进度、自重和多人调整。
+- 新增队列批量去重/恢复与 debug-only 隔离设备 benchmark。
+- typecheck、lint、58 suites/293 tests 与 Android arm64 release build 通过。
+- NE2210 15/64/200 set 原子结束为 21.913/73.742/210.561ms；无 migration/API/服务器部署。
+
 ## 2026-07-21 - v2.11.0 achievement-continuity
 
 - 新增 11 项共享成就目录、离线纯引擎、账号级 SQLite 聚合与本地/远端单调合并。

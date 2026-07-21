@@ -1,3 +1,13 @@
+## 2026-07-21 v2.11.1 训练写入管线
+
+- `WorkoutWriteCoordinator` 合并同一 set 的最新 patch，替换逐输入 Promise chain；失败 patch 恢复后可重试。
+- `saveSetPatchesBatch` 与 `completeSessionAtomic` 一次 scope/目标读取，在单事务内写最终 set 和 session sync metadata。
+- 输入链路不写 `local_sync_queue`；批量候选在边界事件或路由后按 owner/type/localId 去重。
+- `reconcileDirtyWorkoutSyncQueue` 以业务表 `sync_status` 重建训练队列，保证异常退出后的可恢复性。
+- 结束关键路径仅包含锁、freeze、必要 drain、原子完成和路由；报告/progression/achievement/network sync 后置隔离。
+- lifecycle/unmount/background 规则避免重复 flush；进度 selector 只读取真实 set 状态。
+- 现有 SQLite 索引足够，无移动端/服务端 migration、API 或部署变化。
+
 ## 2026-07-21 v2.11.0 成就连续性架构
 
 - `domain/achievement` 提供稳定 catalog、Monday-week 纯函数、进度计算、12 周活动与单调 merge；页面不读取数据库字段。

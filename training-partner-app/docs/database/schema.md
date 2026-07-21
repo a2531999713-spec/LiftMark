@@ -1,6 +1,14 @@
 ﻿# SQLite 数据库结构
 
-更新时间：2026-07-06
+更新时间：2026-07-21
+
+## 2026-07-21 补充：训练写入稳定性不新增 migration
+
+- `workout_sets`、`workout_exercise_records`、`workout_sessions` 现有 sync metadata 足以支持本地先写和异常恢复。
+- set-by-session、member/exercise 与 queue owner/status 查询均命中现有索引，无需新增索引 migration。
+- 不盲目给 `local_sync_queue` 添加 UNIQUE；批量入队会安全收敛旧重复活动行。
+- `completeSessionAtomic` 在一个排他事务内写最终 set 和 session completed，保持一致状态。
+- 无 SQLite/PostgreSQL schema 变化，不删除历史 session/set/queue 数据。
 
 ## 2026-07-15 补充：恢复状态不新增 migration
 

@@ -2,7 +2,15 @@
 
 LiftMark is a three-client strength-training system. Mobile training writes to SQLite first; PostgreSQL is the authoritative cloud recovery and conflict-arbitration source.
 
-## Current release: v2.11.0 training continuity and achievements
+## Current release: v2.11.1 workout write-pipeline stabilization
+
+- Workout input now coalesces the latest patch per set instead of appending an unbounded Promise chain.
+- Batch SQLite repository methods and one atomic finish transaction persist final sets and the completed session before summary navigation.
+- Sync queue reconstruction, reports, progression, achievements, and network sync run after navigation and never block local workout completion.
+- Execution phases, double-submit locks, save-and-exit semantics, real set-derived progress, bodyweight completion, and multi-member adjustments are covered by regression tests.
+- No SQLite/PostgreSQL migration, API change, or server deployment is required for v2.11.1.
+
+## Previous release: v2.11.0 training continuity and achievements
 
 - Eleven stable, account-scoped milestones are calculated from valid completed workouts, active Monday-to-Sunday weeks, volume, group workouts, plan cycles, and recovery check-ins.
 - Achievement progress is available offline from SQLite, then reconciled monotonically with `GET /api/achievements/me` when the cloud is reachable.

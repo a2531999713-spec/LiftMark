@@ -3,6 +3,15 @@
 更新时间：2026-07-03  
 对应代码目录：`training-partner-app/`；Sprint 4 已实现从今日训练创建 session、生成 records/sets、训练执行页和即时保存。
 
+## 2026-07-21 addendum: bounded write pipeline and atomic finish
+
+- `WorkoutWriteCoordinator` 按 set 合并 weight/reps/RPE/note/completed 等最终 patch，取消无界串行 Promise。
+- Repository 提供 batch save/add/delete 和 atomic complete；一次事务写最终 set 与 session completed 状态。
+- 完成本组捕获稳定身份并只在保存成功后推进；同步 ref 锁阻止同一 render 前的双击重入。
+- 保存并退出只 flush 本地并保留 `in_progress`；正式结束后立即路由，报告/建议/成就/同步后置。
+- 进度从 set completed/skipped/deleted 事实计算；自重允许 0kg，reps 仍必须大于 0。
+- 正常 finish 后 unmount 不再 flush，background snapshot 不与 finish 并发。
+
 ## 2026-07-21 addendum: non-blocking achievement unlocks
 
 - 完成 session 后仍立即导航到训练总结；成就 before/after 快照差量在后台计算，不参与本地完成事务。
