@@ -5,12 +5,15 @@ import {
   buildWorkoutExecutionQueue,
   checkShortWorkout,
   getWorkoutCursorFromQueue,
+  getWorkoutCompletionState,
+  getWorkoutExerciseProgressStatus,
   getNextWorkoutSetForRotation,
   getPlanExerciseInitialReps,
   getPlanExerciseSetCount,
   getWorkoutSetByCursor,
   getWorkoutExerciseSetProgress,
   getWorkoutRecordInitialReps,
+  resolveWorkoutSetCompletionInput,
   summarizeWorkoutAdjustments,
   summarizeWorkoutSets,
 } from '@/domain/workout/workout.service';
@@ -258,6 +261,48 @@ describe('workout domain rules', () => {
       totalMemberSets: 4,
       totalPlannedSets: 2,
     });
+  });
+
+  it('derives action progress from set truth rather than browse order', () => {
+    const sets = [
+      createSet({ id: 'done', completed: true }),
+      createSet({ id: 'pending', setNumber: 2 }),
+    ];
+    expect(getWorkoutExerciseProgressStatus(sets, 'record_1')).toBe('partial');
+    expect(getWorkoutExerciseProgressStatus(sets, 'record_1', true)).toBe('current');
+    expect(getWorkoutExerciseProgressStatus([
+      createSet({ id: 'skip-1', skipped: true }),
+      createSet({ id: 'skip-2', skipped: true, setNumber: 2 }),
+    ], 'record_1')).toBe('skipped');
+  });
+
+  it('only enables the completion card when no unskipped set is incomplete', () => {
+    expect(getWorkoutCompletionState([
+      createSet({ id: 'done', completed: true }),
+      createSet({ id: 'skip', skipped: true }),
+      createSet({ id: 'pending' }),
+    ])).toEqual({ canFinishFromCompletionCard: false, incompleteSetCount: 1 });
+    expect(getWorkoutCompletionState([
+      createSet({ id: 'done', completed: true }),
+      createSet({ id: 'skip', skipped: true }),
+    ])).toEqual({ canFinishFromCompletionCard: true, incompleteSetCount: 0 });
+  });
+
+  it('uses zero kilograms only for an unweighted bodyweight action', () => {
+    expect(resolveWorkoutSetCompletionInput({
+      fallbackReps: 10,
+      isBodyweightExercise: true,
+      set: createSet(),
+    })).toEqual({ actualReps: 10, actualWeight: 0 });
+    expect(resolveWorkoutSetCompletionInput({
+      fallbackReps: 10,
+      isBodyweightExercise: false,
+      set: createSet(),
+    })).toEqual({ actualReps: 10, actualWeight: undefined });
+    expect(resolveWorkoutSetCompletionInput({
+      isBodyweightExercise: true,
+      set: createSet({ actualReps: 8, actualWeight: 12.5 }),
+    })).toEqual({ actualReps: 8, actualWeight: 12.5 });
   });
 
   it('rejects invalid live set inputs', () => {

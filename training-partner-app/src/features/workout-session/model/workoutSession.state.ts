@@ -2,15 +2,18 @@ import type { Exercise } from '@/domain/exercise/exercise.types';
 import type { GroupMember, MemberProfile } from '@/domain/member/member.types';
 import type { WorkoutSessionDetail } from '@/domain/workout/workout.types';
 
-export type WorkoutSessionStatus =
+export type WorkoutExecutionPhase =
   | 'loading'
-  | 'ready'
-  | 'recording'
-  | 'saving'
-  | 'resting'
-  | 'finishing'
-  | 'finished'
-  | 'error';
+  | 'active'
+  | 'saving_set'
+  | 'adjusting'
+  | 'closing'
+  | 'completed'
+  | 'save_failed';
+
+export type WorkoutSessionStatus = WorkoutExecutionPhase;
+
+export type WorkoutLifecycle = 'active' | 'leaving' | 'finishing' | 'finished' | 'unmounted';
 
 export type WorkoutSessionState = {
   status: WorkoutSessionStatus;

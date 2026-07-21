@@ -248,6 +248,51 @@ export type WorkoutExerciseSetProgress = {
   totalPlannedSets: number;
 };
 
+export type WorkoutExerciseProgressStatus = 'completed' | 'current' | 'partial' | 'pending' | 'skipped';
+
+export function getWorkoutExerciseProgressStatus(
+  sets: WorkoutSet[],
+  exerciseRecordId: string,
+  isCurrent = false,
+): WorkoutExerciseProgressStatus {
+  const exerciseSets = sets.filter((set) => set.exerciseRecordId === exerciseRecordId);
+  const pendingCount = exerciseSets.filter((set) => !set.completed && !set.skipped).length;
+  const completedCount = exerciseSets.filter((set) => set.completed).length;
+  const skippedCount = exerciseSets.filter((set) => set.skipped).length;
+  if (isCurrent && pendingCount > 0) return 'current';
+  if (exerciseSets.length > 0 && skippedCount === exerciseSets.length) return 'skipped';
+  if (pendingCount === 0 && completedCount + skippedCount > 0) return 'completed';
+  if (completedCount + skippedCount > 0) return 'partial';
+  return 'pending';
+}
+
+export function getWorkoutCompletionState(sets: WorkoutSet[]): {
+  canFinishFromCompletionCard: boolean;
+  incompleteSetCount: number;
+} {
+  const incompleteSetCount = sets.filter((set) => !set.completed && !set.skipped).length;
+  return {
+    canFinishFromCompletionCard: sets.length > 0 && incompleteSetCount === 0,
+    incompleteSetCount,
+  };
+}
+
+export function resolveWorkoutSetCompletionInput(input: {
+  fallbackReps?: number;
+  isBodyweightExercise: boolean;
+  previousCompletedWeight?: number;
+  set: WorkoutSet;
+}): { actualReps?: number; actualWeight?: number } {
+  return {
+    actualReps: input.set.actualReps ?? input.set.plannedReps ?? input.fallbackReps,
+    actualWeight:
+      input.set.actualWeight ??
+      input.set.plannedWeight ??
+      input.previousCompletedWeight ??
+      (input.isBodyweightExercise ? 0 : undefined),
+  };
+}
+
 export function getWorkoutExerciseSetProgress(
   sets: WorkoutSet[],
   exerciseRecordId: string,
