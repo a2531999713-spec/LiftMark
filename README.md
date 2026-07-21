@@ -2,7 +2,15 @@
 
 LiftMark is a three-client strength-training system. Mobile training writes to SQLite first; PostgreSQL is the authoritative cloud recovery and conflict-arbitration source.
 
-## Current release: v2.10.0 recovery readiness
+## Current release: v2.11.0 training continuity and achievements
+
+- Eleven stable, account-scoped milestones are calculated from valid completed workouts, active Monday-to-Sunday weeks, volume, group workouts, plan cycles, and recovery check-ins.
+- Achievement progress is available offline from SQLite, then reconciled monotonically with `GET /api/achievements/me` when the cloud is reachable.
+- The Today screen has a compact continuity card, `/achievements` provides the full center, and newly reached milestones appear after workout summary navigation without blocking the workout finish path.
+- The legacy daily-streak definition is disabled rather than deleted. v2.11.0 adds no leaderboard, points, store, group challenge, or daily-training pressure.
+- No SQLite or PostgreSQL schema migration is required. The API and idempotent achievement seed must be deployed after merge.
+
+## Previous release: v2.10.0 recovery readiness
 
 - Six daily signals produce deterministic recovery guidance and an optional, session-only training adjustment.
 - The Today screen loads recovery independently from the plan so a recovery read failure cannot block workout startup.

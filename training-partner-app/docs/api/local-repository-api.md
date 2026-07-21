@@ -2,6 +2,21 @@
 
 更新时间：2026-07-15
 
+## 2026-07-21 契约补充：成就快照
+
+```ts
+AchievementRepository.getAchievementSnapshot({
+  ownerUserId,
+  today?,
+  excludeSessionId?,
+}): Promise<AchievementSnapshot>
+```
+
+- `ownerUserId` 必须等于当前认证账号；不读取 null owner，也不按昵称或 group 推断 owner。
+- 一次快照返回 `metrics`、`achievements`、`activityWeeks`、`generatedAt`，使用固定少量聚合 SQL，无 session/detail 或 definition N+1。
+- `excludeSessionId` 只用于训练结束后的 before/after 解锁差量，不修改任何数据。
+- 有效训练、有效组、容量、group mode、周期与恢复记录口径见成就架构文档。
+
 ## 2026-07-15 契约补充：恢复状态
 
 - `RecoveryRepository.getDailyLog/upsertDailyLog/listMemberLogs/getLatestLog/getRecentAssessmentTrend/softDeleteLog` 均要求显式 `ownerUserId + memberId`。

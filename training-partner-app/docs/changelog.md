@@ -1,5 +1,14 @@
 # 变更记录
 
+## 2026-07-21 - v2.11.0 achievement-continuity
+
+- 新增 11 项共享成就目录、离线纯引擎、账号级 SQLite 聚合与本地/远端单调合并。
+- 新增首页连续性卡、成就中心、AccountPanel 入口和训练总结后的单次解锁 Sheet。
+- 修复 API 有效训练/组/容量/group mode/周期/恢复口径、definition N+1 与 `achieved_at` 重写风险。
+- seed 按 code 幂等 upsert 并禁用旧日连续成就，不删除历史行。
+- typecheck、lint、移动端 55 套件/275 用例、API 23 用例、shared/API build 和 Android arm64 构建通过。
+- 无 SQLite/PostgreSQL migration；API 和 seed 合并后需要部署。
+
 ## 2026-07-15 - v2.10.0 recovery-readiness
 
 - 新增六项恢复评估、确定性评分/安全规则、同日编辑、最近趋势与 Today 紧凑入口。

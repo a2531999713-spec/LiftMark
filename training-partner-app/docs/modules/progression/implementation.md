@@ -3,6 +3,12 @@
 更新时间：2026-07-15
 对应代码目录：`training-partner-app/`；Sprint 1 已创建基础类型和 Repository 骨架，稳定性 Sprint 新增进阶建议中文展示映射。
 
+## 2026-07-21 与成就解锁的关系
+
+- progression 与 achievement 都在训练总结导航后后台计算，互不等待、互不写入对方表。
+- progression 继续依据动作级训练事实给出下一次建议；achievement 只累计账号级阶段里程碑。
+- 任一任务失败不阻塞总结、另一个后台任务或本地同步。
+
 ## 2026-07-15 与恢复建议的关系
 
 - progression 是长期“下次训练”建议；recovery 是当天、当前 session 的临时调整。

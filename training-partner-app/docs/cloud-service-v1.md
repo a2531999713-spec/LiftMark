@@ -2,6 +2,14 @@
 
 更新时间：2026-07-01
 
+## 2026-07-21 成就 API 补充
+
+- `GET /api/achievements/me` 必须认证，只从 `authUser.id` 推导账号范围，不接受任意 userId。
+- 响应为 camelCase：`metrics`、`achievements`、`generatedAt`；definitions 与 existing rows 固定各查询一次，聚合指标使用固定查询数量。
+- GET 会幂等 reconcile `user_achievements`：进度不倒退、首次 `achieved_at` 不重写、不创建重复行，也不修改训练事实。
+- 移动端先读 SQLite；云端失败不影响离线成就。`user_achievements` 不加入 generic sync。
+- 本版 API 与 seed 需要合并后部署，但不需要 PostgreSQL schema migration。
+
 ## 0. 当前部署状态
 
 公网 API Base URL：

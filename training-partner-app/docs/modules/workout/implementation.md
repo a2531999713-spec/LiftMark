@@ -3,6 +3,13 @@
 更新时间：2026-07-03  
 对应代码目录：`training-partner-app/`；Sprint 4 已实现从今日训练创建 session、生成 records/sets、训练执行页和即时保存。
 
+## 2026-07-21 addendum: non-blocking achievement unlocks
+
+- 完成 session 后仍立即导航到训练总结；成就 before/after 快照差量在后台计算，不参与本地完成事务。
+- 差量只认有效 completed session 与至少一组有效完成 set；未完成、取消、跳过或软删除数据不触发。
+- 新解锁写入 `achievement_pending_unlocks:${userId}`，总结页一次消费并最多展示 3 项；历史已解锁首次基线不会批量弹窗。
+- 成就失败、报告失败、进阶建议失败或远端同步失败彼此隔离，不丢失本地训练。
+
 ## 2026-07-15 addendum: recovery-only session adjustment
 
 - 开始训练使用完整计划生成原始选择，再根据已确认建议过滤共享动作快照；无 A 动作时不创建空 session。

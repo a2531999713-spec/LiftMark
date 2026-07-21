@@ -10,6 +10,41 @@
 | SSH 用户 | `deploy` |
 | 项目目录 | `/home/deploy/liftmark` |
 | 后端目录 | `/home/deploy/liftmark/apps/liftmark-api` |
+
+## v2.11.0 成就 API 合并后部署清单
+
+本功能分支开发阶段不直接部署生产。合并 `master` 后按以下顺序执行，不能跳过备份与验证：
+
+```bash
+cd /home/deploy/liftmark
+git status --short
+pm2 status liftmark-api
+
+# 先按现有运维方式把 PostgreSQL 备份写入：
+# /home/deploy/liftmark-backups/database/
+# 不覆盖或删除已有备份；数据库连接参数从服务器环境变量读取。
+
+git pull --ff-only origin master
+
+cd packages/shared
+npm ci
+npm run typecheck
+npm run build
+
+cd ../../apps/liftmark-api
+npm ci
+npm run typecheck
+npm run build
+mapfile -d '' TEST_FILES < <(find src -type f -name '*.test.ts' -print0)
+npx tsx --test "${TEST_FILES[@]}"
+npm run db:seed
+
+cd /home/deploy/liftmark
+pm2 reload apps/liftmark-api/ecosystem.config.js --only liftmark-api
+pm2 status liftmark-api
+```
+
+随后验证 `GET /api/health`、`GET /api/migration-health`，并使用隔离测试账号认证请求 `GET /api/achievements/me`。确认 `streak_3_days` 不返回、`first_workout` 正常、重复请求不新增重复行且首次 `achievedAt` 不变化。该发布无 PostgreSQL migration；若任一步失败，停止后续操作并保留备份与旧进程状态。
 | API 公网地址 | `http://47.100.239.29/api` |
 | Node.js 版本 | >= 22.13.0 |
 | PM2 进程名 | `liftmark-api` |

@@ -1,5 +1,16 @@
 ﻿# LiftMark 项目交接记录
 
+## 2026-07-21 v2.11.0 成就连续性交接
+
+- 新路由 `/achievements`；Today 在核心训练内容后显示紧凑连续性卡，AccountPanel 仅通过 props 接收摘要和导航回调。
+- 新增 shared 11 项目录、移动端纯引擎/scoped Repository/API client/merge hook 与账号级解锁状态。
+- 训练结束先进入总结页；成就差量计算、报告、进阶建议和同步均在后台，任何失败都不阻塞总结。
+- API `GET /api/achievements/me` 只使用认证用户，修复有效 session/set、容量、group mode、周期、恢复记录与 N+1 口径。
+- seed 幂等 upsert 新目录，禁用 `streak_3_days` 和旧错误别名，不删除 definition 或 user history。
+- 无 migration；移动端 55 套件/275 用例、API 23 用例、typecheck/lint/build 与 Android arm64 构建通过。
+- NE2210 完成只读入口、滚动、返回与布局验收；未在 176 账号执行会写入训练历史的验收。
+- 合并后仍需部署 shared/API、运行幂等 seed 并验证三个健康/成就接口。
+
 ## 2026-07-15 v2.10.0 恢复状态交接
 
 - 新路由 `/recovery`；Today 独立异步加载今日成员的状态，失败不阻塞计划或开始训练。

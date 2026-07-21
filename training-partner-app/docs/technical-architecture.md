@@ -1,3 +1,13 @@
+## 2026-07-21 v2.11.0 成就连续性架构
+
+- `domain/achievement` 提供稳定 catalog、Monday-week 纯函数、进度计算、12 周活动与单调 merge；页面不读取数据库字段。
+- `SQLiteAchievementRepository.getAchievementSnapshot` 只接受当前认证 owner，使用固定聚合查询读取有效 session/set、周期与恢复记录，不读取空 owner 历史数据。
+- 有效 session 必须 completed、未软删且至少含一组 completed/non-skipped/non-deleted set；容量只累计这些有效组。
+- `useAchievementSnapshot` 先展示本地快照，再请求认证 API；远端失败保留本地，合并采用最大进度、achieved OR 和最早 `achievedAt`。
+- 解锁检测在 summary 路由已经打开后后台执行，seen/pending key 包含 `userId`，不会跨账号串联或阻塞训练结束。
+- 服务端固定读取 definitions、existing achievements 与聚合指标，在内存 Map 中 reconcile 后单事务批量 upsert，无 definition 数量相关 N+1。
+- 无 SQLite/PostgreSQL migration；generic sync 不传输 `user_achievements`，服务端根据已同步业务事实重算。
+
 ## 2026-07-15 v2.10.0 恢复状态架构
 
 - `domain/recovery/recovery-engine.ts` 只负责六项评分、阈值、硬覆盖和确定性 reasons；不返回颜色或 JSX。
