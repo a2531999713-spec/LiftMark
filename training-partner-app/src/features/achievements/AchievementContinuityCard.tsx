@@ -30,4 +30,3 @@ const styles = StyleSheet.create({
   main: { flex: 1, gap: 2, minWidth: 0 },
   pressed: { opacity: 0.82 },
 });
-

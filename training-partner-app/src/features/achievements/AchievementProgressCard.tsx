@@ -57,4 +57,3 @@ const styles = StyleSheet.create({
   titleRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   track: { backgroundColor: colors.backgroundElevated, borderRadius: radius.pill, height: 4, marginTop: spacing.xs, overflow: 'hidden' },
 });
-

@@ -53,4 +53,3 @@ const styles = StyleSheet.create({
   list: { gap: spacing.md },
   text: { flex: 1, gap: 2 },
 });
-

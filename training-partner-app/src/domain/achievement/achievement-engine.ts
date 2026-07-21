@@ -161,7 +161,6 @@ export function mergeAchievementSnapshots(local: AchievementSnapshot, remote: Ac
     generatedAt: local.generatedAt >= remote.generatedAt ? local.generatedAt : remote.generatedAt,
   };
 }
-
 export function selectNextMilestone(achievements: AchievementProgress[]): AchievementProgress | null {
   return achievements.filter((item) => !item.achieved).slice().sort((left, right) => {
     const ratioDiff = right.progress / right.target - left.progress / left.target;
@@ -179,4 +178,3 @@ export function sortAchievementGroups(achievements: AchievementProgress[]) {
     ),
   };
 }
-

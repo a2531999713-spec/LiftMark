@@ -13,4 +13,3 @@ export type AchievementSnapshotSource = 'local' | 'merged' | 'remote';
 export type DisplayAchievementSnapshot = import('@liftmark/shared').AchievementSnapshot & {
   source: AchievementSnapshotSource;
 };
-

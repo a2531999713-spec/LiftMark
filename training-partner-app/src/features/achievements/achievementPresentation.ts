@@ -23,4 +23,3 @@ export function remainingAchievementText(achievement: AchievementProgress): stri
   if (achievement.metric === 'longest_active_week_streak') return `还差 ${Math.ceil(remaining)} 周`;
   return `还差 ${Math.ceil(remaining)} 次`;
 }
-

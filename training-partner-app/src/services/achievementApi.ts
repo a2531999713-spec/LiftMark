@@ -20,4 +20,3 @@ export async function getMyAchievements(): Promise<AchievementSnapshot> {
     activityWeeks: response.activityWeeks ?? [],
   };
 }
-

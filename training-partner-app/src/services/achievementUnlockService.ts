@@ -80,4 +80,3 @@ export function subscribeToAchievementUnlocks(userId: string, listener: () => vo
     if (userListeners.size === 0) listeners.delete(userId);
   };
 }
-

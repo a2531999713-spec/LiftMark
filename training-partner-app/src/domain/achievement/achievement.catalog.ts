@@ -20,4 +20,3 @@ export const ACHIEVEMENT_ICON_BY_METRIC: Record<
   completed_cycles: 'repeat-outline',
   recovery_checkins: 'pulse-outline',
 };
-

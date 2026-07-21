@@ -49,4 +49,3 @@ describe('SQLiteAchievementRepository', () => {
     expect(params.slice(-2)).toEqual(['session-new', 'session-new']);
   });
 });
-
