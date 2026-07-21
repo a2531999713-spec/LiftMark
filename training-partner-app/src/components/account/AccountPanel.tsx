@@ -51,6 +51,7 @@ export type AccountProfileUpdate = {
 };
 
 type AccountPanelProps = {
+  achievementSummary?: string;
   accountProfile?: AccountProfileCache | null;
   activePlanName?: string;
   avatarLocalUri?: string;
@@ -65,6 +66,7 @@ type AccountPanelProps = {
   membershipLabel: string;
   members: GroupMember[];
   onAboutPress: () => void;
+  onAchievementsPress: () => void;
   onBodyMetricsPress: () => void;
   onAvatarPick: (source: AvatarPickSource) => Promise<void>;
   onAvatarRemove: () => Promise<void>;
@@ -101,6 +103,7 @@ function normalizeGender(gender: AccountGender) {
 }
 
 export function AccountPanel({
+  achievementSummary,
   accountProfile,
   activePlanName,
   avatarLocalUri,
@@ -114,6 +117,7 @@ export function AccountPanel({
   membershipLabel,
   members,
   onAboutPress,
+  onAchievementsPress,
   onBodyMetricsPress,
   onAvatarPick,
   onAvatarRemove,
@@ -273,6 +277,8 @@ export function AccountPanel({
               membershipLabel={membershipLabel}
               memberCount={members.length}
               onAboutPress={onAboutPress}
+              onAchievementsPress={onAchievementsPress}
+              achievementSummary={achievementSummary}
               onBodyMetricsPress={onBodyMetricsPress}
               onBackupPress={() => setMode('backup')}
               onEditPress={() => {
@@ -362,6 +368,7 @@ export function AccountPanel({
 }
 
 type MainPanelProps = {
+  achievementSummary?: string;
   avatarLocalUri?: string;
   avatarThumbUrl?: string;
   avatarUrl?: string;
@@ -372,6 +379,7 @@ type MainPanelProps = {
   membershipLabel: string;
   memberCount: number;
   onAboutPress: () => void;
+  onAchievementsPress: () => void;
   onBodyMetricsPress: () => void;
   onBackupPress: () => void;
   onEditPress: () => void;
@@ -388,6 +396,7 @@ type MainPanelProps = {
 };
 
 function MainPanel({
+  achievementSummary,
   avatarLocalUri,
   avatarThumbUrl,
   avatarUrl,
@@ -398,6 +407,7 @@ function MainPanel({
   membershipLabel,
   memberCount,
   onAboutPress,
+  onAchievementsPress,
   onBodyMetricsPress,
   onBackupPress,
   onEditPress,
@@ -450,6 +460,14 @@ function MainPanel({
           icon="people-outline"
           label="训练小组"
           onPress={onTrainingGroupPress}
+        />
+        <Divider />
+        <AccountPanelRow
+          description="查看训练连续性和阶段进度"
+          icon="ribbon-outline"
+          label="成就与里程碑"
+          onPress={onAchievementsPress}
+          trailing={achievementSummary}
         />
         <Divider />
         <AccountPanelRow icon="cloud-outline" label="云同步" onPress={onSyncPress} trailing={syncLabel} />

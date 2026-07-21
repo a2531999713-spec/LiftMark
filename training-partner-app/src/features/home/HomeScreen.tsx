@@ -55,6 +55,8 @@ import type {
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { loadHomeDashboardSnapshot } from '@/features/home/application/loadHomeDashboard.usecase';
 import { RecoveryStatusCard } from '@/features/recovery/RecoveryStatusCard';
+import { AchievementContinuityCard } from '@/features/achievements/AchievementContinuityCard';
+import { useAchievementSnapshot } from '@/features/achievements/useAchievementSnapshot';
 import {
   getAssessmentForLog,
   getRecoveryRecommendationLabel,
@@ -561,6 +563,7 @@ function getFocusExercises(
 
 export default function TodayRoute() {
   const repositories = useMemo(() => createLocalRepositories(), []);
+  const achievementState = useAchievementSnapshot();
   const todayWeekday = useMemo(() => getTodayWeekday(), []);
   const { guardFeature, sheets } = useAuthGate();
   const authStatus = useAuthStore((state) => state.authStatus);
@@ -1929,6 +1932,13 @@ export default function TodayRoute() {
                 />
               ) : null}
 
+              {achievementState.snapshot ? (
+                <AchievementContinuityCard
+                  onPress={() => router.push('/achievements' as never)}
+                  snapshot={achievementState.snapshot}
+                />
+              ) : null}
+
             </>
           ) : null}
         </>
@@ -1936,6 +1946,7 @@ export default function TodayRoute() {
 
       {isAccountMenuVisible ? (
         <AccountPanel
+          achievementSummary={achievementState.snapshot ? `已解锁 ${achievementState.snapshot.achievements.filter((item) => item.achieved).length} 项` : undefined}
           accountProfile={accountProfile}
           activePlanName={activePlan?.name}
           avatarLocalUri={avatarDisplay.avatarLocalUri}
@@ -1950,6 +1961,7 @@ export default function TodayRoute() {
           membershipLabel={membershipLabel}
           members={members}
           onAboutPress={() => navigateFromAccountMenu(() => router.push('/about' as never))}
+          onAchievementsPress={() => navigateFromAccountMenu(() => router.push('/achievements' as never))}
           onBodyMetricsPress={() => navigateFromAccountMenu(() => router.push('/profile/body-metrics' as never))}
           onAvatarPick={pickAccountAvatar}
           onAvatarRemove={removeAccountAvatar}
