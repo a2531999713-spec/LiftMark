@@ -8,6 +8,7 @@ import {
   markSyncItemFailed,
   markSyncItemSynced,
   markSyncItemsSyncing,
+  reconcileDirtyWorkoutSyncQueue,
 } from './syncQueue';
 import type { SyncEntityType, SyncPreferences, SyncQueueItem, SyncSnapshot } from './syncTypes';
 import { getInstallationDeviceId } from './device/deviceIdentity';
@@ -216,6 +217,9 @@ export async function updateSyncPreferences(preferences: SyncPreferences): Promi
 export async function requestImmediateSync(): Promise<{ ok: true; message?: string } | { ok: false; message: string }> {
   const session = await readStoredSession();
   if (!session) return { ok: false, message: 'Please sign in before using cloud sync.' };
+  // Business rows are the source of truth. Repair missing workout queue entries
+  // before every push so background/save-and-exit writes cannot remain local-only forever.
+  await reconcileDirtyWorkoutSyncQueue();
   const pendingItems = await listPendingSyncItems({ includeAllAccounts: true });
   if (pendingItems.length === 0) {
     return { ok: true, message: 'No pending sync data.' };

@@ -23,6 +23,10 @@ export type WorkoutSession = {
   sourceDeviceId?: string;
   startedAt?: string;
   finishedAt?: string;
+  /** Selection snapshot populated for open-session matching. */
+  participantMemberIds?: ID[];
+  /** Selection snapshot populated for open-session matching. */
+  planExerciseIds?: ID[];
   createdAt: string;
   updatedAt: string;
 };

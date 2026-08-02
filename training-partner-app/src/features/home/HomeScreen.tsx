@@ -52,6 +52,7 @@ import type {
   CreateSessionFromTodayPlanInput,
   WorkoutSession,
 } from '@/domain/workout/workout.types';
+import { isSameWorkoutSelection } from '@/domain/workout/workout-selection';
 import { useAuthGate } from '@/hooks/useAuthGate';
 import { loadHomeDashboardSnapshot } from '@/features/home/application/loadHomeDashboard.usecase';
 import { RecoveryStatusCard } from '@/features/recovery/RecoveryStatusCard';
@@ -496,19 +497,6 @@ function isTrainablePlan(plan: PlanTemplate | null): plan is PlanTemplate {
   if (!plan) return false;
   if (plan.source === 'system' || plan.visibility === 'system') return true;
   return !plan.status || plan.status === 'active';
-}
-
-function isSameWorkoutSelection(
-  session: WorkoutSession,
-  input: CreateSessionFromTodayPlanInput,
-): boolean {
-  return (
-    session.planId === input.planId &&
-    (!session.planDayId || !input.planDayId || session.planDayId === input.planDayId) &&
-    session.week === input.week &&
-    session.weekday === input.weekday &&
-    session.trainingMode === (input.trainingMode ?? 'group_local')
-  );
 }
 
 function formatSessionSelection(session: WorkoutSession): string {

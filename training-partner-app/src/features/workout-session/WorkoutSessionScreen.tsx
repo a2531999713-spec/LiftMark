@@ -61,6 +61,7 @@ import { WorkoutWriteCoordinator } from '@/features/workout-session/services/wor
 import { parseIncrementKg } from '@/domain/preferences/user-preferences.types';
 import { syncGroupMembersAvatar } from '@/services/memberSyncService';
 import { enqueueSyncCandidatesBatch } from '@/sync/syncQueue';
+import { scheduleSyncDebounced } from '@/sync/syncOrchestrator';
 import { colors, radius, spacing } from '@/theme';
 
 function formatTimer(seconds: number): string {
@@ -1101,6 +1102,7 @@ export default function WorkoutRoute() {
     try {
       await flushDebouncedSetWrites();
       router.replace('/(tabs)/today');
+      scheduleSyncDebounced();
     } catch (saveError) {
       finishingRef.current = false;
       lifecycleRef.current = 'active';

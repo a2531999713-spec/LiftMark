@@ -66,6 +66,24 @@ describe('workout sync queue batching', () => {
     expect(sqlArgs).toContain('pending_delete');
   });
 
+  it('keeps an unsynced create as create when a newer edit arrives', async () => {
+    const db = createDb([{
+      id: 'queue-create', owner_user_id: 'user-a', entity_type: 'workoutSets', local_id: 'set-a',
+      remote_id: null, operation: 'create', status: 'pending_create', payload: '{}',
+    }]);
+    mockInitialize.mockResolvedValue(db as never);
+
+    await enqueueSyncCandidatesBatch([{
+      entityType: 'workoutSets', localId: 'set-a', operation: 'update', ownerUserId: 'user-a',
+      payload: { actualReps: 8 }, status: 'pending_update', updatedAt: '2026-07-21T00:00:01.000Z',
+    }]);
+
+    const sqlArgs = db.runAsync.mock.calls[0];
+    expect(sqlArgs).toContain('create');
+    expect(sqlArgs).toContain('pending_create');
+    expect(sqlArgs).toContain('queue-create');
+  });
+
   it('retires older duplicate active rows and updates only the newest row', async () => {
     const db = createDb([
       {

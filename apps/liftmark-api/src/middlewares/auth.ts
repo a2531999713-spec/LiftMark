@@ -13,7 +13,14 @@ function readBearerToken(request: FastifyRequest) {
 }
 
 export async function requireAuth(request: FastifyRequest, _reply: FastifyReply) {
-  const payload = verifyAccessToken(readBearerToken(request));
+  const token = readBearerToken(request);
+  let payload: ReturnType<typeof verifyAccessToken>;
+  try {
+    payload = verifyAccessToken(token);
+  } catch {
+    throw unauthorized('登录状态已失效，请重新登录。');
+  }
+
   const user = await db('users')
     .select('id', 'role', 'status')
     .where({ id: payload.sub })
@@ -39,4 +46,3 @@ export function getAuthUser(request: FastifyRequest) {
   }
   return request.authUser;
 }
-

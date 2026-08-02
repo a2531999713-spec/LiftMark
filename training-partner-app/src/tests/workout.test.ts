@@ -17,7 +17,8 @@ import {
   summarizeWorkoutAdjustments,
   summarizeWorkoutSets,
 } from '@/domain/workout/workout.service';
-import type { WorkoutExerciseRecord, WorkoutSessionDetail, WorkoutSet } from '@/domain/workout/workout.types';
+import type { WorkoutExerciseRecord, WorkoutSession, WorkoutSessionDetail, WorkoutSet } from '@/domain/workout/workout.types';
+import { isSameWorkoutSelection } from '@/domain/workout/workout-selection';
 import { validateWorkoutSetInput } from '@/domain/workout/workout.validation';
 
 function createPlanExercise(patch: Partial<PlanExercise> = {}): PlanExercise {
@@ -334,5 +335,53 @@ describe('workout domain rules', () => {
         totalVolumeKg: 12000,
       }).shouldConfirm,
     ).toBe(false);
+  });
+});
+
+describe('workout selection matching', () => {
+  const session: WorkoutSession = {
+    id: 'session_1',
+    groupId: 'group_1',
+    planId: 'plan_1',
+    planDayId: 'day_1',
+    date: '2026-08-02',
+    week: 1,
+    weekday: 7,
+    title: 'Day 1',
+    status: 'in_progress',
+    trainingMode: 'group_local',
+    participantMemberIds: ['member_a', 'member_b'],
+    planExerciseIds: ['plan_exercise_a', 'plan_exercise_b'],
+    createdAt: '2026-08-02T00:00:00.000Z',
+    updatedAt: '2026-08-02T00:00:00.000Z',
+  };
+
+  it('reuses an open session only for the same participants and exercise snapshot', () => {
+    const baseInput = {
+      groupId: 'group_1',
+      planId: 'plan_1',
+      planDayId: 'day_1',
+      date: '2026-08-02',
+      week: 1,
+      weekday: 7 as const,
+      title: 'Day 1',
+      trainingMode: 'group_local' as const,
+    };
+
+    expect(isSameWorkoutSelection(session, {
+      ...baseInput,
+      participantMemberIds: ['member_b', 'member_a'],
+      planExerciseIds: ['plan_exercise_b', 'plan_exercise_a'],
+    })).toBe(true);
+    expect(isSameWorkoutSelection(session, {
+      ...baseInput,
+      participantMemberIds: ['member_a'],
+      planExerciseIds: ['plan_exercise_a', 'plan_exercise_b'],
+    })).toBe(false);
+    expect(isSameWorkoutSelection(session, {
+      ...baseInput,
+      participantMemberIds: ['member_a', 'member_b'],
+      planExerciseIds: ['plan_exercise_a'],
+    })).toBe(false);
   });
 });
