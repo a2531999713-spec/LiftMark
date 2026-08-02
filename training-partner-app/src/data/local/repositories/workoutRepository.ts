@@ -71,6 +71,13 @@ function normalizeLinkedPlanId(planId?: string | null): string {
   return planId?.trim() || FREE_TRAINING_PLAN_ID;
 }
 
+function hasSameIds(actual: string[], expected: string[]): boolean {
+  const actualIds = new Set(actual);
+  const expectedIds = new Set(expected);
+  return actualIds.size === expectedIds.size
+    && [...expectedIds].every((id) => actualIds.has(id));
+}
+
 function getSessionDurationSeconds(session: WorkoutSession): number {
   const start = session.startedAt ? new Date(session.startedAt).getTime() : Number.NaN;
   const end = session.finishedAt ? new Date(session.finishedAt).getTime() : Date.now();
@@ -546,8 +553,26 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       );
 
       if (existing) {
-        session = mapWorkoutSession(existing);
-        return;
+        const participantIdsMatch = !input.participantMemberIds?.length || hasSameIds(
+          (await txn.getAllAsync<{ member_id: string }>(
+            `SELECT DISTINCT member_id FROM workout_sets
+             WHERE session_id = ? AND deleted_at IS NULL`,
+            existing.id,
+          )).map((row) => row.member_id),
+          input.participantMemberIds,
+        );
+        const planExerciseIdsMatch = !input.planExerciseIds?.length || hasSameIds(
+          (await txn.getAllAsync<{ plan_exercise_id: string }>(
+            `SELECT DISTINCT plan_exercise_id FROM workout_exercise_records
+             WHERE session_id = ? AND plan_exercise_id IS NOT NULL AND deleted_at IS NULL`,
+            existing.id,
+          )).map((row) => row.plan_exercise_id),
+          input.planExerciseIds,
+        );
+        if (participantIdsMatch && planExerciseIdsMatch) {
+          session = mapWorkoutSession(existing);
+          return;
+        }
       }
 
       let planExerciseRows: PlanExerciseRow[] = [];
@@ -568,6 +593,9 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
         planExerciseRows = input.planExerciseIds
           .map((id) => byId.get(id))
           .filter((row): row is PlanExerciseRow => Boolean(row));
+        if (!hasSameIds(planExerciseRows.map((row) => row.id), input.planExerciseIds)) {
+          throw new Error('部分所选计划动作已失效，请刷新计划后重试。');
+        }
       } else {
         planExerciseRows = await txn.getAllAsync<PlanExerciseRow>(
           `SELECT pe.* FROM plan_exercises pe
@@ -610,6 +638,13 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
 
       if (participantMembers.length === 0) {
         throw new Error('没有成员，无法创建训练。');
+      }
+
+      if (
+        requestedParticipantIds
+        && !hasSameIds(participantMembers.map((member) => member.id), [...requestedParticipantIds])
+      ) {
+        throw new Error('部分所选训练成员已失效，请刷新成员后重试。');
       }
 
       const profileRows = await txn.getAllAsync<MemberProfileRow>(
@@ -1253,8 +1288,21 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
     const db = await this.getDb();
     const userId = await getCurrentAccountUserId();
     const scope = getGroupAccountScope(userId, 'groups');
-    const rows = await db.getAllAsync<WorkoutSessionRow>(
-      `SELECT ws.* FROM workout_sessions ws
+    type OpenSessionRow = WorkoutSessionRow & {
+      participant_member_ids: string | null;
+      plan_exercise_ids: string | null;
+    };
+    const rows = await db.getAllAsync<OpenSessionRow>(
+      `SELECT ws.*,
+              (SELECT GROUP_CONCAT(DISTINCT workout_set.member_id)
+               FROM workout_sets workout_set
+               WHERE workout_set.session_id = ws.id AND workout_set.deleted_at IS NULL) AS participant_member_ids,
+              (SELECT GROUP_CONCAT(DISTINCT record.plan_exercise_id)
+               FROM workout_exercise_records record
+               WHERE record.session_id = ws.id
+                 AND record.plan_exercise_id IS NOT NULL
+                 AND record.deleted_at IS NULL) AS plan_exercise_ids
+       FROM workout_sessions ws
        INNER JOIN groups ON groups.id = ws.group_id
        WHERE ws.group_id = ? AND ws.date = ? AND ws.status IN ('draft', 'in_progress')
          AND ${scope.where}
@@ -1265,7 +1313,11 @@ export class SQLiteWorkoutRepository implements WorkoutRepository {
       input.date,
       ...scope.params,
     );
-    return rows.map(mapWorkoutSession);
+    return rows.map((row) => ({
+      ...mapWorkoutSession(row),
+      participantMemberIds: row.participant_member_ids?.split(',').filter(Boolean) ?? [],
+      planExerciseIds: row.plan_exercise_ids?.split(',').filter(Boolean) ?? [],
+    }));
   }
 
   async updateSession(input: UpdateWorkoutSessionInput): Promise<WorkoutSession> {

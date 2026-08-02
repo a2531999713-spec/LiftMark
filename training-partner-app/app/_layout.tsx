@@ -34,8 +34,8 @@ export default function RootLayout() {
 
       const currentUser = useAuthStore.getState().user;
       if (currentUser) {
-        // 启动时触发同步（pull + push），受 30 秒节流控制
-        triggerAppSync();
+        // loadCurrentUser already starts account-scoped recovery. Starting a
+        // second sync here can win the global lock and drop required recovery.
         void reconcileTrainingReminderSchedules().catch((error) => console.warn('[app] reminder reconcile failed', error));
       }
     }

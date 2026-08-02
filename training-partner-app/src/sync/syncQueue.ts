@@ -394,8 +394,19 @@ export async function enqueueSyncCandidatesBatch(entities: SyncEntity[]): Promis
       const key = `${candidate.ownerUserId ?? '<null>'}:${candidate.entityType}:${candidate.localId}`;
       const existing = existingByKey.get(key);
       const preserveDelete = existing?.operation === 'delete' && candidate.operation !== 'delete';
-      const operation = preserveDelete ? existing.operation : candidate.operation;
-      const status = preserveDelete ? existing.status : normalizeQueueStatus({ ...candidate, operation });
+      const preserveCreate = existing?.operation === 'create'
+        && !existing.remote_id
+        && candidate.operation === 'update';
+      const operation = preserveDelete
+        ? existing.operation
+        : preserveCreate
+          ? 'create'
+          : candidate.operation;
+      const status = preserveDelete
+        ? existing.status
+        : preserveCreate
+          ? 'pending_create'
+          : normalizeQueueStatus({ ...candidate, operation });
       const payload = preserveDelete ? existing.payload : JSON.stringify(candidate.payload ?? {});
       if (existing) {
         await txn.runAsync(

@@ -17,6 +17,7 @@ import type {
 import { readStoredSession, saveStoredSession } from '@/services/auth/tokenStorage';
 import { getMembership, type Membership } from '@/services/membershipService';
 import { repairLocalDataOwnership } from '@/services/ownershipRepairService';
+import { syncServerDataToLocal } from '@/services/profileSyncService';
 import { cancelCurrentAccountTrainingReminderSchedules } from '@/services/trainingReminderService';
 import { sync } from '@/sync/syncOrchestrator';
 
@@ -120,9 +121,18 @@ function switchRuntimeAccountScope(userId?: string | null) {
   switchApplicationAccountScope(userId);
 }
 
-function recoverCurrentAccountData() {
+function recoverCurrentAccountData(options: { fullPull: boolean }) {
   repairLocalDataOwnership()
-    .then(() => sync({ fullPull: true }))
+    .then(async () => {
+      if (options.fullPull) {
+        await sync({ fullPull: true });
+        return;
+      }
+      // A restored session is not an account switch. Refresh the lightweight
+      // group/member graph, then continue from the account-scoped pull cursor.
+      await syncServerDataToLocal();
+      await sync();
+    })
     .catch((error) => {
       console.warn('[auth] account data recovery failed', error instanceof Error ? error.message : error);
     });
@@ -148,7 +158,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       set(nextState);
       // 登录态恢复后异步修复本地数据归属（不阻塞 UI）
       if (nextState.user?.id) {
-        recoverCurrentAccountData();
+        recoverCurrentAccountData({ fullPull: false });
       }
     } catch (error) {
       switchRuntimeAccountScope(null);
@@ -212,7 +222,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         ...nextState,
         hasSeenSyncPrompt: false,
       });
-      recoverCurrentAccountData();
+      recoverCurrentAccountData({ fullPull: true });
       return null;
     } finally {
       set({ isLoading: false });
@@ -244,7 +254,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         ...nextState,
         hasSeenSyncPrompt: false,
       });
-      recoverCurrentAccountData();
+      recoverCurrentAccountData({ fullPull: true });
       return null;
     } finally {
       set({ isLoading: false });
@@ -299,7 +309,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         ...nextState,
         hasSeenSyncPrompt: false,
       });
-      recoverCurrentAccountData();
+      recoverCurrentAccountData({ fullPull: true });
       return null;
     } finally {
       set({ isLoading: false });

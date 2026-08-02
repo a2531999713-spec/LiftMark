@@ -292,6 +292,51 @@ describe('SQLiteWorkoutRepository.createSessionFromTodayPlan', () => {
     expect(transaction.runAsync).not.toHaveBeenCalled();
   });
 
+  it('does not reuse an open session with a different participant snapshot', async () => {
+    const transaction = {
+      getFirstAsync: jest.fn(async (sql: string) => (
+        sql.includes('FROM workout_sessions') ? openSessionRow : null
+      )),
+      getAllAsync: jest.fn(async (sql: string) => {
+        if (sql.includes('SELECT DISTINCT member_id')) return [{ member_id: 'member_old' }];
+        if (sql.includes('SELECT DISTINCT plan_exercise_id')) {
+          return [{ plan_exercise_id: 'plan_exercise_selected' }];
+        }
+        if (sql.includes('FROM plan_exercises')) return [planExerciseRow];
+        if (sql.includes('FROM group_members')) return [memberRow];
+        if (sql.includes('FROM member_profiles')) return [];
+        if (sql.includes('FROM exercises')) return [exerciseRow];
+        return [];
+      }),
+      runAsync: jest.fn(async (_sql: string, ..._params: unknown[]) => undefined),
+    };
+    const db = {
+      getFirstAsync: jest.fn(async (sql: string) => (sql.includes('FROM groups') ? visibleGroupRow : null)),
+      withExclusiveTransactionAsync: jest.fn(async (callback: (txn: typeof transaction) => Promise<void>) => {
+        await callback(transaction);
+      }),
+    };
+
+    const session = await new SQLiteWorkoutRepository(async () => db as never).createSessionFromTodayPlan({
+      date: '2026-06-30',
+      groupId: 'group_1',
+      phaseId: 'phase_strength',
+      planCycleId: 'cycle_current',
+      planExerciseIds: ['plan_exercise_selected'],
+      planId: 'plan_current',
+      participantMemberIds: ['member_1'],
+      title: 'Day 3',
+      trainingMode: 'group_local',
+      week: 8,
+      weekday: 3,
+    });
+
+    expect(session.id).toBe('session_test');
+    expect(transaction.runAsync.mock.calls.some(([sql]) => (
+      typeof sql === 'string' && sql.includes('INSERT INTO workout_sessions')
+    ))).toBe(true);
+  });
+
   it('lists open sessions so the UI can resolve conflicting selections explicitly', async () => {
     const db = {
       getAllAsync: jest.fn(async () => [

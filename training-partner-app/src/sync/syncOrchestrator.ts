@@ -4,6 +4,8 @@ import { pullFromServer } from './pullService';
 import { requestImmediateSync } from './syncService';
 
 let isSyncing = false;
+let activeSyncIsFullPull = false;
+let pendingFullPull = false;
 let lastSyncAt = 0;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -11,10 +13,16 @@ export async function sync(
   options?: { fullPull?: boolean; pushOnly?: boolean },
 ): Promise<{ ok: boolean; message?: string }> {
   if (isSyncing) {
+    if (options?.fullPull && !activeSyncIsFullPull) {
+      pendingFullPull = true;
+      console.log('[sync] full pull queued behind active sync');
+      return { ok: true, message: 'full pull queued' };
+    }
     console.log('[sync] skipped: already syncing');
     return { ok: true, message: 'sync in progress' };
   }
   isSyncing = true;
+  activeSyncIsFullPull = Boolean(options?.fullPull);
   console.log('[sync] starting, options:', JSON.stringify(options ?? {}));
   try {
     let pullResultMessage: string | undefined;
@@ -68,6 +76,11 @@ export async function sync(
     return { ok: false, message: error instanceof Error ? error.message : 'sync failed' };
   } finally {
     isSyncing = false;
+    activeSyncIsFullPull = false;
+    if (pendingFullPull) {
+      pendingFullPull = false;
+      void sync({ fullPull: true });
+    }
   }
 }
 
